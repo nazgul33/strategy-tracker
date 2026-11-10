@@ -18,6 +18,10 @@
       "name": "@st/core",
       "version": "0.0.1",
     },
+    "packages/ingest": {
+      "name": "@st/ingest",
+      "version": "0.0.1",
+    },
     "packages/market-data": {
       "name": "@st/market-data",
       "version": "0.0.1",
@@ -38,6 +42,8 @@
     "@st/calendar": ["@st/calendar@workspace:packages/calendar"],
 
     "@st/core": ["@st/core@workspace:packages/core"],
+
+    "@st/ingest": ["@st/ingest@workspace:packages/ingest"],
 
     "@st/market-data": ["@st/market-data@workspace:packages/market-data"],
 
