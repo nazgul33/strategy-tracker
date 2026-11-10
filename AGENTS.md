@@ -37,6 +37,7 @@ apps/web/src/      main.tsx App.tsx api.ts i18n.ts viewmodels.ts
 - `bun run typecheck`
 - `bun run dev`
 - `docker compose up`
+- Test DB: `docker run -d --name st-mariadb-test -e MARIADB_ROOT_PASSWORD=test -e MARIADB_DATABASE=st_test -p 127.0.0.1:3307:3306 mariadb:11` then `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun test`
 
 ## Conventions
 
