@@ -1,0 +1,14 @@
+{
+  "name": "strategy-tracker",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "bun-types": "^1.4.4",
+    "typescript": "^5.6.0"
+  }
+}
