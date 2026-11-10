@@ -1,0 +1,12 @@
+{
+  "name": "@st/strategies",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "@st/core": "workspace:*",
+    "@st/calendar": "workspace:*"
+  },
+  "exports": {
+    ".": "./src/mean-reversion.ts"
+  }
+}

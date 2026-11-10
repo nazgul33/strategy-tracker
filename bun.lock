@@ -25,6 +25,14 @@
         "@st/calendar": "workspace:*",
       },
     },
+    "packages/strategies": {
+      "name": "@st/strategies",
+      "version": "0.0.1",
+      "dependencies": {
+        "@st/calendar": "workspace:*",
+        "@st/core": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@st/calendar": ["@st/calendar@workspace:packages/calendar"],
@@ -32,6 +40,8 @@
     "@st/core": ["@st/core@workspace:packages/core"],
 
     "@st/market-data": ["@st/market-data@workspace:packages/market-data"],
+
+    "@st/strategies": ["@st/strategies@workspace:packages/strategies"],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 

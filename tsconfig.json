@@ -9,6 +9,9 @@
     },
     {
       "path": "./packages/market-data"
+    },
+    {
+      "path": "./packages/strategies"
     }
   ]
 }

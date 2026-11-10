@@ -1,3 +1,5 @@
+import { roundDiv, TICK_USD } from './money'
+
 export type ISODate = string // 'YYYY-MM-DD'
 
 export type BucketState = 'empty' | 'held' | 'force_sell'
@@ -62,4 +64,12 @@ export class DomainError extends Error {
     this.kind = kind
     this.name = 'DomainError'
   }
+}
+
+export function bucketBudgetCents(poolCents: number): number {
+  return Math.floor(poolCents / 10)
+}
+
+export function sellTarget(buyPrice: bigint, costPpm: number, shares: bigint): bigint {
+  return buyPrice + TICK_USD + roundDiv(buyPrice * 2n * BigInt(costPpm), 1_000_000n)
 }
