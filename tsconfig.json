@@ -1,4 +1,14 @@
 {
   "files": [],
-  "references": [{ "path": "./packages/core" }, { "path": "./packages/calendar" }]
+  "references": [
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/calendar"
+    },
+    {
+      "path": "./packages/market-data"
+    }
+  ]
 }

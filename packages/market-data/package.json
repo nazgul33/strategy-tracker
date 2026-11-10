@@ -1,0 +1,11 @@
+{
+  "name": "@st/market-data",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "@st/calendar": "workspace:*"
+  },
+  "exports": {
+    ".": "./src/yahoo.ts"
+  }
+}
