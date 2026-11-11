@@ -40,12 +40,12 @@ describe('simulateDays', () => {
     expect(fa.shares).toBe(2)
     expect(fa.price).toBe(3499900n)
     expect(fa.feeCents).toBe(feeCents(3499900n, 2, 30))
-    // 2-bar sim -> the only day is the last day -> forced exit at close 3498000 (R25)
+    // 2-bar sim -> the only day is the last day -> forced exit at open 3501000 (market sells fill LOO)
     expect(da[0]!.fills.length).toBe(2)
     expect(da[0]!.fills[1]!.side).toBe('sell')
-    expect(da[0]!.fills[1]!.price).toBe(3498000n)
+    expect(da[0]!.fills[1]!.price).toBe(3501000n)
     expect(da[0]!.heldCount).toBe(0)
-    expect(da[0]!.cashCents).toBe(1000000 - 69998 - feeCents(3499900n, 2, 30) + 69960 - feeCents(3498000n, 2, 30))
+    expect(da[0]!.cashCents).toBe(1000000 - 69998 - feeCents(3499900n, 2, 30) + 70020 - feeCents(3501000n, 2, 30))
     const b: OHLCBar[] = [
       { date: '2026-11-01', open: 3500000n, high: 3550000n, low: 3450000n, close: 3500000n },
       // gap-down open below limit -> fills at open
@@ -54,11 +54,11 @@ describe('simulateDays', () => {
     const db = simulateDays(makeRun(), DEFAULT_MR_PARAMS, b)
     const fb = db[0]!.fills.find((f) => f.side === 'buy')!
     expect(fb.price).toBe(3480000n)
-    // again the only day is the last day -> forced exit at close 3400000 (R25)
+    // again the only day is the last day -> forced exit at open 3480000 (market sells fill LOO)
     expect(db[0]!.heldCount).toBe(0)
     expect(db[0]!.fills[1]!.side).toBe('sell')
-    expect(db[0]!.fills[1]!.price).toBe(3400000n)
-    expect(db[0]!.cashCents).toBe(1000000 - 69600 - feeCents(3480000n, 2, 30) + 68000 - feeCents(3400000n, 2, 30))
+    expect(db[0]!.fills[1]!.price).toBe(3480000n)
+    expect(db[0]!.cashCents).toBe(1000000 - 69600 - feeCents(3480000n, 2, 30) + 69600 - feeCents(3480000n, 2, 30))
   })
 
   test('case 3: sell_loc fills at max(target, open); high < target -> no fill', () => {
@@ -104,7 +104,7 @@ describe('simulateDays', () => {
   test('case 4b: insufficient cash skips buy, cash never negative', () => {
     // pool 699995c, budget = pool/10 = 69999c -> 2 shares @ 3499900 (cost 69998 + fee 2 = 70000 per buy)
     // days 1-9 fill (cash 699995 - 9*70000 = 69995), day 10 buy needs 70000 -> skipped
-    // day 10 forced exit: 9 buckets x 2 @ close 3500000 -> + (70000 - 2) * 9 = +629982 -> 699977
+    // day 10 forced exit: 9 buckets x 2 @ open 3500000 -> + (70000 - 2) * 9 = +629982 -> 699977
     const run = makeRun({ poolCents: 699995 })
     const flat = (date: string): OHLCBar => ({ date, open: 3500000n, high: 3500000n, low: 3350000n, close: 3500000n })
     const b = Array.from({ length: 11 }, (_, i) => flat(`2026-11-${String(i + 1).padStart(2, '0')}`)) // bars[0] seeds -> 10 trading days
@@ -120,7 +120,7 @@ describe('simulateDays', () => {
     expect(last.heldCount).toBe(0) // forced exit liquidates everything
   })
 
-  test('case 5: resolveDay market_sell fills at close', () => {
+  test('case 5: resolveDay market_sell fills at open (LOO)', () => {
     const state = emptyState(1)
     state.buckets[0] = { index: 0, state: 'force_sell', shares: 5, buyPrice: 3000000n, buyFeeCents: 0, filledOn: '2026-10-01' }
     state.cashCents = 1000
@@ -128,7 +128,7 @@ describe('simulateDays', () => {
     const bar: OHLCBar = { date: '2026-11-02', open: 3400000n, high: 3450000n, low: 3350000n, close: 3420000n }
     const { state: ns, fills } = resolveDay(state as RunState, plan as any, bar, 30)
     expect(fills.length).toBe(1)
-    expect(fills[0]!.price).toBe(bar.close)
+    expect(fills[0]!.price).toBe(bar.open)
     expect(ns.closed.length).toBe(1)
     expect(ns.buckets[0]!.state).toBe('empty')
   })

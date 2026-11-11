@@ -35,19 +35,17 @@ const GROUP_LABEL: Record<SimGroup, string> = {
 interface SimParams {
   bucketCount: number;
   maxAgeDays: number;
-  sellCapBps: number | null;
 }
 
 function parseParams(paramsJson: string, fallbackBucketCount: number): SimParams {
   try {
-    const raw = JSON.parse(paramsJson) as { bucketCount?: number; maxAgeDays?: number; sellCapBps?: number };
+    const raw = JSON.parse(paramsJson) as { bucketCount?: number; maxAgeDays?: number };
     return {
       bucketCount: typeof raw.bucketCount === 'number' && raw.bucketCount > 0 ? raw.bucketCount : fallbackBucketCount,
       maxAgeDays: typeof raw.maxAgeDays === 'number' && raw.maxAgeDays > 0 ? raw.maxAgeDays : 20,
-      sellCapBps: typeof raw.sellCapBps === 'number' ? raw.sellCapBps : null,
     };
   } catch {
-    return { bucketCount: fallbackBucketCount, maxAgeDays: 20, sellCapBps: null };
+    return { bucketCount: fallbackBucketCount, maxAgeDays: 20 };
   }
 }
 
@@ -117,7 +115,6 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
         </Button>
         <span className="ml-auto text-xs text-muted-foreground">
           {run.ticker} · {isoDate(run.fromDate)} → {isoDate(run.toDate)} · {t('runPoolCents')} {centsUsd(run.poolCents)}
-          {params.sellCapBps !== null && <> · {t('simSellCap')} {bpPercent(params.sellCapBps * 100)}</>}
           {` · ${t('simMaxAge')} ${params.maxAgeDays}`}
         </span>
       </Card>

@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { bucketBudgetCents, buyShares, sellTarget, ageBuckets, computeOrders, progressView, DEFAULT_MR_PARAMS } from '@st/strategies'
-import { emptyState, applyBuyFill, applySellFill, formatUsd } from '@st/core'
+import { emptyState, applyBuyFill, applySellFill } from '@st/core'
 import type { Bucket } from '@st/core'
 
 describe('core money pins', () => {
@@ -59,16 +59,16 @@ describe('computeOrders', () => {
     const so = plan.orders.find(o => o.kind === 'sell_loc' && o.bucketIndex === 3)
     expect(so?.limitPrice).toBe(3411605n)
   })
-  test('sell capped', () => {
+  test('high target sells anyway (no cap)', () => {
     const state = emptyState(10)
     const b: Bucket = { index: 4, state: 'held', shares: 5, buyPrice: 4500000n, buyFeeCents: 0, filledOn: '2026-11-08' }
     state.buckets[4] = b
     const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, poolCents: 1_000_000, status: 'active' as const }
     const plan = computeOrders(run, state, { lastClose: 3402300n })
-    expect(plan.orders.find(o => o.kind === 'sell_loc' && o.bucketIndex === 4)).toBeUndefined()
-    expect(plan.skips.find(o => o.kind === 'sell_loc' && o.bucketIndex === 4)).toBeDefined()
     const target = sellTarget(4500000n, 30, 5n)
-    expect(plan.notices).toContainEqual({ code: 'sell-capped', params: { bucket: '4', price: formatUsd(target) } })
+    expect(plan.orders).toContainEqual({ kind: 'sell_loc', bucketIndex: 4, limitPrice: target, shares: 5 })
+    expect(plan.skips).toEqual([])
+    expect(plan.notices).toEqual([])
   })
   test('force sell', () => {
     const state = emptyState(10)

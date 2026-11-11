@@ -124,7 +124,7 @@ DECIMAL(12,4) USD. Cash/fees in cents with fee = price × shares × ppm rounded 
 
 ## Strategy: MeanReversion (떨사오팔)
 
-Config: ticker; pool (editable); 10 buckets; tick $0.01; sell cap factor 1.30; max age 20
+Config: ticker; pool (editable); 10 buckets; tick $0.01; max age 20
 trading days; trade cost ppm (per run). Bucket budget = pool ÷ 10 (recomputed on pool edits;
 held buckets keep their actual entry economics — only new orders use the new budget).
 
@@ -141,8 +141,7 @@ and nothing else that day):
    shares = `floor(bucket budget ÷ (C − $0.01))`. If all buckets held: digest says
    "no buy — no bucket available". If shares = 0 (price too high for a bucket): digest says so.
 3. **Sells — many per day**: for each `held` bucket: LOC sell at
-   `buy_price + $0.01 + 2 × (buy_price × ppm)`. Include in digest only if that price
-   **< C × 1.30**; otherwise show it in a "skipped" line with reason.
+   `buy_price + $0.01 + 2 × (buy_price × ppm)`. Every such sell goes into the digest (no cap).
 4. **Forced exit**: any bucket unsold past 20 trading days ⇒ `MARKET SELL today` instruction.
 5. Send digest (Telegram + logged for UI history).
 
@@ -173,7 +172,7 @@ per run: cash, exposure, realized P&L, win rate of closed buckets.
 - Fill model (documented approximation; free data has no deep intraday bars):
   - Buy LOC: fills on trade date if `low ≤ limit`; fill price `min(limit, open)`.
   - Sell LOC: fills if `high ≥ limit`; fill price `max(limit, open)`.
-  - Market sell: fills at `close`.
+  - Market sell: fills at `open` (morning limit-on-open order).
 - Output: day-by-day replay UI — each step shows the exact digest that *would* have been sent
   plus bucket board and P&L curve. No Telegram. Separate sim tables; disposable runs.
 

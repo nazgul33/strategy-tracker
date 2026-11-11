@@ -8,14 +8,12 @@ export const MEAN_REVERSION = 'mean-reversion'
 export interface MrParams {
   bucketCount: number
   tick: bigint
-  sellCapBps: number
   maxAgeDays: number
 }
 
 export const DEFAULT_MR_PARAMS: MrParams = {
   bucketCount: 10,
   tick: 100n,
-  sellCapBps: 13000,
   maxAgeDays: 20,
 }
 
@@ -96,15 +94,7 @@ export function computeOrders(
     .sort((a, b) => a.index - b.index)
   for (const b of held) {
     const target = sellTarget(b.buyPrice, run.costPpm, BigInt(b.shares))
-    const cap = (ctx.lastClose * BigInt(params.sellCapBps)) / 10000n
-    if (target >= cap) {
-      // skip
-      const skipOrder: PlannedOrder = { kind: 'sell_loc', bucketIndex: b.index, limitPrice: target, shares: b.shares }
-      skips.push(skipOrder)
-      notices.push({ code: 'sell-capped', params: { bucket: String(b.index), price: formatUsd(target) } })
-    } else {
-      orders.push({ kind: 'sell_loc', bucketIndex: b.index, limitPrice: target, shares: b.shares })
-    }
+    orders.push({ kind: 'sell_loc', bucketIndex: b.index, limitPrice: target, shares: b.shares })
   }
 
   // force_sell

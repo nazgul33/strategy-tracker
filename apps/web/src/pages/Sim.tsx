@@ -33,7 +33,6 @@ export function SimPage() {
   const [poolUsd, setPoolUsd] = useState('');
   const [costPpm, setCostPpm] = useState('200');
   const [bucketCount, setBucketCount] = useState('');
-  const [sellCap, setSellCap] = useState('');
   const [maxAge, setMaxAge] = useState('');
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -51,8 +50,6 @@ export function SimPage() {
 
     const buckets = optInt(bucketCount, 2, 20, t('runInvalidBucketCount'));
     if (buckets === null) return null;
-    const cap = optInt(sellCap, 1, 100, t('runInvalidSellCap'));
-    if (cap === null) return null;
     const age = optInt(maxAge, 1, 250, t('runInvalidMaxAge'));
     if (age === null) return null;
 
@@ -60,7 +57,6 @@ export function SimPage() {
     const input: SimInput = { name: name.trim(), ticker: tid, from: fromDate, to: toDate, poolCents, costPpm: Number(cost) };
     const params: NonNullable<SimInput['params']> = {};
     if (buckets !== undefined) params.bucketCount = buckets;
-    if (cap !== undefined) params.sellCapBps = cap;
     if (age !== undefined) params.maxAgeDays = age;
     if (Object.keys(params).length > 0) input.params = params;
     return input;
@@ -131,9 +127,6 @@ export function SimPage() {
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Field label={t('runBucketCount')}>
                 <Input value={bucketCount} onChange={(e) => setBucketCount(e.target.value)} inputMode="numeric" />
-              </Field>
-              <Field label={t('simSellCap')}>
-                <Input value={sellCap} onChange={(e) => setSellCap(e.target.value)} inputMode="numeric" />
               </Field>
               <Field label={t('simMaxAge')}>
                 <Input value={maxAge} onChange={(e) => setMaxAge(e.target.value)} inputMode="numeric" />

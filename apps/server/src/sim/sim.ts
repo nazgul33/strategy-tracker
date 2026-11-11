@@ -80,7 +80,7 @@ export function resolveDay(state: RunState, plan: DayPlan, bar: OHLCBar, costPpm
   const buyLocs = plan.orders.filter((o) => o.kind === 'buy_loc').sort((a, b) => a.bucketIndex - b.bucketIndex)
 
   for (const o of marketSells) {
-    const price = bar.close
+    const price = bar.open // market sells are limit-on-open orders placed in the morning
     const fee = feeCents(price, o.shares, costPpm)
     try {
       cur = applySellFill(cur, o.bucketIndex, o.shares, price, fee, bar.date)
@@ -140,13 +140,13 @@ function simulate(run: Run, params: MrParams, bars: OHLCBar[]): SimResult {
     days.push({ date: bars[i]!.date, plan, fills, events, cashCents: state.cashCents, heldCount: heldCount(state) })
     states.push(state)
   }
-  // forced exit: liquidate every held bucket at the last bar's close (R25)
+  // forced exit: liquidate every held bucket at the last bar's open (LOO, supersedes R25's close fill)
   const lastBar = bars[bars.length - 1]!
   const lastDay = days[days.length - 1]!
   for (let i = 0; i < state.buckets.length; i++) {
     const b = state.buckets[i]!
     if (b.state === 'empty') continue
-    const price = lastBar.close
+    const price = lastBar.open
     const fee = feeCents(price, b.shares, run.costPpm)
     state = applySellFill(state, i, b.shares, price, fee, lastBar.date)
     const f = { side: 'sell' as const, bucketIndex: i, shares: b.shares, price, feeCents: fee }
@@ -166,7 +166,7 @@ export function simulateDays(run: Run, params: MrParams, bars: OHLCBar[]): SimDa
 export async function runSim(input: SimInput, deps: { fetchDailyBars: (ticker: string, from: string, to: string) => Promise<OHLCBar[]>; repos: SimRepoSurface }): Promise<{ id: number; dayCount: number }> {
   if (input.params) {
     for (const k of Object.keys(input.params)) {
-      if (!['bucketCount', 'sellCapBps', 'maxAgeDays'].includes(k)) {
+      if (!['bucketCount', 'maxAgeDays'].includes(k)) {
         throw new DomainError('invalid-params')
       }
     }

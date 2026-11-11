@@ -182,5 +182,5 @@ export interface SimInput {
   to: string;
   poolCents: number;
   costPpm: number;
-  params?: { bucketCount?: number; sellCapBps?: number; maxAgeDays?: number };
+  params?: { bucketCount?: number; maxAgeDays?: number };
 }

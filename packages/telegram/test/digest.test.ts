@@ -43,15 +43,6 @@ describe('digest', () => {
     const out = renderDigest(run, plan, ctx, 'en').join('\n')
     expect(out).toContain('⚠️ 3 unconfirmed orders from 2026-11-05')
   })
-  test('sell-capped notice text appears for skip', () => {
-    const plan: DayPlan = {
-      orders: [],
-      skips: [{ kind: 'sell_loc', bucketIndex: 3, limitPrice: 100n, shares: 5 }],
-      notices: [{ code: 'sell-capped', params: { bucket: 3, price: 100 } }],
-    }
-    const out = renderDigest(run, plan, ctx, 'en').join('\n')
-    expect(out).toContain('sell capped')
-  })
   test('ko variant 매수/매도', () => {
     const plan: DayPlan = {
       orders: [
@@ -92,25 +83,6 @@ describe('digest', () => {
         expect(line.startsWith('Buy  LOC') || line.startsWith('Alpha') || line.startsWith('Trade date')).toBe(true)
       }
     }
-  })
-  test('skip reason linked per bucket', () => {
-    const plan: DayPlan = {
-      orders: [],
-      skips: [
-        { kind: 'sell_loc', bucketIndex: 3, limitPrice: 100n, shares: 5 },
-        { kind: 'sell_loc', bucketIndex: 7, limitPrice: 200n, shares: 6 },
-      ],
-      notices: [
-        { code: 'sell-capped', params: { bucket: 3, price: 333 } },
-        { code: 'sell-capped', params: { bucket: 7, price: 777 } },
-      ],
-    }
-    const out = renderDigest(run, plan, ctx, 'en').join('\n')
-    expect(out).toContain('333')
-    expect(out).toContain('777')
-    // notice text appears exactly twice (once per skip), not as standalone
-    const count = (out.match(/sell capped/g) || []).length
-    expect(count).toBe(2)
   })
   test('header appears', () => {
     const plan: DayPlan = { orders: [], skips: [], notices: [] }
