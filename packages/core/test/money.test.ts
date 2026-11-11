@@ -1,5 +1,5 @@
-import { test, expect } from 'bun:test'
-import { parseUsd, formatUsd, roundDiv, centsFromUsd, feeCents, TICK_USD } from '@st/core/money'
+import { describe, test, expect } from 'bun:test'
+import { parseUsd, formatUsd, roundDiv, centsFromUsd, feeCents, TICK_USD, ceilCents, ceilDiv, floorCents } from '@st/core/money'
 
 test('TICK_USD', () => {
   expect(TICK_USD).toBe(100n)
@@ -45,4 +45,23 @@ test('centsFromUsd', () => {
   expect(centsFromUsd(12345n)).toBe(123)
   expect(centsFromUsd(123456n)).toBe(1235)
   expect(centsFromUsd(-12345n)).toBe(-123)
+})
+
+describe('cent rounding helpers', () => {
+  test('ceilDiv rounds up, exact stays exact, rejects non-positive divisor', () => {
+    expect(ceilDiv(7n, 2n)).toBe(4n)
+    expect(ceilDiv(6n, 2n)).toBe(3n)
+    expect(ceilDiv(-7n, 2n)).toBe(-3n)
+    expect(() => ceilDiv(1n, 0n)).toThrow('divisor must be positive')
+  })
+  test('ceilCents rounds up to next cent, no-op on exact cents', () => {
+    expect(ceilCents(345578n)).toBe(345600n)
+    expect(ceilCents(345500n)).toBe(345500n)
+    expect(ceilCents(0n)).toBe(0n)
+  })
+  test('floorCents truncates down, no-op on exact cents', () => {
+    expect(floorCents(346655n)).toBe(346600n)
+    expect(floorCents(346600n)).toBe(346600n)
+    expect(floorCents(99n)).toBe(0n)
+  })
 })
