@@ -101,6 +101,7 @@ export interface Api {
   setPool(id: number, amountCents: number): Promise<void>;
   setGaps(id: number, input: { buyGapPpm: number; sellGapPpm: number }): Promise<void>;
   listOrders(id: number, date?: string): Promise<OrderDto[]>;
+  cancelOrder(runId: number, orderId: number, reason: string): Promise<void>;
   listFills(id: number): Promise<FillDto[]>;
   listNotifications(id: number): Promise<NotificationDto[]>;
   addManualFill(runId: number, fill: ManualFillInput): Promise<void>;
@@ -156,6 +157,8 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
     setPool: (id, amountCents) => send<{ ok: true }>('POST', `/api/runs/${id}/pool`, { amountCents }).then(() => undefined),
     setGaps: (id, input) => send<{ ok: true }>('POST', `/api/runs/${id}/gaps`, input).then(() => undefined),
     listOrders: (id, date) => get<OrderDto[]>(`/api/runs/${id}/orders${date ? `?date=${date}` : ''}`),
+    cancelOrder: (runId, orderId, reason) =>
+      send<{ ok: true }>('POST', `/api/runs/${runId}/orders/${orderId}/cancel`, { reason }).then(() => undefined),
     listFills: (id) => get<FillDto[]>(`/api/runs/${id}/fills`),
     listNotifications: (id) => get<NotificationDto[]>(`/api/runs/${id}/notifications`),
     addManualFill: (runId, fill) => {
