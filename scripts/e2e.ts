@@ -96,6 +96,8 @@ async function main(): Promise<void> {
       defaultSettings: { visionBaseUrl: `http://127.0.0.1:${vision.port}/v1`, visionModel: 'e2e-vision', digestLang: 'en' },
       triggerMorning: async () => 'sent',
       fetchDailyBars: async () => [],
+      allowedChatIds: [],
+      send: async () => {},
     }
     const app = createApp(httpDeps)
     const req = (method: string, path: string, body?: unknown, token?: string) =>

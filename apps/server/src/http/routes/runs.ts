@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
 import { emptyState } from '@st/core'
-import { parseUsd } from '@st/core/money'
+import { parseUsd, formatUsd } from '@st/core/money'
 import { progressView } from '@st/strategies'
-import { seedRun, manualFill } from '../../domain/booking'
+import { t as tgT } from '@st/telegram/i18n'
+import { seedRun, manualFill, cancelOrder } from '../../domain/booking'
 import type { RawFill } from '@st/ingest'
 import { jsonBig, type HttpDeps } from '../app'
 import { MAX_PPM, isValidPpm } from '../../domain/ppm'
@@ -160,6 +161,34 @@ export function runsRouter(deps: HttpDeps): Hono {
       await manualFill(id, fill, { repos: deps.repos as any, today: deps.today() as any })
     } catch (e: any) {
       return c.json({ error: e?.message ?? 'error' }, 422)
+    }
+    return c.json({ ok: true })
+  })
+
+  r.post('/runs/:id/orders/:orderId/cancel', async (c) => {
+    const id = Number(c.req.param('id'))
+    const orderId = Number(c.req.param('orderId'))
+    const body = await c.req.json().catch(() => ({}))
+    try {
+      await cancelOrder(id, orderId, body?.reason, { repos: deps.repos as any, today: deps.today() })
+    } catch (e: any) {
+      const code = e?.message
+      if (code === 'invalid-reason') return c.json({ error: 'invalid-reason' }, 400)
+      if (code === 'order-not-found') return c.json({ error: 'order-not-found' }, 404)
+      if (code === 'order-not-open') return c.json({ error: 'order-not-open' }, 409)
+      return c.json({ error: code ?? 'error' }, 422)
+    }
+    const order = (await deps.repos.orderRepo.get(orderId))!
+    const lang = deps.defaultSettings.digestLang
+    const text = tgT('order-cancelled', lang, {
+      kind: order.kind,
+      bucket: order.bucketIdx,
+      price: formatUsd(order.limitPrice),
+      reason: tgT('reason-' + body.reason, lang),
+    })
+    for (const chatId of deps.allowedChatIds) {
+      await deps.repos.notificationRepo.insert({ runId: id, chatId, text })
+      await deps.send(chatId, text)
     }
     return c.json({ ok: true })
   })

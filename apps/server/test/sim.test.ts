@@ -267,6 +267,8 @@ describe('routes', () => {
       defaultSettings: { visionBaseUrl: 'http://x', visionModel: 'm', digestLang: 'en' },
       triggerMorning: async () => 'morning-ok',
       fetchDailyBars: async () => bars,
+      allowedChatIds: [],
+      send: async () => {},
     }
   }
 
