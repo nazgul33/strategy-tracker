@@ -178,7 +178,7 @@ export async function runSim(input: SimInput, deps: { fetchDailyBars: (ticker: s
   }
   const params = { ...DEFAULT_MR_PARAMS, ...(input.params ?? {}) }
 
-  const run: Run = { id: 0, name: input.name, ticker: input.ticker, strategyKey: 'mean-reversion', costPpm: input.costPpm, poolCents: input.poolCents, status: 'active' }
+  const run: Run = { id: 0, name: input.name, ticker: input.ticker, strategyKey: 'mean-reversion', costPpm: input.costPpm, buyGapPpm: 0, sellGapPpm: 0, poolCents: input.poolCents, status: 'active' }
 
   const bars = await deps.fetchDailyBars(input.ticker, input.from, input.to)
   const { days, states } = simulate(run, params, bars)

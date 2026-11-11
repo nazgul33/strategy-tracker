@@ -33,6 +33,8 @@ export interface Run {
   ticker: string
   strategyKey: 'mean-reversion'
   costPpm: number
+  buyGapPpm: number
+  sellGapPpm: number
   poolCents: number
   status: 'active' | 'paused' | 'closed'
 }

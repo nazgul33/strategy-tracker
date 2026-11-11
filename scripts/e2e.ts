@@ -206,7 +206,7 @@ async function main(): Promise<void> {
       heldCells[1]!.ageDays === 1, 'cell 1: captured fill 30 sh, age 1 (booked today, aged once by morning run)')
 
     // ---- deterministic sim (fixture bars, pure + persisted) ------------------
-    const simRun = { id: 0, name: 'E2E Sim', ticker: 'NVDA', strategyKey: 'mean-reversion' as const, costPpm: 1_000, poolCents: 1_000_000, status: 'active' as const }
+    const simRun = { id: 0, name: 'E2E Sim', ticker: 'NVDA', strategyKey: 'mean-reversion' as const, costPpm: 1_000, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
     const days = simulateDays(simRun, DEFAULT_MR_PARAMS, BARS)
     ok(days.map((d) => d.date).join(',') === '2026-11-09,2026-11-10,2026-11-12', '3 sim days from 4 bars')
     ok(days[0]!.fills.length === 1 && days[0]!.fills[0]!.side === 'buy' && days[0]!.fills[0]!.bucketIndex === 0 &&
