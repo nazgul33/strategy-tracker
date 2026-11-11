@@ -14,7 +14,7 @@ export function renderDigest(run: Run, plan: DayPlan, ctx: DayContext, lang: Lan
     lines.push(buyLine(o, lang))
   }
   const sellLocs = plan.orders.filter((x) => x.kind === 'sell_loc').sort((a, b) => a.bucketIndex - b.bucketIndex)
-  for (const o of sellLocs) lines.push(sellLocLine(o, lang))
+  for (const o of sellLocs) lines.push(sellLocLine(o, lang, ages))
   const marketSells = plan.orders.filter((x) => x.kind === 'market_sell').sort((a, b) => a.bucketIndex - b.bucketIndex)
   for (const o of marketSells) lines.push(marketSellLine(o, lang, ages))
   const consumedNotices = new Set<number>()
@@ -53,14 +53,20 @@ function buyLine(o: PlannedOrder, lang: Lang): string {
   return `${verb}  LOC  ${o.shares} sh  @ ${formatUsd(o.limitPrice)}  → bucket ${o.bucketIndex}`
 }
 
-function sellLocLine(o: PlannedOrder, lang: Lang): string {
+function orderAge(o: PlannedOrder, ages?: Record<number, number>): number | undefined {
+  return o.ageDays ?? ages?.[o.bucketIndex]
+}
+
+function sellLocLine(o: PlannedOrder, lang: Lang, ages?: Record<number, number>): string {
   const verb = lang === 'ko' ? '매도' : 'Sell'
-  return `${verb}  LOC  ${o.shares} sh  @ ${formatUsd(o.limitPrice)}  → bucket ${o.bucketIndex}`
+  const age = orderAge(o, ages)
+  const ageClause = age !== undefined ? `  (${t('age', lang, { n: age })})` : ''
+  return `${verb}  LOC  ${o.shares} sh  @ ${formatUsd(o.limitPrice)}  → bucket ${o.bucketIndex}${ageClause}`
 }
 
 function marketSellLine(o: PlannedOrder, lang: Lang, ages?: Record<number, number>): string {
-  const age = ages ? ages[o.bucketIndex] : undefined
-  const ageClause = age !== undefined ? `  (age ${age} — forced exit)` : ''
+  const age = orderAge(o, ages)
+  const ageClause = age !== undefined ? `  (${t('age-forced', lang, { n: age })})` : ''
   if (lang === 'ko') {
     return `매도  MARKET  ${o.shares} sh  bucket ${o.bucketIndex}${ageClause}`
   }

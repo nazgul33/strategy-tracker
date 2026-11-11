@@ -11,6 +11,8 @@ export const CATALOG: Record<string, MsgEntry> = {
   'header': { en: '{name}  {ticker}', ko: '{name}  {ticker}' },
   'trade-date': { en: 'Trade date: {date}  Last close: {price} ({lastDate})', ko: '거래일: {date}  최근 종가: {price} ({lastDate})' },
   'skip': { en: 'SKIP', ko: '건너뜀' },
+  'age': { en: 'age {n}', ko: '{n}일 경과' },
+  'age-forced': { en: 'age {n} — forced exit', ko: '{n}일 경과 — 강제 청산' },
   'closed': { en: 'Market closed', ko: '시장 휴장' },
   'closed-named': { en: 'Market closed ({name})', ko: '시장 휴장 ({name})' },
   'reminder': { en: '16:05 fill capture reminder', ko: '16:05 체결 캡처 알림' },
