@@ -181,6 +181,35 @@ describe('day pipeline', () => {
     expect(f.orders.length).toBe(0)
   })
 
+  test('(d2) data-error on one run does not silence the other runs', async () => {
+    const f = makeRepos()
+    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'BADA', name: 'A', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: emptyState(10) })
+    const st = emptyState(10)
+    st.cashCents = 1000000
+    const okId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'B', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: st })
+    const sends: string[] = []
+    const deps: DayDeps = {
+      today: () => '2026-11-06',
+      fetchLastClose: async (tk: string) => {
+        if (tk === 'BADA') throw new Error('yahoo down')
+        return { date: '2026-11-05', close: 3402300n }
+      },
+      crossCheck: async () => ({ agree: true }),
+      send: async (_c, t) => { sends.push(t) },
+      allowedChatIds: ['c1'],
+      repos: f.repos,
+      params: () => DEFAULT_MR_PARAMS,
+      digestLang: 'en',
+    }
+    const r = await runMorningPipeline(deps)
+    expect(r).toBe('sent')
+    const badId = f.runs.find((x: any) => x.ticker === 'BADA').id
+    expect(f.orders.filter((o: any) => o.runId === badId).length).toBe(0)
+    expect(f.orders.filter((o: any) => o.runId === okId).length).toBeGreaterThan(0)
+    expect(sends.filter((s) => s.includes('Market data error'))).toHaveLength(1)
+    expect(sends.length).toBeGreaterThan(1)
+  })
+
   test('(e) conflict', async () => {
     const f = makeRepos()
     await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: emptyState(10) })

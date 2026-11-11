@@ -16,7 +16,7 @@ export interface RepoSurface {
   bucketRepo: { loadState(runId: number): Promise<RunState>; saveState(runId: number, state: RunState): Promise<void> }
   orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; markStale(date: string): Promise<any>; setStatus(id: number, status: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
   fillRepo: { insert(fill: any): Promise<any> }
-  pendingRepo: { insert(p: any): Promise<number>; listPending(): Promise<any[]>; decide(id: number, status: string, edited?: any): Promise<void> }
+  pendingRepo: { insert(p: any): Promise<number>; listPending(): Promise<any[]>; decide(id: number, status: string, edited?: any): Promise<boolean> }
   captureRepo: { hasHash(runId: number, hash: string): Promise<boolean>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
   ledgerRepo: { insert(l: any): Promise<any>; listForRun(runId: number): Promise<any[]> }
   notificationRepo: { insert(n: any): Promise<any> }
@@ -99,7 +99,8 @@ async function runBooking(input: BookInput, deps: BookingDeps): Promise<void> {
   // persist order: decide -> saveState -> fill -> ledger -> order flip (R15: flip last, only after ledger)
   if (input.pendingId != null) {
     const edited: any = { shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, bucketIdx }
-    await repos.pendingRepo.decide(input.pendingId, 'confirmed', edited)
+    const flipped = await repos.pendingRepo.decide(input.pendingId, 'confirmed', edited)
+    if (flipped === false) throw new Error('pending-not-pending')
   }
   await repos.bucketRepo.saveState(input.runId, next)
   await repos.fillRepo.insert({ runId: input.runId, bucketIdx, side: input.side, ticker: input.ticker, shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, source: input.source })

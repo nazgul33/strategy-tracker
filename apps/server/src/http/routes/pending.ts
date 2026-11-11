@@ -22,7 +22,8 @@ export function pendingRouter(deps: HttpDeps): Hono {
     const id = Number(c.req.param('id'))
     const row = await deps.repos.pendingRepo.get(id)
     if (!row || row.status !== 'pending') return c.json({ error: 'not-pending' }, 409)
-    await deps.repos.pendingRepo.decide(id, 'rejected')
+    const ok = await deps.repos.pendingRepo.decide(id, 'rejected')
+    if (ok === false) return c.json({ error: 'pending-not-pending' }, 409)
     return c.json({ ok: true })
   })
   return r

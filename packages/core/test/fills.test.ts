@@ -121,6 +121,32 @@ test('force_sell partial preserves', () => {
   expect(out.ages[0]).toBe(21)
 })
 
+test('advanceDay honors custom maxAgeDays', () => {
+  const s = emptyState(1)
+  // custom small threshold: flip when age > 2
+  let cur: any = applyBuyFill(s, 0, 10, 1000000n, 0)
+  cur = advanceDay(cur, 2)
+  expect(cur.buckets[0].state).toBe('held')
+  expect(cur.ages[0]).toBe(1)
+  cur = advanceDay(cur, 2)
+  expect(cur.buckets[0].state).toBe('held')
+  expect(cur.ages[0]).toBe(2)
+  cur = advanceDay(cur, 2)
+  expect(cur.buckets[0].state).toBe('force_sell')
+  expect(cur.ages[0]).toBe(3)
+  // custom large threshold: no flip at the default-20 boundary
+  let big: any = applyBuyFill(s, 0, 10, 1000000n, 0)
+  for (let i = 0; i < 21; i++) big = advanceDay(big, 30)
+  expect(big.buckets[0].state).toBe('held')
+  expect(big.ages[0]).toBe(21)
+  // omitted arg keeps default 20
+  let def: any = applyBuyFill(s, 0, 10, 1000000n, 0)
+  for (let i = 0; i < 20; i++) def = advanceDay(def)
+  expect(def.buckets[0].state).toBe('held')
+  def = advanceDay(def)
+  expect(def.buckets[0].state).toBe('force_sell')
+})
+
 test('advanceDay keeps incrementing force_sell', () => {
   const s = emptyState(1)
   let cur: any = applyBuyFill(s, 0, 10, 1000000n, 0)

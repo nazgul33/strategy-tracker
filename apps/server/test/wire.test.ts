@@ -141,11 +141,12 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
     },
     get: async (id: number) => pending.find((p) => p.id === id) ?? null,
     listPending: async () => pending.filter((p) => p.status === 'pending'),
-    decide: async (id: number, status: string, edited?: FakeRow) => {
+    decide: async (id: number, status: string, edited?: FakeRow): Promise<boolean> => {
       const p = pending.find((x) => x.id === id);
-      if (!p || p.status !== 'pending') return;
+      if (!p || p.status !== 'pending') return false;
       p.status = status;
       if (edited) Object.assign(p, edited);
+      return true;
     },
   };
   const captureRepo = {

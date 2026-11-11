@@ -19,14 +19,14 @@ export function emptyState(bucketCount: number): RunState {
   return { buckets, cashCents: 0, closed: [], ages: {} }
 }
 
-export function advanceDay(state: RunState): RunState {
+export function advanceDay(state: RunState, maxAgeDays = 20): RunState {
   const next = clone(state)
   for (const b of next.buckets) {
     if (b.state === 'held' || b.state === 'force_sell') {
       const idx = b.index
       const newAge = (next.ages[idx] ?? 0) + 1
       next.ages[idx] = newAge
-      if (b.state === 'held' && newAge > 20) {
+      if (b.state === 'held' && newAge > maxAgeDays) {
         b.state = 'force_sell'
       }
     }

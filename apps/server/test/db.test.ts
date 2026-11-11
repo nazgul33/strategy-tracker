@@ -62,10 +62,14 @@ describeIf('db integration', () => {
   test('pending decide merges', async () => {
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'Y'+Date.now(), name: 'run4-'+Date.now(), poolCents: 1000, costPpm: 10 })
     const id = await repos.pendingRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker: 'Y', shares: 5, price: 100n, fee: 1, filledOn: '2026-02-10', status: 'pending' })
-    await repos.pendingRepo.decide(id, 'confirmed', { shares: 7 })
+    const first = await repos.pendingRepo.decide(id, 'confirmed', { shares: 7 })
+    expect(first).toBe(true)
     const rows = await repos.pendingRepo.listPending()
     // the decided row must no longer be pending for this run
     expect(rows.filter((r: any) => r.runId === runId).length).toBe(0)
+    // second decide (any status) is a no-op: atomic pending-state guard
+    const second = await repos.pendingRepo.decide(id, 'rejected')
+    expect(second).toBe(false)
     const after = await repos.pendingRepo.get(id)
     expect(after.status).toBe('confirmed')
     expect(Number(after.shares)).toBe(7)

@@ -133,7 +133,7 @@ function simulate(run: Run, params: MrParams, bars: OHLCBar[]): SimResult {
   const days: SimDay[] = []
   const states: RunState[] = []
   for (let i = 1; i < bars.length; i++) {
-    state = advanceDay(state)
+    state = advanceDay(state, params.maxAgeDays)
     const plan = computeOrders(run, state, { lastClose: bars[i - 1]!.close }, params)
     const { state: nextState, fills, events } = resolveDay(state, plan, bars[i]!, run.costPpm)
     state = nextState

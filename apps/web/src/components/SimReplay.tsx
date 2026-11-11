@@ -43,11 +43,11 @@ function parseParams(paramsJson: string, fallbackBucketCount: number): SimParams
     const raw = JSON.parse(paramsJson) as { bucketCount?: number; maxAgeDays?: number; sellCapBps?: number };
     return {
       bucketCount: typeof raw.bucketCount === 'number' && raw.bucketCount > 0 ? raw.bucketCount : fallbackBucketCount,
-      maxAgeDays: typeof raw.maxAgeDays === 'number' && raw.maxAgeDays > 0 ? raw.maxAgeDays : 5,
+      maxAgeDays: typeof raw.maxAgeDays === 'number' && raw.maxAgeDays > 0 ? raw.maxAgeDays : 20,
       sellCapBps: typeof raw.sellCapBps === 'number' ? raw.sellCapBps : null,
     };
   } catch {
-    return { bucketCount: fallbackBucketCount, maxAgeDays: 5, sellCapBps: null };
+    return { bucketCount: fallbackBucketCount, maxAgeDays: 20, sellCapBps: null };
   }
 }
 

@@ -55,10 +55,11 @@ function makeFakes() {
   const pendingRepo = {
     async insert(p: any) { const id = pending.length + 1; pending.push({ id, ...p }); return id },
     async listPending() { return pending.filter((p) => p.status === 'pending') },
-    async decide(id: number, status: string, edited?: any) {
-      const p = pending.find((x) => x.id === id); if (!p) return
+    async decide(id: number, status: string, edited?: any): Promise<boolean> {
+      const p = pending.find((x) => x.id === id); if (!p || p.status !== 'pending') return false
       p.status = status
       if (edited) Object.assign(p, edited)
+      return true
     },
     async get(id: number) { return pending.find((x) => x.id === id) ?? null },
   }
@@ -243,6 +244,17 @@ describe('http runs', () => {
     expect(cr.status).toBe(400)
     expect(f.runs.length).toBe(0)
   })
+  test('seed with more buckets than bucketCount -> 400, no run created', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const buckets = Array.from({ length: 11 }, () => ({ shares: 1, buyPrice: '10.0000', filledOn: '2026-11-01' }))
+    const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r3', ticker: 'AAPL', costPpm: 100, poolCents: 1000, seed: { cashCents: 500, buckets } }), headers: { 'content-type': 'application/json', ...auth } })
+    expect(cr.status).toBe(400)
+    expect(f.runs.length).toBe(0)
+  })
   test('invalid body 400', async () => {
     const f = makeFakes()
     const app = createApp(makeDeps(f))
@@ -348,6 +360,23 @@ describe('http pending', () => {
     // reject non-pending
     const rej = await app.request(`/api/pending/${pid}/reject`, { method: 'POST', headers: auth })
     expect(rej.status).toBe(409)
+  })
+
+  test('double confirm books exactly one fill', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 }), headers: { 'content-type': 'application/json', ...auth } })
+    const { id } = await cr.json()
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    const conf1 = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { 'content-type': 'application/json', ...auth } })
+    expect(conf1.status).toBe(200)
+    const conf2 = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { 'content-type': 'application/json', ...auth } })
+    expect(conf2.status).toBe(422)
+    expect(f.fills.length).toBe(1)
+    expect(f.ledger.length).toBe(1)
   })
 })
 

@@ -71,12 +71,13 @@ export function fakeRepos() {
   const pendingRepo = {
     async insert(p: any) { const id = pendingSeq++; pending.push({ id, ...p }); return id },
     async listPending() { return pending.filter((p) => p.status === 'pending') },
-    async decide(id: number, status: string, edited?: any) {
+    async decide(id: number, status: string, edited?: any): Promise<boolean> {
       const p = pending.find((x) => x.id === id)
       if (!p) throw new Error('not found')
       if (p.status !== 'pending') throw new Error('not pending')
       p.status = status
       if (edited) Object.assign(p, edited)
+      return true
     },
   }
   const captureRepo = {

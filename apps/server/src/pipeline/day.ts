@@ -59,6 +59,9 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
   const runs = (await deps.repos.runRepo.list()) as any[]
   const active = runs.filter((r) => r.status === 'active')
 
+  let numFailed = 0
+  let numCompleted = 0
+  let warnedData = false
   for (const run of active) {
     // fetch + sanity close
     let close: bigint
@@ -68,26 +71,35 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
       close = res.close
       closeDate = res.date
     } catch (e) {
+      numFailed++
       const text = t('warn-data-error', lang)
+      if (!warnedData) {
+        warnedData = true
+        for (const chatId of deps.allowedChatIds) await deps.send(chatId, text)
+      }
       for (const chatId of deps.allowedChatIds) {
-        await deps.send(chatId, text)
         await deps.repos.notificationRepo.insert({ runId: null, chatId, text })
       }
-      return 'data-error'
+      continue
     }
     const prevTd = prevTradingDay(today)
     if (closeDate !== prevTd) {
+      numFailed++
       const text = t('warn-data-error', lang)
+      if (!warnedData) {
+        warnedData = true
+        for (const chatId of deps.allowedChatIds) await deps.send(chatId, text)
+      }
       for (const chatId of deps.allowedChatIds) {
-        await deps.send(chatId, text)
         await deps.repos.notificationRepo.insert({ runId: null, chatId, text })
       }
-      return 'data-error'
+      continue
     }
 
     const state0 = await deps.repos.bucketRepo.loadState(run.id)
-    const state = advanceDay(state0)
-    const plan: DayPlan = computeOrders(run as Run, state, { lastClose: close }, deps.params(run))
+    const mrParams = deps.params(run)
+    const state = advanceDay(state0, mrParams.maxAgeDays)
+    const plan: DayPlan = computeOrders(run as Run, state, { lastClose: close }, mrParams)
 
     // unconfirmed stale linkage: date = oldest stale entry's tradeDate
     const staleEntries = stale[run.id]
@@ -118,9 +130,10 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
         await deps.repos.notificationRepo.insert({ runId: run.id, chatId, text: chunk })
       }
     }
+    numCompleted++
   }
 
-  return 'sent'
+  return numFailed > 0 && numCompleted === 0 ? 'data-error' : 'sent'
 }
 
 export async function runReminder(deps: DayDeps): Promise<void> {

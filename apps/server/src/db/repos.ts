@@ -101,10 +101,11 @@ export function getRepos(db: any) {
     async insert(p: any) { const [r] = await db.insert(s.pendingFills).values(p); return (r as any).insertId },
     async listPending() { return db.select().from(s.pendingFills).where(eq(s.pendingFills.status, 'pending')) },
     async get(id: number) { const rows = await db.select().from(s.pendingFills).where(eq(s.pendingFills.id, id)); return rows[0] ?? null },
-    async decide(id: number, status: string, edited?: any) {
+    async decide(id: number, status: string, edited?: any): Promise<boolean> {
       const patch: any = { status }
       if (edited) Object.assign(patch, edited)
-      await db.update(s.pendingFills).set(patch).where(eq(s.pendingFills.id, id))
+      const [res] = await db.update(s.pendingFills).set(patch).where(and(eq(s.pendingFills.id, id), eq(s.pendingFills.status, 'pending')))
+      return (res as any)?.affectedRows > 0
     },
   }
 

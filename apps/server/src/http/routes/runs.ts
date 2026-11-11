@@ -10,10 +10,10 @@ const SEED_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 // booking.seedRun overwrites state.cashCents unconditionally, so a seed
 // missing (or with a fractional/negative) cashCents bricks the run server-side.
-function validSeed(seed: any): boolean {
+function validSeed(seed: any, bucketCount: number): boolean {
   if (typeof seed !== 'object' || seed === null || Array.isArray(seed)) return false
   if (!Number.isInteger(seed.cashCents) || seed.cashCents < 0) return false
-  if (!Array.isArray(seed.buckets)) return false
+  if (!Array.isArray(seed.buckets) || seed.buckets.length > bucketCount) return false
   for (const b of seed.buckets) {
     if (typeof b !== 'object' || b === null) return false
     if (!Number.isInteger(b.shares) || b.shares <= 0) return false
@@ -60,7 +60,7 @@ export function runsRouter(deps: HttpDeps): Hono {
       }
     }
     const seed = body?.seed
-    if (seed && !validSeed(seed)) return c.json({ error: 'invalid seed' }, 400)
+    if (seed && !validSeed(seed, bucketCount)) return c.json({ error: 'invalid seed' }, 400)
     const state = emptyState(bucketCount)
     state.cashCents = poolCents
     const id = await deps.repos.runRepo.create({
