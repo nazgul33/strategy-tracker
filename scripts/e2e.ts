@@ -26,7 +26,8 @@ import { bucketCells } from '../apps/web/src/viewmodels'
 import { prevTradingDay, type ISODate } from '../packages/calendar/src/index'
 import { DEFAULT_MR_PARAMS } from '../packages/strategies/src/mean-reversion'
 import type { OHLCBar } from '../packages/market-data/src/yahoo'
-import { parseUsd } from '../packages/core/src/money'
+import { formatUsd, parseUsd } from '../packages/core/src/money'
+import { CATALOG } from '../packages/telegram/src/i18n'
 
 let checks = 0
 function ok(cond: unknown, label: string): void {
@@ -88,6 +89,7 @@ async function main(): Promise<void> {
     console.log(`  ok  migrations applied on fresh scratch db '${SCRATCH}'`)
 
     // ---- HTTP app (real Hono wiring, injected fakes) -------------------------
+    const httpSends: { chat: string; text: string }[] = []
     const httpDeps: HttpDeps = {
       repos,
       password: PASSWORD,
@@ -96,8 +98,8 @@ async function main(): Promise<void> {
       defaultSettings: { visionBaseUrl: `http://127.0.0.1:${vision.port}/v1`, visionModel: 'e2e-vision', digestLang: 'en' },
       triggerMorning: async () => 'sent',
       fetchDailyBars: async () => [],
-      allowedChatIds: [],
-      send: async () => {},
+      allowedChatIds: ['chat-1'],
+      send: async (chatId: string, text: string) => { httpSends.push({ chat: chatId, text }) },
     }
     const app = createApp(httpDeps)
     const req = (method: string, path: string, body?: unknown, token?: string) =>
@@ -206,6 +208,36 @@ async function main(): Promise<void> {
       'cell 0: 32 sh, buyPrice 1785000, notional 571200c, age 2, no forceSell')
     ok(heldCells[1]!.index === 1 && heldCells[1]!.shares === 30 && heldCells[1]!.buyPrice === '1795000' &&
       heldCells[1]!.ageDays === 1, 'cell 1: captured fill 30 sh, age 1 (booked today, aged once by morning run)')
+
+    // ---- operator-cancelled order: cancel route + reason + Telegram fan-out --
+    const openOrders = (await jsonOf(await req('GET', `/runs/${runId}/orders?date=${TODAY}`, undefined, token))) as any[]
+    const sellLoc = openOrders.find((o) => o.status === 'open' && o.kind === 'sell_loc')
+    ok(!!sellLoc, `morning plan left an open sell_loc to cancel: ${JSON.stringify(openOrders.map((o) => [o.kind, o.status]))}`)
+
+    const cancelResp = await req('POST', `/runs/${runId}/orders/${sellLoc.id}/cancel`, { reason: 'stale-price' }, token)
+    ok(cancelResp.status === 200, 'POST cancel -> 200')
+
+    const afterCancel = (await jsonOf(await req('GET', `/runs/${runId}/orders?date=${TODAY}`, undefined, token))) as any[]
+    const cancelled = afterCancel.find((o) => o.id === sellLoc.id)
+    ok(cancelled.status === 'cancelled' && cancelled.cancelReason === 'stale-price' && cancelled.skipReason === null,
+      `cancelled row carries cancelReason (skipReason null): ${JSON.stringify(cancelled)}`)
+
+    const bogus = await req('POST', `/runs/${runId}/orders/${sellLoc.id}/cancel`, { reason: 'because-i-said-so' }, token)
+    ok(bogus.status === 400 && (await jsonOf(bogus)).error === 'invalid-reason', 'unknown reason -> 400 invalid-reason')
+    const doubleCancel = await req('POST', `/runs/${runId}/orders/${sellLoc.id}/cancel`, { reason: 'other' }, token)
+    ok(doubleCancel.status === 409 && (await jsonOf(doubleCancel)).error === 'order-not-open', 'cancelling a cancelled order -> 409 order-not-open')
+
+    const foreignRun = (await jsonOf(await req('POST', '/runs', { name: 'E2E Other', ticker: 'ZZZ', poolCents: 500_000, costPpm: 1_000 }, token))) as { id: number }
+    const foreign = await req('POST', `/runs/${foreignRun.id}/orders/${sellLoc.id}/cancel`, { reason: 'other' }, token)
+    ok(foreign.status === 404 && (await jsonOf(foreign)).error === 'order-not-found', 'cancelling via a foreign run -> 404 order-not-found')
+
+    const expectedCancelMsg = `\u{1F6AB} Cancelled: ${sellLoc.kind} bucket ${sellLoc.bucketIdx} \u2014 ${CATALOG['reason-stale-price'].en} (${formatUsd(BigInt(sellLoc.limitPrice))})`
+    ok(httpSends.length === 1 && httpSends[0].chat === 'chat-1' && httpSends[0].text === expectedCancelMsg,
+      `exactly one Telegram cancel push to the allowed chat, exact text: ${JSON.stringify(httpSends)}`)
+    const notifs = (await jsonOf(await req('GET', `/runs/${runId}/notifications`, undefined, token))) as any[]
+    const cancelNotifs = notifs.filter((n) => n.text === expectedCancelMsg)
+    ok(cancelNotifs.length === 1 && cancelNotifs[0].chatId === 'chat-1',
+      `exactly one durable cancel-notification row for the chat, beside the morning digest row: ${JSON.stringify(notifs.map((n) => n.text.slice(0, 20)))}`)
 
     // ---- deterministic sim (fixture bars, pure + persisted) ------------------
     const simRun = { id: 0, name: 'E2E Sim', ticker: 'NVDA', strategyKey: 'mean-reversion' as const, costPpm: 1_000, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
