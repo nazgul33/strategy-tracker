@@ -65,6 +65,21 @@ describeIf('db integration', () => {
     await repos.pendingRepo.decide(id, 'confirmed', { shares: 7 })
     const rows = await repos.pendingRepo.listPending()
     // just ensure no throw
-    expect(true).toBe(true)
+    expect(rows.length).toBeGreaterThanOrEqual(0)
+  })
+
+  test('DATE columns come back as date strings, not Date objects', async () => {
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'D' + Date.now(), name: 'run5-' + Date.now(), poolCents: 1000, costPpm: 10 })
+    await repos.fillRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker: 'D', shares: 10, price: 100n, fee: 1, filledOn: '2026-02-10', source: 'manual' })
+    const fills = await repos.fillRepo.listForRun(runId)
+    expect(fills.length).toBe(1)
+    // Without dateStrings on the pool, the driver+drizzle mapping turns DATE
+    // columns into Date instances — the only server-side value that would
+    // serialize as a `2026-02-10T00:00:00.000Z` timestamp on the JSON wire.
+    const raw = fills[0].filledOn
+    expect(raw instanceof Date).toBe(false)
+    const wire = JSON.parse(JSON.stringify({ filledOn: raw })).filledOn
+    expect(typeof wire).toBe('string')
+    expect(wire).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 })
