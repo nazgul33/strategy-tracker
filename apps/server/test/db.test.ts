@@ -98,10 +98,11 @@ describeIf('db integration', () => {
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'M', name: 'done-' + Date.now(), poolCents: 100, costPpm: 10 })
     await db.execute(sql.raw(`UPDATE strategy_runs SET status = 'done' WHERE id = ${runId}`))
     const migrationsDir = new URL('../db/migrations/', import.meta.url)
-    let fileName: string | undefined
+    const candidates: string[] = []
     for await (const path of new Bun.Glob('0002_*.sql').scan({ cwd: fileURLToPath(migrationsDir) })) {
-      fileName ??= path
+      candidates.push(path)
     }
+    const fileName = candidates.sort()[0] // deterministic: earliest 0002_* tag wins
     expect(fileName).toBeDefined()
     // replay exactly the chunks drizzle's migrator executes: statements separated by `--> statement-breakpoint`
     const text = await Bun.file(new URL(fileName!, migrationsDir)).text()

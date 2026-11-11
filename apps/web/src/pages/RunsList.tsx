@@ -32,7 +32,7 @@ export function RunsListPage() {
   const [triggerResult, setTriggerResult] = useState<string | null>(null);
   const [triggerError, setTriggerError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [bulkBusy, setBulkBusy] = useState<RunStatus | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkResult, setBulkResult] = useState<string | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [showBulkClose, setShowBulkClose] = useState(false);
@@ -95,7 +95,7 @@ export function RunsListPage() {
   };
 
   const runBulk = async (ids: number[], status: RunStatus) => {
-    setBulkBusy(status);
+    setBulkBusy(true);
     setBulkResult(null);
     setBulkError(null);
     try {
@@ -106,7 +106,7 @@ export function RunsListPage() {
     } catch (err) {
       setBulkError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBulkBusy(null);
+      setBulkBusy(false);
     }
   };
 
@@ -150,15 +150,15 @@ export function RunsListPage() {
           <span className="text-sm font-medium">{t('bulkSelected', { count: selected.size })}</span>
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              busy={bulkBusy === 'paused'}
-              disabled={plan.pause.length === 0}
+              busy={bulkBusy}
+              disabled={bulkBusy || plan.pause.length === 0}
               onClick={() => void runBulk(plan.pause, 'paused')}
             >
               {t('bulkPause')} ({plan.pause.length})
             </Button>
             <Button
-              busy={bulkBusy === 'active'}
-              disabled={plan.resume.length === 0}
+              busy={bulkBusy}
+              disabled={bulkBusy || plan.resume.length === 0}
               onClick={() => void runBulk(plan.resume, 'active')}
             >
               {t('bulkResume')} ({plan.resume.length})
@@ -258,7 +258,7 @@ export function RunsListPage() {
             <Button onClick={() => setShowBulkClose(false)}>{t('cancel')}</Button>
             <Button
               variant="danger"
-              busy={bulkBusy === 'closed'}
+              busy={bulkBusy}
               onClick={() => {
                 setShowBulkClose(false);
                 void runBulk(plan.close, 'closed');
