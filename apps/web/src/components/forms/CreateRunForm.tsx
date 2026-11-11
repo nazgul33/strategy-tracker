@@ -2,6 +2,7 @@
 import { useState } from 'react';
 
 import { api, usdOrNull, usdToCents } from '../../api';
+import { gapToPpm, isGapText } from '../../gaps';
 import { useT } from '../../i18n';
 import { seedCashErrorKey } from '../../viewmodels';
 import { Button, Field, Input } from '../ui';
@@ -15,18 +16,6 @@ interface SeedRow {
 const EMPTY_ROW: SeedRow = { shares: '', buyPrice: '', filledOn: '' };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TICKER_RE = /^[A-Za-z.]{1,10}$/;
-
-// Percent gap text → integer ppm (1% = 10_000). Blank means "not set" → 0.
-function isGapText(s: string): boolean {
-  return /^\d+(\.\d{1,4})?$/.test(s) && Number(s) <= 100;
-}
-
-function gapToPpm(s: string): number {
-  if (s === '') return 0;
-  const [whole, frac = ''] = s.split('.');
-  const fracPadded = (frac + '0000').slice(0, 4);
-  return Number(whole) * 10_000 + Number(fracPadded);
-}
 
 export function CreateRunForm({
   onCreated,
@@ -56,6 +45,9 @@ export function CreateRunForm({
 
   const submit = async () => {
     if (busy) return;
+    // Defense in depth: the create button is disabled while invalid, but a
+    // future native form submit would bypass it.
+    if (!gapsValid) return;
     setError(null);
     if (!TICKER_RE.test(ticker.trim())) {
       setError(t('runInvalidTicker'));

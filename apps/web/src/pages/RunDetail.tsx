@@ -1,12 +1,13 @@
-// Run detail: header + progress stats, bucket board, lifecycle actions,
-// pool top-up, and the tabbed panels (orders / pending / fills / history /
-// notifications / manual capture).
+// Run detail: header + progress stats, order price gaps, bucket board,
+// lifecycle actions, pool top-up, and the tabbed panels (orders / pending /
+// fills / history / notifications / manual capture).
 import { useState } from 'react';
 
 import { api, usdToCents } from '../api';
 import type { RunStatus } from '../api';
 import { BucketBoard } from '../components/BucketBoard';
 import { useAsync } from '../components/hooks';
+import { GapEditForm } from '../components/forms/GapEditForm';
 import { ManualCaptureForm } from '../components/forms/ManualCaptureForm';
 import { PendingTable } from '../components/forms/PendingTable';
 import { FillsPanel, NotificationsPanel, OrdersPanel } from '../components/RunPanels';
@@ -23,7 +24,7 @@ import {
   Spinner,
   Stat,
 } from '../components/ui';
-import { bpPercent, centsUsd, isoDateTime, percent, signedCentsUsd } from '../format';
+import { bpPercent, centsUsd, gapText, isoDateTime, percent, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
 import { enumLabelKey, pnlBadgeTone, poolAfterTopUp, runActions, runStatusTone, toneFor } from '../viewmodels';
 
@@ -121,7 +122,7 @@ export function RunDetailPage({ id }: { id: number }) {
       {actionError !== null && <ErrorNote message={actionError} />}
 
       <Card>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Stat label={t('statHeld')} value={pv.heldCount} />
           <Stat label={t('statCash')} value={centsUsd(pv.cashCents)} />
           <Stat label={t('statExposure')} value={centsUsd(pv.exposureCents)} />
@@ -131,7 +132,19 @@ export function RunDetailPage({ id }: { id: number }) {
             tone={pnlBadgeTone(toneFor(pv.realizedCents))}
           />
           <Stat label={t('statWinRate')} value={percent(pv.winRate)} />
+          <Stat label={t('runDetail.buyGap')} value={gapText(run.buyGapPpm / 10_000, t)} />
+          <Stat label={t('runDetail.sellGap')} value={gapText(run.sellGapPpm / 10_000, t)} />
         </div>
+      </Card>
+
+      <Card>
+        <SectionTitle>{t('runDetail.gapFormTitle')}</SectionTitle>
+        <GapEditForm
+          runId={run.id}
+          initialBuyPpm={run.buyGapPpm}
+          initialSellPpm={run.sellGapPpm}
+          onSaved={() => void reload()}
+        />
       </Card>
 
       <Card>

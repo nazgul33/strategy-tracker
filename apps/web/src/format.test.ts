@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isoDate, isoDateTime } from './format';
+import { gapText, isoDate, isoDateTime } from './format';
 
 // Date-only wire values must pass through untouched, and the space-separated
 // naive timestamps from MySQL DATESTRINGS must never be re-rendered through
@@ -44,5 +44,26 @@ describe('isoDateTime', () => {
   test('null or garbage renders as an em dash', () => {
     expect(isoDateTime(null)).toBe('—');
     expect(isoDateTime('bogus')).toBe('—');
+  });
+});
+
+// gapText takes the i18n lookup, same as the pages do; a tiny stub keeps the
+// formatter test free of React context.
+const t = (key: string) => (key === 'fmt.gapDefault' ? 'default' : key);
+
+describe('gapText', () => {
+  test('a positive percent renders with a percent sign', () => {
+    expect(gapText(2.5, t)).toBe('2.5%');
+    expect(gapText(0.0001, t)).toBe('0.0001%');
+    expect(gapText(100, t)).toBe('100%');
+  });
+
+  test('0 means "server decides" and shows the catalog default word', () => {
+    expect(gapText(0, t)).toBe('default');
+  });
+
+  test('null or undefined renders as an em dash', () => {
+    expect(gapText(null, t)).toBe('—');
+    expect(gapText(undefined, t)).toBe('—');
   });
 });

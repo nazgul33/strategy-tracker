@@ -1,3 +1,5 @@
+// react-dom/client must stay a dynamic import: it has to load *after*
+// GlobalRegistrator.register(), otherwise onChange handlers silently never fire.
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test';
 
