@@ -8,6 +8,13 @@ import { jsonBig, type HttpDeps } from '../app'
 
 const SEED_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
+export const RUN_STATUSES_SERVER = ['active', 'paused', 'closed'] as const
+export const RUN_TRANSITIONS: Record<string, string[]> = {
+  active: ['paused', 'closed'],
+  paused: ['active', 'closed'],
+  closed: [],
+}
+
 // booking.seedRun overwrites state.cashCents unconditionally, so a seed
 // missing (or with a fractional/negative) cashCents bricks the run server-side.
 function validSeed(seed: any, bucketCount: number): boolean {
@@ -83,7 +90,11 @@ export function runsRouter(deps: HttpDeps): Hono {
     const id = Number(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
     const status = body?.status
-    if (!['active', 'paused', 'closed', 'done'].includes(status)) return c.json({ error: 'invalid status' }, 400)
+    if (!(RUN_STATUSES_SERVER as readonly string[]).includes(status)) return c.json({ error: 'invalid status' }, 400)
+    const run = await deps.repos.runRepo.get(id)
+    if (!run) return c.json({ error: 'not found' }, 404)
+    // `?? []` guards legacy `done` rows until the enum migration lands
+    if (!(RUN_TRANSITIONS[run.status] ?? []).includes(status)) return c.json({ error: 'invalid transition' }, 409)
     await deps.repos.runRepo.updateStatus(id, status)
     return c.json({ ok: true })
   })
