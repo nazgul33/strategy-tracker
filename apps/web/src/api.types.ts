@@ -12,6 +12,8 @@ export interface RunDto {
   name: string;
   poolCents: number;
   costPpm: number;
+  buyGapPpm: number; // integer ppm 0–1_000_000; 0 = unset
+  sellGapPpm: number; // integer ppm 0–1_000_000; 0 = unset
   status: RunStatus;
   stateJson: string;
   createdAt: string;
@@ -120,6 +122,8 @@ export interface SimRunDto {
   toDate: string;
   poolCents: number;
   costPpm: number;
+  buyGapPpm: number; // integer ppm 0–1_000_000; 0 = unset
+  sellGapPpm: number; // integer ppm 0–1_000_000; 0 = unset
   paramsJson: string;
   createdAt: string;
 }
@@ -161,6 +165,8 @@ export interface CreateRunInput {
   name: string;
   ticker: string;
   costPpm: number; // integer ppm ≥ 0
+  buyGapPpm?: number; // integer ppm 0–1_000_000; omitted → server default 0 (unset)
+  sellGapPpm?: number; // integer ppm 0–1_000_000; omitted → server default 0 (unset)
   poolCents: number; // integer cents > 0
   bucketCount?: number; // omitted → server default (10)
   seed?: { cashCents?: number; buckets?: { shares: number; buyPrice: string; filledOn: string }[] };
@@ -183,5 +189,7 @@ export interface SimInput {
   to: string;
   poolCents: number;
   costPpm: number;
+  buyGapPpm?: number; // integer ppm 0–1_000_000; omitted → server default 0 (unset)
+  sellGapPpm?: number; // integer ppm 0–1_000_000; omitted → server default 0 (unset)
   params?: { bucketCount?: number; maxAgeDays?: number };
 }

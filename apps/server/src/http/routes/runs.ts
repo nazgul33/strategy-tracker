@@ -5,6 +5,7 @@ import { progressView } from '@st/strategies'
 import { seedRun, manualFill } from '../../domain/booking'
 import type { RawFill } from '@st/ingest'
 import { jsonBig, type HttpDeps } from '../app'
+import { MAX_PPM, isValidPpm } from '../../domain/ppm'
 
 const SEED_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -53,6 +54,10 @@ export function runsRouter(deps: HttpDeps): Hono {
     if (typeof ticker !== 'string' || ticker.trim() === '') return c.json({ error: 'invalid ticker' }, 400)
     if (!Number.isInteger(costPpm) || costPpm < 0) return c.json({ error: 'invalid costPpm' }, 400)
     if (!Number.isInteger(poolCents) || poolCents <= 0) return c.json({ error: 'invalid poolCents' }, 400)
+    const buyGapPpm = body?.buyGapPpm ?? 0
+    const sellGapPpm = body?.sellGapPpm ?? 0
+    if (!isValidPpm(buyGapPpm)) return c.json({ error: 'invalid buyGapPpm' }, 400)
+    if (!isValidPpm(sellGapPpm)) return c.json({ error: 'invalid sellGapPpm' }, 400)
     const params = body?.params
     let bucketCount = 10
     if (params != null) {
@@ -71,7 +76,7 @@ export function runsRouter(deps: HttpDeps): Hono {
     const state = emptyState(bucketCount)
     state.cashCents = poolCents
     const id = await deps.repos.runRepo.create({
-      strategyKey: 'mean-reversion', ticker, name, poolCents, costPpm, initialRunState: state,
+      strategyKey: 'mean-reversion', ticker, name, poolCents, costPpm, buyGapPpm, sellGapPpm, initialRunState: state,
     })
     if (seed) {
       await seedRun(id, seed, { repos: deps.repos as any, today: deps.today() as any })
@@ -120,6 +125,16 @@ export function runsRouter(deps: HttpDeps): Hono {
     await deps.repos.runRepo.updatePool(id, amountCents)
     await deps.repos.poolEditRepo.insert({ runId: id, poolCents: amountCents })
     return c.json({ ok: true })
+  })
+  // gaps are editable in any run status (operator ruling): pure price-config edit
+  r.post('/runs/:id/gaps', async (c) => {
+    const id = Number(c.req.param('id'))
+    const body = await c.req.json().catch(() => ({}))
+    if (!isValidPpm(body?.buyGapPpm) || !isValidPpm(body?.sellGapPpm)) return c.json({ error: 'invalid gaps' }, 400)
+    const run = await deps.repos.runRepo.get(id)
+    if (!run) return c.json({ error: 'not found' }, 404)
+    await deps.repos.runRepo.updateGaps(id, body.buyGapPpm, body.sellGapPpm)
+    return c.body(null, 204)
   })
   r.get('/runs/:id/orders', async (c) => {
     const id = Number(c.req.param('id'))

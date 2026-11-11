@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { DomainError } from '@st/core'
 import { MarketDataError } from '@st/market-data'
 import { runSim } from '../../sim/sim'
+import { isValidPpm } from '../../domain/ppm'
 import { jsonBig, type HttpDeps } from '../app'
 
 const ISO_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -20,6 +21,10 @@ function validateBody(body: any): { ok: true; input: any } | { ok: false; error:
   if (from > to) return { ok: false, error: 'invalid range' }
   if (!Number.isInteger(poolCents) || poolCents <= 0) return { ok: false, error: 'invalid poolCents' }
   if (!Number.isInteger(costPpm) || costPpm < 0) return { ok: false, error: 'invalid costPpm' }
+  const buyGapPpm = body?.buyGapPpm ?? 0
+  const sellGapPpm = body?.sellGapPpm ?? 0
+  if (!isValidPpm(buyGapPpm)) return { ok: false, error: 'invalid buyGapPpm' }
+  if (!isValidPpm(sellGapPpm)) return { ok: false, error: 'invalid sellGapPpm' }
   const params = body?.params
   if (params != null) {
     if (typeof params !== 'object' || Array.isArray(params)) return { ok: false, error: 'invalid params' }
@@ -27,7 +32,7 @@ function validateBody(body: any): { ok: true; input: any } | { ok: false; error:
       if (!Number.isInteger(params.bucketCount) || params.bucketCount < 1 || params.bucketCount > 50) return { ok: false, error: 'invalid bucketCount' }
     }
   }
-  return { ok: true, input: { name, ticker, from, to, poolCents, costPpm, params } }
+  return { ok: true, input: { name, ticker, from, to, poolCents, costPpm, buyGapPpm, sellGapPpm, params } }
 }
 
 export function simRouter(deps: HttpDeps): Hono {

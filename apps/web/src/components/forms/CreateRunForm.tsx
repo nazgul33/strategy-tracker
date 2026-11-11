@@ -2,6 +2,7 @@
 import { useState } from 'react';
 
 import { api, usdOrNull, usdToCents } from '../../api';
+import { gapToPpm, isGapText } from '../../gaps';
 import { useT } from '../../i18n';
 import { seedCashErrorKey } from '../../viewmodels';
 import { Button, Field, Input } from '../ui';
@@ -29,6 +30,8 @@ export function CreateRunForm({
   const [pool, setPool] = useState('');
   const [costPpm, setCostPpm] = useState('200');
   const [bucketCount, setBucketCount] = useState('');
+  const [buyGap, setBuyGap] = useState('');
+  const [sellGap, setSellGap] = useState('');
   const [seedCash, setSeedCash] = useState('');
   const [seedRows, setSeedRows] = useState<SeedRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -38,8 +41,13 @@ export function CreateRunForm({
   const setRow = (i: number, patch: Partial<SeedRow>) =>
     setSeedRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
+  const gapsValid = (buyGap === '' || isGapText(buyGap)) && (sellGap === '' || isGapText(sellGap));
+
   const submit = async () => {
     if (busy) return;
+    // Defense in depth: the create button is disabled while invalid, but a
+    // future native form submit would bypass it.
+    if (!gapsValid) return;
     setError(null);
     if (!TICKER_RE.test(ticker.trim())) {
       setError(t('runInvalidTicker'));
@@ -104,6 +112,8 @@ export function CreateRunForm({
         costPpm: Number(costPpm),
         poolCents,
         bucketCount: bucketsN,
+        buyGapPpm: gapToPpm(buyGap),
+        sellGapPpm: gapToPpm(sellGap),
         seed,
       });
       setCreatedId(res.id);
@@ -152,6 +162,26 @@ export function CreateRunForm({
         </Field>
         <Field label={`${t('runCostPpm')} (ppm)`}>
           <Input value={costPpm} onChange={(e) => setCostPpm(e.target.value)} inputMode="numeric" />
+        </Field>
+        <Field label={t('runForm.buyGapLabel')} hint={t('runForm.buyGapHint')}>
+          <Input
+            data-testid="buyGapInput"
+            value={buyGap}
+            onChange={(e) => setBuyGap(e.target.value)}
+            inputMode="decimal"
+            placeholder="0"
+            invalid={buyGap !== '' && !isGapText(buyGap)}
+          />
+        </Field>
+        <Field label={t('runForm.sellGapLabel')} hint={t('runForm.sellGapHint')}>
+          <Input
+            data-testid="sellGapInput"
+            value={sellGap}
+            onChange={(e) => setSellGap(e.target.value)}
+            inputMode="decimal"
+            placeholder="0"
+            invalid={sellGap !== '' && !isGapText(sellGap)}
+          />
         </Field>
       </div>
       <details>
@@ -219,7 +249,7 @@ export function CreateRunForm({
 
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel}>{t('cancel')}</Button>
-        <Button variant="primary" busy={busy} onClick={() => void submit()}>
+        <Button variant="primary" busy={busy} disabled={!gapsValid} onClick={() => void submit()}>
           {t('create')}
         </Button>
       </div>

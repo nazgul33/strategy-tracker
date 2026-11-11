@@ -15,7 +15,7 @@ import {
   type BadgeTone,
   type SimGroup,
 } from '../viewmodels';
-import { centsUsd, priceUsd, bpPercent, isoDate, signedCentsUsd } from '../format';
+import { centsUsd, priceUsd, bpPercent, gapText, isoDate, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
 import { Badge, Button, Card, EmptyNote, SectionTitle, Stat, TableWrap, Td, Th } from './ui';
 import { BucketBoard } from './BucketBoard';
@@ -123,6 +123,8 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
         <span className="ml-auto text-xs text-muted-foreground">
           {run.ticker} · {isoDate(run.fromDate)} → {isoDate(run.toDate)} · {t('runPoolCents')} {centsUsd(run.poolCents)}
           {` · ${t('simMaxAge')} ${params.maxAgeDays}`}
+          {` · ${t('simDetail.buyGap')} ${gapText(run.buyGapPpm / 10_000, t)}`}
+          {` · ${t('simDetail.sellGap')} ${gapText(run.sellGapPpm / 10_000, t)}`}
         </span>
       </Card>
 

@@ -7,6 +7,8 @@ export const strategyRuns = mysqlTable('strategy_runs', {
   name: varchar('name', { length: 128 }).notNull().unique(),
   poolCents: int('pool_cents').notNull(),
   costPpm: int('cost_ppm').notNull(),
+  buyGapPpm: int('buy_gap_ppm').notNull().default(0),
+  sellGapPpm: int('sell_gap_ppm').notNull().default(0),
   status: mysqlEnum('status', ['active', 'paused', 'closed']).notNull().default('active'),
   stateJson: text('state_json').notNull(),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
@@ -106,6 +108,8 @@ export const simRuns = mysqlTable('sim_runs', {
   toDate: date('to_date', { mode: 'string' }).notNull(),
   poolCents: int('pool_cents').notNull(),
   costPpm: int('cost_ppm').notNull(),
+  buyGapPpm: int('buy_gap_ppm').notNull().default(0),
+  sellGapPpm: int('sell_gap_ppm').notNull().default(0),
   paramsJson: text('params_json').notNull(),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 })

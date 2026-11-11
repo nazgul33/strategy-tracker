@@ -47,3 +47,18 @@ export function centsFromUsd(v: bigint): number {
 export function feeCents(price: bigint, shares: number, ppm: number): number {
   return Number(roundDiv(price * BigInt(shares) * BigInt(ppm), 100_000_000n))
 }
+
+export function ceilDiv(n: bigint, d: bigint): bigint {
+  if (d <= 0n) throw new Error('divisor must be positive')
+  // bigint / truncates toward zero, so only positive numerators need the +d-1 shift
+  if (n >= 0n) return (n + d - 1n) / d
+  return n / d
+}
+
+export function ceilCents(v: bigint): bigint {
+  return ceilDiv(v, 100n) * 100n
+}
+
+export function floorCents(v: bigint): bigint {
+  return (v / 100n) * 100n
+}

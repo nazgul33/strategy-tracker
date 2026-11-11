@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { DomainError, emptyState, type RunState } from '@st/core'
-import { feeCents } from '@st/core/money'
+import { feeCents, parseUsd } from '@st/core/money'
 import { DEFAULT_MR_PARAMS, computeOrders, sellTarget } from '@st/strategies'
 import type { OHLCBar } from '@st/market-data'
 import { simulateDays, resolveDay, runSim } from '../src/sim/sim'
@@ -12,8 +12,16 @@ const bars: OHLCBar[] = [
   { date: '2026-11-03', open: 3450000n, high: 3500000n, low: 3400000n, close: 3450000n },
 ]
 
+// seed close 100.00 → buyGapPpm 10_000 buys at 99.00 (fills: day2 low 95 < 99);
+// sellGapPpm 20_000 sells at floorCents(99.00 × 1.02) = 100.98 (fills: day3 high 101)
+const gapBars: OHLCBar[] = [
+  { date: '2026-12-01', open: parseUsd('100'), high: parseUsd('100'), low: parseUsd('100'), close: parseUsd('100') },
+  { date: '2026-12-02', open: parseUsd('99.5'), high: parseUsd('99.5'), low: parseUsd('95'), close: parseUsd('90') },
+  { date: '2026-12-03', open: parseUsd('100'), high: parseUsd('101'), low: parseUsd('99'), close: parseUsd('100.5') },
+]
+
 function makeRun(over?: Partial<{ poolCents: number }>): any {
-  return { id: 0, name: 'sim', ticker: 'TSLA', strategyKey: 'mean-reversion', costPpm: 30, poolCents: 1000000, status: 'active', ...over }
+  return { id: 0, name: 'sim', ticker: 'TSLA', strategyKey: 'mean-reversion', costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1000000, status: 'active', ...over }
 }
 
 describe('simulateDays', () => {
@@ -188,6 +196,36 @@ describe('runSim', () => {
       expect(e.kind).toBe('invalid-params')
     }
     expect(f.runs.length).toBe(0)
+  })
+
+  test('simulation honours buy and sell gaps', async () => {
+    const f = makeRepos()
+    const res = await runSim({ name: 'g', ticker: 'TSLA', from: '2026-12-01', to: '2026-12-03', poolCents: 1000000, costPpm: 30, buyGapPpm: 10_000, sellGapPpm: 20_000 }, { fetchDailyBars: async () => gapBars, repos: f.simRepo })
+    expect(res.dayCount).toBe(2)
+    // day1 buy plan price = buyLimit(100.00, 10_000) = 99.00 — the tell vs the legacy 99.99
+    const plan1 = JSON.parse(f.days[0]!.planJson)
+    expect(plan1.orders.find((o: any) => o.kind === 'buy_loc').limitPrice).toBe(parseUsd('99').toString())
+    const ev1 = JSON.parse(f.days[0]!.eventsJson)
+    expect(ev1[0]).toMatchObject({ type: 'fill', side: 'buy', price: '990000' }) // open 99.50 above limit → fills at limit
+    // day2 sell plan price = sellLimit(99.00, 30, 10, 20_000) = 100.98 truncated, not the legacy sellTarget
+    const plan2 = JSON.parse(f.days[1]!.planJson)
+    expect(plan2.orders.find((o: any) => o.kind === 'sell_loc').limitPrice).toBe('1009800')
+    const ev2 = JSON.parse(f.days[1]!.eventsJson)
+    const sell = ev2.find((e: any) => e.side === 'sell')
+    expect(sell.price).toBe('1009800') // fills at the gap target, and the sim ends flat — the final sell is this one
+  })
+
+  test('sim gaps default to 0 and are persisted on the sim run row', async () => {
+    const f = makeRepos()
+    await runSim({ name: 'g', ticker: 'TSLA', from: '2026-12-01', to: '2026-12-03', poolCents: 1000000, costPpm: 30 }, { fetchDailyBars: async () => gapBars, repos: f.simRepo })
+    expect(f.runs[0].buyGapPpm).toBe(0)
+    expect(f.runs[0].sellGapPpm).toBe(0)
+    // gaps unset → legacy prices: lastClose − 100 myriadths
+    expect(JSON.parse(f.days[0]!.planJson).orders.find((o: any) => o.kind === 'buy_loc').limitPrice).toBe('999900')
+    const f2 = makeRepos()
+    await runSim({ name: 'g', ticker: 'TSLA', from: '2026-12-01', to: '2026-12-03', poolCents: 1000000, costPpm: 30, buyGapPpm: 10_000, sellGapPpm: 20_000 }, { fetchDailyBars: async () => gapBars, repos: f2.simRepo })
+    expect(f2.runs[0].buyGapPpm).toBe(10_000)
+    expect(f2.runs[0].sellGapPpm).toBe(20_000)
   })
 })
 

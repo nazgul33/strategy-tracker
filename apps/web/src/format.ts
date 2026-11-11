@@ -97,6 +97,16 @@ export function percent(fraction: number | null | undefined): string {
   return `${(fraction * 100).toFixed(1)}%`;
 }
 
+/**
+ * Gap percent (integer ppm / 10_000) → `2.5%`. `0` means "not set: the
+ * strategy decides" → the catalog's default word; `null` → `—`.
+ */
+export function gapText(pct: number | null | undefined, t: (key: string) => string): string {
+  if (pct === null || pct === undefined || !Number.isFinite(pct)) return '—';
+  if (pct === 0) return t('fmt.gapDefault');
+  return `${pct}%`;
+}
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**

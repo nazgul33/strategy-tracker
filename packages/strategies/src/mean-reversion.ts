@@ -1,5 +1,5 @@
 import type { Bucket, ClosedBucket, DayPlan, Notice, PlannedOrder, Run, RunState } from '@st/core'
-import { bucketBudgetCents as coreBucketBudget, formatUsd, roundDiv, sellTarget as coreSellTarget } from '@st/core'
+import { bucketBudgetCents as coreBucketBudget, ceilCents, floorCents, formatUsd, roundDiv, sellTarget as coreSellTarget } from '@st/core'
 import { nextTradingDay } from '@st/calendar'
 import type { ISODate } from '@st/core'
 
@@ -28,6 +28,20 @@ export function buyShares(budgetCents: number, price: bigint): number {
 
 export function sellTarget(buyPrice: bigint, costPpm: number, shares: bigint): bigint {
   return coreSellTarget(buyPrice, costPpm, shares)
+}
+
+export const MILLION = 1_000_000n
+
+export function buyLimit(lastClose: bigint, buyGapPpm: number): bigint {
+  const raw = buyGapPpm === 0
+    ? lastClose - 100n
+    : (lastClose * (MILLION - BigInt(buyGapPpm))) / MILLION
+  return ceilCents(raw)
+}
+
+export function sellLimit(buyPrice: bigint, costPpm: number, shares: number, sellGapPpm: number): bigint {
+  if (sellGapPpm === 0) return sellTarget(buyPrice, costPpm, BigInt(shares))
+  return floorCents((buyPrice * (MILLION + BigInt(sellGapPpm))) / MILLION)
 }
 
 export function ageBuckets(
@@ -79,7 +93,7 @@ export function computeOrders(
   if (lowestEmpty === null) {
     notices.push({ code: 'no-bucket-available' })
   } else {
-    const limit = ctx.lastClose - 100n
+    const limit = buyLimit(ctx.lastClose, run.buyGapPpm)
     const shares = buyShares(bucketBudgetCents(run.poolCents), limit)
     if (shares === 0) {
       notices.push({ code: 'shares-zero', params: { price: formatUsd(limit) } })
@@ -93,7 +107,7 @@ export function computeOrders(
     .filter((b) => b.state === 'held')
     .sort((a, b) => a.index - b.index)
   for (const b of held) {
-    const target = sellTarget(b.buyPrice, run.costPpm, BigInt(b.shares))
+    const target = sellLimit(b.buyPrice, run.costPpm, b.shares, run.sellGapPpm)
     orders.push({ kind: 'sell_loc', bucketIndex: b.index, limitPrice: target, shares: b.shares, ageDays: state.ages[b.index] ?? 0 })
   }
 

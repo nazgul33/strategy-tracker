@@ -1,6 +1,7 @@
 import { DomainError, emptyState, advanceDay, applyBuyFill, applySellFill, type ISODate, type Run, type RunState, type DayPlan } from '@st/core'
 import { feeCents, roundDiv } from '@st/core/money'
 import { computeOrders, DEFAULT_MR_PARAMS, type MrParams } from '@st/strategies'
+import { isValidPpm } from '../domain/ppm'
 import type { OHLCBar } from '@st/market-data'
 
 export interface SimFill {
@@ -31,6 +32,8 @@ export interface SimInput {
   to: ISODate
   poolCents: number
   costPpm: number
+  buyGapPpm?: number
+  sellGapPpm?: number
   params?: Partial<MrParams>
 }
 
@@ -41,6 +44,8 @@ export interface SimRunRow {
   toDate: string
   poolCents: number
   costPpm: number
+  buyGapPpm: number
+  sellGapPpm: number
   paramsJson: string
   createdAt: any
 }
@@ -55,7 +60,7 @@ export interface SimDayRow {
 }
 
 export interface SimRepoSurface {
-  insertRun(input: { ticker: string; fromDate: string; toDate: string; poolCents: number; costPpm: number; paramsJson: string }): Promise<number>
+  insertRun(input: { ticker: string; fromDate: string; toDate: string; poolCents: number; costPpm: number; buyGapPpm: number; sellGapPpm: number; paramsJson: string }): Promise<number>
   insertDays(rows: { simRunId: number; tradeDate: string; planJson: string; stateJson: string; eventsJson: string }[]): Promise<void>
   listRuns(): Promise<SimRunRow[]>
   getRun(id: number): Promise<SimRunRow | null>
@@ -178,7 +183,11 @@ export async function runSim(input: SimInput, deps: { fetchDailyBars: (ticker: s
   }
   const params = { ...DEFAULT_MR_PARAMS, ...(input.params ?? {}) }
 
-  const run: Run = { id: 0, name: input.name, ticker: input.ticker, strategyKey: 'mean-reversion', costPpm: input.costPpm, poolCents: input.poolCents, status: 'active' }
+  const buyGapPpm = input.buyGapPpm ?? 0
+  const sellGapPpm = input.sellGapPpm ?? 0
+  if (!isValidPpm(buyGapPpm) || !isValidPpm(sellGapPpm)) throw new DomainError('invalid-params')
+
+  const run: Run = { id: 0, name: input.name, ticker: input.ticker, strategyKey: 'mean-reversion', costPpm: input.costPpm, buyGapPpm, sellGapPpm, poolCents: input.poolCents, status: 'active' }
 
   const bars = await deps.fetchDailyBars(input.ticker, input.from, input.to)
   const { days, states } = simulate(run, params, bars)
@@ -189,6 +198,8 @@ export async function runSim(input: SimInput, deps: { fetchDailyBars: (ticker: s
     toDate: input.to,
     poolCents: input.poolCents,
     costPpm: input.costPpm,
+    buyGapPpm,
+    sellGapPpm,
     paramsJson: JSON.stringify(params, bigintReplacer),
   })
 

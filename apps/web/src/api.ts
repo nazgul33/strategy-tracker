@@ -99,6 +99,7 @@ export interface Api {
   setRunStatus(id: number, status: RunStatus): Promise<void>;
   bulkSetRunStatus(ids: number[], status: RunStatus): Promise<number>;
   setPool(id: number, amountCents: number): Promise<void>;
+  setGaps(id: number, input: { buyGapPpm: number; sellGapPpm: number }): Promise<void>;
   listOrders(id: number, date?: string): Promise<OrderDto[]>;
   listFills(id: number): Promise<FillDto[]>;
   listNotifications(id: number): Promise<NotificationDto[]>;
@@ -142,6 +143,8 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
         costPpm: input.costPpm,
         poolCents: input.poolCents,
       };
+      if (input.buyGapPpm !== undefined) body.buyGapPpm = input.buyGapPpm;
+      if (input.sellGapPpm !== undefined) body.sellGapPpm = input.sellGapPpm;
       if (input.bucketCount !== undefined) body.params = { bucketCount: input.bucketCount };
       if (input.seed !== undefined) body.seed = input.seed;
       return send<{ id: number }>('POST', '/api/runs', body);
@@ -151,6 +154,7 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
     bulkSetRunStatus: (ids, status) =>
       send<{ updated: number }>('POST', '/api/runs/bulk-status', { ids, status }).then((r) => r.updated),
     setPool: (id, amountCents) => send<{ ok: true }>('POST', `/api/runs/${id}/pool`, { amountCents }).then(() => undefined),
+    setGaps: (id, input) => send<{ ok: true }>('POST', `/api/runs/${id}/gaps`, input).then(() => undefined),
     listOrders: (id, date) => get<OrderDto[]>(`/api/runs/${id}/orders${date ? `?date=${date}` : ''}`),
     listFills: (id) => get<FillDto[]>(`/api/runs/${id}/fills`),
     listNotifications: (id) => get<NotificationDto[]>(`/api/runs/${id}/notifications`),
@@ -188,6 +192,8 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
         poolCents: input.poolCents,
         costPpm: input.costPpm,
       };
+      if (input.buyGapPpm !== undefined) body.buyGapPpm = input.buyGapPpm;
+      if (input.sellGapPpm !== undefined) body.sellGapPpm = input.sellGapPpm;
       if (input.params && Object.keys(input.params).length > 0) body.params = input.params;
       return send<{ id: number; dayCount: number }>('POST', '/api/sim', body);
     },

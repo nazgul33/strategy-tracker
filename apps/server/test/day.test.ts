@@ -13,7 +13,7 @@ function makeRepos() {
   const runRepo = {
     async list() { return runs },
     async get(id: number) { return runs.find((r) => r.id === id) ?? null },
-    async create(input: any) { const id = runs.length + 1; const st = input.initialRunState ?? emptyState(10); const r = { id, status: input.status ?? 'active', ...input, stateJson: JSON.stringify(st, (_: any, v: any) => typeof v === 'bigint' ? v.toString() : v) }; runs.push(r); return id },
+    async create(input: any) { const id = runs.length + 1; const st = input.initialRunState ?? emptyState(10); const r = { id, buyGapPpm: 0, sellGapPpm: 0, status: input.status ?? 'active', ...input, stateJson: JSON.stringify(st, (_: any, v: any) => typeof v === 'bigint' ? v.toString() : v) }; runs.push(r); return id },
     async updateStatus(id: number, s: string) { const r = runs.find((x) => x.id === id); if (r) r.status = s },
   }
   const bucketRepo = {

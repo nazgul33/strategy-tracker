@@ -26,7 +26,7 @@ function makeFakes() {
       const id = runIdSeq++
       const state = input.initialRunState
       if (state) states.set(id, state)
-      runs.push({ id, strategyKey: input.strategyKey, ticker: input.ticker, name: input.name, poolCents: input.poolCents, costPpm: input.costPpm, status: 'active', stateJson: JSON.stringify(state, (_k, v) => typeof v === 'bigint' ? v.toString() : v), createdAt: new Date() })
+      runs.push({ id, strategyKey: input.strategyKey, ticker: input.ticker, name: input.name, poolCents: input.poolCents, costPpm: input.costPpm, buyGapPpm: input.buyGapPpm ?? 0, sellGapPpm: input.sellGapPpm ?? 0, status: 'active', stateJson: JSON.stringify(state, (_k, v) => typeof v === 'bigint' ? v.toString() : v), createdAt: new Date() })
       return id
     },
     async updateStatus(id: number, status: string) {
@@ -39,6 +39,9 @@ function makeFakes() {
     },
     async updatePool(id: number, poolCents: number) {
       const r = runs.find((x) => x.id === id); if (r) r.poolCents = poolCents
+    },
+    async updateGaps(id: number, buyGapPpm: number, sellGapPpm: number) {
+      const r = runs.find((x) => x.id === id); if (r) { r.buyGapPpm = buyGapPpm; r.sellGapPpm = sellGapPpm }
     },
   }
   const orderRepo = {
@@ -84,10 +87,11 @@ function makeFakes() {
   const poolEditRepo = {
     async insert(input: { runId: number; poolCents: number }) { poolEdits.push({ id: poolEdits.length + 1, ...input }) },
   }
+  const simRuns: any[] = []
   const simRepo = {
-    async insertRun() { return 1 },
+    async insertRun(i: any) { simRuns.push({ id: simRuns.length + 1, createdAt: '2026-11-10T00:00:00Z', ...i }); return simRuns.length },
     async insertDays() {},
-    async listRuns() { return [] },
+    async listRuns() { return simRuns },
     async getRun() { return null },
     async listDays() { return [] },
   }
@@ -95,7 +99,7 @@ function makeFakes() {
     runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo,
     settingsRepo, poolEditRepo, simRepo,
   } as any
-  return { repos, runs, poolEdits, fills, ledger, orders, pending, notifications, settings, states }
+  return { repos, runs, poolEdits, fills, ledger, orders, pending, notifications, settings, states, simRuns }
 }
 
 const PASSWORD = 'secret'
@@ -421,6 +425,70 @@ describe('http runs', () => {
       expect((await app.request('/api/runs/bulk-status', { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...auth } })).status).toBe(400)
     }
   })
+  test('POST /runs accepts gap fields and rejects invalid', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const base = { name: 'g', ticker: 'A', costPpm: 0, poolCents: 100 }
+    const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ ...base, buyGapPpm: 10000, sellGapPpm: 20000 }), headers: { 'content-type': 'application/json', ...auth } })
+    expect(cr.status).toBe(201)
+    const { id } = await cr.json()
+    const d = await (await app.request(`/api/runs/${id}`, { headers: auth })).json()
+    expect(d.buyGapPpm).toBe(10000)
+    expect(d.sellGapPpm).toBe(20000)
+    // GET /runs list DTO carries the gaps too
+    const listed = await (await app.request('/api/runs', { headers: auth })).json()
+    expect(listed.find((x: any) => x.id === id)!.buyGapPpm).toBe(10000)
+    expect(listed.find((x: any) => x.id === id)!.sellGapPpm).toBe(20000)
+    for (const bad of [{ buyGapPpm: 1.5 }, { sellGapPpm: -1 }, { buyGapPpm: 1000001 }]) {
+      const br = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ ...base, ...bad }), headers: { 'content-type': 'application/json', ...auth } })
+      expect(br.status).toBe(400)
+    }
+    expect(f.runs.length).toBe(1) // create never called for invalid gaps
+    // absent gaps default to 0 on both GET DTOs, like the DB column default
+    const cr2 = await app.request('/api/runs', { method: 'POST', body: JSON.stringify(base), headers: { 'content-type': 'application/json', ...auth } })
+    expect(cr2.status).toBe(201)
+    const id2 = (await cr2.json()).id
+    const d2 = await (await app.request(`/api/runs/${id2}`, { headers: auth })).json()
+    expect(d2.buyGapPpm).toBe(0)
+    expect(d2.sellGapPpm).toBe(0)
+    const listed2 = await (await app.request('/api/runs', { headers: auth })).json()
+    expect(listed2.find((x: any) => x.id === id2)!.buyGapPpm).toBe(0)
+    expect(listed2.find((x: any) => x.id === id2)!.sellGapPpm).toBe(0)
+  })
+  test('POST /runs/:id/gaps updates, validates, 404s', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'g', ticker: 'A', costPpm: 0, poolCents: 100, buyGapPpm: 10000, sellGapPpm: 20000 }), headers: { 'content-type': 'application/json', ...auth } })
+    const { id } = await cr.json()
+    const gr = await app.request(`/api/runs/${id}/gaps`, { method: 'POST', body: JSON.stringify({ buyGapPpm: 100, sellGapPpm: 200 }), headers: { 'content-type': 'application/json', ...auth } })
+    expect(gr.status).toBe(204)
+    const d = await (await app.request(`/api/runs/${id}`, { headers: auth })).json()
+    expect(d.buyGapPpm).toBe(100)
+    expect(d.sellGapPpm).toBe(200)
+    // missing / non-integer / out-of-range → 400, gaps unchanged
+    for (const bad of [{ buyGapPpm: 100 }, { sellGapPpm: 200 }, { buyGapPpm: 'x', sellGapPpm: 200 },
+      { buyGapPpm: 1.5, sellGapPpm: 200 }, { buyGapPpm: 100, sellGapPpm: -1 }, { buyGapPpm: 1000001, sellGapPpm: 200 }]) {
+      const br = await app.request(`/api/runs/${id}/gaps`, { method: 'POST', body: JSON.stringify(bad), headers: { 'content-type': 'application/json', ...auth } })
+      expect(br.status).toBe(400)
+    }
+    const d2 = await (await app.request(`/api/runs/${id}`, { headers: auth })).json()
+    expect(d2.buyGapPpm).toBe(100)
+    expect(d2.sellGapPpm).toBe(200)
+    // unknown id → 404
+    const nf = await app.request('/api/runs/999/gaps', { method: 'POST', body: JSON.stringify({ buyGapPpm: 1, sellGapPpm: 2 }), headers: { 'content-type': 'application/json', ...auth } })
+    expect(nf.status).toBe(404)
+    // gaps are editable in any status
+    await app.request(`/api/runs/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'paused' }), headers: { 'content-type': 'application/json', ...auth } })
+    const pr = await app.request(`/api/runs/${id}/gaps`, { method: 'POST', body: JSON.stringify({ buyGapPpm: 0, sellGapPpm: 0 }), headers: { 'content-type': 'application/json', ...auth } })
+    expect(pr.status).toBe(204)
+    expect(f.runs.find((x) => x.id === id)!.status).toBe('paused')
+  })
 })
 
 describe('http pending', () => {
@@ -506,5 +574,53 @@ describe('http trigger', () => {
     const res = await app.request('/api/trigger/morning', { method: 'POST', headers: auth })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ result: 'morning-ok' })
+  })
+})
+describe('http sim gaps', () => {
+  test('sim run validates gaps', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const base = { name: 's', ticker: 'A', from: '2026-11-01', to: '2026-11-03', poolCents: 1000, costPpm: 30 }
+    for (const bad of [{ buyGapPpm: -1 }, { sellGapPpm: 1.5 }, { buyGapPpm: 1000001 }, { sellGapPpm: 'x' }]) {
+      const br = await app.request('/api/sim', { method: 'POST', body: JSON.stringify({ ...base, ...bad }), headers: { 'content-type': 'application/json', ...auth } })
+      expect(br.status).toBe(400)
+    }
+    // valid gaps pass validation and reach the simulator (bars fake → not-enough-bars 422)
+    const ok = await app.request('/api/sim', { method: 'POST', body: JSON.stringify({ ...base, buyGapPpm: 10000, sellGapPpm: 20000 }), headers: { 'content-type': 'application/json', ...auth } })
+    expect(ok.status).toBe(422)
+    expect((await ok.json()).error).toBe('not-enough-bars')
+  })
+  test('sim run defaults gaps to 0 and persists them', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    // fake fetchDailyBars returns [] → runSim throws before insert; assert via repo fake instead:
+    // give this app real day data by overriding deps
+    const f2 = makeFakes()
+    const deps = makeDeps(f2)
+    deps.fetchDailyBars = async () => [
+      { date: '2026-11-01', open: 1000000n, high: 1000000n, low: 1000000n, close: 1000000n },
+      { date: '2026-11-02', open: 995000n, high: 995000n, low: 950000n, close: 900000n },
+    ]
+    const app2 = createApp(deps)
+    const lr2 = await app2.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const auth2 = { Authorization: `Bearer ${(await lr2.json()).token}` }
+    const base = { name: 's', ticker: 'A', from: '2026-11-01', to: '2026-11-02', poolCents: 1000000, costPpm: 30 }
+    const r1 = await app2.request('/api/sim', { method: 'POST', body: JSON.stringify(base), headers: { 'content-type': 'application/json', ...auth2 } })
+    expect(r1.status).toBe(200)
+    expect(f2.simRuns[0].buyGapPpm).toBe(0)
+    expect(f2.simRuns[0].sellGapPpm).toBe(0)
+    const r2 = await app2.request('/api/sim', { method: 'POST', body: JSON.stringify({ ...base, buyGapPpm: 10000, sellGapPpm: 20000 }), headers: { 'content-type': 'application/json', ...auth2 } })
+    expect(r2.status).toBe(200)
+    expect(f2.simRuns[1].buyGapPpm).toBe(10000)
+    expect(f2.simRuns[1].sellGapPpm).toBe(20000)
+    const rows = await (await app2.request('/api/sim', { headers: auth2 })).json()
+    expect(rows[0].buyGapPpm).toBe(0)
+    expect(rows[1].sellGapPpm).toBe(20000)
   })
 })

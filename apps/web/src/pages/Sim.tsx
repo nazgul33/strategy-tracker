@@ -18,6 +18,7 @@ import {
   Th,
 } from '../components/ui';
 import { bpPercent, centsUsd, isoDate, isoDateTime, todayIso } from '../format';
+import { gapToPpm, isGapText } from '../gaps';
 import { useT } from '../i18n';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -32,11 +33,15 @@ export function SimPage() {
   const [toDate, setToDate] = useState('');
   const [poolUsd, setPoolUsd] = useState('');
   const [costPpm, setCostPpm] = useState('200');
+  const [buyGap, setBuyGap] = useState('');
+  const [sellGap, setSellGap] = useState('');
   const [bucketCount, setBucketCount] = useState('');
   const [maxAge, setMaxAge] = useState('');
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const gapsValid = (buyGap === '' || isGapText(buyGap)) && (sellGap === '' || isGapText(sellGap));
 
   function validate(): SimInput | null {
     const tid = ticker.trim().toUpperCase();
@@ -54,7 +59,17 @@ export function SimPage() {
     if (age === null) return null;
 
     setFieldError(null);
-    const input: SimInput = { name: name.trim(), ticker: tid, from: fromDate, to: toDate, poolCents, costPpm: Number(cost) };
+    const input: SimInput = {
+      name: name.trim(),
+      ticker: tid,
+      from: fromDate,
+      to: toDate,
+      poolCents,
+      costPpm: Number(cost),
+      // blank gap = "not set" → explicit 0 (the server's unset value).
+      buyGapPpm: buyGap === '' ? 0 : gapToPpm(buyGap),
+      sellGapPpm: sellGap === '' ? 0 : gapToPpm(sellGap),
+    };
     const params: NonNullable<SimInput['params']> = {};
     if (buckets !== undefined) params.bucketCount = buckets;
     if (age !== undefined) params.maxAgeDays = age;
@@ -79,7 +94,9 @@ export function SimPage() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (busy) return;
+    // Defense in depth: the button is disabled while invalid, but Enter in a
+    // text field would still fire a native form submit.
+    if (busy || !gapsValid) return;
     const input = validate();
     if (!input) return;
     setBusy(true);
@@ -122,6 +139,26 @@ export function SimPage() {
           <Field label={t('simCostPpm')}>
             <Input value={costPpm} onChange={(e) => setCostPpm(e.target.value)} inputMode="numeric" required />
           </Field>
+          <Field label={t('simForm.buyGapLabel')}>
+            <Input
+              data-testid="buyGapInput"
+              value={buyGap}
+              onChange={(e) => setBuyGap(e.target.value)}
+              inputMode="decimal"
+              placeholder="0"
+              invalid={buyGap !== '' && !isGapText(buyGap)}
+            />
+          </Field>
+          <Field label={t('simForm.sellGapLabel')}>
+            <Input
+              data-testid="sellGapInput"
+              value={sellGap}
+              onChange={(e) => setSellGap(e.target.value)}
+              inputMode="decimal"
+              placeholder="0"
+              invalid={sellGap !== '' && !isGapText(sellGap)}
+            />
+          </Field>
           <details className="text-sm sm:col-span-2">
             <summary className="cursor-pointer text-muted-foreground">{t('runParamsOptional')}</summary>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -134,7 +171,7 @@ export function SimPage() {
             </div>
           </details>
           <div className="flex items-center gap-3 sm:col-span-2">
-            <Button type="submit" variant="primary" busy={busy}>
+            <Button type="submit" variant="primary" busy={busy} disabled={!gapsValid}>
               {t('simRun')}
             </Button>
             {busy && <span className="text-sm text-muted-foreground">{t('simRunning')}</span>}
