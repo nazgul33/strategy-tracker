@@ -1,5 +1,5 @@
 import { parseUsd } from '@st/core/money';
-import type { BucketDto, PendingFillDto, RunStatus, SimEvent } from './api';
+import type { BucketDto, PendingFillDto, RunStatus, SimEvent, SimPlanDto } from './api';
 
 /**
  * Presentation logic worth unit testing: bucket cells, badge tones, form
@@ -204,6 +204,25 @@ export function simEventGroup(event: SimEvent, isLastDay: boolean): SimGroup {
   if (event.type === 'skipped') return 'skipped';
   if (event.side === 'buy') return 'buy';
   return isLastDay ? 'force' : 'target';
+}
+
+/** Skip rows → their cancellation reason, paired the same way as the Telegram
+ * digest: first unconsumed notice whose `bucket` param matches (0-based). */
+export function skipReasons(
+  plan: SimPlanDto,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): Map<number, string> {
+  const out = new Map<number, string>();
+  const notices = plan.notices ?? [];
+  const used = new Set<number>();
+  for (const s of plan.skips ?? []) {
+    const idx = notices.findIndex((n, i) => !used.has(i) && n.params?.bucket === s.bucketIndex);
+    if (idx >= 0) {
+      used.add(idx);
+      out.set(s.bucketIndex, t(`digest.${notices[idx].code}`, notices[idx].params));
+    }
+  }
+  return out;
 }
 
 /**

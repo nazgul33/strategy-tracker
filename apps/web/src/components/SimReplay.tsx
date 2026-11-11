@@ -9,6 +9,7 @@ import {
   pnlBadgeTone,
   reasonKey,
   simEventGroup,
+  skipReasons,
   toneFor,
   type BadgeTone,
   type SimGroup,
@@ -100,6 +101,7 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
   const finalValueCents = state.cashCents + holdingsCents;
   const realizedTone = pnlBadgeTone(toneFor(realizedCents));
   const groups = groupEvents(day.eventsJson, isLast);
+  const reasons = skipReasons(day.planJson, t);
 
   return (
     <div className="space-y-4">
@@ -148,7 +150,12 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
                       {t(enumLabelKey('orderKind', o.kind))}
                     </Badge>
                   </Td>
-                  <Td className="text-right tabular-nums">{o.bucketIndex + 1}</Td>
+                  <Td className="text-right tabular-nums">
+                    {o.bucketIndex + 1}
+                    {o.kind !== 'buy_loc' && o.ageDays !== undefined && (
+                      <span className="ml-1 text-xs text-muted-foreground">· {t('simOrderAge', { n: o.ageDays })}</span>
+                    )}
+                  </Td>
                   <Td className="text-right tabular-nums">{priceUsd(o.limitPrice)}</Td>
                   <Td className="text-right tabular-nums">{o.shares}</Td>
                 </tr>
@@ -157,8 +164,16 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
                 <tr key={`s${i}`} className="opacity-60">
                   <Td>
                     <Badge tone="neutral">{t('orderStatusCancelled')}</Badge>
+                    {reasons.has(o.bucketIndex) && (
+                      <span className="ml-1 text-xs text-muted-foreground">· {reasons.get(o.bucketIndex)}</span>
+                    )}
                   </Td>
-                  <Td className="text-right tabular-nums">{o.bucketIndex + 1}</Td>
+                  <Td className="text-right tabular-nums">
+                    {o.bucketIndex + 1}
+                    {o.ageDays !== undefined && (
+                      <span className="ml-1 text-xs text-muted-foreground">· {t('simOrderAge', { n: o.ageDays })}</span>
+                    )}
+                  </Td>
                   <Td className="text-right tabular-nums">{priceUsd(o.limitPrice)}</Td>
                   <Td className="text-right tabular-nums">{o.shares}</Td>
                 </tr>

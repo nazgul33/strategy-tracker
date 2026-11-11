@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { BucketDto, PendingFillDto } from './api';
+import type { BucketDto, PendingFillDto, SimPlanDto } from './api';
 import {
   bucketCells,
   bulkPlan,
@@ -20,6 +20,7 @@ import {
   runStatusTone,
   seedCashErrorKey,
   simEventGroup,
+  skipReasons,
   toneFor,
 } from './viewmodels';
 
@@ -237,5 +238,44 @@ describe('seedCashErrorKey', () => {
 
   test('zero cash is valid (form sends {cashCents: 0, buckets: []})', () => {
     expect(seedCashErrorKey([], 0, true)).toBeNull();
+  });
+});
+
+describe('skipReasons', () => {
+  const t = (key: string, vars?: Record<string, string | number>) =>
+    key === 'digest.sell-capped' ? `sell capped (price ${vars?.price})` : key;
+
+  test('pairs a skip with the first unconsumed notice for its bucket', () => {
+    const plan = {
+      orders: [],
+      skips: [{ kind: 'sell_loc', bucketIndex: 3, limitPrice: '0', shares: 10 }],
+      notices: [
+        { code: 'sell-capped', params: { bucket: 3, price: 340 } },
+      ],
+    } as unknown as SimPlanDto;
+    expect(skipReasons(plan, t).get(3)).toBe('sell capped (price 340)');
+  });
+
+  test('pairing matches on bucket regardless of notice code — first wins', () => {
+    const plan = {
+      orders: [],
+      skips: [{ kind: 'sell_loc', bucketIndex: 3, limitPrice: '0', shares: 10 }],
+      notices: [
+        { code: 'other', params: { bucket: 3 } },
+        { code: 'sell-capped', params: { bucket: 3, price: 340 } },
+      ],
+    } as unknown as SimPlanDto;
+    // Pins renderDigest semantics (digest.ts:22): findIndex takes the first
+    // *unconsumed* notice with a matching bucket param, whatever its code.
+    expect(skipReasons(plan, t).get(3)).toBe('digest.other');
+  });
+
+  test('a skip with no matching notice gets no reason', () => {
+    const plan = {
+      orders: [],
+      skips: [{ kind: 'sell_loc', bucketIndex: 1, limitPrice: '0', shares: 10 }],
+      notices: [{ code: 'sell-capped', params: { bucket: 5, price: 340 } }],
+    } as unknown as SimPlanDto;
+    expect(skipReasons(plan, t).has(1)).toBe(false);
   });
 });
