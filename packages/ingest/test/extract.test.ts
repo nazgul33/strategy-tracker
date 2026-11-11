@@ -105,6 +105,30 @@ describe('extract', () => {
     if (r.ok) expect(r.fills.length).toBe(1);
   });
 
+  test('g) thousands separators from the screenshot are tolerated', async () => {
+    const content =
+      '{"fills":[{"side":"매수","ticker":"SOXL","shares":"1,268","price":"46,976.8042","fee":"1,234.56"},{"side":"매도","ticker":"GDXU","shares":"100","price":"77.7400"}]}';
+    const f = fakeFetch([okJson(content)]);
+    const r = await extractFills([{ base64: 'AAA', mime: 'image/png' }], CFG, f);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.fills[0]).toEqual({ side: 'buy', ticker: 'SOXL', shares: 1268, price: '46976.8042', fee: '1234.56' });
+      expect(r.fills[1]).toEqual({ side: 'sell', ticker: 'GDXU', shares: 100, price: '77.7400' });
+    }
+  });
+
+  test('h) unexecuted order rows (체결수량 0) are dropped, real fills kept', async () => {
+    const content =
+      '{"fills":[{"side":"매수","ticker":"SOXL","shares":"0","price":"14.6200"},{"side":"매도","ticker":"GDXU","shares":"21","price":"77.0000"},{"side":"매수","ticker":"SOXL","shares":"","price":"42.8400"}]}';
+    const f = fakeFetch([okJson(content)]);
+    const r = await extractFills([{ base64: 'AAA', mime: 'image/png' }], CFG, f);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.fills.length).toBe(1);
+      expect(r.fills[0]).toEqual({ side: 'sell', ticker: 'GDXU', shares: 21, price: '77.0000' });
+    }
+  });
+
   test('200 with non-JSON body -> unparseable, not a crash', async () => {
     const f = fakeFetch([{ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } }]);
     const r = await extractFills([{ base64: 'AAA', mime: 'image/png' }], CFG, f);

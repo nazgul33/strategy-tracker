@@ -24,13 +24,15 @@ function normalizeSide(s: any): 'buy' | 'sell' | null {
   return null;
 }
 
+const stripCommas = (v: any): any => (typeof v === 'string' ? v.replace(/,/g, '') : v);
+
 function normalizeFill(raw: any): RawFill | null {
   const side = normalizeSide(raw?.side);
   if (!side) return null;
   const ticker = raw?.ticker;
-  const shares = Number(raw?.shares);
-  const price = raw?.price;
-  const fee = raw?.fee;
+  const shares = Number(stripCommas(raw?.shares));
+  const price = stripCommas(raw?.price);
+  const fee = stripCommas(raw?.fee);
   const f: RawFill = { side, ticker, shares, price };
   if (fee !== undefined && fee !== null) f.fee = String(fee);
   if (typeof price !== 'string') f.price = String(price);
