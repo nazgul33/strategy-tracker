@@ -1,5 +1,5 @@
-import type { Bucket, DayPlan, Notice, PlannedOrder, Run, RunState } from '@st/core'
-import { bucketBudgetCents as coreBucketBudget, formatUsd, sellTarget as coreSellTarget } from '@st/core'
+import type { Bucket, ClosedBucket, DayPlan, Notice, PlannedOrder, Run, RunState } from '@st/core'
+import { bucketBudgetCents as coreBucketBudget, formatUsd, roundDiv, sellTarget as coreSellTarget } from '@st/core'
 import { nextTradingDay } from '@st/calendar'
 import type { ISODate } from '@st/core'
 
@@ -116,6 +116,38 @@ export function computeOrders(
   }
 
   return { orders, skips, notices }
+}
+
+export interface ProgressView {
+  heldCount: number
+  cashCents: number
+  exposureCents: number
+  realizedCents: number
+  winRate: number | null
+}
+
+function realizedCentsOfClosed(c: ClosedBucket): bigint {
+  return roundDiv((c.soldPrice - c.buyPrice) * BigInt(c.shares), 100n) - BigInt(c.buyFeeCents + c.sellFeeCents)
+}
+
+export function progressView(state: RunState): ProgressView {
+  const held = state.buckets.filter((b) => b.state !== 'empty')
+  let exposure = 0n
+  for (const b of held) exposure += roundDiv(b.buyPrice * BigInt(b.shares), 100n)
+  let realized = 0n
+  let wins = 0
+  for (const c of state.closed) {
+    const r = realizedCentsOfClosed(c)
+    realized += r
+    if (r > 0n) wins++
+  }
+  return {
+    heldCount: held.length,
+    cashCents: state.cashCents,
+    exposureCents: Number(exposure),
+    realizedCents: Number(realized),
+    winRate: state.closed.length === 0 ? null : wins / state.closed.length,
+  }
 }
 
 

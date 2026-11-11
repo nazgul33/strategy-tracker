@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
-import { bucketBudgetCents, buyShares, sellTarget, ageBuckets, computeOrders, DEFAULT_MR_PARAMS } from '@st/strategies'
-import { emptyState, applyBuyFill, formatUsd } from '@st/core'
+import { bucketBudgetCents, buyShares, sellTarget, ageBuckets, computeOrders, progressView, DEFAULT_MR_PARAMS } from '@st/strategies'
+import { emptyState, applyBuyFill, applySellFill, formatUsd } from '@st/core'
 import type { Bucket } from '@st/core'
 
 describe('core money pins', () => {
@@ -85,5 +85,40 @@ describe('computeOrders', () => {
     const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, poolCents: 1_000_000, status: 'active' as const }
     computeOrders(run, state, { lastClose: 3402300n })
     expect(state.buckets.map(b => b.shares)).toEqual(before)
+  })
+})
+
+describe('progressView', () => {
+  test('empty state: zeros and winRate null', () => {
+    const v = progressView(emptyState(10))
+    expect(v).toEqual({ heldCount: 0, cashCents: 0, exposureCents: 0, realizedCents: 0, winRate: null })
+  })
+  test('held exposure = price*shares/100 per bucket; realized derived from closed', () => {
+    let s = emptyState(10)
+    s = applyBuyFill(s, 0, 10, 3402200n, 34, '2026-11-02')
+    s = applyBuyFill(s, 1, 5, 1000000n, 5, '2026-11-03')
+    s = applySellFill(s, 1, 5, 999900n, 5, '2026-11-04')
+    const v = progressView(s)
+    expect(v.heldCount).toBe(1)
+    expect(v.cashCents).toBe(s.cashCents)
+    expect(v.exposureCents).toBe(340220)
+    expect(v.realizedCents).toBe(-15)
+    expect(v.winRate).toBe(0)
+  })
+  test('realized rounds half-up on the gross delta; win counted', () => {
+    let s = emptyState(10)
+    s = applyBuyFill(s, 0, 3, 1000000n, 0, '2026-11-02')
+    s = applySellFill(s, 0, 3, 1000050n, 0, '2026-11-03')
+    const v = progressView(s)
+    expect(v.realizedCents).toBe(2)
+    expect(v.winRate).toBe(1)
+  })
+  test('winRate = wins / all closed', () => {
+    let s = emptyState(10)
+    s = applyBuyFill(s, 0, 1, 1000000n, 0, '2026-11-02')
+    s = applyBuyFill(s, 1, 1, 1000000n, 0, '2026-11-02')
+    s = applySellFill(s, 0, 1, 1000100n, 0, '2026-11-03')
+    s = applySellFill(s, 1, 1, 999900n, 0, '2026-11-03')
+    expect(progressView(s).winRate).toBe(0.5)
   })
 })
