@@ -372,7 +372,7 @@ describe('capture onPhoto — multi-ticker auto-route (I3)', () => {
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
 
     expect(h.captures.length).toBe(2);
-    expect(h.captures.map((c) => c.runId).sort()).toEqual([1, 2]);
+    expect(h.captures.map((c) => c.runId).sort((a, b) => a - b)).toEqual([1, 2]);
     expect(h.pending.length).toBe(2);
     const nvda = h.pending.find((p) => p.ticker === 'NVDA')!;
     const aapl = h.pending.find((p) => p.ticker === 'AAPL')!;
