@@ -194,6 +194,7 @@ export async function rollStale(tradeDate: ISODate, deps: BookingDeps): Promise<
 }
 
 export async function seedRun(runId: number, seed: { cashCents: number; buckets: Array<{ shares: number; buyPrice: string; filledOn: ISODate }> }, deps: BookingDeps): Promise<void> {
+  if (!Number.isInteger(seed.cashCents) || seed.cashCents < 0) throw new Error('invalid seed cash')
   const repos = deps.repos
   const run = await repos.runRepo.get(runId)
   let state: RunState = await repos.bucketRepo.loadState(runId)

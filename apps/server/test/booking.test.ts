@@ -269,6 +269,13 @@ describe('booking', () => {
     expect(f._stores.ledger[0].amountCents).toBeLessThan(0)
   })
 
+  test('(g2) seedRun guards missing cash (defense in depth)', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r7b', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
+    await expect(seedRun(runId, { cashCents: undefined as any, buckets: [] }, deps)).rejects.toThrow('invalid seed cash')
+  })
+
   test('(h) manualFill', async () => {
     const f = fakeRepos()
     const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }

@@ -202,6 +202,40 @@ describe('http runs', () => {
     const ledger = await f.repos.ledgerRepo.listForRun(id)
     expect(ledger.length).toBe(1)
   })
+  // A seed without cashCents would leave state.cashCents undefined in
+  // booking.seedRun and permanently brick the run — reject before creating.
+  test('seed without cashCents -> 400, no run created', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r3', ticker: 'AAPL', costPpm: 100, poolCents: 1000, seed: { buckets: [] } }), headers: { 'content-type': 'application/json', ...auth } })
+    expect(cr.status).toBe(400)
+    expect(await cr.json()).toEqual({ error: 'invalid seed' })
+    expect(f.runs.length).toBe(0) // runRepo.create never called
+    expect(f.states.size).toBe(0)
+  })
+  test('seed cashCents 1.5 -> 400, no run created', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r3', ticker: 'AAPL', costPpm: 100, poolCents: 1000, seed: { cashCents: 1.5, buckets: [] } }), headers: { 'content-type': 'application/json', ...auth } })
+    expect(cr.status).toBe(400)
+    expect(f.runs.length).toBe(0)
+  })
+  test('seed bucket shares 0 -> 400, no run created', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r3', ticker: 'AAPL', costPpm: 100, poolCents: 1000, seed: { cashCents: 500, buckets: [{ shares: 0, buyPrice: '10.0000', filledOn: '2026-11-01' }] } }), headers: { 'content-type': 'application/json', ...auth } })
+    expect(cr.status).toBe(400)
+    expect(f.runs.length).toBe(0)
+  })
   test('invalid body 400', async () => {
     const f = makeFakes()
     const app = createApp(makeDeps(f))

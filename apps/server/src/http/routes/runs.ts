@@ -1,9 +1,34 @@
 import { Hono } from 'hono'
 import { emptyState } from '@st/core'
+import { parseUsd } from '@st/core/money'
 import { progressView } from '@st/strategies'
 import { seedRun, manualFill } from '../../domain/booking'
 import type { RawFill } from '@st/ingest'
 import { jsonBig, type HttpDeps } from '../app'
+
+const SEED_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+// booking.seedRun overwrites state.cashCents unconditionally, so a seed
+// missing (or with a fractional/negative) cashCents bricks the run server-side.
+function validSeed(seed: any): boolean {
+  if (typeof seed !== 'object' || seed === null || Array.isArray(seed)) return false
+  if (!Number.isInteger(seed.cashCents) || seed.cashCents < 0) return false
+  if (!Array.isArray(seed.buckets)) return false
+  for (const b of seed.buckets) {
+    if (typeof b !== 'object' || b === null) return false
+    if (!Number.isInteger(b.shares) || b.shares <= 0) return false
+    if (typeof b.buyPrice !== 'string') return false
+    let price: bigint
+    try {
+      price = parseUsd(b.buyPrice)
+    } catch {
+      return false
+    }
+    if (price < 0n) return false
+    if (typeof b.filledOn !== 'string' || !SEED_DATE_RE.test(b.filledOn)) return false
+  }
+  return true
+}
 
 export function runsRouter(deps: HttpDeps): Hono {
   const r = new Hono()
@@ -34,12 +59,13 @@ export function runsRouter(deps: HttpDeps): Hono {
         bucketCount = params.bucketCount
       }
     }
+    const seed = body?.seed
+    if (seed && !validSeed(seed)) return c.json({ error: 'invalid seed' }, 400)
     const state = emptyState(bucketCount)
     state.cashCents = poolCents
     const id = await deps.repos.runRepo.create({
       strategyKey: 'mean-reversion', ticker, name, poolCents, costPpm, initialRunState: state,
     })
-    const seed = body?.seed
     if (seed) {
       await seedRun(id, seed, { repos: deps.repos as any, today: deps.today() as any })
     }
