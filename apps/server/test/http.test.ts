@@ -438,18 +438,25 @@ describe('http runs', () => {
     const d = await (await app.request(`/api/runs/${id}`, { headers: auth })).json()
     expect(d.buyGapPpm).toBe(10000)
     expect(d.sellGapPpm).toBe(20000)
+    // GET /runs list DTO carries the gaps too
+    const listed = await (await app.request('/api/runs', { headers: auth })).json()
+    expect(listed.find((x: any) => x.id === id)!.buyGapPpm).toBe(10000)
+    expect(listed.find((x: any) => x.id === id)!.sellGapPpm).toBe(20000)
     for (const bad of [{ buyGapPpm: 1.5 }, { sellGapPpm: -1 }, { buyGapPpm: 1000001 }]) {
       const br = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ ...base, ...bad }), headers: { 'content-type': 'application/json', ...auth } })
       expect(br.status).toBe(400)
     }
     expect(f.runs.length).toBe(1) // create never called for invalid gaps
-    // absent gaps default to 0, like the DB column default
+    // absent gaps default to 0 on both GET DTOs, like the DB column default
     const cr2 = await app.request('/api/runs', { method: 'POST', body: JSON.stringify(base), headers: { 'content-type': 'application/json', ...auth } })
     expect(cr2.status).toBe(201)
     const id2 = (await cr2.json()).id
-    const row2 = f.runs.find((x) => x.id === id2)!
-    expect(row2.buyGapPpm).toBe(0)
-    expect(row2.sellGapPpm).toBe(0)
+    const d2 = await (await app.request(`/api/runs/${id2}`, { headers: auth })).json()
+    expect(d2.buyGapPpm).toBe(0)
+    expect(d2.sellGapPpm).toBe(0)
+    const listed2 = await (await app.request('/api/runs', { headers: auth })).json()
+    expect(listed2.find((x: any) => x.id === id2)!.buyGapPpm).toBe(0)
+    expect(listed2.find((x: any) => x.id === id2)!.sellGapPpm).toBe(0)
   })
   test('POST /runs/:id/gaps updates, validates, 404s', async () => {
     const f = makeFakes()
