@@ -286,9 +286,19 @@ describe('booking', () => {
     const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r8', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
     const beforePending = f._stores.pending.length
-    await manualFill(runId, { side: 'buy', ticker: 'AAPL', shares: 3, price: '5.00', filledOn: '2026-11-06' }, deps)
+    await manualFill(runId, { side: 'buy', shares: 3, price: '5.00', filledOn: '2026-11-06' }, deps)
     expect(f._stores.fills[0].source).toBe('manual')
+    expect(f._stores.fills[0].ticker).toBe('AAPL')
     expect(f._stores.pending.length).toBe(beforePending)
+  })
+
+  test('manualFill ignores a stray ticker and stamps the run ticker', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r8b', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
+    const legacy = { side: 'buy' as const, ticker: 'ZZZ', shares: 3, price: '5.00', filledOn: '2026-11-06' }
+    await manualFill(runId, legacy, deps)
+    expect(f._stores.fills[0].ticker).toBe('AAPL')
   })
 
   test('(i) double-confirm throws and over-size sell throws', async () => {

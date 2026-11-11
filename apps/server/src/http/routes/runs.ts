@@ -156,7 +156,7 @@ export function runsRouter(deps: HttpDeps): Hono {
   r.post('/runs/:id/fills', async (c) => {
     const id = Number(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
-    const fill = body as RawFill & { filledOn: string }
+    const fill = body as Omit<RawFill, 'ticker'> & { filledOn: string }
     try {
       await manualFill(id, fill, { repos: deps.repos as any, today: deps.today() as any })
     } catch (e: any) {
