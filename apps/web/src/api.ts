@@ -97,6 +97,7 @@ export interface Api {
   createRun(input: CreateRunInput): Promise<{ id: number }>;
   getRun(id: number): Promise<RunDetailDto>;
   setRunStatus(id: number, status: RunStatus): Promise<void>;
+  bulkSetRunStatus(ids: number[], status: RunStatus): Promise<number>;
   setPool(id: number, amountCents: number): Promise<void>;
   listOrders(id: number, date?: string): Promise<OrderDto[]>;
   listFills(id: number): Promise<FillDto[]>;
@@ -147,6 +148,8 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
     },
     getRun: (id) => get<RunDetailDto>(`/api/runs/${id}`),
     setRunStatus: (id, status) => send<{ ok: true }>('PATCH', `/api/runs/${id}`, { status }).then(() => undefined),
+    bulkSetRunStatus: (ids, status) =>
+      send<{ updated: number }>('POST', '/api/runs/bulk-status', { ids, status }).then((r) => r.updated),
     setPool: (id, amountCents) => send<{ ok: true }>('POST', `/api/runs/${id}/pool`, { amountCents }).then(() => undefined),
     listOrders: (id, date) => get<OrderDto[]>(`/api/runs/${id}/orders${date ? `?date=${date}` : ''}`),
     listFills: (id) => get<FillDto[]>(`/api/runs/${id}/fills`),

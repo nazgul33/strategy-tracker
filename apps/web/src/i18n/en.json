@@ -297,5 +297,12 @@
   "simEvents": "Events",
   "runStrategyMr": "Mean reversion",
   "simSkipNoBucket": "No free bucket",
-  "simSkipInsufficientCash": "Insufficient cash"
+  "simSkipInsufficientCash": "Insufficient cash",
+  "bulkSelectAll": "Select all",
+  "bulkSelected": "{count} selected",
+  "bulkPause": "Pause",
+  "bulkResume": "Resume",
+  "bulkClose": "Close",
+  "bulkCloseConfirm": "Closing is final. Close {count} runs?",
+  "bulkDone": "{count} runs updated"
 }

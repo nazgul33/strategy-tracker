@@ -297,5 +297,12 @@
   "simEvents": "이벤트",
   "runStrategyMr": "평균 회귀",
   "simSkipNoBucket": "사용 가능한 버킷 없음",
-  "simSkipInsufficientCash": "현금 부족"
+  "simSkipInsufficientCash": "현금 부족",
+  "bulkSelectAll": "전체 선택",
+  "bulkSelected": "{count}개 선택됨",
+  "bulkPause": "일시 정지",
+  "bulkResume": "재개",
+  "bulkClose": "종료",
+  "bulkCloseConfirm": "종료는 되돌릴 수 없습니다. {count}개 런을 종료할까요?",
+  "bulkDone": "{count}개 런이 변경되었습니다"
 }
