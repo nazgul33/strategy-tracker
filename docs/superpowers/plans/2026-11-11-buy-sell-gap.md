@@ -208,7 +208,7 @@ describe('sellLimit', () => {
 
 describe('computeOrders with gaps', () => {
   test('buy and sell_loc prices follow run gaps', () => {
-    const run = { ...makeRun(), buyGapPpm: 10_000, sellGapPpm: 20_000 }
+    const run = { ...makeRun(), buyGapPpm: 10_000, sellGapPpm: 200_000 }
     const state = { buckets: [mkBucket(0, 'held', 100, parseUsd('90'), '2026-11-02')], cashCents: 100_00, closedBuckets: [], lastBuys: [], lastSells: [] }
     const ctx = { lastClose: parseUsd('100'), today: '2026-11-03', prevTradingDay: '2026-11-02', maxAgeDays: 20 }
     const r = computeOrders(run, DEFAULT_MR_PARAMS, state, ctx)
