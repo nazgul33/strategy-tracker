@@ -14,7 +14,7 @@ export async function sha256(buf: Uint8Array): Promise<string> {
 export interface RepoSurface {
   runRepo: { list(): Promise<any[]>; get(id: number): Promise<any>; create(input: any): Promise<number>; updateStatus(id: number, status: string): Promise<void> }
   bucketRepo: { loadState(runId: number): Promise<RunState>; saveState(runId: number, state: RunState): Promise<void> }
-  orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; markStale(date: string): Promise<any>; setStatus(id: number, status: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
+  orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; markStale(date: string): Promise<any>; get(id: number): Promise<any | null>; setStatus(id: number, status: string, cancelReason?: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
   fillRepo: { insert(fill: any): Promise<any> }
   pendingRepo: { insert(p: any): Promise<number>; listPending(): Promise<any[]>; decide(id: number, status: string, edited?: any): Promise<boolean> }
   captureRepo: { hasHash(runId: number, hash: string): Promise<boolean>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
@@ -192,6 +192,18 @@ export async function rollStale(tradeDate: ISODate, deps: BookingDeps): Promise<
     grouped[r.runId]!.push(r)
   }
   return grouped
+}
+
+export const CANCEL_REASONS = ['broker-filled', 'strategy-change', 'stale-price', 'other'] as const
+
+export async function cancelOrder(runId: number, orderId: number, reason: string, deps: BookingDeps): Promise<any> {
+  if (!(CANCEL_REASONS as readonly string[]).includes(reason)) throw new Error('invalid-reason')
+  const repos = deps.repos
+  const order = await repos.orderRepo.get(orderId)
+  if (!order || order.runId !== runId) throw new Error('order-not-found')
+  if (order.status !== 'open') throw new Error('order-not-open')
+  await repos.orderRepo.setStatus(orderId, 'cancelled', reason)
+  return { ...order, status: 'cancelled', cancelReason: reason }
 }
 
 export async function seedRun(runId: number, seed: { cashCents: number; buckets: Array<{ shares: number; buyPrice: string; filledOn: ISODate }> }, deps: BookingDeps): Promise<void> {
