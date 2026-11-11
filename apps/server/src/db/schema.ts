@@ -119,4 +119,9 @@ export const simDays = mysqlTable('sim_days', {
   eventsJson: text('events_json').notNull(),
 })
 
+export const settings = mysqlTable('settings', {
+  key: varchar('key', { length: 64 }).primaryKey(),
+  value: text('value').notNull(),
+})
+
 import { uniqueIndex } from 'drizzle-orm/mysql-core'

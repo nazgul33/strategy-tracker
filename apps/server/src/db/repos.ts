@@ -42,6 +42,9 @@ export function getRepos(db: any) {
     async updateStatus(id: number, status: string) {
       await db.update(s.strategyRuns).set({ status: status as any }).where(eq(s.strategyRuns.id, id))
     },
+    async updatePool(id: number, poolCents: number) {
+      await db.update(s.strategyRuns).set({ poolCents }).where(eq(s.strategyRuns.id, id))
+    },
   }
 
   const bucketRepo = {
@@ -83,15 +86,21 @@ export function getRepos(db: any) {
     async listOpenBefore(date: string) {
       return db.select().from(s.orders).where(and(eq(s.orders.status, 'open'), sql`${s.orders.tradeDate} < ${date}`))
     },
+    async listForRun(runId: number, date?: string) {
+      if (date) return db.select().from(s.orders).where(and(eq(s.orders.runId, runId), sql`${s.orders.tradeDate} = ${date}`))
+      return db.select().from(s.orders).where(eq(s.orders.runId, runId))
+    },
   }
 
   const fillRepo = {
     async insert(fill: any) { await db.insert(s.fills).values(fill) },
+    async listForRun(runId: number) { return db.select().from(s.fills).where(eq(s.fills.runId, runId)) },
   }
 
   const pendingRepo = {
     async insert(p: any) { const [r] = await db.insert(s.pendingFills).values(p); return (r as any).insertId },
     async listPending() { return db.select().from(s.pendingFills).where(eq(s.pendingFills.status, 'pending')) },
+    async get(id: number) { const rows = await db.select().from(s.pendingFills).where(eq(s.pendingFills.id, id)); return rows[0] ?? null },
     async decide(id: number, status: string, edited?: any) {
       const patch: any = { status }
       if (edited) Object.assign(patch, edited)
@@ -123,7 +132,24 @@ export function getRepos(db: any) {
 
   const notificationRepo = {
     async insert(n: any) { await db.insert(s.notifications).values(n) },
+    async listForRun(runId: number) { return db.select().from(s.notifications).where(eq(s.notifications.runId, runId)) },
   }
 
-  return { runRepo, orderRepo, fillRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo }
+  const settingsRepo = {
+    async getAll(): Promise<Record<string, string>> {
+      const rows = await db.select().from(s.settings)
+      const out: Record<string, string> = {}
+      for (const r of rows) out[r.key] = r.value
+      return out
+    },
+    async set(key: string, value: string) {
+      await db.insert(s.settings).values({ key, value }).onDuplicateKeyUpdate({ set: { value } })
+    },
+  }
+  const poolEditRepo = {
+    async insert(input: { runId: number; poolCents: number }) {
+      await db.insert(s.poolEdits).values({ runId: input.runId, poolCents: input.poolCents })
+    },
+  }
+  return { runRepo, orderRepo, fillRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo, settingsRepo, poolEditRepo }
 }
