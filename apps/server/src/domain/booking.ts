@@ -150,6 +150,7 @@ export async function confirmPendingFill(pendingId: number, overrides: { shares?
   if (!pending) throw new Error('pending-not-found-or-not-pending')
 
   const run = await repos.runRepo.get(pending.runId)
+  if (pending.ticker !== run.ticker) throw new Error('ticker-mismatch')
   const priceStr = overrides?.price ?? formatUsd(pending.price)
   const shares = overrides?.shares ?? pending.shares
   const filledOn = overrides?.filledOn ?? pending.filledOn

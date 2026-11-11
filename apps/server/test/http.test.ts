@@ -559,6 +559,21 @@ describe('http pending', () => {
     expect(f.fills.length).toBe(1)
     expect(f.ledger.length).toBe(1)
   })
+
+  test('confirm with ticker mismatch returns 409', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 }), headers: { 'content-type': 'application/json', ...auth } })
+    const { id } = await cr.json()
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'ZZZ', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    const conf = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', headers: auth })
+    expect(conf.status).toBe(409)
+    expect((await conf.json()).error).toBe('ticker-mismatch')
+    expect(f.fills.length).toBe(0)
+  })
 })
 
 describe('http settings', () => {

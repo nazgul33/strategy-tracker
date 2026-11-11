@@ -357,6 +357,18 @@ describe('booking', () => {
     expect(fill.fee).toBe(999)
   })
 
+  test('confirm with ticker mismatch throws and books nothing', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'mism', poolCents: 1000000, costPpm: 100, initialRunState: { buckets: emptyState(2).buckets, cashCents: 1000000, closed: [], ages: {} } })
+    const stateBefore = serializeState(await f.repos.bucketRepo.loadState(runId))
+    const pid = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'buy', ticker: 'ZZZ', shares: 5, price: parseUsd('10.00'), fee: null, filledOn: '2026-11-06', status: 'pending' })
+    await expect(confirmPendingFill(pid, null, deps)).rejects.toThrow('ticker-mismatch')
+    expect(f._stores.fills.length).toBe(0)
+    expect(f._stores.pending[0].status).toBe('pending')
+    expect(serializeState(await f.repos.bucketRepo.loadState(runId))).toBe(stateBefore)
+  })
+
   test('fallback lowest-index multiple candidates', async () => {
     const f = fakeRepos()
     const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
