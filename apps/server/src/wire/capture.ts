@@ -48,7 +48,9 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     lastChatId = chatId;
 
     let runId: number | null = null;
-    const m = /(\d+)/.exec(caption ?? '');
+    // the run id must be the caption's FIRST token: `7`, `#7` or `/capture 7`.
+    // anything else (e.g. a "NVDA 12/25" note) falls through to ticker auto-route.
+    const m = /^(?:\/capture\s+)?#?(\d+)(?:\s|$)/.exec(caption?.trim() ?? '');
     if (m) {
       const id = Number(m[1]);
       const run = await deps.repos.runRepo.get(id);
@@ -63,27 +65,50 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     if (!extract) return;
 
     if (runId === null) {
-      const ticker = extract.fills[0]?.ticker;
-      if (!ticker) {
+      // auto-route: every distinct extracted ticker must resolve to exactly one
+      // active run, otherwise book NOTHING (a mixed screenshot must not half-book).
+      const groups = new Map<string, typeof extract.fills>();
+      for (const fill of extract.fills) {
+        const g = groups.get(fill.ticker);
+        if (g) g.push(fill);
+        else groups.set(fill.ticker, [fill]);
+      }
+      if (groups.size === 0) {
         await deps.send(chatId, t('capture-bad-extract', lang, { detail: 'no fills recognized' }));
         return;
       }
       const active = (await deps.repos.runRepo.list()).filter((r: { status: string }) => r.status === 'active');
-      const matches = active.filter((r: { ticker: string }) => r.ticker === ticker);
-      if (matches.length === 0) {
-        await deps.send(chatId, t('capture-no-run', lang, { ticker }));
-        return;
+      const routed: { runId: number; ticker: string }[] = [];
+      for (const ticker of groups.keys()) {
+        const matches = active.filter((r: { ticker: string }) => r.ticker === ticker);
+        if (matches.length === 0) {
+          await deps.send(chatId, t('capture-no-run', lang, { ticker }));
+          return;
+        }
+        if (matches.length > 1) {
+          await deps.send(chatId, t('capture-ambiguous', lang, { ticker }));
+          return;
+        }
+        routed.push({ runId: matches[0]!.id, ticker });
       }
-      if (matches.length > 1) {
-        await deps.send(chatId, t('capture-ambiguous', lang, { ticker }));
-        return;
+      for (const { runId: id, ticker } of routed) {
+        const outcome = await ingestCapture(id, image, { ...extract, fills: groups.get(ticker)! }, {
+          repos: deps.repos,
+          today: deps.today(),
+        });
+        await sendOutcome(chatId, outcome);
       }
-      runId = matches[0]!.id;
+      return;
     }
 
-    if (runId === null) return; // DB rows always carry an id
-
     const outcome = await ingestCapture(runId, image, extract, { repos: deps.repos, today: deps.today() });
+    await sendOutcome(chatId, outcome);
+  }
+
+  async function sendOutcome(
+    chatId: string,
+    outcome: Awaited<ReturnType<typeof ingestCapture>>,
+  ): Promise<void> {
     if (outcome === 'duplicate') {
       await deps.send(chatId, t('duplicate-capture', lang));
       return;
@@ -134,7 +159,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
   }
 
   async function onStatus(chatId: string): Promise<void> {
-    const runs = await deps.repos.runRepo.list();
+    const runs = (await deps.repos.runRepo.list()).filter((r: { status: string }) => r.status === 'active');
     if (runs.length === 0) {
       await deps.send(chatId, t('no-runs', lang));
       return;
@@ -169,7 +194,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     }
     const lines = orders.map(
       (o: { id: number; kind: string; ticker: string; shares: number; limitPrice: bigint }) =>
-        `#${o.id} ${o.kind} ${o.ticker} ${o.shares} sh @ $${formatUsd(o.limitPrice)}`,
+        t('orders-line', lang, { id: o.id, kind: o.kind, ticker: o.ticker, shares: o.shares, price: formatUsd(o.limitPrice) }),
     );
     await deps.send(chatId, lines.join('\n'));
   }

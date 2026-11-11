@@ -4,7 +4,7 @@ import { calendarCrossCheck } from '@st/calendar'
 import { createBot } from '@st/telegram'
 import { DEFAULT_MR_PARAMS } from '@st/strategies'
 import { fetchDailyBars, fetchLastClose } from '@st/market-data'
-import { applyMigrations, getDb } from './db/client'
+import { applyMigrations, closeDb, getDb } from './db/client'
 import { getRepos } from './db/repos'
 import { createApp } from './http/app'
 import { runMorningPipeline, type DayDeps } from './pipeline/day'
@@ -111,14 +111,23 @@ async function main(): Promise<void> {
   })
   console.log(`[main] listening on :${env.port} (static: ${hasDist ? 'apps/web/dist' : 'none'})`)
 
-  const shutdown = (): void => {
+  const shutdown = async (): Promise<void> => {
     for (const job of jobs) job.stop()
-    void bot?.stop()
+    try {
+      await bot?.stop()
+    } catch (e) {
+      console.error('[main] bot stop failed:', e)
+    }
     server.stop()
+    try {
+      await closeDb()
+    } catch (e) {
+      console.error('[main] db close failed:', e)
+    }
     process.exit(0)
   }
-  process.on('SIGTERM', shutdown)
-  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', () => void shutdown())
+  process.on('SIGINT', () => void shutdown())
 }
 
 main().catch((e) => {
