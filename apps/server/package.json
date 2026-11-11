@@ -8,7 +8,10 @@
   "dependencies": {
     "drizzle-orm": "^0.44.0",
     "mysql2": "^3.11.0",
-    "@st/core": "workspace:*"
+    "@st/core": "workspace:*",
+    "@st/calendar": "workspace:*",
+    "@st/strategies": "workspace:*",
+    "@st/ingest": "workspace:*"
   },
   "devDependencies": {
     "drizzle-kit": "^0.30.0"

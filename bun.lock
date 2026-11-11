@@ -13,7 +13,10 @@
     "apps/server": {
       "name": "@st/server",
       "dependencies": {
+        "@st/calendar": "workspace:*",
         "@st/core": "workspace:*",
+        "@st/ingest": "workspace:*",
+        "@st/strategies": "workspace:*",
         "drizzle-orm": "^0.44.0",
         "mysql2": "^3.11.0",
       },

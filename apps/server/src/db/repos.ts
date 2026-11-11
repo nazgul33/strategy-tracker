@@ -77,6 +77,12 @@ export function getRepos(db: any) {
       const header = Array.isArray(res) ? res[0] : res
       return header?.affectedRows ?? 0
     },
+    async setStatus(id: number, status: string) {
+      await db.update(s.orders).set({ status: status as any }).where(eq(s.orders.id, id))
+    },
+    async listOpenBefore(date: string) {
+      return db.select().from(s.orders).where(and(eq(s.orders.status, 'open'), sql`${s.orders.tradeDate} < ${date}`))
+    },
   }
 
   const fillRepo = {
@@ -98,10 +104,10 @@ export function getRepos(db: any) {
       const rows = await db.select().from(s.captures).where(and(eq(s.captures.runId, runId), eq(s.captures.imageHash, hash)))
       return rows.length > 0
     },
-    async insert(c: any): Promise<{ inserted: boolean }> {
+    async insert(c: any): Promise<{ inserted: boolean; id?: number }> {
       try {
-        await db.insert(s.captures).values(c)
-        return { inserted: true }
+        const [res] = await db.insert(s.captures).values(c)
+        return { inserted: true, id: (res as any).insertId }
       } catch (e: any) {
         const msg = String(e) + ' ' + (e?.message ?? '') + ' ' + (e?.cause?.message ?? '')
         if (msg.includes('ER_DUP_ENTRY') || msg.toLowerCase().includes('duplicate')) return { inserted: false }
