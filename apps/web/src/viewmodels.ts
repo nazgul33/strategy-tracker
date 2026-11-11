@@ -1,5 +1,5 @@
 import { parseUsd } from '@st/core/money';
-import type { BucketDto, PendingFillDto, RunStatus, SimEvent } from './api';
+import type { BucketDto, PendingFillDto, RunStatus, SimEvent, SimPlanDto } from './api';
 
 /**
  * Presentation logic worth unit testing: bucket cells, badge tones, form
@@ -204,6 +204,40 @@ export function simEventGroup(event: SimEvent, isLastDay: boolean): SimGroup {
   if (event.type === 'skipped') return 'skipped';
   if (event.side === 'buy') return 'buy';
   return isLastDay ? 'force' : 'target';
+}
+
+/** `skipReasons` result: reasons keyed by skip-row index, plus the notices
+ * that are still worth rendering in the notices block. */
+export interface SkipReasonsResult {
+  reasons: Map<number, string>;
+  visibleNotices: SimPlanDto['notices'];
+}
+
+/**
+ * Skip rows → their cancellation reason, paired exactly like the Telegram
+ * digest: each skip consumes the first unconsumed notice whose `bucket` param
+ * matches (0-based). Keys are skip-row indices (index into `plan.skips`), so
+ * two skips on one bucket get independent reasons, like the digest loop.
+ * Suppression mirrors `renderDigest` (digest.ts:31-34): a consumed notice is
+ * removed from `visibleNotices` (original order), and callers must render the
+ * notices block from `visibleNotices` — never the full array — or the same
+ * text shows up twice, as a skip reason *and* as a notice.
+ */
+export function skipReasons(
+  plan: SimPlanDto,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): SkipReasonsResult {
+  const reasons = new Map<number, string>();
+  const notices = plan.notices ?? [];
+  const used = new Set<number>();
+  (plan.skips ?? []).forEach((s, si) => {
+    const idx = notices.findIndex((n, i) => !used.has(i) && n.params?.bucket === s.bucketIndex);
+    if (idx >= 0) {
+      used.add(idx);
+      reasons.set(si, t(`digest.${notices[idx].code}`, notices[idx].params));
+    }
+  });
+  return { reasons, visibleNotices: notices.filter((_, i) => !used.has(i)) };
 }
 
 /**

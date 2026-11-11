@@ -91,4 +91,35 @@ describe('digest', () => {
     expect(out).toContain('AAPL')
     expect(out).toContain('2026-11-06')
   })
+  test('sell loc line shows age when known', () => {
+    const plan: DayPlan = {
+      orders: [{ kind: 'sell_loc', bucketIndex: 2, limitPrice: 3500000n, shares: 10, ageDays: 21 }],
+      skips: [],
+      notices: [],
+    }
+    const out = renderDigest(run, plan, ctx, 'en').join('\n')
+    expect(out).toContain('Sell  LOC  10 sh  @ 350.00  → bucket 2  (age 21)')
+  })
+  test('stamped ageDays wins over the ages argument', () => {
+    const plan: DayPlan = {
+      orders: [{ kind: 'market_sell', bucketIndex: 1, limitPrice: 0n, shares: 120, ageDays: 21 }],
+      skips: [],
+      notices: [],
+    }
+    const out = renderDigest(run, plan, ctx, 'en', { 1: 5 }).join('\n')
+    expect(out).toContain('Market  SELL  120 sh  bucket 1  (age 21 — forced exit)')
+  })
+  test('ko age clauses translated', () => {
+    const plan: DayPlan = {
+      orders: [
+        { kind: 'sell_loc', bucketIndex: 0, limitPrice: 3500000n, shares: 10, ageDays: 21 },
+        { kind: 'market_sell', bucketIndex: 1, limitPrice: 0n, shares: 120, ageDays: 120 },
+      ],
+      skips: [],
+      notices: [],
+    }
+    const out = renderDigest(run, plan, ctx, 'ko').join('\n')
+    expect(out).toContain('→ bucket 0  (21일 경과)')
+    expect(out).toContain('매도  MARKET  120 sh  bucket 1  (120일 경과 — 강제 청산)')
+  })
 })

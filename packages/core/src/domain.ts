@@ -51,6 +51,10 @@ export interface PlannedOrder {
   bucketIndex: number
   limitPrice: bigint
   shares: number
+  /** Bucket age (trading days, post-morning bump) stamped at plan time; sell
+   * orders only. Required because applySellFill deletes the bucket's age, so
+   * the stored plan is the only surviving record for the sim replay. */
+  ageDays?: number
 }
 export interface DayPlan {
   orders: PlannedOrder[]

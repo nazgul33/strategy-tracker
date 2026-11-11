@@ -133,6 +133,7 @@ export interface SimOrderDto {
   bucketIndex: number;
   limitPrice: string;
   shares: number;
+  ageDays?: number; // stamped on sells by computeOrders; old stored plans lack it
 }
 
 export interface SimPlanDto {
