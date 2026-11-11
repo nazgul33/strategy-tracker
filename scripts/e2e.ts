@@ -214,9 +214,9 @@ async function main(): Promise<void> {
       'day1: buy 2 sh @ 342.00 fee 68c')
     ok(days[1]!.fills.length === 2 && days[1]!.cashCents === 931_392, 'day2: sell bucket 0 + buy bucket 1, cash 931392')
     const lastDay = days[2]!
-    ok(lastDay.fills.length === 3 && lastDay.fills[2]!.side === 'sell' && lastDay.fills[2]!.price === 3550000n,
-      'day3: forced exit liquidates held bucket at last close 355.00')
-    ok(lastDay.heldCount === 0 && lastDay.cashCents === 1_002_181, 'sim ends flat with cash 1002181')
+    ok(lastDay.fills.length === 3 && lastDay.fills[2]!.side === 'sell' && lastDay.fills[2]!.price === 3490000n,
+      'day3: forced exit liquidates held bucket at last open 349.00 (market sells fill LOO)')
+    ok(lastDay.heldCount === 0 && lastDay.cashCents === 1_000_982, 'sim ends flat with cash 1000982')
     const simSaved = await runSim(
       { name: 'E2E Sim', ticker: 'NVDA', from: '2026-11-06', to: '2026-11-12', poolCents: 1_000_000, costPpm: 1_000 },
       { fetchDailyBars: async () => BARS, repos: repos.simRepo },
