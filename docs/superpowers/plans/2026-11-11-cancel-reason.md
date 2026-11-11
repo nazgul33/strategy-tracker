@@ -46,10 +46,7 @@
 
 ```ts
 test('order cancel reason round trip', async () => {
-  const [runId] = [await repos.runRepo.create({
-    strategyKey: 'mean-reversion', ticker: 'RT', name: `rt-cancel-${Date.now()}`,
-    poolCents: 100, costPpm: 0, stateJson: '{}',
-  })]
+  const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'RT' + Date.now(), name: `rt-cancel-${Date.now()}`, poolCents: 1000, costPpm: 10 })
   await repos.orderRepo.insertMany([{
     runId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 0,
     limitPrice: 35000000n, shares: 5, status: 'open',
@@ -73,7 +70,7 @@ test('order cancel reason round trip', async () => {
 })
 ```
 
-Note: mirror however existing tests in this file create a run + order (check the top of the file; if `runRepo.create` returns the id directly, use that shape).
+Match the real `runRepo.create` signature — `apps/server/src/db/repos.ts:27` takes `{ strategyKey, ticker, name, poolCents, costPpm, initialRunState? }` and resolves to the numeric `runId` (see the `'orders markStale'` test at `db.test.ts:49-62` for the exact call shape). There is no `stateJson` parameter.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -124,27 +121,27 @@ git commit -m "feat: cancel_reason column with orderRepo.get and reason-aware se
 - Produces: `export const CANCEL_REASONS = ['broker-filled', 'strategy-change', 'stale-price', 'other'] as const` and
   `export async function cancelOrder(runId: number, orderId: number, reason: string, deps: BookingDeps): Promise<any>` in `booking.ts` — resolves with the updated order row (`status: 'cancelled'`, `cancelReason: reason`); throws `Error('invalid-reason')`, `Error('order-not-found')` (unknown id **or** different run), or `Error('order-not-open')` (status !== 'open'). `RepoSurface.orderRepo` gains `get(id: number): Promise<any | null>` and the optional `cancelReason` on `setStatus`.
 
-- [ ] **Step 1: Write the failing tests** in `booking.test.ts` (reuse the file's existing fixture builder; its fake order array holds rows like `{ runId, tradeDate, kind, bucketIdx, limitPrice, shares, status }`):
+- [ ] **Step 1: Write the failing tests** in `booking.test.ts`. The file exports a shared `fakeRepos()` builder (~:25) returning `{ repos, _stores: { runs, orders, fills, pending, captures, ledger } }`; there is **no** `makeFixture`. Every test does its own `const f = fakeRepos()` and `const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }`. The fake `orderRepo` (~:57-67) has `insertMany` that pushes `{ id: orderSeq++, ...o }` onto the shared `orders` array and returns nothing — so insert via `insertMany` and read the id back from `f._stores.orders`. Two fakes must be widened (fakes are test code — allowed): add `async get(id: number) { return orders.find((x) => x.id === id) ?? null }` and make `setStatus` accept `(id, status, cancelReason?)` applying `if (cancelReason !== undefined) o.cancelReason = cancelReason`.
 
 ```ts
 test('cancelOrder marks open order cancelled with reason', async () => {
-  const f = makeFixture() // whatever the existing builder is called
-  const id = await f.repos.orderRepo.insertOne({ runId: f.runId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 1, limitPrice: 200n, shares: 5, status: 'open' })
-  const order = await cancelOrder(f.runId, id, 'strategy-change', f.deps)
+  const f = fakeRepos()
+  const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'C1', name: 'c1', poolCents: 100, costPpm: 0 })
+  await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 1, limitPrice: 200n, shares: 5, status: 'open' }])
+  const id = f._stores.orders[0].id
+  const order = await cancelOrder(runId, id, 'strategy-change', { repos: f.repos as any, today: '2026-11-11' })
   expect(order.status).toBe('cancelled')
   expect(order.cancelReason).toBe('strategy-change')
 })
 test('cancelOrder rejects unknown, foreign-run, and non-open orders', async () => {
-  // expect cancelOrder(run, 99999, 'other', deps) → 'order-not-found'
-  // order inserted with runId: otherRun → 'order-not-found'
-  // order with status: 'filled' → 'order-not-open'; the row's status must stay 'filled'
+  // cancelOrder(runId, 99999, 'other', deps) → rejects 'order-not-found'
+  // order whose runId is a different run → 'order-not-found'
+  // order with status: 'filled' → 'order-not-open'; assert the stored row's status is still 'filled'
 })
 test('cancelOrder rejects unknown reason', async () => {
-  // expect cancelOrder(run, id, 'because-i-said-so', deps) → 'invalid-reason'; row stays 'open'
+  // cancelOrder(runId, id, 'because-i-said-so', deps) → rejects 'invalid-reason'; stored row stays 'open'
 })
 ```
-
-If the fake `orderRepo` has no per-row `insertOne`/id-returning insert, add one to the fake (fakes are test code — allowed), or use `insertMany` + the store array like neighboring tests do.
 
 - [ ] **Step 2: Run to verify they fail**
 
@@ -170,73 +167,87 @@ git commit -m "feat: cancelOrder domain function with reason validation"
 
 **Files:**
 - Modify: `packages/telegram/src/i18n.ts` (CATALOG)
-- Modify: `apps/server/src/http/app.ts` (`HttpDeps`)
+- Modify: `apps/server/src/http/app.ts` (`HttpDeps` — two new required fields)
 - Modify: `apps/server/src/http/routes/runs.ts`
 - Modify: `apps/server/src/main.ts` (wire new deps)
 - Test: `apps/server/test/http.test.ts`, `packages/telegram/test/digest.test.ts`
+- Modify (fake widening forced by the new required `HttpDeps` fields — there are three `HttpDeps` construction sites): `apps/server/test/sim.test.ts` (its own local `makeDeps`, ~:223), `scripts/e2e.ts` (`const httpDeps: HttpDeps`, ~:91)
 
 **Interfaces:**
-- Consumes: Task 2 `cancelOrder` / `CANCEL_REASONS`; `deps.repos.notificationRepo.insert({ runId, chatId, text })` (existing shape from `pipeline/day.ts`).
-- Produces: `POST /api/runs/:id/orders/:orderId/cancel` — body `{ reason: string }`; 200 `{ ok: true }`, 400 `{ error: 'invalid-reason' }`, 404 `{ error: 'order-not-found' }`, 409 `{ error: 'order-not-open' }`. On success, for each `deps.allowedChats` entry: one `notificationRepo.insert({ runId, chatId, text })` and one `deps.sendText(chatId, text)`, where text = `tgT('order-cancelled', deps.digestLang, { kind, bucket, price, reason })` with `reason = tgT('reason-' + code, lang)` and `price = formatUsd(order.limitPrice)`; `tgT` is `t` from `@st/telegram/i18n`. New `HttpDeps` fields (required): `digestLang: 'en' | 'ko'`, `allowedChats: string[]`, `sendText: (chatId: string, text: string) => Promise<void>`. CATALOG gains keys `order-cancelled`, `reason-broker-filled`, `reason-strategy-change`, `reason-stale-price`, `reason-other`.
+- Consumes: Task 2 `cancelOrder` / `CANCEL_REASONS`; `deps.repos.notificationRepo.insert({ runId, chatId, text })` (existing shape, used by `pipeline/day.ts:130`).
+- Produces: `POST /api/runs/:id/orders/:orderId/cancel` — body `{ reason: string }`; 200 `{ ok: true }`, 400 `{ error: 'invalid-reason' }`, 404 `{ error: 'order-not-found' }`, 409 `{ error: 'order-not-open' }`. On success, for each `deps.allowedChatIds` entry: one `notificationRepo.insert({ runId, chatId, text })` then one `deps.send(chatId, text)` (insert first — the durable record wins over the transport, unlike `day.ts`'s send-first order; ruling in the ledger), where text = `tgT('order-cancelled', deps.defaultSettings.digestLang, { kind, bucket, price, reason })` with `reason = tgT('reason-' + code, lang)`, `bucket = order.bucketIdx` (raw, 0-based, matching `packages/telegram/src/digest.ts:29,53`) and `price = formatUsd(order.limitPrice)` (no `$` — `formatUsd` in `packages/core/src/money.ts` returns `"3.50"`, and no telegram string in this repo carries a currency sign); `tgT` is `t` from `@st/telegram/i18n` (server-side precedent: `pipeline/day.ts:6`). New `HttpDeps` fields (required, named to match `DayDeps`): `allowedChatIds: string[]`, `send: (chatId: string, text: string) => Promise<void>`. No new `digestLang` field — `deps.defaultSettings.digestLang` already exists (`app.ts:22`). CATALOG gains keys `order-cancelled`, `reason-broker-filled`, `reason-strategy-change`, `reason-stale-price`, `reason-other`.
+- Note: there is no `HttpError` class and no `app.onError` in this repo — every route maps its own errors inline (`pending.ts:14-18`, `runs.ts:105-113`), so the new route does the same.
 
-- [ ] **Step 1: Write the failing catalog test** in `packages/telegram/test/digest.test.ts`:
+- [ ] **Step 1: Write the failing catalog test** in `packages/telegram/test/digest.test.ts`. That file does **not** import `t` today (it imports `renderDigest, renderClosed, renderReminder` from `'../src/digest'`) — add `import { t } from '../src/i18n';` to its import block:
 
 ```ts
 test('order-cancelled renders in both languages', () => {
-  expect(t('order-cancelled', 'ko', { kind: 'sell_loc', bucket: 2, price: '$3.50', reason: t('reason-strategy-change', 'ko') }))
-    .toBe('🚫 취소: sell_loc 버킷 2 — 전략 변경 ($3.50)')
-  expect(t('order-cancelled', 'en', { kind: 'buy_loc', bucket: 0, price: '$1.00', reason: t('reason-broker-filled', 'en') }))
-    .toBe('🚫 Cancelled: buy_loc bucket 0 — filled elsewhere at broker ($1.00)')
+  expect(t('order-cancelled', 'ko', { kind: 'sell_loc', bucket: 2, price: '3.50', reason: t('reason-strategy-change', 'ko') }))
+    .toBe('🚫 취소: sell_loc 버킷 2 — 전략 변경 (3.50)')
+  expect(t('order-cancelled', 'en', { kind: 'buy_loc', bucket: 0, price: '1.00', reason: t('reason-broker-filled', 'en') }))
+    .toBe('🚫 Cancelled: buy_loc bucket 0 — filled elsewhere at broker (1.00)')
 })
 ```
 
-(import `t` from `'../src/i18n'` if the test file doesn't already.)
+(`t`'s interpolator is `{name}` single-brace — `packages/telegram/src/i18n.ts:46-51`.)
 
 - [ ] **Step 2: Run to verify it fails**, then add the five CATALOG entries with exactly the strings above (en/ko pairs): `order-cancelled` en `'🚫 Cancelled: {kind} bucket {bucket} — {reason} ({price})'` / ko `'🚫 취소: {kind} 버킷 {bucket} — {reason} ({price})'`; `reason-broker-filled` `'filled elsewhere at broker'` / `'증권사에서 별도 체결'`; `reason-strategy-change` `'strategy change'` / `'전략 변경'`; `reason-stale-price` `'price no longer valid'` / `'가격 무효화'`; `reason-other` `'other'` / `'기타'`. Re-run → PASS.
 
-- [ ] **Step 3: Write the failing route tests** in `http.test.ts`. Update the shared fake deps builder (one place): `digestLang: 'en'`, `allowedChats: ['42']`, and a `sendText` that pushes `{ chatId, text }` to an exported `sent: any[]` array (follow how the builder exposes `notifications` etc.).
+- [ ] **Step 3: Write the failing route tests** in `http.test.ts`. There is no auth helper in this file — copy the inline login used by every existing test (`const lr = await app.request('/api/login', …)` → `const auth = { Authorization: `Bearer ${token}` }`), and see the neighbouring POST test at ~:281 for shape. Update the shared builders in one place:
+  - `makeFakes()` (~:7): add `sent: { chatId: string; text: string }[]` alongside the existing `orders` / `notifications` arrays and add it to the returned object; the fake `orderRepo` needs `async get(id) { return orders.find((x) => x.id === id) ?? null }` and its `setStatus` must accept and apply an optional third `cancelReason` arg (`if (cancelReason !== undefined) o.cancelReason = cancelReason`).
+  - `makeDeps(fakes)` (~:104): add `allowedChatIds: ['42']` and `send: async (chatId: string, text: string) => { fakes.sent.push({ chatId, text }) }`.
 
 ```ts
 test('cancel order: happy path stores reason, notifies each allowed chat', async () => {
-  // insert an open order for the run via the fake orderRepo store, then:
-  const res = await app.request('/api/runs/1/orders/<id>/cancel', {
-    method: 'POST', headers: authHeaders(),
-    body: JSON.stringify({ reason: 'stale-price' }),
+  // push an open order onto the fake `orders` store, then POST /api/runs/<runId>/orders/<id>/cancel
+  const res = await app.request(`/api/runs/${runId}/orders/${id}/cancel`, {
+    method: 'POST', headers: auth, body: JSON.stringify({ reason: 'stale-price' }),
   })
   expect(res.status).toBe(200)
-  const row = /* find the order in the fake store */
+  const row = orders.find((o) => o.id === id)!
   expect(row.status).toBe('cancelled')
   expect(row.cancelReason).toBe('stale-price')
-  expect(notifications.filter((n) => n.runId === 1)).toHaveLength(1)
-  expect(notifications.find((n) => n.runId === 1)!.text).toContain('Cancelled')
-  expect(sent).toEqual([{ chatId: '42', text: notifications.find((n) => n.runId === 1)!.text }])
+  expect(notifications.filter((n) => n.runId === runId)).toHaveLength(1)
+  expect(notifications.find((n) => n.runId === runId)!.text).toContain('Cancelled')
+  expect(sent).toEqual([{ chatId: '42', text: notifications.find((n) => n.runId === runId)!.text }])
 })
 test('cancel order: 400 invalid-reason, 404 unknown order, 409 not open', async () => {
-  // reason 'nope' → 400 { error: 'invalid-reason' }, order still open, nothing sent
+  // reason 'nope' → 400 { error: 'invalid-reason' }, order still open, notifications/sent unchanged
   // unknown orderId → 404 { error: 'order-not-found' }
-  // status 'filled' order → 409 { error: 'order-not-open' }
+  // status 'filled' order → 409 { error: 'order-not-open' }, row stays 'filled'
 })
 test('cancel order succeeds with no allowed chats: 200, no notification rows, no sends', async () => {
-  // same app, deps.allowedChats = [] → 200; notifications for the run stay empty; sent stays empty
+  // deps.allowedChatIds = [] → 200; notifications for the run stay empty; sent stays empty
 })
 ```
 
-Use the same auth/session helper the existing tests use.
-
 - [ ] **Step 4: Run to verify they fail**, then implement:
-  - `app.ts`: add `digestLang`, `allowedChats`, `sendText` to `HttpDeps`.
-  - `runs.ts`: add `r.post('/runs/:id/orders/:orderId/cancel', ...)` — parse body with `.catch(() => ({}))`, validate `typeof reason === 'string' && (CANCEL_REASONS as readonly string[]).includes(reason)` is done *inside* `cancelOrder` (route just maps thrown messages: `invalid-reason`→400, `order-not-found`→404, `order-not-open`→409, anything else→422 like the pending routes). After success build the text and loop `allowedChats` doing insert + `sendText` (insert before send). Import `t as tgT` from `'@st/telegram/i18n'` and `formatUsd` from `'@st/core/money'` — check whether `runs.ts` already imports `formatUsd` (it imports `parseUsd`).
-  - `main.ts`: `createApp({ ..., digestLang, allowedChats: tg?.allowedChatIds ?? [], sendText: send })`.
+  - `app.ts`: add `allowedChatIds: string[]` and `send: (chatId: string, text: string) => Promise<void>` to `HttpDeps` (do NOT add `digestLang` — `defaultSettings.digestLang` already exists).
+  - `runs.ts`: add `r.post('/runs/:id/orders/:orderId/cancel', ...)`. Follow the file's inline style: `const body = await c.req.json().catch(() => ({}))`, then
+    ```ts
+    try {
+      await cancelOrder(id, orderId, body?.reason, { repos: deps.repos as any, today: deps.today() })
+    } catch (e: any) {
+      const code = e?.message
+      if (code === 'invalid-reason') return c.json({ error: 'invalid-reason' }, 400)
+      if (code === 'order-not-found') return c.json({ error: 'order-not-found' }, 404)
+      if (code === 'order-not-open') return c.json({ error: 'order-not-open' }, 409)
+      return c.json({ error: code ?? 'error' }, 422)
+    }
+    ```
+    then build the text and loop `deps.allowedChatIds` doing insert **then** `deps.send` (insert first, per the Interfaces note). Add imports: `cancelOrder` from `../../domain/booking`, `t as tgT` from `'@st/telegram/i18n'`, and `formatUsd` next to the existing `parseUsd` from `'@st/core/money'`.
+  - `main.ts`: add `allowedChatIds: tg?.allowedChatIds ?? []` and `send` to the `createApp({...})` call (the local `send` function at ~:29 and `tg` at ~:46 are both in scope there).
+  - `apps/server/test/sim.test.ts` (its own local `makeDeps`, ~:223) and `scripts/e2e.ts` (~:91) construct `HttpDeps` too — add `allowedChatIds: []` and a no-op/`sends`-pushing `send` to each so `bun run typecheck` stays clean. Do not change their assertions.
 
 - [ ] **Step 5: Run the server suite + typecheck**
 
 Run: `bun test apps/server/test/http.test.ts && bun run typecheck`
-Expected: PASS / clean (this also compiles main.ts wiring).
+Expected: PASS / clean (typecheck also compiles main.ts, sim.test.ts and scripts/e2e.ts wiring).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/telegram/src/i18n.ts packages/telegram/test/digest.test.ts apps/server/src/http apps/server/src/main.ts apps/server/test/http.test.ts
+git add packages/telegram/src/i18n.ts packages/telegram/test/digest.test.ts apps/server/src/http apps/server/src/main.ts apps/server/test/http.test.ts apps/server/test/sim.test.ts scripts/e2e.ts
 git commit -m "feat: order cancel route with Telegram notification"
 ```
 
@@ -245,30 +256,32 @@ git commit -m "feat: order cancel route with Telegram notification"
 ### Task 4: Web — cancel button, reason modal, reason display
 
 **Files:**
-- Modify: `apps/web/src/api.types.ts` (`OrderDto`), `apps/web/src/api.ts`, `apps/web/src/viewmodels.ts`, `apps/web/src/components/OrderTable.tsx`, `apps/web/src/pages/RunDetail.tsx`, `apps/web/src/i18n/en.json`, `apps/web/src/i18n/ko.json`
+- Modify: `apps/web/src/api.types.ts` (`OrderDto`), `apps/web/src/api.ts`, `apps/web/src/viewmodels.ts`, `apps/web/src/components/OrderTable.tsx`, `apps/web/src/components/RunPanels.tsx` (`OrdersPanel`), `apps/web/src/i18n/en.json`, `apps/web/src/i18n/ko.json`
 - Test: `apps/web/src/viewmodels.test.ts` (append)
 
 **Interfaces:**
-- Consumes: Task 3 route `POST /runs/:id/orders/:orderId/cancel`.
-- Produces: `OrderDto.cancelReason: string | null`; `api.cancelOrder(runId: number, orderId: number, reason: string): Promise<void>`; `export const CANCEL_REASONS = ['broker-filled', 'strategy-change', 'stale-price', 'other'] as const` and `export function orderReasonText(o: { status: string; skipReason: string | null; cancelReason: string | null }, t: (key: string) => string): string` in `viewmodels.ts` (cancel reason wins on `cancelled` rows via `reasonKey('cancelReason', code)`, skip reason otherwise, `''` when neither or cancelReason is null); `OrderTable` gains optional prop `onCancel?: (orderId: number, reason: string) => Promise<void>` — when provided, an `orderColAction` column with a `t('orderCancelBtn')` button on `status === 'open'` rows opens a `Modal` (from `./ui`) with `Select` over `CANCEL_REASONS` and confirm/cancel buttons; RunDetail passes `onCancel` = `api.cancelOrder` then `reload()`.
+- Consumes: Task 3 route `POST /api/runs/:id/orders/:orderId/cancel`.
+- Produces: `OrderDto.cancelReason: string | null` (server `listForRun` does `select()` on the whole table, so the field arrives once Task 1 lands); `api.cancelOrder(runId: number, orderId: number, reason: string): Promise<void>`; `export const CANCEL_REASONS = ['broker-filled', 'strategy-change', 'stale-price', 'other'] as const` and `export function orderReasonText(o: { status: string; skipReason: string | null; cancelReason: string | null }, t: (key: string) => string): string` in `viewmodels.ts` (cancel reason wins on `cancelled` rows via `reasonKey('cancelReason', code)`, skip reason otherwise, `''` when neither or `cancelReason` is null); `OrderTable` gains optional prop `onCancel?: (orderId: number, reason: string) => Promise<void>` — when provided, a trailing `orderColAction` column with a `t('orderCancelBtn')` button on `status === 'open'` rows opens a `Modal` (from `./ui`) with a `Select` over `CANCEL_REASONS` plus confirm/cancel buttons; `OrdersPanel` supplies `onCancel` = `api.cancelOrder(runId, …)` then its **own** `reload()`.
+- Facts to code against: `Modal` has exactly `{ title, onClose, children }` — no `onConfirm`/footer props (`apps/web/src/components/ui.tsx:157`), so buttons are children, following the run-close confirm modal at `apps/web/src/pages/RunDetail.tsx:174-191`. `Button` variants are `'primary' | 'secondary' | 'danger'` with a `busy` prop. `Select` is a plain `React.SelectHTMLAttributes<HTMLSelectElement>`. There is no `OrderRow` type in `apps/web` — `OrderTable` takes `OrderDto[]`, imported as `import type { OrderDto } from '../api';` (api.ts re-exports `api.types.ts`). The reason cell today renders `o.skipReason ? t(enumLabelKey('orderReason', o.skipReason)) : '—'`, so the empty state is an **em dash**, not an empty string.
+- Catalog files are FLAT JSON with literal camelCase keys (`apps/web/src/i18n/catalog.ts` merges `en.json` + `ko.json` side by side), so `"cancelReasonStalePrice"` is a literal top-level key. Keys `cancel` ("Cancel"/"취소") and `confirm` ("Confirm"/"확인") already exist — reuse them, do not add `orderCancelConfirm`. `apps/web/src/catalog.test.ts` fails the suite if en/ko key sets or `{placeholder}` sets diverge, so add every new key to BOTH files in the same commit.
 
 - [ ] **Step 1: Write the failing viewmodels test** in `viewmodels.test.ts`:
 
 ```ts
 test('orderReasonText: cancel reason wins, null-safe for old rows', () => {
-  const t = (k: string) => `«${k}»`
-  expect(orderReasonText({ status: 'cancelled', skipReason: null, cancelReason: 'stale-price' }, t)).toBe('«cancelReasonStalePrice»')
-  expect(orderReasonText({ status: 'cancelled', skipReason: 'sell-capped', cancelReason: null }, t)).toBe('')
-  expect(orderReasonText({ status: 'open', skipReason: 'no-bucket', cancelReason: null }, t)).toBe('«orderReasonNoBucket»')
-  expect(orderReasonText({ status: 'open', skipReason: null, cancelReason: null }, t)).toBe('')
-})
+  const t = (k: string) => `«${k}»`;
+  expect(orderReasonText({ status: 'cancelled', skipReason: null, cancelReason: 'stale-price' }, t)).toBe('«cancelReasonStalePrice»');
+  expect(orderReasonText({ status: 'cancelled', skipReason: 'sell-capped', cancelReason: null }, t)).toBe('«orderReasonSellCapped»');
+  expect(orderReasonText({ status: 'open', skipReason: 'no-bucket', cancelReason: null }, t)).toBe('«orderReasonNoBucket»');
+  expect(orderReasonText({ status: 'open', skipReason: null, cancelReason: null }, t)).toBe('');
+});
 ```
 
-- [ ] **Step 2: Run to verify it fails** (`bun test apps/web`), then implement `CANCEL_REASONS` + `orderReasonText` in `viewmodels.ts` using the existing `reasonKey`.
+- [ ] **Step 2: Run to verify it fails** (`bun test apps/web`), then implement `CANCEL_REASONS` + `orderReasonText` in `viewmodels.ts` using the existing `reasonKey` (`apps/web/src/viewmodels.ts:21` — it is `enumLabelKey` under another name). The rule is exactly three branches, in this order: `o.cancelReason` → `t(reasonKey('cancelReason', o.cancelReason))`; else `o.skipReason` → `t(reasonKey('orderReason', o.skipReason))`; else `''`. Status is not consulted — that is what keeps a legacy `cancelled` row that carries a `skipReason` rendering exactly what it renders today (the reason cell in `OrderTable.tsx` is status-independent), and no row can have both reasons in practice because the cancel path never writes `skip_reason`.
 
-- [ ] **Step 3: Wire API + types + copy.** `OrderDto` += `cancelReason: string | null;` (server rows now include it). Add `api.cancelOrder` POSTing `{ reason }` to `runs/${runId}/orders/${orderId}/cancel` using the existing request helper. Catalog keys — en.json: `"orderColAction": "Action"`, `"orderCancelBtn": "Cancel"`, `"orderCancelTitle": "Cancel order"`, `"orderCancelConfirm": "Cancel order"`, `"cancelReasonBrokerFilled": "Filled elsewhere at broker"`, `"cancelReasonStrategyChange": "Strategy change"`, `"cancelReasonStalePrice": "Price no longer valid"`, `"cancelReasonOther": "Other"`; ko.json: `"동작"`, `"취소"`, `"주문 취소"`, `"주문 취소"`, `"증권사에서 별도 체결"`, `"전략 변경"`, `"가격 무효화"`, `"기타"` (same keys).
+- [ ] **Step 3: Wire API + types + copy.** `OrderDto` += `cancelReason: string | null;`. Add `api.cancelOrder` POSTing `{ reason }` to `runs/${runId}/orders/${orderId}/cancel` via the file's existing `send`/`call` helper (copy the style of an existing mutating method; `call` already throws `ApiError(status, errorString)`). Catalog keys — en.json: `"orderColAction": "Action"`, `"orderCancelBtn": "Cancel"`, `"orderCancelTitle": "Cancel order"`, `"cancelReasonBrokerFilled": "Filled elsewhere at broker"`, `"cancelReasonStrategyChange": "Strategy change"`, `"cancelReasonStalePrice": "Price no longer valid"`, `"cancelReasonOther": "Other"`; ko.json (same keys): `"동작"`, `"취소"`, `"주문 취소"`, `"증권사에서 별도 체결"`, `"전략 변경"`, `"가격 무효화"`, `"기타"`.
 
-- [ ] **Step 4: Implement the UI.** `OrderTable`: reason cell renders `orderReasonText(o, t)`; when `onCancel` is set, header `orderColAction` and, on open rows, a small `Button` that stores the clicked order in local state and opens `<Modal title={t('orderCancelTitle')}>` with a `Select` (options labeled `t(reasonKey('cancelReason', code))`), a busy-tracked confirm `Button variant="danger"` calling `onCancel(order.id, selectedReason)` then closing, and a plain cancel `Button` (`t('cancel')`, key already exists). `RunDetail`: `<OrderTable orders={...} onCancel={async (orderId, reason) => { await api.cancelOrder(id, orderId, reason); void reload(); }} />` wherever `<OrderTable>` is rendered.
+- [ ] **Step 4: Implement the UI.** `OrderTable`: reason cell renders `orderReasonText(o, t) || '—'` (keeps the old em-dash rendering for rows with no reason, satisfying the byte-exact display constraint); when `onCancel` is provided, render the extra `Th` and, on `status === 'open'` rows, a small `Button variant="secondary"` that stores the clicked order id in local state and opens `<Modal title={t('orderCancelTitle')} onClose={…}>` holding a `Select` (options labelled `t(reasonKey('cancelReason', code))` over `CANCEL_REASONS`, defaulting to the first), a `Button variant="danger" busy={busy}` labelled `t('confirm')` that calls `onCancel(orderId, selected)` and closes on success (surfacing a thrown message like `RunDetail`'s `actionError` does with `ErrorNote`), and a plain `Button` labelled `t('cancel')` that just closes. `OrdersPanel` in `RunPanels.tsx`: `<OrderTable orders={data ?? []} onCancel={async (orderId, reason) => { await api.cancelOrder(runId, orderId, reason); reload(); }} />`.
 
 - [ ] **Step 5: Verify** — `bun test apps/web && bun run typecheck && bun run --cwd apps/web build` all green (build proves the bundle picks it up).
 
