@@ -6,15 +6,17 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "drizzle-orm": "^0.44.0",
-    "hono": "^4.6.0",    "mysql2": "^3.11.0",
-    "@st/core": "workspace:*",
     "@st/calendar": "workspace:*",
-    "@st/strategies": "workspace:*",
+    "@st/core": "workspace:*",
     "@st/ingest": "workspace:*",
-    "croner": "^11.0.0",
     "@st/market-data": "workspace:*",
-    "@st/telegram": "workspace:*"
+    "@st/strategies": "workspace:*",
+    "@st/telegram": "workspace:*",
+    "croner": "^11.0.0",
+    "drizzle-orm": "^0.44.0",
+    "hono": "^4.6.0",
+    "mysql2": "^3.11.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "drizzle-kit": "^0.30.0"
