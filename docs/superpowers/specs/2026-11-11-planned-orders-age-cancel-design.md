@@ -40,6 +40,8 @@ The "Planned orders" view (web Sim replay **and** morning Telegram digest) shoul
   (keeps callers/tests that pass only `ages` working).
 - New i18n entries `age` and `age-forced` (en/ko) replace the hard-coded clause:
   en `(age {n})` / `(age {n} — forced exit)`, ko `({n}일차)` / `({n}일차 — 강제 청산)`.
+  *(Implementer note — approved deviation: shipped ko wording is `{n}일 경과` /
+  `{n}일 경과 — 강제 청산`; `일차` → `경과`, "days elapsed" chosen as more accurate for an age.)*
 
 ### 3. Web (`apps/web`)
 
