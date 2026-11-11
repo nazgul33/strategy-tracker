@@ -88,7 +88,7 @@ describe('computeOrders', () => {
     expect(state.buckets.map(b => b.shares)).toEqual(before)
   })
   test('sell orders carry the bucket age stamped at plan time; buys do not', () => {
-    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, poolCents: 1_000_000, status: 'active' as const }
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
     let state = emptyState(10)
     state = applyBuyFill(state, 0, 10, 3402200n, 34, '2026-11-02')
     state = applyBuyFill(state, 1, 5, 3402200n, 17, '2026-10-01')
