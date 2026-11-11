@@ -9,7 +9,7 @@ import type { BucketDto, PendingFillDto, RunStatus, SimEvent } from './api';
 
 export type BadgeTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger' | 'info';
 
-export const RUN_STATUSES: RunStatus[] = ['active', 'paused', 'closed', 'done'];
+export const RUN_STATUSES: RunStatus[] = ['active', 'paused', 'closed'];
 
 // "buy_loc" → `${prefix}BuyLoc` — catalog keys for wire-level enum values.
 export function enumLabelKey(prefix: string, value: string): string {
@@ -26,12 +26,30 @@ export function isRunStatus(value: string): value is RunStatus {
   return (RUN_STATUSES as string[]).includes(value);
 }
 
-/** Suggested next status per the run lifecycle (`done` is terminal). */
-export function nextStatus(status: RunStatus): RunStatus | null {
-  if (status === 'active') return 'paused';
-  if (status === 'paused') return 'active';
-  if (status === 'closed') return 'done';
-  return null;
+/** Lifecycle transitions the web can send for a run; `closed` is terminal. */
+export type RunAction = 'pause' | 'resume' | 'close';
+
+export function runActions(status: RunStatus): RunAction[] {
+  if (status === 'active') return ['pause', 'close'];
+  if (status === 'paused') return ['resume', 'close'];
+  return [];
+}
+
+/** Selected run ids grouped by the bulk transitions they can all take. */
+export interface BulkPlan {
+  pause: number[];
+  resume: number[];
+  close: number[];
+}
+
+export function bulkPlan(rows: readonly { id: number; status: RunStatus }[]): BulkPlan {
+  const plan: BulkPlan = { pause: [], resume: [], close: [] };
+  for (const row of rows) {
+    if (row.status === 'active') plan.pause.push(row.id);
+    if (row.status === 'paused') plan.resume.push(row.id);
+    if (row.status !== 'closed') plan.close.push(row.id);
+  }
+  return plan;
 }
 
 export function runStatusTone(status: RunStatus): BadgeTone {

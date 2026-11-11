@@ -25,7 +25,7 @@ import {
 } from '../components/ui';
 import { bpPercent, centsUsd, isoDateTime, percent, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
-import { enumLabelKey, pnlBadgeTone, poolAfterTopUp, runStatusTone, toneFor } from '../viewmodels';
+import { enumLabelKey, pnlBadgeTone, poolAfterTopUp, runActions, runStatusTone, toneFor } from '../viewmodels';
 
 type Tab = 'orders' | 'pending' | 'fills' | 'history' | 'notifications' | 'manual';
 
@@ -82,15 +82,6 @@ export function RunDetailPage({ id }: { id: number }) {
 
   const run = data;
   const pv = run.progressView;
-  const lifecycle: { status: RunStatus; labelKey: string; variant: 'primary' | 'secondary' | 'danger' } | null =
-    run.status === 'active'
-      ? { status: 'paused', labelKey: 'actionPause', variant: 'secondary' }
-      : run.status === 'paused'
-        ? { status: 'active', labelKey: 'actionResume', variant: 'primary' }
-        : run.status === 'closed'
-          ? { status: 'done', labelKey: 'actionStop', variant: 'secondary' }
-          : null;
-  const canClose = run.status === 'active' || run.status === 'paused';
 
   return (
     <div className="space-y-4">
@@ -108,19 +99,21 @@ export function RunDetailPage({ id }: { id: number }) {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={() => setShowPool(true)}>{t('poolEdit')}</Button>
-          {canClose && (
-            <Button variant="danger" onClick={() => setShowClose(true)}>
-              {t('actionClose')}
-            </Button>
-          )}
-          {lifecycle && (
-            <Button
-              variant={lifecycle.variant}
-              busy={busyStatus === lifecycle.status}
-              onClick={() => void setStatus(lifecycle.status)}
-            >
-              {t(lifecycle.labelKey)}
-            </Button>
+          {runActions(run.status).map((action) =>
+            action === 'close' ? (
+              <Button key={action} variant="danger" onClick={() => setShowClose(true)}>
+                {t('actionClose')}
+              </Button>
+            ) : (
+              <Button
+                key={action}
+                variant={action === 'pause' ? 'secondary' : 'primary'}
+                busy={busyStatus === (action === 'pause' ? 'paused' : 'active')}
+                onClick={() => void setStatus(action === 'pause' ? 'paused' : 'active')}
+              >
+                {t(action === 'pause' ? 'actionPause' : 'actionResume')}
+              </Button>
+            ),
           )}
         </div>
       </div>

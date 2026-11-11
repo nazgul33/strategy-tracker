@@ -3,7 +3,7 @@
 // `import type { … } from '../api'` site keeps working unchanged.
 
 // ------------------------------------------------------------------- DTOs
-export type RunStatus = 'active' | 'paused' | 'closed' | 'done';
+export type RunStatus = 'active' | 'paused' | 'closed';
 
 export interface RunDto {
   id: number;

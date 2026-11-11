@@ -2,12 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import type { BucketDto, PendingFillDto } from './api';
 import {
   bucketCells,
+  bulkPlan,
   daysBetween,
   enumLabelKey,
   fillSourceTone,
   isRunStatus,
   myriadthsToUsdText,
-  nextStatus,
   notionalCents,
   orderKindTone,
   orderStatusTone,
@@ -16,6 +16,7 @@ import {
   poolAfterTopUp,
   priceToCents,
   reasonKey,
+  runActions,
   runStatusTone,
   seedCashErrorKey,
   simEventGroup,
@@ -35,18 +36,27 @@ describe('run status helpers', () => {
   test('isRunStatus accepts only lifecycle statuses', () => {
     expect(isRunStatus('created')).toBe(false);
     expect(isRunStatus('paused')).toBe(true);
+    expect(isRunStatus('done')).toBe(false);
   });
 
-  test('nextStatus walks the lifecycle, done is terminal', () => {
-    expect(nextStatus('active')).toBe('paused');
-    expect(nextStatus('paused')).toBe('active');
-    expect(nextStatus('closed')).toBe('done');
-    expect(nextStatus('done')).toBeNull();
+  test('runActions per status, closed is terminal', () => {
+    expect(runActions('active')).toEqual(['pause', 'close']);
+    expect(runActions('paused')).toEqual(['resume', 'close']);
+    expect(runActions('closed')).toEqual([]);
+  });
+
+  test('bulkPlan buckets selected ids by the transitions they can take', () => {
+    const plan = bulkPlan([
+      { id: 1, status: 'active' },
+      { id: 2, status: 'paused' },
+      { id: 3, status: 'closed' },
+    ]);
+    expect(plan).toEqual({ pause: [1], resume: [2], close: [1, 2] });
   });
 
   test('badge tones per status', () => {
     expect(runStatusTone('active')).toBe('success');
-    expect(runStatusTone('done')).toBe('neutral');
+    expect(runStatusTone('closed')).toBe('info');
     expect(orderKindTone('market_sell')).toBe('danger');
     // `cancelled` is inert like `skipped`/`stale` — it never held money.
     expect(orderStatusTone('cancelled')).toBe('neutral');
