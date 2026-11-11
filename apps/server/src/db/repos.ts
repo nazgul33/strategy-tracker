@@ -163,10 +163,10 @@ export function getRepos(db: any) {
     },
   }
   const simRepo = {
-    async insertRun(input: { ticker: string; fromDate: string; toDate: string; poolCents: number; costPpm: number; paramsJson: string }): Promise<number> {
+    async insertRun(input: { ticker: string; fromDate: string; toDate: string; poolCents: number; costPpm: number; buyGapPpm: number; sellGapPpm: number; paramsJson: string }): Promise<number> {
       const [res] = await db.insert(s.simRuns).values({
         ticker: input.ticker, fromDate: input.fromDate, toDate: input.toDate,
-        poolCents: input.poolCents, costPpm: input.costPpm, paramsJson: input.paramsJson,
+        poolCents: input.poolCents, costPpm: input.costPpm, buyGapPpm: input.buyGapPpm, sellGapPpm: input.sellGapPpm, paramsJson: input.paramsJson,
       })
       return (res as any).insertId
     },

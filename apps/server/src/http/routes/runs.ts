@@ -5,13 +5,9 @@ import { progressView } from '@st/strategies'
 import { seedRun, manualFill } from '../../domain/booking'
 import type { RawFill } from '@st/ingest'
 import { jsonBig, type HttpDeps } from '../app'
+import { MAX_PPM, isValidPpm } from '../../domain/ppm'
 
 const SEED_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-
-const MAX_PPM = 1_000_000
-function isValidPpm(x: unknown): x is number {
-  return Number.isInteger(x) && (x as number) >= 0 && (x as number) <= MAX_PPM
-}
 
 export const RUN_STATUSES_SERVER = ['active', 'paused', 'closed'] as const
 export const RUN_TRANSITIONS: Record<string, string[]> = {
