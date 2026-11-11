@@ -82,6 +82,10 @@ export function getRepos(db: any) {
       if (!orders.length) return
       await db.insert(s.orders).values(orders)
     },
+    async get(id: number) {
+      const rows = await db.select().from(s.orders).where(eq(s.orders.id, id))
+      return rows[0] ?? null
+    },
     async listForDate(date: string) {
       return db.select().from(s.orders).where(sql`${s.orders.tradeDate} = ${date}`)
     },
@@ -90,8 +94,10 @@ export function getRepos(db: any) {
       const header = Array.isArray(res) ? res[0] : res
       return header?.affectedRows ?? 0
     },
-    async setStatus(id: number, status: string) {
-      await db.update(s.orders).set({ status: status as any }).where(eq(s.orders.id, id))
+    async setStatus(id: number, status: string, cancelReason?: string) {
+      await db.update(s.orders)
+        .set({ status: status as any, ...(cancelReason !== undefined ? { cancelReason } : {}) })
+        .where(eq(s.orders.id, id))
     },
     async listOpenBefore(date: string) {
       return db.select().from(s.orders).where(and(eq(s.orders.status, 'open'), sql`${s.orders.tradeDate} < ${date}`))

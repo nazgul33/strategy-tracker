@@ -1,0 +1,1 @@
+ALTER TABLE `orders` ADD `cancel_reason` varchar(32);

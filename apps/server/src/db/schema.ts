@@ -42,6 +42,7 @@ export const orders = mysqlTable('orders', {
   shares: int('shares').notNull(),
   status: mysqlEnum('status', ['open', 'filled', 'stale', 'cancelled']).notNull().default('open'),
   skipReason: text('skip_reason'),
+  cancelReason: varchar('cancel_reason', { length: 32 }),
 })
 
 export const captures = mysqlTable('captures', {
