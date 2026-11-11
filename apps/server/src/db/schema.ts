@@ -7,7 +7,7 @@ export const strategyRuns = mysqlTable('strategy_runs', {
   name: varchar('name', { length: 128 }).notNull().unique(),
   poolCents: int('pool_cents').notNull(),
   costPpm: int('cost_ppm').notNull(),
-  status: mysqlEnum('status', ['active', 'paused', 'closed', 'done']).notNull().default('active'),
+  status: mysqlEnum('status', ['active', 'paused', 'closed']).notNull().default('active'),
   stateJson: text('state_json').notNull(),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 })

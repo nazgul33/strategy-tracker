@@ -1,4 +1,6 @@
 import { describe, test, expect, beforeAll } from 'bun:test'
+import { fileURLToPath } from 'node:url'
+import { sql } from 'drizzle-orm'
 import { getDb, applyMigrations } from '../src/db/client'
 import { getRepos } from '../src/db/repos'
 
@@ -88,5 +90,30 @@ describeIf('db integration', () => {
     const wire = JSON.parse(JSON.stringify({ filledOn: raw })).filledOn
     expect(typeof wire).toBe('string')
     expect(wire).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  test('0002 migration rewrites done rows before shrinking the enum', async () => {
+    // widen back to the legacy enum so a `done` row is insertable again
+    await db.execute(sql.raw(`ALTER TABLE strategy_runs MODIFY status enum('active','paused','closed','done') NOT NULL DEFAULT 'active'`))
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'M', name: 'done-' + Date.now(), poolCents: 100, costPpm: 10 })
+    await db.execute(sql.raw(`UPDATE strategy_runs SET status = 'done' WHERE id = ${runId}`))
+    const migrationsDir = new URL('../db/migrations/', import.meta.url)
+    let fileName: string | undefined
+    for await (const path of new Bun.Glob('0002_*.sql').scan({ cwd: fileURLToPath(migrationsDir) })) {
+      fileName ??= path
+    }
+    expect(fileName).toBeDefined()
+    // replay exactly the chunks drizzle's migrator executes: statements separated by `--> statement-breakpoint`
+    const text = await Bun.file(new URL(fileName!, migrationsDir)).text()
+    for (const chunk of text.split('--> statement-breakpoint')) {
+      const stmt = chunk.trim()
+      if (stmt === '') continue
+      await db.execute(sql.raw(stmt))
+    }
+    expect((await repos.runRepo.get(runId)).status).toBe('closed')
+    // enum is really narrower again: writing `done` must now be rejected
+    let rejected = false
+    try { await db.execute(sql.raw(`UPDATE strategy_runs SET status = 'done' WHERE id = ${runId}`)) } catch { rejected = true }
+    expect(rejected).toBe(true)
   })
 })
