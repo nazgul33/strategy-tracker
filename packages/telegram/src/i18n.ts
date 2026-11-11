@@ -18,6 +18,9 @@ export const CATALOG: Record<string, MsgEntry> = {
   'reminder': { en: '16:05 fill capture reminder', ko: '16:05 체결 캡처 알림' },
   'start': { en: 'ok', ko: 'ok' },
   'help': { en: 'help', ko: 'help' },
+  'december-nudge': { en: 'December — time to load next year\'s NYSE calendar', ko: '12월입니다 — 내년 NYSE 휴장 캘린더를 업데이트하세요' },
+  'warn-conflict': { en: 'Calendar conflict — local and remote calendars disagree. No orders today, please check manually', ko: '캘린더 불일치 — 로컬·원격 캘린더가 엇갈립니다. 오늘 주문을 내지 말고 확인해 주세요' },
+  'warn-data-error': { en: 'Market data error — last close unavailable or stale. No orders today', ko: '시세 데이터 오류 — 최근 종가를 가져올 수 없습니다. 오늘 주문을 내지 마세요' },
 }
 
 export function t(code: string, lang: Lang, params?: Record<string, string | number>): string {

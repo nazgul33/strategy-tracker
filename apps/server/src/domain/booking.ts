@@ -12,13 +12,14 @@ export async function sha256(buf: Uint8Array): Promise<string> {
 }
 
 export interface RepoSurface {
-  runRepo: { get(id: number): Promise<any> }
+  runRepo: { list(): Promise<any[]>; get(id: number): Promise<any>; create(input: any): Promise<number>; updateStatus(id: number, status: string): Promise<void> }
   bucketRepo: { loadState(runId: number): Promise<RunState>; saveState(runId: number, state: RunState): Promise<void> }
-  orderRepo: { listForDate(date: string): Promise<any[]>; markStale(date: string): Promise<any>; setStatus(id: number, status: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
+  orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; markStale(date: string): Promise<any>; setStatus(id: number, status: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
   fillRepo: { insert(fill: any): Promise<any> }
   pendingRepo: { insert(p: any): Promise<number>; listPending(): Promise<any[]>; decide(id: number, status: string, edited?: any): Promise<void> }
   captureRepo: { hasHash(runId: number, hash: string): Promise<boolean>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
   ledgerRepo: { insert(l: any): Promise<any>; listForRun(runId: number): Promise<any[]> }
+  notificationRepo: { insert(n: any): Promise<any> }
 }
 
 export interface BookingDeps { repos: RepoSurface; today: ISODate }
