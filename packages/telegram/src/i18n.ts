@@ -28,6 +28,8 @@ export const CATALOG: Record<string, MsgEntry> = {
   'capture-bad-extract': { en: 'Could not read fills from this image — {detail}. Book the fill manually in the web UI.', ko: '이미지에서 체결을 읽을 수 없습니다 — {detail}. 웹 UI에서 직접 예약해 주세요.' },
   'capture-no-run': { en: 'No active run for {ticker} — use /capture <runId> to pick one.', ko: '{ticker}에 대한 활성 런이 없습니다 — /capture <runId>로 선택하세요.' },
   'capture-ambiguous': { en: 'Multiple active runs for {ticker} — use /capture <runId>.', ko: '{ticker}에 여러 활성 런이 있습니다 — /capture <runId>를 사용하세요.' },
+  'capture-pin-skipped': { en: 'Ignored {tickers} — not the ticker of run #{id}.', ko: '{tickers}은(는) 런 #{id}의 종목이 아니므로 무시했습니다.' },
+  'capture-pin-nomatch': { en: 'No {ticker} fills in this image — run #{id} unchanged.', ko: '이 이미지에서 {ticker} 체결을 찾지 못했습니다 — 런 #{id}는 그대로입니다.' },
   'unknown-run': { en: 'No run with id {id}.', ko: 'id {id}인 런이 없습니다.' },
   'no-runs': { en: 'No runs yet — start one from the web app.', ko: '아직 런이 없습니다 — 웹 앱에서 시작하세요.' },
   'status-run-line': { en: 'Run #{id} {ticker}', ko: '런 #{id} {ticker}' },

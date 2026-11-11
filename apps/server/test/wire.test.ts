@@ -331,15 +331,13 @@ describe('capture onPhoto — caption routing', () => {
     expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 — confirm?');
   });
 
-  test('I1: "/capture 3" pins run 3 even when its ticker differs and an active NVDA run exists', async () => {
+  test('I1: "/capture 3" with a foreign-ticker extract books nothing and says so', async () => {
     const h = makeCapture({ runs: [activeRun(1, 'NVDA'), activeRun(3, 'AAPL')] });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' }, '/capture 3');
-    expect(h.captures.length).toBe(1);
-    expect(h.captures[0]!.runId).toBe(3);
-    expect(h.pending.length).toBe(1);
-    expect(h.pending[0]!.runId).toBe(3);
+    expect(h.captures.length).toBe(0);
+    expect(h.pending.length).toBe(0);
     expect(h.sent.length).toBe(1);
-    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 — confirm?');
+    expect(h.sent[0]!.text).toBe('No AAPL fills in this image — run #3 unchanged.');
   });
 
   test('I1: "#7" prefix still routes to run 7', async () => {
@@ -386,32 +384,53 @@ describe('capture onPhoto — multi-ticker auto-route (I3)', () => {
     expect(h.sent[1]!.text).toBe('Booked AAPL buy 5 sh @ $210.25 — confirm?');
   });
 
-  test('if any ticker has no active run, nothing is booked and the error names it', async () => {
+  test('a ticker with no active run is skipped with a notice; matched tickers still book', async () => {
     const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: multiVisionFetch });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
-    expect(h.captures.length).toBe(0);
-    expect(h.pending.length).toBe(0);
-    expect(h.sent.length).toBe(1);
-    expect(h.sent[0]!.text).toBe('No active run for AAPL — use /capture <runId> to pick one.');
+    expect(h.captures.length).toBe(1);
+    expect(h.captures[0]!.runId).toBe(1);
+    expect(h.pending.length).toBe(1);
+    expect(h.pending[0]!.ticker).toBe('NVDA');
+    expect(h.sent.map((s) => s.text)).toEqual([
+      'Booked NVDA buy 10 sh @ $180.50 — confirm?',
+      'No active run for AAPL — use /capture <runId> to pick one.',
+    ]);
   });
 
-  test('if any ticker is ambiguous, nothing is booked and the error names it', async () => {
+  test('an ambiguous ticker is skipped with a notice; unique tickers still book', async () => {
     const h = makeCapture({
       runs: [activeRun(1, 'NVDA'), activeRun(2, 'AAPL'), activeRun(3, 'AAPL')],
       fetchImpl: multiVisionFetch,
     });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
-    expect(h.captures.length).toBe(0);
-    expect(h.pending.length).toBe(0);
-    expect(h.sent[0]!.text).toBe('Multiple active runs for AAPL — use /capture <runId>.');
+    expect(h.captures.length).toBe(1);
+    expect(h.captures[0]!.runId).toBe(1);
+    expect(h.pending.length).toBe(1);
+    expect(h.pending[0]!.ticker).toBe('NVDA');
+    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 — confirm?');
+    expect(h.sent[1]!.text).toBe('Multiple active runs for AAPL — use /capture <runId>.');
   });
 
-  test('a numeric caption still pins one run for the whole extract', async () => {
+  test('a numeric caption pins one run and books nothing when no fill has its ticker', async () => {
     const h = makeCapture({ runs: [activeRun(5, 'MSFT')], fetchImpl: multiVisionFetch });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' }, '/capture 5');
+    expect(h.captures.length).toBe(0);
+    expect(h.pending.length).toBe(0);
+    expect(h.sent.length).toBe(1);
+    expect(h.sent[0]!.text).toBe('No MSFT fills in this image — run #5 unchanged.');
+  });
+
+  test('a pinned run keeps its own ticker and reports the ignored ones', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: multiVisionFetch });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' }, '/capture 1');
     expect(h.captures.length).toBe(1);
-    expect(h.captures[0]!.runId).toBe(5);
-    expect(h.pending.length).toBe(2);
+    expect(h.captures[0]!.runId).toBe(1);
+    expect(h.pending.length).toBe(1);
+    expect(h.pending[0]!.ticker).toBe('NVDA');
+    expect(h.sent.map((s) => s.text)).toEqual([
+      'Ignored AAPL — not the ticker of run #1.',
+      'Booked NVDA buy 10 sh @ $180.50 — confirm?',
+    ]);
   });
 });
 

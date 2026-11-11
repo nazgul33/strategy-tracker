@@ -47,7 +47,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
   async function onPhoto(chatId: string, image: { base64: string; mime: string }, caption?: string): Promise<void> {
     lastChatId = chatId;
 
-    let runId: number | null = null;
+    let pinned: { id: number; ticker: string } | null = null;
     // the run id must be the caption's FIRST token: `7`, `#7` or `/capture 7`.
     // anything else (e.g. a "NVDA 12/25" note) falls through to ticker auto-route.
     const m = /^(?:\/capture\s+)?#?(\d+)(?:\s|$)/.exec(caption?.trim() ?? '');
@@ -58,51 +58,62 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
         await deps.send(chatId, t('unknown-run', lang, { id }));
         return;
       }
-      runId = run.id;
+      pinned = { id: run.id, ticker: run.ticker };
     }
 
     const extract = await extractOrTell(chatId, image);
     if (!extract) return;
 
-    if (runId === null) {
-      // auto-route: every distinct extracted ticker must resolve to exactly one
-      // active run, otherwise book NOTHING (a mixed screenshot must not half-book).
-      const groups = new Map<string, typeof extract.fills>();
-      for (const fill of extract.fills) {
-        const g = groups.get(fill.ticker);
-        if (g) g.push(fill);
-        else groups.set(fill.ticker, [fill]);
-      }
-      if (groups.size === 0) {
-        await deps.send(chatId, t('capture-bad-extract', lang, { detail: 'no fills recognized' }));
+    if (pinned) {
+      // pinned mode: book ONLY fills carrying the pinned run's own ticker — one run
+      // has exactly one ticker — and tell the user what was ignored.
+      const { id: pinId, ticker: pinTicker } = pinned;
+      const own = extract.fills.filter((f: { ticker: string }) => f.ticker === pinTicker);
+      const ignored = [...new Set(extract.fills.filter((f: { ticker: string }) => f.ticker !== pinTicker).map((f: { ticker: string }) => f.ticker))];
+      if (own.length === 0) {
+        await deps.send(chatId, t('capture-pin-nomatch', lang, { ticker: pinTicker, id: pinId }));
         return;
       }
-      const active = (await deps.repos.runRepo.list()).filter((r: { status: string }) => r.status === 'active');
-      const routed: { runId: number; ticker: string }[] = [];
-      for (const ticker of groups.keys()) {
-        const matches = active.filter((r: { ticker: string }) => r.ticker === ticker);
-        if (matches.length === 0) {
-          await deps.send(chatId, t('capture-no-run', lang, { ticker }));
-          return;
-        }
-        if (matches.length > 1) {
-          await deps.send(chatId, t('capture-ambiguous', lang, { ticker }));
-          return;
-        }
-        routed.push({ runId: matches[0]!.id, ticker });
+      if (ignored.length > 0) {
+        await deps.send(chatId, t('capture-pin-skipped', lang, { tickers: ignored.join(', '), id: pinId }));
       }
-      for (const { runId: id, ticker } of routed) {
-        const outcome = await ingestCapture(id, image, { ...extract, fills: groups.get(ticker)! }, {
-          repos: deps.repos,
-          today: deps.today(),
-        });
-        await sendOutcome(chatId, outcome);
-      }
+      const outcome = await ingestCapture(pinId, image, { ...extract, fills: own }, {
+        repos: deps.repos,
+        today: deps.today(),
+      });
+      await sendOutcome(chatId, outcome);
       return;
     }
 
-    const outcome = await ingestCapture(runId, image, extract, { repos: deps.repos, today: deps.today() });
-    await sendOutcome(chatId, outcome);
+    // auto-route: each ticker group resolves to exactly one active run; groups
+    // without a unique run are skipped with a one-line notice, never abort the rest.
+    const groups = new Map<string, typeof extract.fills>();
+    for (const fill of extract.fills) {
+      const g = groups.get(fill.ticker);
+      if (g) g.push(fill);
+      else groups.set(fill.ticker, [fill]);
+    }
+    if (groups.size === 0) {
+      await deps.send(chatId, t('capture-bad-extract', lang, { detail: 'no fills recognized' }));
+      return;
+    }
+    const active = (await deps.repos.runRepo.list()).filter((r: { status: string }) => r.status === 'active');
+    for (const [ticker, fills] of groups) {
+      const matches = active.filter((r: { ticker: string }) => r.ticker === ticker);
+      if (matches.length === 0) {
+        await deps.send(chatId, t('capture-no-run', lang, { ticker }));
+        continue;
+      }
+      if (matches.length > 1) {
+        await deps.send(chatId, t('capture-ambiguous', lang, { ticker }));
+        continue;
+      }
+      const outcome = await ingestCapture(matches[0]!.id, image, { ...extract, fills }, {
+        repos: deps.repos,
+        today: deps.today(),
+      });
+      await sendOutcome(chatId, outcome);
+    }
   }
 
   async function sendOutcome(
