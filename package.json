@@ -3,7 +3,8 @@
   "private": true,
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "typecheck": "tsc -b && tsc -p apps/web --noEmit",
+    "dev": "echo 'no root dev script — run: bun run --cwd apps/server dev  ·  bun run --cwd apps/web dev' && exit 1",
+    "typecheck": "tsc -b && tsc -p apps/web --noEmit && tsc -p scripts --noEmit",
     "test": "bun test"
   },
   "devDependencies": {

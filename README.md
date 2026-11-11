@@ -93,6 +93,34 @@ and needs no inbound endpoint). DB migrations are applied in-process at startup
 (`applyMigrations` in `apps/server/src/db/client.ts`); no manual step. Data persists in the
 `st-data` volume.
 
+> Gotcha: MariaDB bakes the root password into the `st-data` volume the **first** time it
+> initializes. Changing `MARIADB_ROOT_PASSWORD` in `.env` afterwards does not change the password
+> the running container accepts — the app then fails to connect. To adopt a new password you must
+> wipe the volume (`docker compose down -v` — **destroys all data**) or change the password inside
+> the running DB.
+
+## Telegram
+
+Everything Telegram is optional: with `TELEGRAM_BOT_TOKEN` unset the bot never starts and every
+digest/send is a `[send:<chatId>] …` console line — the web UI stays fully usable. To turn it on,
+set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_CHAT_IDS` (plus `VISION_BASE_URL` / `VISION_MODEL` for
+fill extraction; the key may come from `VISION_API_KEY` or the web Settings page, which wins).
+Restart — `main.ts` starts a long-polling bot (no inbound endpoint needed).
+
+Only chat IDs on the allowlist get any response (`packages/telegram/src/bot.ts`):
+
+- `/status` — current runs with held buckets and cash; `/orders` — today's open orders;
+  `/help`, `/start`.
+- Send a fill screenshot (mPOP) as a photo. To pick the run explicitly, caption it with the run id
+  as the first word: `12 …`, `#12 …`, or `/capture 12 …`. With no run number the fills are
+  auto-routed by ticker — and only if every ticker resolves to exactly one active run (an ambiguous
+  or unknown ticker books nothing and says so).
+- The vision model extracts the fills; each becomes a pending fill with a `Yes`/`No` inline
+  keyboard. `Yes` books it (lowest empty bucket for buys), `No` rejects. Nothing is booked without
+  that tap. Re-sending the identical photo is deduped by content hash.
+- A fill-capture reminder goes out at 16:05 ET on trading days (nothing on weekends/holidays).
+
+
 ## Schedules
 
 All jobs run on croner with timezone `America/New_York` (`apps/server/src/pipeline/wire.ts`), Mon–Fri

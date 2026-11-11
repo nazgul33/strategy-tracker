@@ -2,6 +2,7 @@
   "name": "@st/server",
   "private": true,
   "scripts": {
+    "dev": "cd ../.. && bun --watch apps/server/src/main.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },
