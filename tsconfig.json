@@ -17,6 +17,9 @@
       "path": "./packages/ingest"
     },
     {
+      "path": "./packages/telegram"
+    },
+    {
       "path": "./apps/server"
     }
   ]

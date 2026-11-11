@@ -1,0 +1,16 @@
+{
+  "name": "@st/telegram",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "@st/calendar": "workspace:*",
+    "@st/core": "workspace:*",
+    "@st/strategies": "workspace:*",
+    "grammy": "^1.46.0"
+  },
+  "exports": {
+    ".": "./src/bot.ts",
+    "./digest": "./src/digest.ts",
+    "./i18n": "./src/i18n.ts"
+  }
+}
