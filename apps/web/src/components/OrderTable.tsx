@@ -1,6 +1,6 @@
 import type { OrderDto } from '../api';
 import { enumLabelKey, orderKindTone, orderStatusTone } from '../viewmodels';
-import { priceUsd } from '../format';
+import { isoDate, priceUsd } from '../format';
 import { useT } from '../i18n';
 import { Badge, EmptyNote, TableWrap, Td, Th } from './ui';
 
@@ -23,7 +23,7 @@ export function OrderTable({ orders }: { orders: OrderDto[] }) {
       <tbody>
         {orders.map((o) => (
           <tr key={o.id}>
-            <Td className="whitespace-nowrap tabular-nums">{o.tradeDate}</Td>
+            <Td className="whitespace-nowrap tabular-nums">{isoDate(o.tradeDate)}</Td>
             <Td className="text-right tabular-nums">{o.bucketIdx + 1}</Td>
             <Td>
               <Badge tone={orderKindTone(o.kind)}>{t(enumLabelKey('orderKind', o.kind))}</Badge>

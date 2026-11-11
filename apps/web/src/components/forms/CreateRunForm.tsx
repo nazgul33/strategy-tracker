@@ -3,6 +3,7 @@ import { useState } from 'react';
 
 import { api, usdOrNull, usdToCents } from '../../api';
 import { useT } from '../../i18n';
+import { seedCashErrorKey } from '../../viewmodels';
 import { Button, Field, Input } from '../ui';
 
 interface SeedRow {
@@ -82,16 +83,15 @@ export function CreateRunForm({
         }
         buckets.push({ shares, buyPrice: price, filledOn: r.filledOn });
       }
-      let cashCents: number | undefined;
-      if (seedCash.trim() !== '') {
-        const parsed = usdToCents(seedCash);
-        if (parsed === null) {
-          setError(t('poolInvalidAmount'));
-          return;
-        }
-        cashCents = parsed;
+      // Cash total is required whenever seed rows exist (even 0), and must be
+      // a non-negative integer number of cents when typed.
+      const cashCents = usdToCents(seedCash);
+      const cashErr = seedCashErrorKey(rows, cashCents);
+      if (cashErr !== null) {
+        setError(t(cashErr));
+        return;
       }
-      seed = cashCents === undefined ? { buckets } : { cashCents, buckets };
+      seed = cashCents === null ? { buckets } : { cashCents, buckets };
     }
 
     setBusy(true);

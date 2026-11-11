@@ -25,7 +25,7 @@ import {
 } from '../components/ui';
 import { bpPercent, centsUsd, isoDateTime, percent, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
-import { enumLabelKey, pnlBadgeTone, runStatusTone, toneFor } from '../viewmodels';
+import { enumLabelKey, pnlBadgeTone, poolAfterTopUp, runStatusTone, toneFor } from '../viewmodels';
 
 type Tab = 'orders' | 'pending' | 'fills' | 'history' | 'notifications' | 'manual';
 
@@ -197,12 +197,29 @@ export function RunDetailPage({ id }: { id: number }) {
         </Modal>
       )}
 
-      {showPool && <PoolModal runId={id} onClose={() => setShowPool(false)} onAdded={() => void reload()} />}
+      {showPool && (
+        <PoolModal
+          runId={id}
+          poolCents={run.poolCents}
+          onClose={() => setShowPool(false)}
+          onAdded={() => void reload()}
+        />
+      )}
     </div>
   );
 }
 
-function PoolModal({ runId, onClose, onAdded }: { runId: number; onClose: () => void; onAdded: () => void }) {
+function PoolModal({
+  runId,
+  poolCents,
+  onClose,
+  onAdded,
+}: {
+  runId: number;
+  poolCents: number;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
   const t = useT();
   const [amount, setAmount] = useState('');
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -212,15 +229,18 @@ function PoolModal({ runId, onClose, onAdded }: { runId: number; onClose: () => 
 
   const submit = async () => {
     if (busy) return;
-    const cents = usdToCents(amount);
-    if (cents === null || cents <= 0) {
+    // The pool endpoint sets an ABSOLUTE amount — send current pool + addition,
+    // otherwise a "top up $500" would shrink a larger pool to $500.
+    const add = usdToCents(amount);
+    const total = add === null ? null : poolAfterTopUp(poolCents, add);
+    if (total === null) {
       setFieldError(t('poolInvalidAmount'));
       return;
     }
     setBusy(true);
     setSubmitError(null);
     try {
-      await api.setPool(runId, cents);
+      await api.setPool(runId, total);
       setAdded(true);
       onAdded();
     } catch (err) {

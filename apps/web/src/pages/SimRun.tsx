@@ -2,6 +2,7 @@ import { useAsync } from '../components/hooks';
 import { api } from '../api';
 import { SimReplay } from '../components/SimReplay';
 import { Button, ErrorNote, SectionTitle, Spinner } from '../components/ui';
+import { isoDate } from '../format';
 import { useT } from '../i18n';
 
 export function SimRunPage({ id }: { id: number }) {
@@ -25,7 +26,7 @@ export function SimRunPage({ id }: { id: number }) {
         <div className="space-y-4">
           <p className="text-sm text-ink-faint">
             <span className="font-semibold text-ink">{data.run.ticker}</span>
-            {' · '}{data.run.fromDate} → {data.run.toDate}
+            {' · '}{isoDate(data.run.fromDate)} → {isoDate(data.run.toDate)}
             {' · '}{t('simDayCount', { count: data.days.length })}
           </p>
           <SimReplay run={data.run} days={data.days} />

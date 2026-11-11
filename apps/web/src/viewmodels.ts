@@ -48,10 +48,12 @@ export function orderKindTone(kind: string): BadgeTone {
   return 'neutral';
 }
 
+// `cancelled` is grouped with `skipped`/`stale`: an order the broker accepted
+// and then called off is just as inert — it never held money.
 export function orderStatusTone(status: string): BadgeTone {
   if (status === 'open') return 'primary';
   if (status === 'filled') return 'success';
-  if (status === 'skipped' || status === 'stale' || status === 'expired') return 'neutral';
+  if (status === 'skipped' || status === 'stale' || status === 'cancelled') return 'neutral';
   return 'warning';
 }
 
@@ -184,4 +186,31 @@ export function simEventGroup(event: SimEvent, isLastDay: boolean): SimGroup {
   if (event.type === 'skipped') return 'skipped';
   if (event.side === 'buy') return 'buy';
   return isLastDay ? 'force' : 'target';
+}
+
+/**
+ * Shared-pool top-up: the API's `POST /api/runs/:id/pool` sets an **absolute**
+ * amount, so the modal must send current pool + the user's addition. Returns
+ * the new total in cents, or `null` when the result is not a positive integer
+ * that JSON can carry exactly — a float total would silently change the pool.
+ */
+export function poolAfterTopUp(poolCents: number, addCents: number): number | null {
+  if (!Number.isInteger(poolCents) || !Number.isInteger(addCents)) return null;
+  if (addCents <= 0) return null;
+  const total = poolCents + addCents;
+  if (total <= 0 || !Number.isSafeInteger(total)) return null;
+  return total;
+}
+
+/**
+ * Seed-cash validation for the create-run form. When seed rows exist, the cash
+ * total is required (empty or whitespace-only → `seedCashRequired`); a typed
+ * value must be a non-negative integer number of cents. `cashCents` is the
+ * parsed value (`usdToCents`) or `null` when the input was empty/unparsable.
+ */
+export function seedCashErrorKey(rows: readonly unknown[], cashCents: number | null): string | null {
+  if (rows.length === 0) return null;
+  if (cashCents === null) return 'seedCashRequired';
+  if (!Number.isInteger(cashCents) || cashCents < 0) return 'seedCashInvalid';
+  return null;
 }

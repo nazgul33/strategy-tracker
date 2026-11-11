@@ -13,9 +13,11 @@ import {
   orderStatusTone,
   pendingIssue,
   pnlBadgeTone,
+  poolAfterTopUp,
   priceToCents,
   reasonKey,
   runStatusTone,
+  seedCashErrorKey,
   simEventGroup,
   toneFor,
 } from './viewmodels';
@@ -46,7 +48,8 @@ describe('run status helpers', () => {
     expect(runStatusTone('active')).toBe('success');
     expect(runStatusTone('done')).toBe('neutral');
     expect(orderKindTone('market_sell')).toBe('danger');
-    expect(orderStatusTone('cancelled')).toBe('warning');
+    // `cancelled` is inert like `skipped`/`stale` — it never held money.
+    expect(orderStatusTone('cancelled')).toBe('neutral');
     expect(fillSourceTone('seed')).toBe('info');
   });
 });
@@ -179,5 +182,38 @@ describe('bucketCells', () => {
     expect(cells[0].filled).toBe(true);
     expect(cells[0].state).toBe('force_sell');
     expect(cells[0].forceSell).toBe(false); // no age known → no computed force
+  });
+});
+
+describe('poolAfterTopUp', () => {
+  test('the pool API sets an absolute amount: send pool + addition', () => {
+    expect(poolAfterTopUp(950000, 50000)).toBe(1000000);
+  });
+
+  test('rejects non-positive additions', () => {
+    expect(poolAfterTopUp(950000, 0)).toBeNull();
+    expect(poolAfterTopUp(950000, -100)).toBeNull();
+  });
+
+  test('rejects values JSON cannot carry exactly as integers', () => {
+    expect(poolAfterTopUp(100000, 0.5)).toBeNull();
+    expect(poolAfterTopUp(Number.NaN, 50000)).toBeNull();
+    expect(poolAfterTopUp(950000, Number.MAX_SAFE_INTEGER)).toBeNull();
+  });
+});
+
+describe('seedCashErrorKey', () => {
+  test('cash is required when seed rows exist, even when the total is 0', () => {
+    expect(seedCashErrorKey([{ bucketIdx: 0, cashCents: 0 }], null)).toBe('seedCashRequired');
+  });
+
+  test('valid input passes, invalid cents are rejected', () => {
+    expect(seedCashErrorKey([{ bucketIdx: 0, cashCents: 0 }], 250000)).toBeNull();
+    expect(seedCashErrorKey([{ bucketIdx: 0, cashCents: 0 }], -100)).toBe('seedCashInvalid');
+    expect(seedCashErrorKey([{ bucketIdx: 0, cashCents: 0 }], 1.5)).toBe('seedCashInvalid');
+  });
+
+  test('no seed rows → no cash requirement', () => {
+    expect(seedCashErrorKey([], null)).toBeNull();
   });
 });

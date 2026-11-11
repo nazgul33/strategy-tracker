@@ -13,7 +13,7 @@ import {
   type BadgeTone,
   type SimGroup,
 } from '../viewmodels';
-import { centsUsd, priceUsd, bpPercent, signedCentsUsd } from '../format';
+import { centsUsd, priceUsd, bpPercent, isoDate, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
 import { Badge, Button, Card, EmptyNote, SectionTitle, Stat, TableWrap, Td, Th } from './ui';
 import { BucketBoard } from './BucketBoard';
@@ -110,13 +110,13 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
           ◀ {t('simPrevDay')}
         </Button>
         <span className="text-sm font-medium tabular-nums">
-          {t('simDayNav', { n: clamped + 1, total })} — {day.tradeDate}
+          {t('simDayNav', { n: clamped + 1, total })} — {isoDate(day.tradeDate)}
         </span>
         <Button variant="secondary" onClick={() => step(1)} disabled={isLast} aria-label={t('simNextDay')}>
           {t('simNextDay')} ▶
         </Button>
         <span className="ml-auto text-xs text-muted-foreground">
-          {run.ticker} · {run.fromDate} → {run.toDate} · {t('runPoolCents')} {centsUsd(run.poolCents)}
+          {run.ticker} · {isoDate(run.fromDate)} → {isoDate(run.toDate)} · {t('runPoolCents')} {centsUsd(run.poolCents)}
           {params.sellCapBps !== null && <> · {t('simSellCap')} {bpPercent(params.sellCapBps * 100)}</>}
           {` · ${t('simMaxAge')} ${params.maxAgeDays}`}
         </span>
@@ -130,7 +130,7 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
       </div>
 
       <Card>
-        <SectionTitle>{t('simPlanOrders')} — {day.tradeDate}</SectionTitle>
+        <SectionTitle>{t('simPlanOrders')} — {isoDate(day.tradeDate)}</SectionTitle>
         {day.planJson.orders.length === 0 && day.planJson.skips.length === 0 ? (
           <EmptyNote>{t('simNoFills')}</EmptyNote>
         ) : (

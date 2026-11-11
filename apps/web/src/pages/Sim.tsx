@@ -17,7 +17,7 @@ import {
   Td,
   Th,
 } from '../components/ui';
-import { bpPercent, centsUsd, isoDateTime, todayIso } from '../format';
+import { bpPercent, centsUsd, isoDate, isoDateTime, todayIso } from '../format';
 import { useT } from '../i18n';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -182,7 +182,7 @@ export function SimPage() {
                     <div className="font-mono text-[11px] text-muted-foreground">{sim.ticker}</div>
                   </Td>
                   <Td className="whitespace-nowrap tabular-nums">
-                    {sim.fromDate} → {sim.toDate}
+                    {isoDate(sim.fromDate)} → {isoDate(sim.toDate)}
                   </Td>
                   <Td className="text-right tabular-nums">{centsUsd(sim.poolCents)}</Td>
                   <Td className="text-right tabular-nums">{bpPercent(sim.costPpm / 100)}</Td>

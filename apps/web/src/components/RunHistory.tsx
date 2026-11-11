@@ -2,7 +2,7 @@
 // (myriadths bigint math, never floats) — display of what the server booked.
 import type { ClosedBucketDto } from '../api';
 import { daysBetween, toneFor, pnlBadgeTone } from '../viewmodels';
-import { priceUsd, signedCentsUsd } from '../format';
+import { isoDate, priceUsd, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
 import { Badge, EmptyNote, TableWrap, Td, Th } from './ui';
 
@@ -40,8 +40,8 @@ export function RunHistory({ closed }: { closed: ClosedBucketDto[] }) {
           return (
             <tr key={`${c.index}-${c.closedOn}`}>
               <Td className="text-right tabular-nums">{c.index + 1}</Td>
-              <Td className="whitespace-nowrap tabular-nums">{c.openedOn}</Td>
-              <Td className="whitespace-nowrap tabular-nums">{c.closedOn}</Td>
+              <Td className="whitespace-nowrap tabular-nums">{isoDate(c.openedOn)}</Td>
+              <Td className="whitespace-nowrap tabular-nums">{isoDate(c.closedOn)}</Td>
               <Td className="text-right tabular-nums">{c.shares}</Td>
               <Td className="text-right tabular-nums">{priceUsd(c.buyPrice)}</Td>
               <Td className="text-right tabular-nums">{priceUsd(c.soldPrice)}</Td>

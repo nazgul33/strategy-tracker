@@ -38,7 +38,7 @@ function NotFound() {
   const t = useT();
   return (
     <div className="py-10 text-center text-sm text-muted-foreground">
-      {t('errorLoadFailed')}
+      {t('routeNotFound')}
       <a href="#/runs" className="ml-2 text-primary underline">
         {t('actionBack')}
       </a>

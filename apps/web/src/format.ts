@@ -97,26 +97,40 @@ export function percent(fraction: number | null | undefined): string {
   return `${(fraction * 100).toFixed(1)}%`;
 }
 
-/** `2026-11-10` → `Nov 10, 2026` (fixed en-US so dates never shift by timezone). */
-export function isoDate(iso: string | null | undefined): string {
-  if (!iso || !ISO_DATE.test(iso)) return '—';
-  const [y, m, d] = iso.split('-').map(Number);
-  const date = new Date(Date.UTC(y, m - 1, d));
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
-}
-
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** ISO timestamp → `2026-11-10 09:05` in the browser's zone (audit fields only). */
+/**
+ * Date value from the API → `YYYY-MM-DD`, shown exactly as the server wrote it.
+ * No locale wording, and no `new Date()` round-trip: an untyped `new Date`
+ * parses a bare `YYYY-MM-DD` as UTC midnight, which lands on the day before in
+ * western browser timezones. Accepts the DATE wire format (`2026-01-05`) and
+ * legacy locale-free datetimes (`2026-01-05 09:05:00`, `2026-01-05T09:05`);
+ * `null`/garbage → `—`.
+ */
+export function isoDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const match = iso.match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : '—';
+}
+
+/**
+ * Datetime value from the API → `YYYY-MM-DD HH:MM`, a naive wall-clock string
+ * with no timezone jargon:
+ *  - bare date (`2026-01-05`) → as-is; a fake ` 00:00` would be a lie.
+ *  - locale-free server stamps (`2026-01-05 09:05[:SS]`, `2026-01-05T09:05`)
+ *    → as-is: these are already New York wall-clock times from the server.
+ *  - explicit offset or `Z` (`…T09:05:00Z`, `…T09:05:00+09:00`) → rendered in
+ *    the browser's own zone.
+ * `null`/garbage → `—`.
+ */
 export function isoDateTime(iso: string | null | undefined): string {
   if (!iso) return '—';
+  const bare = iso.match(/^\d{4}-\d{2}-\d{2}$/);
+  if (bare) return bare[0];
+  const naive = iso.match(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/);
+  if (naive && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(iso)) return naive[0].replace('T', ' ');
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
+  if (Number.isNaN(date.getTime())) return '—';
   const pad = (n: number) => String(n).padStart(2, '0');
   return (
     `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
