@@ -77,8 +77,12 @@ export function usdFeeOrNull(value: string): string | null {
 
 /** "12.345" USD → integer cents, half-up; null on bad input. */
 export function usdToCents(value: string): number | null {
+  // Accept comma-grouped input ("1,000", "12,345,678.90") by stripping only
+  // strictly well-formed grouping; core's parseUsd rejects commas outright.
+  const raw = value.trim();
+  const s = /^\d+(,\d{3})+(\.\d+)?$/.test(raw) ? raw.replace(/,/g, '') : raw;
   try {
-    const v = parseUsd(value.trim());
+    const v = parseUsd(s);
     if (v < 0n) return null;
     return Number((v + 50n) / 100n);
   } catch {

@@ -19,6 +19,10 @@ describe('isoDate', () => {
     expect(isoDate(null)).toBe('—');
     expect(isoDate('bogus')).toBe('—');
   });
+
+  test('date-shaped prefix followed by junk is rejected', () => {
+    expect(isoDate('2026-01-05xyz')).toBe('—');
+  });
 });
 
 describe('isoDateTime', () => {

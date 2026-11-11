@@ -83,15 +83,17 @@ export function CreateRunForm({
         }
         buckets.push({ shares, buyPrice: price, filledOn: r.filledOn });
       }
-      // Cash total is required whenever seed rows exist (even 0), and must be
-      // a non-negative integer number of cents when typed.
+      // Typed-but-unparsable cash is always invalid (even with no rows);
+      // cash is required whenever seed rows exist (even 0).
       const cashCents = usdToCents(seedCash);
-      const cashErr = seedCashErrorKey(rows, cashCents);
+      const cashErr = seedCashErrorKey(rows, cashCents, seedCash.trim() !== '');
       if (cashErr !== null) {
         setError(t(cashErr));
         return;
       }
-      seed = cashCents === null ? { buckets } : { cashCents, buckets };
+      // Never emit a seed without cashCents: the server requires it. With no
+      // rows and no parsable cash there is no seed at all.
+      if (rows.length > 0 || cashCents !== null) seed = { cashCents: cashCents!, buckets };
     }
 
     setBusy(true);

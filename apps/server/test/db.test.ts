@@ -64,8 +64,11 @@ describeIf('db integration', () => {
     const id = await repos.pendingRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker: 'Y', shares: 5, price: 100n, fee: 1, filledOn: '2026-02-10', status: 'pending' })
     await repos.pendingRepo.decide(id, 'confirmed', { shares: 7 })
     const rows = await repos.pendingRepo.listPending()
-    // just ensure no throw
-    expect(rows.length).toBeGreaterThanOrEqual(0)
+    // the decided row must no longer be pending for this run
+    expect(rows.filter((r: any) => r.runId === runId).length).toBe(0)
+    const after = await repos.pendingRepo.get(id)
+    expect(after.status).toBe('confirmed')
+    expect(Number(after.shares)).toBe(7)
   })
 
   test('DATE columns come back as date strings, not Date objects', async () => {

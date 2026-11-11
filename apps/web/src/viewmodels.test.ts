@@ -216,4 +216,16 @@ describe('seedCashErrorKey', () => {
   test('no seed rows → no cash requirement', () => {
     expect(seedCashErrorKey([], null)).toBeNull();
   });
+
+  test('typed-but-unparsable cash is invalid even with no seed rows', () => {
+    expect(seedCashErrorKey([], null, true)).toBe('seedCashInvalid');
+  });
+
+  test('untouched cash input with no seed rows is fine', () => {
+    expect(seedCashErrorKey([], null, false)).toBeNull();
+  });
+
+  test('zero cash is valid (form sends {cashCents: 0, buckets: []})', () => {
+    expect(seedCashErrorKey([], 0, true)).toBeNull();
+  });
 });

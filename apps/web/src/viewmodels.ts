@@ -203,14 +203,15 @@ export function poolAfterTopUp(poolCents: number, addCents: number): number | nu
 }
 
 /**
- * Seed-cash validation for the create-run form. When seed rows exist, the cash
- * total is required (empty or whitespace-only → `seedCashRequired`); a typed
- * value must be a non-negative integer number of cents. `cashCents` is the
- * parsed value (`usdToCents`) or `null` when the input was empty/unparsable.
+ * Seed-cash validation for the create-run form. A typed value (non-empty text,
+ * `cashTyped`; defaults to "parsed a number") must be a non-negative integer
+ * number of cents, or null/NaN from `usdToCents` counts as unparsable →
+ * `seedCashInvalid`. When seed rows exist but nothing was typed, the cash
+ * total is required → `seedCashRequired`. Otherwise null.
  */
-export function seedCashErrorKey(rows: readonly unknown[], cashCents: number | null): string | null {
-  if (rows.length === 0) return null;
-  if (cashCents === null) return 'seedCashRequired';
-  if (!Number.isInteger(cashCents) || cashCents < 0) return 'seedCashInvalid';
+export function seedCashErrorKey(rows: readonly unknown[], cashCents: number | null, cashTyped?: boolean): string | null {
+  const typed = cashTyped ?? cashCents !== null;
+  if (typed && (cashCents === null || !Number.isInteger(cashCents) || cashCents < 0)) return 'seedCashInvalid';
+  if (rows.length > 0 && !typed) return 'seedCashRequired';
   return null;
 }
