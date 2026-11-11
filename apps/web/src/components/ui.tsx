@@ -98,21 +98,28 @@ export function Button({ variant = 'secondary', busy = false, disabled, children
 }
 
 const INPUT_CLASS =
-  'rounded border border-input bg-background px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none';
+  'rounded border bg-background px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none';
 
-export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={`${INPUT_CLASS} ${props.className ?? ''}`} />;
+export function Input({ invalid, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }) {
+  return (
+    <input
+      {...props}
+      aria-invalid={invalid || undefined}
+      className={`${INPUT_CLASS} ${invalid ? 'border-destructive' : 'border-input'} focus:border-primary ${props.className ?? ''}`}
+    />
+  );
 }
 
 export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={`${INPUT_CLASS} ${props.className ?? ''}`} />;
+  return <select {...props} className={`${INPUT_CLASS} border-input focus:border-primary ${props.className ?? ''}`} />;
 }
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs text-muted-foreground">{label}</span>
       {children}
+      {hint !== undefined && <span className="mt-1 block text-[11px] leading-snug text-muted-foreground">{hint}</span>}
     </label>
   );
 }
