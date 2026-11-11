@@ -34,24 +34,24 @@ cp .env.example .env   # then fill in DATABASE_URL, APP_PASSWORD, SESSION_SECRET
 For the DB above, `DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test`. `APP_PASSWORD` and
 `SESSION_SECRET` are any non-empty strings in dev.
 
-Run the server (Bun auto-loads `.env` from the project root):
+### Run in development — no build step needed
+
+Dev mode never needs a build: Bun executes the TypeScript server directly, and Vite serves the UI
+straight from source with hot reload. Start both processes, in two terminals (Bun auto-loads `.env`
+from the project root):
 
 ```sh
-bun apps/server/src/main.ts
+bun run --cwd apps/server dev   # terminal 1: API + bot + cron on :8080, auto-restarts on save
+bun run --cwd apps/web dev      # terminal 2: web UI on http://localhost:5173
 ```
 
-DB migrations apply automatically at startup — there is no manual migrate step. The app listens on
-`PORT` (default 8080) and serves the built SPA from `apps/web/dist` when it exists; without a web
-build it is API-only. `GET /api/health` is public; every other `/api` route needs login with
-`APP_PASSWORD` (`POST /api/login`, session cookie or `Authorization: Bearer`).
+Open **http://localhost:5173**. Vite proxies `/api` to `localhost:8080`, so leave `PORT` at its
+default. Server code restarts on save; UI code reloads in the browser on save. `apps/web/dist` is
+not read in this mode — there is nothing to build and no stale bundle to worry about.
 
-Web UI during development (hot reload, proxies `/api` to `localhost:8080`):
-
-```sh
-bun run --cwd apps/web dev   # http://localhost:5173
-```
-
-Or build it into the binary's static reach: `bun run --cwd apps/web build`.
+DB migrations apply automatically at startup — there is no manual migrate step. `GET /api/health`
+is public; every other `/api` route needs login with `APP_PASSWORD` (`POST /api/login`, session
+cookie or `Authorization: Bearer`).
 
 ## Environment variables
 
@@ -79,6 +79,8 @@ changes made in Settings apply without a restart (`apps/server/src/main.ts`,
 
 ## Deployment
 
+### With Docker (recommended)
+
 Put a root `.env` file with at least these three (docker compose interpolates them):
 `MARIADB_ROOT_PASSWORD`, `APP_PASSWORD`, `SESSION_SECRET`. Optionally set `DIGEST_LANG` (defaults
 to `en`) and the `TELEGRAM_*` / `VISION_*` vars (empty/unset ⇒ bot disabled, sends logged).
@@ -86,6 +88,9 @@ to `en`) and the `TELEGRAM_*` / `VISION_*` vars (empty/unset ⇒ bot disabled, s
 ```sh
 docker compose up -d --build
 ```
+
+The image builds the web bundle inside the build (`cd apps/web && bun run build` in the
+`Dockerfile`), so every deploy ships a fresh UI — no manual build step.
 
 The app serves on `127.0.0.1:8080` — compose binds the port to localhost only, so remote access
 means putting a TLS reverse proxy on the host in front of it (the Telegram bot uses long-polling
@@ -98,6 +103,24 @@ and needs no inbound endpoint). DB migrations are applied in-process at startup
 > the running container accepts — the app then fails to connect. To adopt a new password you must
 > wipe the volume (`docker compose down -v` — **destroys all data**) or change the password inside
 > the running DB.
+
+### Without Docker (bare metal)
+
+Build the UI once into `apps/web/dist`, then start the server — it serves the SPA (with an SPA
+fallback for deep links) from that folder on `PORT` (default 8080):
+
+```sh
+bun install
+bun run --cwd apps/web build   # writes the UI bundle into apps/web/dist
+bun apps/server/src/main.ts    # API + bot + cron + SPA, on :8080 by default
+```
+
+Migrations again apply at startup; use the production DB of your choice in `DATABASE_URL`.
+
+> Gotcha: the server only **reads** `apps/web/dist` — it never rebuilds it. After pulling code
+> that touches `apps/web/`, re-run `bun run --cwd apps/web build` and hard-refresh the browser,
+> or the server keeps serving the stale bundle. (Development mode has no such step — Vite serves
+> the UI from source.)
 
 ## Telegram
 
