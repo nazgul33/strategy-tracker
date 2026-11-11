@@ -1,7 +1,8 @@
 import { describe, test, expect } from 'bun:test'
-import { bucketBudgetCents, buyShares, sellTarget, ageBuckets, computeOrders, progressView, DEFAULT_MR_PARAMS } from '@st/strategies'
+import { bucketBudgetCents, buyShares, sellTarget, ageBuckets, computeOrders, progressView, DEFAULT_MR_PARAMS, buyLimit, sellLimit } from '@st/strategies'
 import { emptyState, applyBuyFill, applySellFill } from '@st/core'
-import type { Bucket } from '@st/core'
+import type { Bucket, Run } from '@st/core'
+import { parseUsd } from '@st/core/money'
 
 describe('core money pins', () => {
   test('bucketBudgetCents', () => expect(bucketBudgetCents(1_000_000)).toBe(100_000))
@@ -139,5 +140,59 @@ describe('progressView', () => {
     s = applySellFill(s, 0, 1, 1000100n, 0, '2026-11-03')
     s = applySellFill(s, 1, 1, 999900n, 0, '2026-11-03')
     expect(progressView(s).winRate).toBe(0.5)
+  })
+})
+
+function makeRun(): Run {
+  return { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion', costPpm: 200, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' }
+}
+
+function mkBucket(index: number, state: Bucket['state'], shares: number, buyPrice: bigint, filledOn: string): Bucket {
+  return { index, state, shares, buyPrice, buyFeeCents: 0, filledOn }
+}
+
+describe('buyLimit', () => {
+  test('default gap keeps close - $0.01, cent-rounded', () => {
+    expect(buyLimit(parseUsd('34.56'), 0)).toBe(parseUsd('34.55'))
+    expect(buyLimit(parseUsd('34.5678'), 0)).toBe(parseUsd('34.56')) // ceil(34.5578)
+  })
+  test('percent gap below close, ceiling to cents', () => {
+    expect(buyLimit(parseUsd('100'), 5_000)).toBe(parseUsd('99.50')) // 0.5%
+    expect(buyLimit(parseUsd('34.5678'), 5_000)).toBe(parseUsd('34.40')) // ceil(34.394961)
+    expect(buyLimit(parseUsd('0.01'), 50_000)).toBe(parseUsd('0.01')) // ceil(0.0095): sub-cent floors back up to 1¢
+  })
+  test('edges: 0 and 100 percent', () => {
+    expect(buyLimit(parseUsd('10'), 1_000_000)).toBe(0n)
+  })
+})
+
+describe('sellLimit', () => {
+  test('default gap keeps legacy sellTarget exactly', () => {
+    expect(sellLimit(parseUsd('33.43'), 200, 100, 0)).toBe(sellTarget(parseUsd('33.43'), 200, 100n))
+  })
+  test('percent gap above buy price, truncate to cents', () => {
+    expect(sellLimit(parseUsd('100'), 200, 100, 10_000)).toBe(parseUsd('101'))
+    expect(sellLimit(parseUsd('33.43'), 200, 100, 300_000)).toBe(parseUsd('43.45')) // 43.459 → 43.45
+  })
+  test('edges: 100 percent doubles buy price', () => {
+    expect(sellLimit(parseUsd('12.34'), 200, 100, 1_000_000)).toBe(parseUsd('24.68'))
+  })
+})
+
+describe('computeOrders with gaps', () => {
+  test('buy and sell_loc prices follow run gaps', () => {
+    const run = { ...makeRun(), buyGapPpm: 10_000, sellGapPpm: 200_000 } // 1% below close, 20% above buy
+    const state = emptyState(10)
+    state.buckets[0] = mkBucket(0, 'held', 100, parseUsd('90'), '2026-11-02')
+    const plan = computeOrders(run, state, { lastClose: parseUsd('100') })
+    expect(plan.orders.find(o => o.kind === 'buy_loc')?.limitPrice).toBe(parseUsd('99'))       // 100 × 0.99
+    expect(plan.orders.find(o => o.kind === 'sell_loc')?.limitPrice).toBe(parseUsd('108'))     // 90 × 1.20
+  })
+  test('unset gaps keep legacy prices', () => {
+    const state = emptyState(10)
+    state.buckets[0] = mkBucket(0, 'held', 100, parseUsd('90'), '2026-11-02')
+    const plan = computeOrders(makeRun(), state, { lastClose: parseUsd('100') })
+    expect(plan.orders.find(o => o.kind === 'buy_loc')?.limitPrice).toBe(parseUsd('99.99'))
+    expect(plan.orders.find(o => o.kind === 'sell_loc')?.limitPrice).toBe(sellTarget(parseUsd('90'), 200, 100n))
   })
 })
