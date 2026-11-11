@@ -183,7 +183,7 @@ async function main(): Promise<void> {
     }
     const morning = await runMorningPipeline(dayDeps)
     ok(morning === 'sent', 'runMorningPipeline -> sent')
-    ok(sent.length > 0 && sent.every((s) => s.chat === 'chat-1'), 'digest delivered to allowed chat only')
+    ok(sent.length === 1 && sent[0].chat === 'chat-1', 'exactly one digest delivered, to the allowed chat')
     const digest = sent.map((s) => s.text).join('\n')
     console.log('--- digest as sent ---\n' + digest + '\n--------------------')
     ok(digest.includes('E2E NVDA  NVDA'), 'digest header verbatim')
@@ -227,9 +227,9 @@ async function main(): Promise<void> {
     await closeDb()
     const parent = await getDb(parentUrl)
     await parent.$client.query(`DROP DATABASE \`${SCRATCH}\``)
-    const [left] = (await parent.$client.query(`SHOW DATABASES LIKE 'st\\_e2e\\_%'`)) as [any[], unknown]
+    const [left] = (await parent.$client.query(`SHOW DATABASES LIKE '${SCRATCH}'`)) as [any[], unknown]
     await closeDb()
-    ok(left.length === 0, 'no st_e2e_* databases left on the server after the run')
+    ok(left.length === 0, `scratch database ${SCRATCH} dropped after the run`)
     console.log(`e2e OK — ${checks} assertions passed`)
   } finally {
     vision.stop(true)

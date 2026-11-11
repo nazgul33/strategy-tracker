@@ -27,9 +27,9 @@ apps/server/       drizzle.config.ts
     http/app.ts http/auth.ts http/routes/{runs,fills,pending,sim,settings}.ts
   db/migrations/   0000_fantastic_thunderbolts.sql 0001_workable_spot.sql (+ meta/)
   test/            booking.test.ts day.test.ts sim.test.ts http.test.ts db.test.ts wire.test.ts
-apps/web/src/      main.tsx App.tsx api.ts api.types.ts i18n.ts viewmodels.ts
-  components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,forms/*}
-  pages/{RunsList,RunDetail,Sim,Settings}.tsx
+apps/web/src/      main.tsx App.tsx api.ts api.types.ts format.ts viewmodels.ts (+ colocated *.test.ts)
+  components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,RunPanels,RunHistory,hooks,ui,forms/*}
+  pages/{RunsList,RunDetail,Sim,SimRun,Settings,Login,Pending}.tsx
   i18n/en.json i18n/ko.json
 scripts/           e2e.ts tsconfig.json — operator smoke on a scratch DB (see Test matrix)
 ```
@@ -41,7 +41,7 @@ scripts/           e2e.ts tsconfig.json — operator smoke on a scratch DB (see 
 - `bun run typecheck` (packages via `tsc -b`, apps/web + scripts directly)
 - `bun run dev` is a pointer, not a server — run `bun run --cwd apps/server dev` (or `bun run --cwd apps/web dev`)
 - `docker compose up` (app listens on 127.0.0.1:8080 by default)
-- E2E smoke (see Test matrix for the scratch DB): `bun scripts/e2e.ts`
+- E2E smoke (see Test matrix for the scratch DB): `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun scripts/e2e.ts`
 - Drizzle migrations: edit `apps/server/src/db/schema.ts`, then `bun run --cwd apps/server db:generate` (writes SQL + `meta/` snapshots into `apps/server/db/migrations/`). They are applied automatically at server startup (`applyMigrations` in `db/client.ts`, resolves from `process.cwd()` — hence all entry points run from the repo root); `db:migrate` exists for a manual apply.
 
 ## Test matrix
