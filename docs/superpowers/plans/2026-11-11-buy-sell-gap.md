@@ -186,7 +186,7 @@ describe('buyLimit', () => {
   test('percent gap below close, ceiling to cents', () => {
     expect(buyLimit(parseUsd('100'), 5_000)).toBe(parseUsd('99.50')) // 0.5%
     expect(buyLimit(parseUsd('34.5678'), 5_000)).toBe(parseUsd('34.40')) // ceil(34.394961)
-    expect(buyLimit(parseUsd('0.01'), 50_000)).toBe(0n)
+    expect(buyLimit(parseUsd('0.01'), 50_000)).toBe(parseUsd('0.01')) // ceil(0.0095): sub-cent floors back up to 1¢
   })
   test('edges: 0 and 100 percent', () => {
     expect(buyLimit(parseUsd('10'), 1_000_000)).toBe(0n)
@@ -199,7 +199,7 @@ describe('sellLimit', () => {
   })
   test('percent gap above buy price, truncate to cents', () => {
     expect(sellLimit(parseUsd('100'), 200, 100, 10_000)).toBe(parseUsd('101'))
-    expect(sellLimit(parseUsd('33.43'), 200, 100, 30_000)).toBe(parseUsd('43.45')) // 43.459 → 43.45
+    expect(sellLimit(parseUsd('33.43'), 200, 100, 300_000)).toBe(parseUsd('43.45')) // 43.459 → 43.45
   })
   test('edges: 100 percent doubles buy price', () => {
     expect(sellLimit(parseUsd('12.34'), 200, 100, 1_000_000)).toBe(parseUsd('24.68'))
