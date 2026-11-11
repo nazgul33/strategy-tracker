@@ -22,6 +22,27 @@ export function reasonKey(prefix: string, reason: string): string {
   return enumLabelKey(prefix, reason);
 }
 
+// The four operator-chosen cancel reasons, in display order. Mirror of
+// `CANCEL_REASONS` in apps/server/src/domain/booking.ts — the server validates
+// against its copy and answers 400 `invalid-reason` for anything else.
+export const CANCEL_REASONS = ['broker-filled', 'strategy-change', 'stale-price', 'other'] as const;
+
+/**
+ * Reason-cell text for the orders table. Exactly three branches, and status is
+ * NOT consulted: a `cancelReason` wins via the `cancelReason*` labels, else a
+ * `skipReason` keeps its historical `orderReason*` label (so a legacy
+ * `cancelled` row renders byte-identically to before), else ''. The caller
+ * renders '' as the em dash.
+ */
+export function orderReasonText(
+  o: { status: string; skipReason: string | null; cancelReason: string | null },
+  t: (key: string) => string,
+): string {
+  if (o.cancelReason) return t(reasonKey('cancelReason', o.cancelReason));
+  if (o.skipReason) return t(reasonKey('orderReason', o.skipReason));
+  return '';
+}
+
 export function isRunStatus(value: string): value is RunStatus {
   return (RUN_STATUSES as string[]).includes(value);
 }

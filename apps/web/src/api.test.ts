@@ -107,3 +107,27 @@ describe('bulkSetRunStatus', () => {
     expect(calls[0]!.init?.body).toBe(JSON.stringify({ ids: [4, 7], status: 'closed' }));
   });
 });
+
+// Order cancel: POST the chosen reason to the run-scoped cancel route; the
+// server's error codes ride back as ApiError(status, code) for the modal.
+describe('cancelOrder', () => {
+  test('posts the reason to /api/runs/:id/orders/:orderId/cancel', async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const http: Http = async (url, init) => {
+      calls.push({ url, init });
+      return Response.json({ ok: true });
+    };
+    const api = createApi(http, { getToken: () => null });
+    await api.cancelOrder(4, 9, 'stale-price');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe('/api/runs/4/orders/9/cancel');
+    expect(calls[0]!.init?.method).toBe('POST');
+    expect(calls[0]!.init?.body).toBe(JSON.stringify({ reason: 'stale-price' }));
+  });
+
+  test('surfaces the server error code as ApiError', async () => {
+    const http: Http = async () => Response.json({ error: 'invalid-reason' }, { status: 400 });
+    const api = createApi(http, { getToken: () => null });
+    await expect(api.cancelOrder(4, 9, 'bogus')).rejects.toMatchObject({ status: 400, code: 'invalid-reason' });
+  });
+});
