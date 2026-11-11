@@ -253,7 +253,10 @@ describe('skipReasons', () => {
         { code: 'sell-capped', params: { bucket: 3, price: 340 } },
       ],
     } as unknown as SimPlanDto;
-    expect(skipReasons(plan, t).get(3)).toBe('sell capped (price 340)');
+    const { reasons, visibleNotices } = skipReasons(plan, t);
+    // Keyed by skip-row index (index into plan.skips), not bucketIndex.
+    expect(reasons.get(0)).toBe('sell capped (price 340)');
+    expect(visibleNotices).toEqual([]);
   });
 
   test('pairing matches on bucket regardless of notice code — first wins', () => {
@@ -267,7 +270,10 @@ describe('skipReasons', () => {
     } as unknown as SimPlanDto;
     // Pins renderDigest semantics (digest.ts:22): findIndex takes the first
     // *unconsumed* notice with a matching bucket param, whatever its code.
-    expect(skipReasons(plan, t).get(3)).toBe('digest.other');
+    const { reasons, visibleNotices } = skipReasons(plan, t);
+    expect(reasons.get(0)).toBe('digest.other');
+    // The consumed winner is suppressed; the unconsumed loser stays visible.
+    expect(visibleNotices).toEqual([{ code: 'sell-capped', params: { bucket: 3, price: 340 } }]);
   });
 
   test('a skip with no matching notice gets no reason', () => {
@@ -276,6 +282,28 @@ describe('skipReasons', () => {
       skips: [{ kind: 'sell_loc', bucketIndex: 1, limitPrice: '0', shares: 10 }],
       notices: [{ code: 'sell-capped', params: { bucket: 5, price: 340 } }],
     } as unknown as SimPlanDto;
-    expect(skipReasons(plan, t).has(1)).toBe(false);
+    const { reasons, visibleNotices } = skipReasons(plan, t);
+    expect(reasons.has(0)).toBe(false);
+    expect(visibleNotices).toEqual(plan.notices);
+  });
+
+  test('a consumed notice is dropped from visibleNotices; the rest keep their order', () => {
+    const plan = {
+      orders: [],
+      skips: [{ kind: 'sell_loc', bucketIndex: 3, limitPrice: '0', shares: 10 }],
+      notices: [
+        { code: 'no-bucket-available', params: { bucket: 2 } },
+        { code: 'sell-capped', params: { bucket: 3, price: 340 } },
+        { code: 'unconfirmed', params: { bucket: 4, count: 1, date: '2026-11-10' } },
+      ],
+    } as unknown as SimPlanDto;
+    // Pins renderDigest suppression (digest.ts:31-34): a notice consumed as a
+    // skip's reason must not also render in the notices block — in order.
+    const { reasons, visibleNotices } = skipReasons(plan, t);
+    expect(reasons.get(0)).toBe('sell capped (price 340)');
+    expect(visibleNotices).toEqual([
+      { code: 'no-bucket-available', params: { bucket: 2 } },
+      { code: 'unconfirmed', params: { bucket: 4, count: 1, date: '2026-11-10' } },
+    ]);
   });
 });

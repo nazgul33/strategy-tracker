@@ -3,7 +3,7 @@ export type Lang = 'en' | 'ko'
 export interface MsgEntry { en: string; ko: string }
 // Notice codes (from computeOrders + day pipeline) covered here:
 //   no-bucket-available, shares-zero (params.price), unconfirmed (params.count, params.date).
-// Plus digest/bot chrome: header, trade-date, skip, closed, reminder, start, help.
+// Plus digest/bot chrome: header, trade-date, skip, age, age-forced, closed, reminder, start, help.
 export const CATALOG: Record<string, MsgEntry> = {
   'no-bucket-available': { en: 'no bucket available', ko: '사용 가능한 버킷 없음' },
   'shares-zero': { en: 'shares zero', ko: '주식 수 0' },

@@ -101,7 +101,7 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
   const finalValueCents = state.cashCents + holdingsCents;
   const realizedTone = pnlBadgeTone(toneFor(realizedCents));
   const groups = groupEvents(day.eventsJson, isLast);
-  const reasons = skipReasons(day.planJson, t);
+  const { reasons, visibleNotices } = skipReasons(day.planJson, t);
 
   return (
     <div className="space-y-4">
@@ -164,8 +164,8 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
                 <tr key={`s${i}`} className="opacity-60">
                   <Td>
                     <Badge tone="neutral">{t('orderStatusCancelled')}</Badge>
-                    {reasons.has(o.bucketIndex) && (
-                      <span className="ml-1 text-xs text-muted-foreground">· {reasons.get(o.bucketIndex)}</span>
+                    {reasons.has(i) && (
+                      <span className="ml-1 text-xs text-muted-foreground">· {reasons.get(i)}</span>
                     )}
                   </Td>
                   <Td className="text-right tabular-nums">
@@ -181,9 +181,9 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
             </tbody>
           </TableWrap>
         )}
-        {day.planJson.notices.length > 0 && (
+        {visibleNotices.length > 0 && (
           <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-            {day.planJson.notices.map((n, i) => (
+            {visibleNotices.map((n, i) => (
               <div key={i}>{t(`digest.${n.code}`, n.params)}</div>
             ))}
           </div>
