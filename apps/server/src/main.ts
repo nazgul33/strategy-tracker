@@ -81,6 +81,8 @@ async function main(): Promise<void> {
     defaultSettings: { visionBaseUrl, visionModel, digestLang },
     triggerMorning: async () => JSON.stringify(await runMorningPipeline(dayDeps)),
     fetchDailyBars,
+    allowedChatIds: tg?.allowedChatIds ?? [],
+    send,
   })
 
   // web build if `bun run --cwd apps/web build` was run; SPA fallback for deep links

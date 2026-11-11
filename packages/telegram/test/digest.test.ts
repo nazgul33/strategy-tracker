@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { renderDigest, renderClosed, renderReminder } from '../src/digest'
+import { t } from '../src/i18n'
 import { dayInfo } from '@st/calendar'
 import type { Run, DayPlan, DayContext } from '@st/core'
 
@@ -142,5 +143,11 @@ describe('digest', () => {
     const out = renderDigest(run, plan, ctx, 'ko').join('\n')
     expect(out).toContain('→ bucket 0  (21일 경과)')
     expect(out).toContain('매도  MARKET  120 sh  bucket 1  (120일 경과 — 강제 청산)')
+  })
+  test('order-cancelled renders in both languages', () => {
+    expect(t('order-cancelled', 'ko', { kind: 'sell_loc', bucket: 2, price: '3.50', reason: t('reason-strategy-change', 'ko') }))
+      .toBe('🚫 취소: sell_loc 버킷 2 — 전략 변경 (3.50)')
+    expect(t('order-cancelled', 'en', { kind: 'buy_loc', bucket: 0, price: '1.00', reason: t('reason-broker-filled', 'en') }))
+      .toBe('🚫 Cancelled: buy_loc bucket 0 — filled elsewhere at broker (1.00)')
   })
 })

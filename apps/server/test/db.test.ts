@@ -117,4 +117,28 @@ describeIf('db integration', () => {
     try { await db.execute(sql.raw(`UPDATE strategy_runs SET status = 'done' WHERE id = ${runId}`)) } catch { rejected = true }
     expect(rejected).toBe(true)
   })
+
+  test('order cancel reason round trip', async () => {
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'RT' + Date.now(), name: `rt-cancel-${Date.now()}`, poolCents: 1000, costPpm: 10 })
+    await repos.orderRepo.insertMany([{
+      runId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 0,
+      limitPrice: 35000000n, shares: 5, status: 'open',
+    }])
+    const rows = await repos.orderRepo.listForDate('2026-11-11')
+    const open = rows.find((o: any) => o.runId === runId)
+    expect(open).toBeTruthy()
+    expect(open.cancelReason).toBeNull()
+
+    const fetched = await repos.orderRepo.get(open.id)
+    expect(fetched!.id).toBe(open.id)
+    expect(await repos.orderRepo.get(999999999)).toBeNull()
+
+    await repos.orderRepo.setStatus(open.id, 'cancelled', 'stale-price')
+    const after = await repos.orderRepo.get(open.id)
+    expect(after!.status).toBe('cancelled')
+    expect(after!.cancelReason).toBe('stale-price')
+
+    await repos.orderRepo.setStatus(open.id, 'open') // legacy call: must not clear nor set a reason
+    expect((await repos.orderRepo.get(open.id))!.cancelReason).toBe('stale-price')
+  })
 })

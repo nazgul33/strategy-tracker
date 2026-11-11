@@ -41,6 +41,11 @@ export const CATALOG: Record<string, MsgEntry> = {
   'bucket-held': { en: 'Bucket {index}: held {shares} sh @ ${price}', ko: '버킷 {index}: {shares}주 보유 @ ${price}' },
   'bucket-force-sell': { en: 'Bucket {index}: FORCE SELL {shares} sh @ ${price}', ko: '버킷 {index}: 강제 매도 {shares}주 @ ${price}' },
   'vision-not-configured': { en: 'Vision is not configured — set VISION_BASE_URL and VISION_MODEL.', ko: '비전 설정이 없습니다 — VISION_BASE_URL과 VISION_MODEL을 설정하세요.' },
+  'order-cancelled': { en: '🚫 Cancelled: {kind} bucket {bucket} — {reason} ({price})', ko: '🚫 취소: {kind} 버킷 {bucket} — {reason} ({price})' },
+  'reason-broker-filled': { en: 'filled elsewhere at broker', ko: '증권사에서 별도 체결' },
+  'reason-strategy-change': { en: 'strategy change', ko: '전략 변경' },
+  'reason-stale-price': { en: 'price no longer valid', ko: '가격 무효화' },
+  'reason-other': { en: 'other', ko: '기타' },
 }
 
 export function t(code: string, lang: Lang, params?: Record<string, string | number>): string {

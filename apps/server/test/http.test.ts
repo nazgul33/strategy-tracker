@@ -3,6 +3,7 @@ import { createApp, type HttpDeps, type HttpRepoSurface } from '../src/http/app'
 import { makeToken, verifyToken } from '../src/http/auth'
 import { emptyState } from '@st/core'
 import type { RunState } from '@st/core'
+import { CANCEL_REASONS } from '../src/domain/booking'
 
 function makeFakes() {
   let runIdSeq = 1
@@ -48,7 +49,11 @@ function makeFakes() {
     async insertMany(os: any[]) { for (const o of os) orders.push({ id: orders.length + 1, ...o }) },
     async listForDate(date: string) { return orders.filter((o) => o.tradeDate === date) },
     async markStale() { return 0 },
-    async setStatus(id: number, status: string) { const o = orders.find((x) => x.id === id); if (o) o.status = status },
+    async get(id: number) { return orders.find((x) => x.id === id) ?? null },
+    async setStatus(id: number, status: string, cancelReason?: string) {
+      const o = orders.find((x) => x.id === id)
+      if (o) { o.status = status; if (cancelReason !== undefined) o.cancelReason = cancelReason }
+    },
     async listOpenBefore() { return [] },
     async listForRun(runId: number, date?: string) {
       let out = orders.filter((o) => o.runId === runId)
@@ -80,6 +85,7 @@ function makeFakes() {
     async insert(n: any) { notifications.push({ id: notifications.length + 1, ...n }) },
     async listForRun(runId: number) { return notifications.filter((n) => n.runId === runId) },
   }
+  const sent: { chatId: string; text: string }[] = []
   const settingsRepo = {
     async getAll() { return { ...settings } },
     async set(key: string, value: string) { settings[key] = value },
@@ -99,7 +105,7 @@ function makeFakes() {
     runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo,
     settingsRepo, poolEditRepo, simRepo,
   } as any
-  return { repos, runs, poolEdits, fills, ledger, orders, pending, notifications, settings, states, simRuns }
+  return { repos, runs, poolEdits, fills, ledger, orders, pending, notifications, sent, settings, states, simRuns }
 }
 
 const PASSWORD = 'secret'
@@ -114,6 +120,8 @@ function makeDeps(fakes: ReturnType<typeof makeFakes>): HttpDeps {
     defaultSettings: { visionBaseUrl: 'http://x', visionModel: 'm', digestLang: 'en' },
     triggerMorning: async () => 'morning-ok',
     fetchDailyBars: async () => [],
+    allowedChatIds: ['42'],
+    send: async (chatId: string, text: string) => { fakes.sent.push({ chatId, text }) },
   }
 }
 
@@ -574,6 +582,86 @@ describe('http trigger', () => {
     const res = await app.request('/api/trigger/morning', { method: 'POST', headers: auth })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ result: 'morning-ok' })
+  })
+
+  async function setup() {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'A', costPpm: 0, poolCents: 100 }), headers: { 'content-type': 'application/json', ...auth } })
+    const { id: runId } = await cr.json()
+    return { f, app, auth, runId }
+  }
+
+  test('cancel order: happy path stores reason, notifies each allowed chat', async () => {
+    const { f, app, auth, runId } = await setup()
+    await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-10', kind: 'sell_loc', bucketIdx: 2, limitPrice: 3500000n, shares: 1, status: 'open' }])
+    const id = f.orders[f.orders.length - 1].id
+    const res = await app.request(`/api/runs/${runId}/orders/${id}/cancel`, {
+      method: 'POST', headers: auth, body: JSON.stringify({ reason: 'stale-price' }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    const row = f.orders.find((o) => o.id === id)!
+    expect(row.status).toBe('cancelled')
+    expect(row.cancelReason).toBe('stale-price')
+    expect(f.notifications.filter((n) => n.runId === runId)).toHaveLength(1)
+    expect(f.notifications.find((n) => n.runId === runId)!.text).toContain('Cancelled')
+    expect(f.sent).toEqual([{ chatId: '42', text: f.notifications.find((n) => n.runId === runId)!.text }])
+  })
+  test('cancel order: 400 invalid-reason, 404 unknown order, 409 not open', async () => {
+    const { f, app, auth, runId } = await setup()
+    await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-10', kind: 'buy_loc', bucketIdx: 0, limitPrice: 1000000n, shares: 1, status: 'open' }])
+    const id = f.orders[f.orders.length - 1].id
+    const bad = await app.request(`/api/runs/${runId}/orders/${id}/cancel`, { method: 'POST', headers: auth, body: JSON.stringify({ reason: 'nope' }) })
+    expect(bad.status).toBe(400)
+    expect(await bad.json()).toEqual({ error: 'invalid-reason' })
+    expect(f.orders[0].status).toBe('open')
+    expect(f.notifications).toHaveLength(0)
+    expect(f.sent).toHaveLength(0)
+    const missing = await app.request(`/api/runs/${runId}/orders/9999/cancel`, { method: 'POST', headers: auth, body: JSON.stringify({ reason: 'other' }) })
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toEqual({ error: 'order-not-found' })
+    await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-10', kind: 'buy_loc', bucketIdx: 1, limitPrice: 1000000n, shares: 1, status: 'filled' }])
+    const filledId = f.orders[f.orders.length - 1].id
+    const notOpen = await app.request(`/api/runs/${runId}/orders/${filledId}/cancel`, { method: 'POST', headers: auth, body: JSON.stringify({ reason: 'other' }) })
+    expect(notOpen.status).toBe(409)
+    expect(await notOpen.json()).toEqual({ error: 'order-not-open' })
+    expect(f.orders[1].status).toBe('filled')
+    expect(f.notifications).toHaveLength(0)
+    expect(f.sent).toHaveLength(0)
+  })
+  test('cancel order succeeds with no allowed chats: 200, no notification rows, no sends', async () => {
+    const f = makeFakes()
+    const deps = makeDeps(f)
+    deps.allowedChatIds = []
+    const app = createApp(deps)
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'A', costPpm: 0, poolCents: 100 }), headers: { 'content-type': 'application/json', ...auth } })
+    const { id: runId } = await cr.json()
+    await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-10', kind: 'sell_loc', bucketIdx: 0, limitPrice: 2000000n, shares: 1, status: 'open' }])
+    const id = f.orders[f.orders.length - 1].id
+    const res = await app.request(`/api/runs/${runId}/orders/${id}/cancel`, { method: 'POST', headers: auth, body: JSON.stringify({ reason: 'strategy-change' }) })
+    expect(res.status).toBe(200)
+    expect(f.orders[0].status).toBe('cancelled')
+    expect(f.notifications.filter((n) => n.runId === runId)).toHaveLength(0)
+    expect(f.sent).toHaveLength(0)
+  })
+  test('cancel order: unmapped booking error surfaces as 422', async () => {
+    expect(CANCEL_REASONS.length).toBe(4)
+    const { f, app, auth, runId } = await setup()
+    await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-10', kind: 'buy_loc', bucketIdx: 0, limitPrice: 1000000n, shares: 1, status: 'open' }])
+    const id = f.orders[f.orders.length - 1].id
+    const orig = f.repos.orderRepo.setStatus
+    f.repos.orderRepo.setStatus = async () => { throw new Error('db-exploded') }
+    const res = await app.request(`/api/runs/${runId}/orders/${id}/cancel`, { method: 'POST', headers: auth, body: JSON.stringify({ reason: 'other' }) })
+    f.repos.orderRepo.setStatus = orig
+    expect(res.status).toBe(422)
+    expect(await res.json()).toEqual({ error: 'db-exploded' })
   })
 })
 describe('http sim gaps', () => {

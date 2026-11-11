@@ -22,6 +22,8 @@ export interface HttpDeps {
   defaultSettings: { visionBaseUrl: string; visionModel: string; digestLang: 'en' | 'ko' }
   triggerMorning: () => Promise<string>
   fetchDailyBars: (ticker: string, from: string, to: string) => Promise<any[]>
+  allowedChatIds: string[]
+  send: (chatId: string, text: string) => Promise<void>
 }
 
 import { runsRouter } from './routes/runs'

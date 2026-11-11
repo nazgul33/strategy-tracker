@@ -4,7 +4,7 @@ import { parseUsd, feeCents } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { ExtractResult, RawFill } from '@st/ingest'
 import {
-  ingestCapture, confirmPendingFill, manualFill, rollStale, seedRun, sha256,
+  ingestCapture, confirmPendingFill, manualFill, rollStale, seedRun, sha256, cancelOrder,
   type BookingDeps, type PendingFillRow,
 } from '../src/domain/booking'
 
@@ -57,12 +57,16 @@ export function fakeRepos() {
   const orderRepo = {
     async insertMany(os: any[]) { for (const o of os) { orders.push({ id: orderSeq++, ...o }) } },
     async listForDate(date: string) { return orders.filter((o) => o.tradeDate === date) },
+    async get(id: number) { return orders.find((x) => x.id === id) ?? null },
     async markStale(date: string) {
       let cnt = 0
       for (const o of orders) { if (o.status === 'open' && o.tradeDate < date) { o.status = 'stale'; cnt++ } }
       return cnt
     },
-    async setStatus(id: number, status: string) { const o = orders.find((x) => x.id === id); if (o) o.status = status },
+    async setStatus(id: number, status: string, cancelReason?: string) {
+      const o = orders.find((x) => x.id === id)
+      if (o) { o.status = status; if (cancelReason !== undefined) o.cancelReason = cancelReason }
+    },
     async listOpenBefore(date: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < date) },
   }
   const fillRepo = {
@@ -391,5 +395,53 @@ describe('booking', () => {
     expect(err).toBeInstanceOf(DomainError)
     const order = f._stores.orders.find((o: any) => o.kind === 'sell_loc')
     expect(order.status).toBe('open')
+  })
+
+  test('cancelOrder marks open order cancelled with reason', async () => {
+    const f = fakeRepos()
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'C1', name: 'c1', poolCents: 100, costPpm: 0 })
+    await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 1, limitPrice: 200n, shares: 5, status: 'open' }])
+    const id = f._stores.orders[0].id
+    const order = await cancelOrder(runId, id, 'strategy-change', { repos: f.repos as any, today: '2026-11-11' })
+    expect(order.status).toBe('cancelled')
+    expect(order.cancelReason).toBe('strategy-change')
+  })
+
+  test('cancelOrder rejects unknown, foreign-run, and non-open orders', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-11' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'C2', name: 'c2', poolCents: 100, costPpm: 0 })
+    const otherRunId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'C3', name: 'c3', poolCents: 100, costPpm: 0 })
+    await f.repos.orderRepo.insertMany([
+      { runId: otherRunId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 1, limitPrice: 200n, shares: 5, status: 'open' },
+      { runId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 1, limitPrice: 200n, shares: 5, status: 'filled' },
+    ])
+    const foreignId = f._stores.orders[0].id
+    const filledId = f._stores.orders[1].id
+    await expect(cancelOrder(runId, 99999, 'other', deps)).rejects.toThrow('order-not-found')
+    await expect(cancelOrder(runId, foreignId, 'other', deps)).rejects.toThrow('order-not-found')
+    await expect(cancelOrder(runId, filledId, 'other', deps)).rejects.toThrow('order-not-open')
+    // stored rows untouched
+    expect(f._stores.orders[0].status).toBe('open')
+    expect(f._stores.orders[1].status).toBe('filled')
+    expect(f._stores.orders[1].cancelReason).toBeUndefined()
+  })
+
+  test('cancelOrder rejects unknown reason', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-11' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'C4', name: 'c4', poolCents: 100, costPpm: 0 })
+    await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 1, limitPrice: 200n, shares: 5, status: 'open' }])
+    const id = f._stores.orders[0].id
+    // reason is validated before any DB touch
+    let getCalls = 0
+    const origGet = f.repos.orderRepo.get
+    f.repos.orderRepo.get = async (gid: number) => { getCalls++; return origGet(gid) }
+    await expect(cancelOrder(runId, id, 'because-i-said-so', deps)).rejects.toThrow('invalid-reason')
+    expect(getCalls).toBe(0)
+    f.repos.orderRepo.get = origGet
+    const stored = f._stores.orders[0]
+    expect(stored.status).toBe('open')
+    expect(stored.cancelReason).toBeUndefined()
   })
 })

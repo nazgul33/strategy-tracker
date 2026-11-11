@@ -69,6 +69,7 @@ export interface OrderDto {
   shares: number;
   status: 'open' | 'filled' | 'stale' | 'cancelled';
   skipReason: string | null;
+  cancelReason: string | null;
 }
 
 export interface FillDto {

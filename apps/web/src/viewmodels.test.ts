@@ -3,6 +3,7 @@ import type { BucketDto, PendingFillDto, SimPlanDto } from './api';
 import {
   bucketCells,
   bulkPlan,
+  CANCEL_REASONS,
   daysBetween,
   enumLabelKey,
   fillSourceTone,
@@ -11,6 +12,7 @@ import {
   myriadthsToUsdText,
   notionalCents,
   orderKindTone,
+  orderReasonText,
   orderStatusTone,
   pendingIssue,
   pnlBadgeTone,
@@ -336,5 +338,29 @@ describe('skipReasons', () => {
       { code: 'no-bucket-available', params: { bucket: 2 } },
       { code: 'unconfirmed', params: { bucket: 4, count: 1, date: '2026-11-10' } },
     ]);
+  });
+});
+
+// Cancel-reason display: `cancelReason` wins the shared reason cell; a legacy
+// `cancelled` row that carries only a `skipReason` keeps rendering its skip
+// label byte-for-byte, and a row with neither renders '' (the table supplies
+// the em dash). Status is deliberately not consulted.
+describe('orderReasonText', () => {
+  test('cancel reason wins, skip reason otherwise, empty when neither', () => {
+    const t = (k: string) => `«${k}»`;
+    expect(orderReasonText({ status: 'cancelled', skipReason: null, cancelReason: 'stale-price' }, t)).toBe(
+      '«cancelReasonStalePrice»',
+    );
+    expect(orderReasonText({ status: 'cancelled', skipReason: 'sell-capped', cancelReason: null }, t)).toBe(
+      '«orderReasonSellCapped»',
+    );
+    expect(orderReasonText({ status: 'open', skipReason: 'no-bucket', cancelReason: null }, t)).toBe(
+      '«orderReasonNoBucket»',
+    );
+    expect(orderReasonText({ status: 'open', skipReason: null, cancelReason: null }, t)).toBe('');
+  });
+
+  test('CANCEL_REASONS lists the four codes in display order', () => {
+    expect([...CANCEL_REASONS]).toEqual(['broker-filled', 'strategy-change', 'stale-price', 'other']);
   });
 });

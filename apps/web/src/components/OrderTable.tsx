@@ -1,10 +1,10 @@
 import type { OrderDto } from '../api';
-import { enumLabelKey, orderKindTone, orderStatusTone } from '../viewmodels';
+import { enumLabelKey, orderKindTone, orderReasonText, orderStatusTone } from '../viewmodels';
 import { isoDate, priceUsd } from '../format';
 import { useT } from '../i18n';
 import { Badge, EmptyNote, TableWrap, Td, Th } from './ui';
 
-export function OrderTable({ orders }: { orders: OrderDto[] }) {
+export function OrderTable({ orders, onCancel }: { orders: OrderDto[]; onCancel?: (orderId: number) => void }) {
   const t = useT();
   if (orders.length === 0) return <EmptyNote>{t('orderEmpty')}</EmptyNote>;
   return (
@@ -18,6 +18,7 @@ export function OrderTable({ orders }: { orders: OrderDto[] }) {
           <Th className="text-right">{t('orderColPrice')}</Th>
           <Th>{t('orderColStatus')}</Th>
           <Th>{t('orderColReason')}</Th>
+          {onCancel && <Th className="text-right">{t('orderColActions')}</Th>}
         </tr>
       </thead>
       <tbody>
@@ -33,9 +34,20 @@ export function OrderTable({ orders }: { orders: OrderDto[] }) {
             <Td>
               <Badge tone={orderStatusTone(o.status)}>{t(enumLabelKey('orderStatus', o.status))}</Badge>
             </Td>
-            <Td className="text-muted-foreground">
-              {o.skipReason ? t(enumLabelKey('orderReason', o.skipReason)) : '—'}
-            </Td>
+            <Td className="text-muted-foreground">{orderReasonText(o, t) || '—'}</Td>
+            {onCancel && (
+              <Td className="text-right">
+                {o.status === 'open' && (
+                  <button
+                    type="button"
+                    className="text-xs text-destructive hover:underline"
+                    onClick={() => onCancel(o.id)}
+                  >
+                    {t('cancel')}
+                  </button>
+                )}
+              </Td>
+            )}
           </tr>
         ))}
       </tbody>
