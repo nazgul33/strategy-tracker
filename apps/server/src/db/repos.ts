@@ -25,12 +25,13 @@ export function getRepos(db: any) {
       const rows = await db.select().from(s.strategyRuns).where(eq(s.strategyRuns.id, id))
       return rows[0] ?? null
     },
-    async create(input: { strategyKey: string; ticker: string; name: string; poolCents: number; costPpm: number; initialRunState?: RunState }) {
+    async create(input: { strategyKey: string; ticker: string; name: string; poolCents: number; costPpm: number; buyGapPpm?: number; sellGapPpm?: number; initialRunState?: RunState }) {
       const state = input.initialRunState ?? { buckets: [], cashCents: input.poolCents, closed: [], ages: {} }
       return db.transaction(async (tx: any) => {
         const [res] = await tx.insert(s.strategyRuns).values({
           strategyKey: input.strategyKey, ticker: input.ticker, name: input.name,
           poolCents: input.poolCents, costPpm: input.costPpm, stateJson: serializeState(state),
+          buyGapPpm: input.buyGapPpm ?? 0, sellGapPpm: input.sellGapPpm ?? 0,
         })
         const runId = (res as any).insertId
         if (input.initialRunState) {
@@ -50,6 +51,9 @@ export function getRepos(db: any) {
     },
     async updatePool(id: number, poolCents: number) {
       await db.update(s.strategyRuns).set({ poolCents }).where(eq(s.strategyRuns.id, id))
+    },
+    async updateGaps(id: number, buyGapPpm: number, sellGapPpm: number) {
+      await db.update(s.strategyRuns).set({ buyGapPpm, sellGapPpm }).where(eq(s.strategyRuns.id, id))
     },
   }
 
