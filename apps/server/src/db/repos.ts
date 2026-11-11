@@ -151,5 +151,28 @@ export function getRepos(db: any) {
       await db.insert(s.poolEdits).values({ runId: input.runId, poolCents: input.poolCents })
     },
   }
-  return { runRepo, orderRepo, fillRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo, settingsRepo, poolEditRepo }
+  const simRepo = {
+    async insertRun(input: { ticker: string; fromDate: string; toDate: string; poolCents: number; costPpm: number; paramsJson: string }): Promise<number> {
+      const [res] = await db.insert(s.simRuns).values({
+        ticker: input.ticker, fromDate: input.fromDate, toDate: input.toDate,
+        poolCents: input.poolCents, costPpm: input.costPpm, paramsJson: input.paramsJson,
+      })
+      return (res as any).insertId
+    },
+    async insertDays(rows: { simRunId: number; tradeDate: string; planJson: string; stateJson: string; eventsJson: string }[]) {
+      if (!rows.length) return
+      await db.insert(s.simDays).values(rows.map((r) => ({
+        simRunId: r.simRunId, tradeDate: r.tradeDate, planJson: r.planJson, stateJson: r.stateJson, eventsJson: r.eventsJson,
+      })))
+    },
+    async listRuns() { return db.select().from(s.simRuns) },
+    async getRun(id: number) {
+      const rows = await db.select().from(s.simRuns).where(eq(s.simRuns.id, id))
+      return rows[0] ?? null
+    },
+    async listDays(id: number) {
+      return db.select().from(s.simDays).where(eq(s.simDays.simRunId, id)).orderBy(s.simDays.tradeDate)
+    },
+  }
+  return { runRepo, orderRepo, fillRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo, settingsRepo, poolEditRepo, simRepo }
 }

@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import type { RepoSurface } from '../domain/booking'
+import type { SimRepoSurface } from '../sim/sim'
 import { authMiddleware, makeToken } from './auth'
 
 export interface HttpRepoSurface extends RepoSurface {
@@ -10,6 +11,7 @@ export interface HttpRepoSurface extends RepoSurface {
   fillRepo: RepoSurface['fillRepo'] & { listForRun(runId: number): Promise<any[]> }
   notificationRepo: RepoSurface['notificationRepo'] & { listForRun(runId: number): Promise<any[]> }
   pendingRepo: RepoSurface['pendingRepo'] & { get(id: number): Promise<any> }
+  simRepo: SimRepoSurface
 }
 
 export interface HttpDeps {
@@ -19,13 +21,14 @@ export interface HttpDeps {
   today: () => string
   defaultSettings: { visionBaseUrl: string; visionModel: string; digestLang: 'en' | 'ko' }
   triggerMorning: () => Promise<string>
+  fetchDailyBars: (ticker: string, from: string, to: string) => Promise<any[]>
 }
 
 import { runsRouter } from './routes/runs'
 import { fillsRouter } from './routes/fills'
 import { pendingRouter } from './routes/pending'
 import { settingsRouter } from './routes/settings'
-import { simStub } from './routes/sim-stub'
+import { simRouter } from './routes/sim'
 
 export function jsonBig(x: unknown): unknown {
   return JSON.parse(JSON.stringify(x, (_k, v) => typeof v === 'bigint' ? v.toString() : v))
@@ -49,7 +52,7 @@ export function createApp(deps: HttpDeps): Hono {
   app.route('/api', fillsRouter(deps))
   app.route('/api', pendingRouter(deps))
   app.route('/api', settingsRouter(deps))
-  app.route('/api/sim', simStub())
+  app.route('/api/sim', simRouter(deps))
   app.post('/api/trigger/morning', async (c) => {
     const result = await deps.triggerMorning()
     return c.json({ result })

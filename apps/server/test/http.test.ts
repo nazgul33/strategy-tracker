@@ -78,9 +78,16 @@ function makeFakes() {
   const poolEditRepo = {
     async insert(input: { runId: number; poolCents: number }) { poolEdits.push({ id: poolEdits.length + 1, ...input }) },
   }
+  const simRepo = {
+    async insertRun() { return 1 },
+    async insertDays() {},
+    async listRuns() { return [] },
+    async getRun() { return null },
+    async listDays() { return [] },
+  }
   const repos: HttpRepoSurface = {
     runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo,
-    settingsRepo, poolEditRepo,
+    settingsRepo, poolEditRepo, simRepo,
   } as any
   return { repos, runs, poolEdits, fills, ledger, orders, pending, notifications, settings, states }
 }
@@ -96,6 +103,7 @@ function makeDeps(fakes: ReturnType<typeof makeFakes>): HttpDeps {
     today: () => '2026-11-10',
     defaultSettings: { visionBaseUrl: 'http://x', visionModel: 'm', digestLang: 'en' },
     triggerMorning: async () => 'morning-ok',
+    fetchDailyBars: async () => [],
   }
 }
 
