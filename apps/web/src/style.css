@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * shadcn-style token palette (HSL triplets) for Tailwind v3. The `dark:`
+ * variant is driven by the `.dark` class on <html> (see i18n/index.tsx,
+ * `darkMode: ['class']` in tailwind.config.ts), which is what
+ * ThemeLangToggle flips.
+ */
+:root {
+  --bg: 0 0% 100%;
+  --fg: 240 10% 3.9%;
+  --card: 0 0% 100%;
+  --border: 240 5.9% 90%;
+  --muted: 240 4.8% 95.9%;
+  --muted-fg: 240 3.8% 46.1%;
+  --primary: 240 5.9% 10%;
+  --primary-fg: 0 0% 98%;
+  --input: 240 5.9% 90%;
+  --danger: 0 84% 60%;
+  --positive: 142 71% 45%;
+  --warning: 38 92% 50%;
+  --info: 217 91% 60%;
+  --accent: 217 91% 50%;
+  --good: 142 71% 40%;
+}
+
+.dark {
+  --bg: 240 10% 3.9%;
+  --fg: 0 0% 98%;
+  --card: 240 10% 5.9%;
+  --border: 240 3.7% 15.9%;
+  --muted: 240 3.7% 15.9%;
+  --muted-fg: 240 5% 64.9%;
+  --primary: 0 0% 98%;
+  --primary-fg: 240 5.9% 10%;
+  --input: 240 3.7% 15.9%;
+  --danger: 0 84% 60%;
+  --positive: 142 71% 45%;
+  --warning: 38 92% 50%;
+  --info: 217 91% 60%;
+  --accent: 217 91% 66%;
+  --good: 142 71% 50%;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      Roboto,
+      'Apple SD Gothic Neo',
+      'Noto Sans KR',
+      sans-serif;
+  }
+}

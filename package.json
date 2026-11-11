@@ -3,7 +3,7 @@
   "private": true,
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && tsc -p apps/web --noEmit",
     "test": "bun test"
   },
   "devDependencies": {

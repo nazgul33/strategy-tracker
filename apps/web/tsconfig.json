@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Preload Bun's ambient types (root `@types/bun`) so the `bun:test` module in
+    // viewmodels.test.ts resolves. Nothing else is needed — DOM types come from `lib`.
+    "types": ["bun"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "noEmit": true
+  },
+  "include": ["src"]
+}
