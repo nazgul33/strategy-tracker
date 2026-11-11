@@ -240,7 +240,7 @@
   "simReasonBuy": "buy",
   "simReasonForceClose": "force close",
   "simReasonSkip": "skip",
-  "simReasonTarget": "target",
+  "simReasonTarget": "sell target",
   "simRun": "Run simulation",
   "simStart": "Start",
   "simStatusDone": "done",

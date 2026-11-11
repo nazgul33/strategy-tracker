@@ -206,6 +206,21 @@ export function simEventGroup(event: SimEvent, isLastDay: boolean): SimGroup {
   return isLastDay ? 'force' : 'target';
 }
 
+/**
+ * Bucket age in trading days as of this morning, from the previous day's
+ * end-of-day ages: `advanceDay` bumps every held bucket by one before
+ * planning and selling, so this matches the planned orders' stamped `ageDays`
+ * — and works for sim data stored before stamping existed.
+ */
+export function morningAge(
+  prevAges: Record<string, number> | undefined,
+  bucketIndex: number,
+): number | undefined {
+  if (!prevAges) return undefined;
+  const age = prevAges[bucketIndex] ?? prevAges[String(bucketIndex)];
+  return typeof age === 'number' ? age + 1 : undefined;
+}
+
 /** `skipReasons` result: reasons keyed by skip-row index, plus the notices
  * that are still worth rendering in the notices block. */
 export interface SkipReasonsResult {

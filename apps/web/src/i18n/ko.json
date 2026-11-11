@@ -240,7 +240,7 @@
   "simReasonBuy": "매수",
   "simReasonForceClose": "강제 청산",
   "simReasonSkip": "건너뜀",
-  "simReasonTarget": "목표",
+  "simReasonTarget": "매도 목표",
   "simRun": "시뮬레이션 실행",
   "simStart": "시작일",
   "simStatusDone": "완료",

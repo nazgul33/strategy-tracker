@@ -7,6 +7,7 @@ import {
   enumLabelKey,
   fillSourceTone,
   isRunStatus,
+  morningAge,
   myriadthsToUsdText,
   notionalCents,
   orderKindTone,
@@ -97,6 +98,15 @@ describe('money conversions', () => {
   test('daysBetween is whole days, 0 on bad input', () => {
     expect(daysBetween('2026-11-02', '2026-11-10')).toBe(8);
     expect(daysBetween('nope', '2026-11-10')).toBe(0);
+  });
+});
+
+describe('morningAge', () => {
+  test('previous end-of-day age plus the overnight advanceDay bump', () => {
+    expect(morningAge({ '1': 6 }, 1)).toBe(7);
+    expect(morningAge({ '1': 6 }, 0)).toBeUndefined();
+    expect(morningAge(undefined, 1)).toBeUndefined();
+    expect(morningAge({}, 0)).toBeUndefined();
   });
 });
 

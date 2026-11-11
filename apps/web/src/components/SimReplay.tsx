@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import type { SimDayDto, SimEvent, SimRunDto } from '../api';
 import {
   enumLabelKey,
+  morningAge,
   pnlBadgeTone,
   reasonKey,
   simEventGroup,
@@ -102,6 +103,10 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
   const realizedTone = pnlBadgeTone(toneFor(realizedCents));
   const groups = groupEvents(day.eventsJson, isLast);
   const { reasons, visibleNotices } = skipReasons(day.planJson, t);
+  // Bucket age for event rows: previous evening's ages + the overnight bump
+  // (sell rows only — buy rows open a fresh bucket).
+  const prevAges = clamped > 0 ? days[clamped - 1]!.stateJson.ages : undefined;
+  const ageAt = (bucketIndex: number) => morningAge(prevAges, bucketIndex);
 
   return (
     <div className="space-y-4">
@@ -216,7 +221,14 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
                         <span className="text-muted-foreground">·</span>
                       )}
                     </Td>
-                    <Td className="text-right tabular-nums">{t('bucketLabel', { n: ev.bucketIndex + 1 })}</Td>
+                    <Td className="text-right tabular-nums">
+                      {ev.bucketIndex + 1}
+                      {g.group !== 'buy' && g.group !== 'skipped' && ageAt(ev.bucketIndex) !== undefined && (
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          · {t('simOrderAge', { n: ageAt(ev.bucketIndex)! })}
+                        </span>
+                      )}
+                    </Td>
                     {ev.type === 'skipped' ? (
                       <Td colSpan={3} className="text-muted-foreground">
                         {t(reasonKey('simSkip', ev.reason))}
