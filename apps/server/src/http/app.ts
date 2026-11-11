@@ -57,14 +57,7 @@ export function createApp(deps: HttpDeps): Hono {
     const result = await deps.triggerMorning()
     return c.json({ result })
   })
-  app.get('/', async (c) => {
-    try {
-      const file = Bun.file(new URL('../../web/dist/index.html', import.meta.url))
-      if (!(await file.exists())) return c.text('not found', 404)
-      return c.html(await file.text())
-    } catch {
-      return c.text('not found', 404)
-    }
-  })
+  // NOTE: the static SPA (apps/web/dist) is served by main.ts, not here —
+  // createApp stays pure so http tests can run without the web build.
   return app
 }

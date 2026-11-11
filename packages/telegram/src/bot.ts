@@ -7,7 +7,7 @@ export interface BotDeps {
   token: string
   allowedChatIds: string[]
   lang?: Lang
-  onPhoto(chatId: string, image: { base64: string; mime: string }): Promise<void> | void
+  onPhoto(chatId: string, image: { base64: string; mime: string }, caption?: string): Promise<void> | void
   onConfirm(cbData: string, approved: boolean): Promise<void> | void
   onStatus(chatId: string): Promise<void> | void
   onOrders(chatId: string): Promise<void> | void
@@ -54,8 +54,9 @@ export function createBot(deps: BotDeps): Bot {
     const res = await fetch(url)
     const buf = await res.arrayBuffer()
     const base64 = Buffer.from(buf).toString('base64')
-    const mime = 'image/jpeg'
-    await deps.onPhoto(chatId, { base64, mime })
+    // Bot API 9 dropped mime_type from File — photos always arrive as JPEG.
+    const mime = (file as { mime_type?: string }).mime_type ?? 'image/jpeg'
+    await deps.onPhoto(chatId, { base64, mime }, ctx.message?.caption)
   })
 
   bot.on('callback_query:data', async (ctx) => {

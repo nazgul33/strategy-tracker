@@ -125,3 +125,7 @@ export const settings = mysqlTable('settings', {
 })
 
 import { uniqueIndex } from 'drizzle-orm/mysql-core'
+
+export type BucketRow = typeof buckets.$inferSelect
+export type FillRow = typeof fills.$inferSelect
+export type LedgerRow = typeof ledger.$inferSelect

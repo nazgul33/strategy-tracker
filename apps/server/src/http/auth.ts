@@ -54,7 +54,7 @@ function atobUrl(s: string): string {
 export function authMiddleware(secret: string) {
   return createMiddleware(async (c, next) => {
     const path = c.req.path
-    if (path === '/api/login') return next()
+    if (path === '/api/login' || path === '/api/health') return next()
     if (!path.startsWith('/api/')) return next()
     // extract token
     let token: string | null = null
