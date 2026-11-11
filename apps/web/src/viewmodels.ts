@@ -231,7 +231,8 @@ export function skipReasons(
   const notices = plan.notices ?? [];
   const used = new Set<number>();
   (plan.skips ?? []).forEach((s, si) => {
-    const idx = notices.findIndex((n, i) => !used.has(i) && n.params?.bucket === s.bucketIndex);
+    // Legacy plans store params.bucket as a string (String(b.index)); compare both sides as strings.
+    const idx = notices.findIndex((n, i) => !used.has(i) && String(n.params?.bucket) === String(s.bucketIndex));
     if (idx >= 0) {
       used.add(idx);
       reasons.set(si, t(`digest.${notices[idx].code}`, notices[idx].params));

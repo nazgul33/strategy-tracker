@@ -276,6 +276,27 @@ describe('skipReasons', () => {
     expect(visibleNotices).toEqual([{ code: 'sell-capped', params: { bucket: 3, price: 340 } }]);
   });
 
+  test('pairs skips with notices whose bucket param is a string (legacy stored plans)', () => {
+    // The old sell-cap producer wrote params.bucket as String(b.index) while
+    // skip.bucketIndex is a number; plans persisted by that code store the
+    // mismatch, so pairing must compare both sides as strings.
+    const plan = {
+      orders: [],
+      skips: [
+        { kind: 'sell_loc', bucketIndex: 1, limitPrice: '164.5', shares: 700 },
+        { kind: 'sell_loc', bucketIndex: 2, limitPrice: '150.7007', shares: 100 },
+      ],
+      notices: [
+        { code: 'sell-capped', params: { bucket: '1', price: 164.5 } },
+        { code: 'sell-capped', params: { bucket: '2', price: 150.7007 } },
+      ],
+    } as unknown as SimPlanDto;
+    const { reasons, visibleNotices } = skipReasons(plan, t);
+    expect(reasons.get(0)).toBe('sell capped (price 164.5)');
+    expect(reasons.get(1)).toBe('sell capped (price 150.7007)');
+    expect(visibleNotices).toEqual([]);
+  });
+
   test('a skip with no matching notice gets no reason', () => {
     const plan = {
       orders: [],

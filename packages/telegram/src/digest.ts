@@ -19,7 +19,8 @@ export function renderDigest(run: Run, plan: DayPlan, ctx: DayContext, lang: Lan
   for (const o of marketSells) lines.push(marketSellLine(o, lang, ages))
   const consumedNotices = new Set<number>()
   for (const o of plan.skips) {
-    const idx = plan.notices.findIndex((n, i) => !consumedNotices.has(i) && n.params?.bucket === o.bucketIndex)
+    // Legacy plans store params.bucket as a string (String(b.index)); compare both sides as strings.
+    const idx = plan.notices.findIndex((n, i) => !consumedNotices.has(i) && String(n.params?.bucket) === String(o.bucketIndex))
     let reason = ''
     if (idx >= 0) {
       consumedNotices.add(idx)

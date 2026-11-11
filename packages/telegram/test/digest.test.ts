@@ -43,6 +43,27 @@ describe('digest', () => {
     const out = renderDigest(run, plan, ctx, 'en').join('\n')
     expect(out).toContain('⚠️ 3 unconfirmed orders from 2026-11-05')
   })
+  test('skip reason pairs with string bucket param (legacy stored plans)', () => {
+    // The old sell-cap producer wrote params.bucket as String(b.index) while
+    // skip.bucketIndex is a number; plans persisted by that code store the
+    // mismatch, so pairing must compare both sides as strings.
+    const plan: DayPlan = {
+      orders: [],
+      skips: [
+        { kind: 'sell_loc', bucketIndex: 1, limitPrice: 0n, shares: 700 },
+        { kind: 'sell_loc', bucketIndex: 2, limitPrice: 0n, shares: 100 },
+      ],
+      notices: [
+        { code: 'sell-capped', params: { bucket: '1', price: 164.5 } },
+        { code: 'sell-capped', params: { bucket: '2', price: 150.7007 } },
+      ],
+    }
+    const out = renderDigest(run, plan, ctx, 'en').join('\n')
+    expect(out).toContain('SKIP  sell_loc  bucket 1  sell capped (price 164.5)')
+    expect(out).toContain('SKIP  sell_loc  bucket 2  sell capped (price 150.7007)')
+    // The consumed notices must not also render as standalone lines.
+    expect(out.split('\n').filter((l) => l.includes('sell capped'))).toHaveLength(2)
+  })
   test('ko variant 매수/매도', () => {
     const plan: DayPlan = {
       orders: [
