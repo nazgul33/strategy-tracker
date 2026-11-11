@@ -94,7 +94,7 @@ export function computeOrders(
     .sort((a, b) => a.index - b.index)
   for (const b of held) {
     const target = sellTarget(b.buyPrice, run.costPpm, BigInt(b.shares))
-    orders.push({ kind: 'sell_loc', bucketIndex: b.index, limitPrice: target, shares: b.shares })
+    orders.push({ kind: 'sell_loc', bucketIndex: b.index, limitPrice: target, shares: b.shares, ageDays: state.ages[b.index] ?? 0 })
   }
 
   // force_sell
@@ -102,7 +102,7 @@ export function computeOrders(
     .filter((b) => b.state === 'force_sell')
     .sort((a, b) => a.index - b.index)
   for (const b of forced) {
-    orders.push({ kind: 'market_sell', bucketIndex: b.index, limitPrice: 0n, shares: b.shares })
+    orders.push({ kind: 'market_sell', bucketIndex: b.index, limitPrice: 0n, shares: b.shares, ageDays: state.ages[b.index] ?? 0 })
   }
 
   return { orders, skips, notices }

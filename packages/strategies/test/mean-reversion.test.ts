@@ -66,7 +66,7 @@ describe('computeOrders', () => {
     const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, poolCents: 1_000_000, status: 'active' as const }
     const plan = computeOrders(run, state, { lastClose: 3402300n })
     const target = sellTarget(4500000n, 30, 5n)
-    expect(plan.orders).toContainEqual({ kind: 'sell_loc', bucketIndex: 4, limitPrice: target, shares: 5 })
+    expect(plan.orders).toContainEqual({ kind: 'sell_loc', bucketIndex: 4, limitPrice: target, shares: 5, ageDays: 0 })
     expect(plan.skips).toEqual([])
     expect(plan.notices).toEqual([])
   })
@@ -76,7 +76,7 @@ describe('computeOrders', () => {
     state.buckets[1] = b
     const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, poolCents: 1_000_000, status: 'active' as const }
     const plan = computeOrders(run, state, { lastClose: 3402300n })
-    expect(plan.orders).toContainEqual({ kind: 'market_sell', bucketIndex: 1, limitPrice: 0n, shares: 120 })
+    expect(plan.orders).toContainEqual({ kind: 'market_sell', bucketIndex: 1, limitPrice: 0n, shares: 120, ageDays: 0 })
     expect(plan.orders.find(o => o.kind === 'sell_loc' && o.bucketIndex === 1)).toBeUndefined()
   })
   test('purity', () => {
@@ -85,6 +85,25 @@ describe('computeOrders', () => {
     const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, poolCents: 1_000_000, status: 'active' as const }
     computeOrders(run, state, { lastClose: 3402300n })
     expect(state.buckets.map(b => b.shares)).toEqual(before)
+  })
+  test('sell orders carry the bucket age stamped at plan time; buys do not', () => {
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, poolCents: 1_000_000, status: 'active' as const }
+    let state = emptyState(10)
+    state = applyBuyFill(state, 0, 10, 3402200n, 34, '2026-11-02')
+    state = applyBuyFill(state, 1, 5, 3402200n, 17, '2026-10-01')
+    state.ages[0] = 15
+    state.ages[1] = 101
+    state.buckets[1]!.state = 'force_sell'
+    const plan = computeOrders(run, state, { lastClose: 3402300n })
+    const buy = plan.orders.find((o) => o.kind === 'buy_loc')!
+    const loc = plan.orders.find((o) => o.kind === 'sell_loc')!
+    const forced = plan.orders.find((o) => o.kind === 'market_sell')!
+    expect(buy.bucketIndex).toBe(2) // lowest empty bucket
+    expect(buy.ageDays).toBeUndefined()
+    expect(loc.bucketIndex).toBe(0)
+    expect(loc.ageDays).toBe(15)
+    expect(forced.bucketIndex).toBe(1)
+    expect(forced.ageDays).toBe(101)
   })
 })
 
