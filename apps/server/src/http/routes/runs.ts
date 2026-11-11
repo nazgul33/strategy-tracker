@@ -78,6 +78,20 @@ export function runsRouter(deps: HttpDeps): Hono {
     }
     return c.json({ id }, 201)
   })
+  r.post('/runs/bulk-status', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    const ids = body?.ids
+    const status = body?.status
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500
+      || !ids.every((x: unknown) => Number.isInteger(x) && (x as number) > 0)) {
+      return c.json({ error: 'invalid ids' }, 400)
+    }
+    if (!(RUN_STATUSES_SERVER as readonly string[]).includes(status)) return c.json({ error: 'invalid status' }, 400)
+    // eligible sources = every status whose transition table allows -> status;
+    // one batched UPDATE applies the same guard in SQL (see runRepo.updateStatusMany)
+    const from = Object.keys(RUN_TRANSITIONS).filter((f) => RUN_TRANSITIONS[f]!.includes(status))
+    return c.json({ updated: await deps.repos.runRepo.updateStatusMany(ids, from, status) })
+  })
   r.get('/runs/:id', async (c) => {
     const id = Number(c.req.param('id'))
     const run = await deps.repos.runRepo.get(id)

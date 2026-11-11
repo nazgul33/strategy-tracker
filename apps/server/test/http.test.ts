@@ -32,6 +32,11 @@ function makeFakes() {
     async updateStatus(id: number, status: string) {
       const r = runs.find((x) => x.id === id); if (r) r.status = status
     },
+    async updateStatusMany(ids: number[], from: string[], to: string) {
+      let n = 0
+      for (const r of runs) if (ids.includes(r.id) && from.includes(r.status)) { r.status = to; n += 1 }
+      return n
+    },
     async updatePool(id: number, poolCents: number) {
       const r = runs.find((x) => x.id === id); if (r) r.poolCents = poolCents
     },
@@ -377,6 +382,44 @@ describe('http runs', () => {
     const body = await fr.json()
     expect(typeof body.error).toBe('string')
     expect(f.fills.length).toBe(0)
+  })
+  test('bulk-status updates eligible rows only', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const createRun = async (name: string) =>
+      (await (await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name, ticker: 'A', costPpm: 0, poolCents: 100 }), headers: { 'content-type': 'application/json', ...auth } })).json()).id as number
+    const a = await createRun('a')
+    const b = await createRun('b')
+    const c = await createRun('c')
+    // move b -> paused and c -> closed so the bulk call sees mixed states
+    expect((await app.request(`/api/runs/${b}`, { method: 'PATCH', body: JSON.stringify({ status: 'paused' }), headers: { 'content-type': 'application/json', ...auth } })).status).toBe(200)
+    expect((await app.request(`/api/runs/${c}`, { method: 'PATCH', body: JSON.stringify({ status: 'closed' }), headers: { 'content-type': 'application/json', ...auth } })).status).toBe(200)
+    const bulk = (body: unknown) => app.request('/api/runs/bulk-status', { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...auth } })
+    const pause = await bulk({ ids: [a, b, c], status: 'paused' })
+    expect(pause.status).toBe(200)
+    expect((await pause.json()).updated).toBe(1) // only a; b is already paused, c is terminal
+    // 200 must actually persist: legal transition applied to a only
+    expect((await (await app.request(`/api/runs/${a}`, { headers: auth })).json()).status).toBe('paused')
+    expect((await (await app.request(`/api/runs/${c}`, { headers: auth })).json()).status).toBe('closed')
+    const close = await bulk({ ids: [a, b, c], status: 'closed' })
+    expect((await close.json()).updated).toBe(2) // a + b resume-close; c already terminal
+    expect((await (await app.request(`/api/runs/${a}`, { headers: auth })).json()).status).toBe('closed')
+    expect((await (await app.request(`/api/runs/${b}`, { headers: auth })).json()).status).toBe('closed')
+    expect(f.runs.find((x) => x.id === c)!.status).toBe('closed')
+  })
+  test('bulk-status rejects malformed bodies', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    for (const body of [{ ids: [], status: 'paused' }, { ids: 'x', status: 'paused' }, { ids: [0], status: 'paused' },
+      { ids: [1.5], status: 'paused' }, { ids: [1], status: 'done' }, { ids: [1], status: 'nope' }, { status: 'paused' }]) {
+      expect((await app.request('/api/runs/bulk-status', { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...auth } })).status).toBe(400)
+    }
   })
 })
 

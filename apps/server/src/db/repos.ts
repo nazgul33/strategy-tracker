@@ -1,5 +1,5 @@
 import type { RunState } from '@st/core'
-import { eq, and, lt, sql } from 'drizzle-orm'
+import { eq, and, lt, sql, inArray } from 'drizzle-orm'
 import * as s from './schema'
 
 function serializeState(state: RunState): string {
@@ -41,6 +41,12 @@ export function getRepos(db: any) {
     },
     async updateStatus(id: number, status: string) {
       await db.update(s.strategyRuns).set({ status: status as any }).where(eq(s.strategyRuns.id, id))
+    },
+    async updateStatusMany(ids: number[], from: string[], to: string): Promise<number> {
+      if (ids.length === 0 || from.length === 0) return 0
+      const [res] = await db.update(s.strategyRuns).set({ status: to as any })
+        .where(and(inArray(s.strategyRuns.id, ids), inArray(s.strategyRuns.status, from as any)))
+      return (res as any)?.affectedRows ?? 0
     },
     async updatePool(id: number, poolCents: number) {
       await db.update(s.strategyRuns).set({ poolCents }).where(eq(s.strategyRuns.id, id))
