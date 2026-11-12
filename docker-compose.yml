@@ -22,7 +22,7 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8080"
-      DATABASE_URL: mysql://${MARIADB_USER:-st_app}:${MARIADB_PASSWORD}@${MARIADB_HOST:-db}:3306/${MARIADB_DATABASE:-st_db}
+      DATABASE_URL: mysql://${MARIADB_USER:-st_app}:${MARIADB_PASSWORD}@${MARIADB_HOST:-db}:${MARIADB_PORT}/${MARIADB_DATABASE:-st_db}
       APP_PASSWORD: ${APP_PASSWORD}
       SESSION_SECRET: ${SESSION_SECRET}
       DIGEST_LANG: ${DIGEST_LANG:-en}

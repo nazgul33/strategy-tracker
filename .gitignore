@@ -1,7 +1,9 @@
 node_modules
-.env
+.*.swp
+.env*
 dist
 build/
 data/
 .superpowers/
 build_and_push.sh
+docker-compose.*.yml
