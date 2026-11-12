@@ -374,11 +374,25 @@ describe('http runs', () => {
     const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 }), headers: { 'content-type': 'application/json', ...auth } })
     const { id } = await cr.json()
     const before = f.states.get(id)!.cashCents
-    const fr = await app.request(`/api/runs/${id}/fills`, { method: 'POST', body: JSON.stringify({ side: 'buy', ticker: 'AAPL', shares: 2, price: '10.0000', filledOn: '2026-11-10' }), headers: { 'content-type': 'application/json', ...auth } })
+    const fr = await app.request(`/api/runs/${id}/fills`, { method: 'POST', body: JSON.stringify({ side: 'buy', shares: 2, price: '10.0000', filledOn: '2026-11-10' }), headers: { 'content-type': 'application/json', ...auth } })
     expect(fr.status).toBe(200)
     const after = f.states.get(id)!.cashCents
     expect(after).toBeLessThan(before)
     expect(f.fills.length).toBe(1)
+    expect(f.fills[0].ticker).toBe('AAPL')
+  })
+  test('manual fill with legacy ticker body -> 200, run ticker stamped', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 }), headers: { 'content-type': 'application/json', ...auth } })
+    const { id } = await cr.json()
+    const fr = await app.request(`/api/runs/${id}/fills`, { method: 'POST', body: JSON.stringify({ side: 'buy', ticker: 'ZZZ', shares: 2, price: '10.0000', filledOn: '2026-11-10' }), headers: { 'content-type': 'application/json', ...auth } })
+    expect(fr.status).toBe(200)
+    expect(f.fills.length).toBe(1)
+    expect(f.fills[0].ticker).toBe('AAPL')
   })
   test('manual fill domain error -> 422 {error}', async () => {
     const f = makeFakes()
@@ -544,6 +558,21 @@ describe('http pending', () => {
     expect(conf2.status).toBe(422)
     expect(f.fills.length).toBe(1)
     expect(f.ledger.length).toBe(1)
+  })
+
+  test('confirm with ticker mismatch returns 409', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const token = (await lr.json()).token
+    const auth = { Authorization: `Bearer ${token}` }
+    const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 }), headers: { 'content-type': 'application/json', ...auth } })
+    const { id } = await cr.json()
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'ZZZ', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    const conf = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', headers: auth })
+    expect(conf.status).toBe(409)
+    expect((await conf.json()).error).toBe('ticker-mismatch')
+    expect(f.fills.length).toBe(0)
   })
 })
 

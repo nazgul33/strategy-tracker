@@ -33,7 +33,6 @@ export interface OrderRow { id: number; runId: number; tradeDate: string; kind: 
 interface BookInput {
   runId: number
   side: 'buy' | 'sell'
-  ticker: string
   shares: number
   priceStr: string
   feeCents: number | null  // null => compute
@@ -103,7 +102,7 @@ async function runBooking(input: BookInput, deps: BookingDeps): Promise<void> {
     if (flipped === false) throw new Error('pending-not-pending')
   }
   await repos.bucketRepo.saveState(input.runId, next)
-  await repos.fillRepo.insert({ runId: input.runId, bucketIdx, side: input.side, ticker: input.ticker, shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, source: input.source })
+  await repos.fillRepo.insert({ runId: input.runId, bucketIdx, side: input.side, ticker: run.ticker, shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, source: input.source })
   await repos.ledgerRepo.insert({ runId: input.runId, kind: input.side === 'buy' ? 'buy' : 'sell', amountCents: delta, ref: JSON.stringify({ bookedOn: deps.today, filledOn: input.filledOn }) })
   if (matchedOrderId !== null) await repos.orderRepo.setStatus(matchedOrderId, 'filled')
 }
@@ -151,6 +150,7 @@ export async function confirmPendingFill(pendingId: number, overrides: { shares?
   if (!pending) throw new Error('pending-not-found-or-not-pending')
 
   const run = await repos.runRepo.get(pending.runId)
+  if (pending.ticker !== run.ticker) throw new Error('ticker-mismatch')
   const priceStr = overrides?.price ?? formatUsd(pending.price)
   const shares = overrides?.shares ?? pending.shares
   const filledOn = overrides?.filledOn ?? pending.filledOn
@@ -158,7 +158,6 @@ export async function confirmPendingFill(pendingId: number, overrides: { shares?
   await runBooking({
     runId: pending.runId,
     side: pending.side,
-    ticker: pending.ticker,
     shares,
     priceStr,
     feeCents: pending.fee,
@@ -168,11 +167,10 @@ export async function confirmPendingFill(pendingId: number, overrides: { shares?
   }, deps)
 }
 
-export async function manualFill(runId: number, fill: RawFill & { filledOn: ISODate }, deps: BookingDeps): Promise<void> {
+export async function manualFill(runId: number, fill: Omit<RawFill, 'ticker'> & { filledOn: ISODate }, deps: BookingDeps): Promise<void> {
   await runBooking({
     runId,
     side: fill.side,
-    ticker: fill.ticker,
     shares: fill.shares,
     priceStr: fill.price,
     feeCents: fill.fee != null ? centsFromUsd(parseUsd(fill.fee)) : null,

@@ -16,7 +16,9 @@ const EMPTY: Overrides = { shares: '', price: '', filledOn: '' };
 
 // Unrecognized screenshot fills. Confirm accepts optional overrides
 // {shares?, price?, filledOn?}; pendingIssue() highlights the field the row is
-// missing (409 = the row was already handled elsewhere).
+// missing. A 409 on confirm is either ticker-mismatch (integrity guard: the
+// pending row's ticker ≠ the run's ticker — the untouched row stays visible
+// for rejection) or the row was already handled elsewhere.
 export function PendingTable({ runId }: { runId?: number }) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.listPending(), []);
@@ -53,7 +55,11 @@ export function PendingTable({ runId }: { runId?: number }) {
       else await api.rejectPending(r.id);
       await reload();
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
+      if (err instanceof ApiError && err.code === 'ticker-mismatch') {
+        // The row is untouched — do NOT reload; it must stay visible so the
+        // user can reject it.
+        setActionError(t('pendingTickerMismatch'));
+      } else if (err instanceof ApiError && err.status === 409) {
         setActionError(t('pendingAlreadyHandled'));
         await reload();
       } else {

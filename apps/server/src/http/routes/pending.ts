@@ -14,6 +14,7 @@ export function pendingRouter(deps: HttpDeps): Hono {
     try {
       await confirmPendingFill(id, overrides, { repos: deps.repos as any, today: deps.today() as any })
     } catch (e: any) {
+      if (e?.message === 'ticker-mismatch') return c.json({ error: 'ticker-mismatch' }, 409)
       return c.json({ error: e?.message ?? 'error' }, 422)
     }
     return c.json({ ok: true })

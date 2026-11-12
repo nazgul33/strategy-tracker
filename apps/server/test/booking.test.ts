@@ -286,9 +286,19 @@ describe('booking', () => {
     const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r8', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
     const beforePending = f._stores.pending.length
-    await manualFill(runId, { side: 'buy', ticker: 'AAPL', shares: 3, price: '5.00', filledOn: '2026-11-06' }, deps)
+    await manualFill(runId, { side: 'buy', shares: 3, price: '5.00', filledOn: '2026-11-06' }, deps)
     expect(f._stores.fills[0].source).toBe('manual')
+    expect(f._stores.fills[0].ticker).toBe('AAPL')
     expect(f._stores.pending.length).toBe(beforePending)
+  })
+
+  test('manualFill ignores a stray ticker and stamps the run ticker', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r8b', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
+    const legacy = { side: 'buy' as const, ticker: 'ZZZ', shares: 3, price: '5.00', filledOn: '2026-11-06' }
+    await manualFill(runId, legacy, deps)
+    expect(f._stores.fills[0].ticker).toBe('AAPL')
   })
 
   test('(i) double-confirm throws and over-size sell throws', async () => {
@@ -345,6 +355,18 @@ describe('booking', () => {
     await confirmPendingFill(pid, null, deps)
     const fill = f._stores.fills[0]
     expect(fill.fee).toBe(999)
+  })
+
+  test('confirm with ticker mismatch throws and books nothing', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'mism', poolCents: 1000000, costPpm: 100, initialRunState: { buckets: emptyState(2).buckets, cashCents: 1000000, closed: [], ages: {} } })
+    const stateBefore = serializeState(await f.repos.bucketRepo.loadState(runId))
+    const pid = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'buy', ticker: 'ZZZ', shares: 5, price: parseUsd('10.00'), fee: null, filledOn: '2026-11-06', status: 'pending' })
+    await expect(confirmPendingFill(pid, null, deps)).rejects.toThrow('ticker-mismatch')
+    expect(f._stores.fills.length).toBe(0)
+    expect(f._stores.pending[0].status).toBe('pending')
+    expect(serializeState(await f.repos.bucketRepo.loadState(runId))).toBe(stateBefore)
   })
 
   test('fallback lowest-index multiple candidates', async () => {

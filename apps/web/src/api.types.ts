@@ -173,10 +173,9 @@ export interface CreateRunInput {
   seed?: { cashCents?: number; buckets?: { shares: number; buyPrice: string; filledOn: string }[] };
 }
 
-/** Body of POST /runs/:id/fills — RawFill & { filledOn }, USD strings. */
+/** Body of POST /runs/:id/fills — USD strings; the ticker is the run's own, server-stamped. */
 export interface ManualFillInput {
   side: 'buy' | 'sell';
-  ticker: string;
   shares: number;
   price: string; // "12.34"
   fee?: string; // "0.50" or omitted
