@@ -150,6 +150,7 @@
   "pendingQtyOverride": "Qty",
   "pendingReject": "Reject",
   "pendingRejected": "Rejected",
+  "pendingTickerMismatch": "Ticker does not match the run — reject this row and re-capture.",
   "pendingTitle": "Unconfirmed fills",
   "poolAdd": "Add funds",
   "poolAddAmount": "Amount (USD)",
