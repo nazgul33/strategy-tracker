@@ -164,7 +164,6 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
     addManualFill: (runId, fill) => {
       const body: Record<string, unknown> = {
         side: fill.side,
-        ticker: fill.ticker.trim().toUpperCase(),
         shares: fill.shares,
         price: fill.price,
         filledOn: fill.filledOn,

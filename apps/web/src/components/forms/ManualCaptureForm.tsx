@@ -4,12 +4,12 @@ import { useT } from '../../i18n';
 import { todayIso } from '../../format';
 import { Button, Field, Input } from '../ui';
 
-// Manual fill capture — the exact fields POST /runs/:id/manual-fills accepts:
-// side, ticker, shares, price, fee (optional), filledOn. No bucket index.
+// Manual fill capture — the exact fields POST /runs/:id/fills accepts:
+// side, shares, price, fee (optional), filledOn. The ticker is the run's own
+// (server-stamped), not an input field. No bucket index.
 export function ManualCaptureForm({ runId, onAdded }: { runId: number; onAdded?: () => void }) {
   const t = useT();
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
-  const [ticker, setTicker] = useState('');
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState('');
   const [fee, setFee] = useState('');
@@ -41,7 +41,6 @@ export function ManualCaptureForm({ runId, onAdded }: { runId: number; onAdded?:
     }
     const input: ManualFillInput = {
       side,
-      ticker: ticker.trim().toUpperCase(),
       shares: Number(shares),
       price: priceUsd,
       fee: feeUsd ?? undefined,
@@ -71,26 +70,31 @@ export function ManualCaptureForm({ runId, onAdded }: { runId: number; onAdded?:
           <select
             value={side}
             onChange={(e) => setSide(e.target.value as 'buy' | 'sell')}
+            data-testid="manualSideSelect"
             className="h-9 rounded-md border border-border bg-background px-2 text-sm"
           >
             <option value="buy">{t('orderSideBuy')}</option>
             <option value="sell">{t('orderSideSell')}</option>
           </select>
         </Field>
-        <Field label={t('manualTicker')}>
-          <Input value={ticker} onChange={(e) => setTicker(e.target.value)} placeholder="AAPL" required />
-        </Field>
         <Field label={t('manualQty')}>
-          <Input value={shares} onChange={(e) => setShares(e.target.value)} inputMode="numeric" required />
+          <Input data-testid="manualSharesInput" value={shares} onChange={(e) => setShares(e.target.value)} inputMode="numeric" required />
         </Field>
         <Field label={t('manualPrice')}>
-          <Input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" placeholder="349.99" required />
+          <Input
+            data-testid="manualPriceInput"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            inputMode="decimal"
+            placeholder="349.99"
+            required
+          />
         </Field>
         <Field label={`${t('manualFee')} (${t('optional')})`}>
-          <Input value={fee} onChange={(e) => setFee(e.target.value)} inputMode="decimal" placeholder="1.50" />
+          <Input data-testid="manualFeeInput" value={fee} onChange={(e) => setFee(e.target.value)} inputMode="decimal" placeholder="1.50" />
         </Field>
         <Field label={t('manualFilledOn')}>
-          <Input type="date" value={filledOn} onChange={(e) => setFilledOn(e.target.value)} required />
+          <Input type="date" data-testid="manualDateInput" value={filledOn} onChange={(e) => setFilledOn(e.target.value)} required />
         </Field>
       </div>
       <div className="flex items-center gap-3">
