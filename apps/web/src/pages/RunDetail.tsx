@@ -176,6 +176,7 @@ export function RunDetailPage({ id }: { id: number }) {
         {tab === 'manual' && (
           <ManualCaptureForm
             runId={id}
+            costPpm={run.costPpm}
             onAdded={() => {
               setPanelKey((k) => k + 1);
               void reload();
