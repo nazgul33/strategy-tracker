@@ -116,4 +116,101 @@ describe('ManualCaptureForm', () => {
     expect(body.fee).toBeUndefined();
     expect(added).toBe(1);
   });
+
+  async function renderWith(props: Record<string, unknown>) {
+    await act(async () => {
+      root.render(d(ManualCaptureForm, { runId: 7, ...props }));
+    });
+  }
+
+  it('prefills the fee from price and shares', async () => {
+    await renderWith({ costPpm: 30 });
+    await type('manualSharesInput', '100');
+    await type('manualPriceInput', '340.23');
+    expect(inputByTestId('manualFeeInput').value).toBe('1.02'); // feeCents(3402300n, 100, 30) = 102
+    await type('manualDateInput', '2026-11-06');
+    await clickSubmit();
+    expect(calls[0]!.body.fee).toBe('1.02');
+  });
+
+  it('recomputes the auto fee when price changes', async () => {
+    await renderWith({ costPpm: 30 });
+    await type('manualSharesInput', '100');
+    await type('manualPriceInput', '340.23');
+    await type('manualPriceInput', '680.46');
+    expect(inputByTestId('manualFeeInput').value).toBe('2.04');
+  });
+
+  it('recomputes the auto fee when shares change', async () => {
+    await renderWith({ costPpm: 30 });
+    await type('manualSharesInput', '100');
+    await type('manualPriceInput', '340.23');
+    await type('manualSharesInput', '200');
+    expect(inputByTestId('manualFeeInput').value).toBe('2.04');
+  });
+
+  it('typed fee survives later price and shares edits', async () => {
+    await renderWith({ costPpm: 30 });
+    await type('manualSharesInput', '100');
+    await type('manualPriceInput', '340.23');
+    await type('manualFeeInput', '5.00');
+    await type('manualPriceInput', '680.46');
+    await type('manualSharesInput', '200');
+    expect(inputByTestId('manualFeeInput').value).toBe('5.00');
+    await type('manualDateInput', '2026-11-06');
+    await clickSubmit();
+    expect(calls[0]!.body.fee).toBe('5.00');
+  });
+
+  it('clearing the fee input returns it to auto mode', async () => {
+    await renderWith({ costPpm: 30 });
+    await type('manualFeeInput', '5.00');
+    await type('manualFeeInput', '');
+    await type('manualSharesInput', '100');
+    await type('manualPriceInput', '340.23');
+    expect(inputByTestId('manualFeeInput').value).toBe('1.02');
+  });
+
+  it('invalid price clears an auto fee', async () => {
+    await renderWith({ costPpm: 30 });
+    await type('manualSharesInput', '100');
+    await type('manualPriceInput', '340.23');
+    expect(inputByTestId('manualFeeInput').value).toBe('1.02');
+    await type('manualPriceInput', 'abc');
+    expect(inputByTestId('manualFeeInput').value).toBe('');
+  });
+
+  it('invalid price does not clear a typed fee', async () => {
+    await renderWith({ costPpm: 30 });
+    await type('manualFeeInput', '5.00');
+    await type('manualPriceInput', 'abc');
+    expect(inputByTestId('manualFeeInput').value).toBe('5.00');
+  });
+
+  it('prefills 0.00 when cost is 0 ppm', async () => {
+    await renderWith({ costPpm: 0 });
+    await type('manualSharesInput', '100');
+    await type('manualPriceInput', '340.23');
+    expect(inputByTestId('manualFeeInput').value).toBe('0.00');
+    await type('manualDateInput', '2026-11-06');
+    await clickSubmit();
+    expect(calls[0]!.body.fee).toBe('0.00');
+  });
+
+  it('a fee cleared without re-autofilling is omitted from the body', async () => {
+    await renderWith({ costPpm: 30 });
+    await type('manualSharesInput', '100');
+    await type('manualPriceInput', '340.23');
+    await type('manualFeeInput', '');
+    await type('manualDateInput', '2026-11-06');
+    await clickSubmit();
+    expect(calls[0]!.body.fee).toBeUndefined(); // server computes from costPpm
+  });
+
+  it('no costPpm means no auto-fee', async () => {
+    await renderWith({});
+    await type('manualSharesInput', '100');
+    await type('manualPriceInput', '340.23');
+    expect(inputByTestId('manualFeeInput').value).toBe('');
+  });
 });

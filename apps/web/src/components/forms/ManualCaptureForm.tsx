@@ -1,18 +1,37 @@
 import { useState, type FormEvent } from 'react';
+import { feeCents, parseUsd } from '@st/core/money';
 import { api, usdFeeOrNull, usdOrNull, type ManualFillInput } from '../../api';
 import { useT } from '../../i18n';
-import { todayIso } from '../../format';
+import { centsToUsdText, todayIso } from '../../format';
 import { Button, Field, Input } from '../ui';
+
+// Fee text the server would book for these inputs (same feeCents half-up math
+// as booking.ts), or '' when the run has no cost or price/shares are invalid.
+export function autoFeeUsd(shares: string, price: string, costPpm: number | undefined): string {
+  if (costPpm === undefined) return '';
+  const priceUsd = usdOrNull(price);
+  if (priceUsd === null || !Number.isInteger(Number(shares)) || Number(shares) <= 0) return '';
+  return centsToUsdText(feeCents(parseUsd(priceUsd), Number(shares), costPpm));
+}
 
 // Manual fill capture — the exact fields POST /runs/:id/fills accepts:
 // side, shares, price, fee (optional), filledOn. The ticker is the run's own
 // (server-stamped), not an input field. No bucket index.
-export function ManualCaptureForm({ runId, onAdded }: { runId: number; onAdded?: () => void }) {
+export function ManualCaptureForm({
+  runId,
+  costPpm,
+  onAdded,
+}: {
+  runId: number;
+  costPpm?: number;
+  onAdded?: () => void;
+}) {
   const t = useT();
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState('');
   const [fee, setFee] = useState('');
+  const [feeTouched, setFeeTouched] = useState(false);
   const [filledOn, setFilledOn] = useState(todayIso());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +74,7 @@ export function ManualCaptureForm({ runId, onAdded }: { runId: number; onAdded?:
       setShares('');
       setPrice('');
       setFee('');
+      setFeeTouched(false);
       onAdded?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -78,20 +98,44 @@ export function ManualCaptureForm({ runId, onAdded }: { runId: number; onAdded?:
           </select>
         </Field>
         <Field label={t('manualQty')}>
-          <Input data-testid="manualSharesInput" value={shares} onChange={(e) => setShares(e.target.value)} inputMode="numeric" required />
+          <Input
+            data-testid="manualSharesInput"
+            value={shares}
+            onChange={(e) => {
+              const v = e.target.value;
+              setShares(v);
+              if (!feeTouched) setFee(autoFeeUsd(v, price, costPpm));
+            }}
+            inputMode="numeric"
+            required
+          />
         </Field>
         <Field label={t('manualPrice')}>
           <Input
             data-testid="manualPriceInput"
             value={price}
-            onChange={(e) => setPrice(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setPrice(v);
+              if (!feeTouched) setFee(autoFeeUsd(shares, v, costPpm));
+            }}
             inputMode="decimal"
             placeholder="349.99"
             required
           />
         </Field>
         <Field label={`${t('manualFee')} (${t('optional')})`}>
-          <Input data-testid="manualFeeInput" value={fee} onChange={(e) => setFee(e.target.value)} inputMode="decimal" placeholder="1.50" />
+          <Input
+            data-testid="manualFeeInput"
+            value={fee}
+            onChange={(e) => {
+              const v = e.target.value;
+              setFee(v);
+              setFeeTouched(v.trim() !== '');
+            }}
+            inputMode="decimal"
+            placeholder="1.50"
+          />
         </Field>
         <Field label={t('manualFilledOn')}>
           <Input type="date" data-testid="manualDateInput" value={filledOn} onChange={(e) => setFilledOn(e.target.value)} required />
