@@ -81,9 +81,12 @@ changes made in Settings apply without a restart (`apps/server/src/main.ts`,
 
 ### With Docker (recommended)
 
-Put a root `.env` file with at least these three (docker compose interpolates them):
-`MARIADB_ROOT_PASSWORD`, `APP_PASSWORD`, `SESSION_SECRET`. Optionally set `DIGEST_LANG` (defaults
-to `en`) and the `TELEGRAM_*` / `VISION_*` vars (empty/unset ⇒ bot disabled, sends logged).
+Put a root `.env` file with at least these (docker compose interpolates them):
+`MARIADB_ROOT_PASSWORD`, `MARIADB_PASSWORD`, `APP_PASSWORD`, `SESSION_SECRET`. The app connects
+with a dedicated account — `MARIADB_USER` (default `st_app`) on database `MARIADB_DATABASE`
+(default `st_db`), which the MariaDB image creates and grants on first init; root is used only for
+image bootstrap and manual admin. Optionally set `DIGEST_LANG` (defaults to `en`) and the
+`TELEGRAM_*` / `VISION_*` vars (empty/unset ⇒ bot disabled, sends logged).
 
 ```sh
 docker compose up -d --build
@@ -92,17 +95,22 @@ docker compose up -d --build
 The image builds the web bundle inside the build (`cd apps/web && bun run build` in the
 `Dockerfile`), so every deploy ships a fresh UI — no manual build step.
 
-The app serves on `127.0.0.1:8080` — compose binds the port to localhost only, so remote access
-means putting a TLS reverse proxy on the host in front of it (the Telegram bot uses long-polling
-and needs no inbound endpoint). DB migrations are applied in-process at startup
-(`applyMigrations` in `apps/server/src/db/client.ts`); no manual step. Data persists in the
+The app binds `127.0.0.1:8080` by default — compose maps the port to localhost only, so remote
+access means putting a TLS reverse proxy on the host in front of it (the Telegram bot uses
+long-polling and needs no inbound endpoint). To listen on all interfaces instead — e.g. the app
+sits behind a TLS proxy on another machine — set `APP_BIND_HOST=0.0.0.0` in `.env`; traffic between
+that proxy and the app is then plain HTTP on your network. DB migrations are applied in-process at
+startup (`applyMigrations` in `apps/server/src/db/client.ts`); no manual step. Data persists in the
 `st-data` volume.
 
-> Gotcha: MariaDB bakes the root password into the `st-data` volume the **first** time it
-> initializes. Changing `MARIADB_ROOT_PASSWORD` in `.env` afterwards does not change the password
-> the running container accepts — the app then fails to connect. To adopt a new password you must
-> wipe the volume (`docker compose down -v` — **destroys all data**) or change the password inside
-> the running DB.
+> Gotcha: on first init MariaDB bakes the root password **and** the `MARIADB_DATABASE` /
+> `MARIADB_USER` / `MARIADB_PASSWORD` account into the `st-data` volume. Changing those in `.env`
+> afterwards does not change what the running container accepts — the app then fails to connect.
+> To adopt new credentials you must wipe the volume (`docker compose down -v` — **destroys all
+> data**) or change them inside the running DB. Upgrading an **existing** root-based deployment:
+> the entrypoint only creates the account on a fresh volume, so either create it by hand first
+> (`CREATE USER '<MARIADB_USER>'@'%' IDENTIFIED BY '<MARIADB_PASSWORD>'; GRANT ALL ON \`st_db\`.*
+> TO '<MARIADB_USER>'@'%';`) or accept one `down -v` from a backup.
 
 ### Without Docker (bare metal)
 

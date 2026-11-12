@@ -3,8 +3,12 @@ services:
     image: mariadb:11.4
     restart: unless-stopped
     environment:
+      # root password: image bootstrap + manual admin only — the app never uses root
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
-      MARIADB_DATABASE: st_db
+      # dedicated account for the app, created + granted on MARIADB_DATABASE at first init
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-st_db}
+      MARIADB_USER: ${MARIADB_USER:-st_app}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
     volumes:
       - st-data:/var/lib/mysql
     healthcheck:
@@ -18,7 +22,7 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8080"
-      DATABASE_URL: mysql://root:${MARIADB_ROOT_PASSWORD}@db:3306/st_db
+      DATABASE_URL: mysql://${MARIADB_USER:-st_app}:${MARIADB_PASSWORD}@${MARIADB_HOST:-db}:3306/${MARIADB_DATABASE:-st_db}
       APP_PASSWORD: ${APP_PASSWORD}
       SESSION_SECRET: ${SESSION_SECRET}
       DIGEST_LANG: ${DIGEST_LANG:-en}
@@ -30,7 +34,8 @@ services:
       VISION_MODEL: ${VISION_MODEL:-}
       VISION_API_KEY: ${VISION_API_KEY:-}
     ports:
-      - "127.0.0.1:8080:8080"
+      # default: localhost-only; set APP_BIND_HOST=0.0.0.0 in .env to expose in production
+      - "${APP_BIND_HOST:-127.0.0.1}:8080:8080"
     depends_on:
       db:
         condition: service_healthy

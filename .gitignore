@@ -4,3 +4,4 @@ dist
 build/
 data/
 .superpowers/
+build_and_push.sh
