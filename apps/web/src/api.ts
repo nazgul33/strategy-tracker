@@ -92,6 +92,15 @@ export function usdToCents(value: string): number | null {
 }
 
 // --------------------------------------------------------------------- api
+/** PUT body for editing a booked fill (buy-only server-side). The route requires
+ * `feeCents` on the wire: an integer >= 0, or null = recompute the fee from the
+ * run's cost ppm; the client normalizes an omitted value to null (auto-fee). */
+export interface FillUpdatePayload {
+  qty: number;
+  priceCents: number;
+  feeCents?: number | null;
+}
+
 export interface Api {
   login(password: string): Promise<string>;
   listRuns(): Promise<RunDto[]>;
@@ -107,6 +116,8 @@ export interface Api {
   listFills(id: number): Promise<FillDto[]>;
   listNotifications(id: number): Promise<NotificationDto[]>;
   addManualFill(runId: number, fill: ManualFillInput): Promise<void>;
+  updateFill(runId: number, fillId: number, body: FillUpdatePayload): Promise<{ ok: true }>;
+  deleteFill(runId: number, fillId: number): Promise<{ ok: true; deletedFillId: number }>;
   triggerMorning(): Promise<string>;
   listPending(): Promise<PendingFillDto[]>;
   confirmPending(id: number, overrides?: { shares?: number; price?: string; filledOn?: string }): Promise<void>;
@@ -174,6 +185,10 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
       if (fill.fee !== undefined && fill.fee !== '') body.fee = fill.fee;
       return send<{ ok: true }>('POST', `/api/runs/${runId}/fills`, body).then(() => undefined);
     },
+    updateFill: (runId, fillId, body) =>
+      send<{ ok: true }>('PUT', `/api/runs/${runId}/fills/${fillId}`, { ...body, feeCents: body.feeCents ?? null }),
+    deleteFill: (runId, fillId) =>
+      send<{ ok: true; deletedFillId: number }>('DELETE', `/api/runs/${runId}/fills/${fillId}`),
     triggerMorning: () => send<{ result: string }>('POST', '/api/trigger/morning').then((r) => r.result),
     listPending: () => get<PendingFillDto[]>('/api/pending'),
     confirmPending: (id, overrides) =>
