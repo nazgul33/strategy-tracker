@@ -1,5 +1,13 @@
 # strategy-tracker
 
+## Important Directive for Agents.
+- Use English when thinking and when having a conversations with human.
+- String resources for UX can be written in English or Korean depending on the Language preference of UX user.
+- Never use Chinese, Russian in any context.
+- Default to subagent development unless instructed otherwise
+- Do not write any file or run destructive commands outside of git protected directories.
+
+
 ## Project overview
 
 Self-hosted stock trade strategy tracker (Bun + TypeScript monorepo). Tracks mean-reversion strategy runs, captures fills via screenshots, and manages sell orders. See `docs/superpowers/specs/2026-11-10-strategy-tracker-design.md`.
