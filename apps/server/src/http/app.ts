@@ -12,7 +12,7 @@ export interface HttpRepoSurface extends RepoSurface {
   poolEditRepo: { insert(input: { runId: number; poolCents: number }): Promise<void> }
   runRepo: RepoSurface['runRepo'] & { updatePool(id: number, poolCents: number): Promise<void>; updateStatusMany(ids: number[], from: string[], to: string): Promise<number>; updateGaps(id: number, buyGapPpm: number, sellGapPpm: number): Promise<void> }
   orderRepo: RepoSurface['orderRepo'] & { listForRun(runId: number, date?: string): Promise<any[]> }
-  fillRepo: RepoSurface['fillRepo'] & { listForRun(runId: number): Promise<any[]> }
+  fillRepo: RepoSurface['fillRepo'] & { listForRun(runId: number): Promise<any[]>; lastId(runId: number): Promise<number | null> }
   notificationRepo: RepoSurface['notificationRepo'] & { listForRun(runId: number): Promise<any[]> }
   pendingRepo: RepoSurface['pendingRepo'] & { get(id: number): Promise<any> }
   simRepo: SimRepoSurface

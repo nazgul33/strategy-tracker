@@ -127,6 +127,11 @@ export function getRepos(db: any) {
       const last = await db.select({ id: s.fills.id }).from(s.fills).where(eq(s.fills.runId, runId)).orderBy(desc(s.fills.id)).limit(1)
       if (last[0]) await db.delete(s.fills).where(eq(s.fills.id, last[0].id))
     },
+    // newest id for the delete-last guard in routes; null when the run has no fills
+    async lastId(runId: number): Promise<number | null> {
+      const row = await db.select({ id: s.fills.id }).from(s.fills).where(eq(s.fills.runId, runId)).orderBy(desc(s.fills.id)).limit(1)
+      return row[0]?.id ?? null
+    },
   }
 
   const priceHistoryRepo = {
