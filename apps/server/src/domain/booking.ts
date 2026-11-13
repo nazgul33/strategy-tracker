@@ -242,12 +242,16 @@ export async function seedRun(runId: number, seed: { cashCents: number; buckets:
   await repos.bucketRepo.saveState(runId, state)
 }
 
+// SQL listings carry no ORDER BY, so never trust row-return order: id-ascending
+// is the canonical history order (matches the MAX(id) delete in fillRepo).
+const byIdAsc = <T extends { id: number }>(rows: readonly T[]): T[] => [...rows].sort((a, b) => a.id - b.id)
+
 // Cash Model A: the run state is fully derived from the starting pool plus the
 // fill history. Pure — returns a fresh RunState and never mutates the inputs.
 export function rebuildState(fills: readonly FillRow[], poolCents: number, today: ISODate, bucketCount: number): RunState {
   let state = emptyState(bucketCount)
   state.cashCents = poolCents
-  for (const f of [...fills].sort((a, b) => a.id - b.id)) {
+  for (const f of byIdAsc(fills)) {
     state = f.side === 'buy'
       ? applyBuyFill(state, f.bucketIdx, f.shares, f.price, f.fee, f.filledOn)
       : applySellFill(state, f.bucketIdx, f.shares, f.price, f.fee, f.filledOn)
@@ -266,7 +270,7 @@ export interface RebookEdit { fillId: number; shares: number; priceStr: string; 
 export async function rebookFill(runId: number, edit: RebookEdit, deps: BookingDeps): Promise<FillRow> {
   const repos = deps.repos
   if (!repos.fillRepo.listForRun || !repos.fillRepo.update) throw new Error('fill-history-unavailable')
-  const history = await repos.fillRepo.listForRun(runId)
+  const history = byIdAsc(await repos.fillRepo.listForRun(runId))
   const match = history.find((f) => f.id === edit.fillId)
   if (!match) throw new DomainError('no-fill')
   if (match.side === 'sell') throw new DomainError('immutable-field')
@@ -302,7 +306,7 @@ export async function rebookFill(runId: number, edit: RebookEdit, deps: BookingD
 export async function deleteLastFill(runId: number, deps: BookingDeps): Promise<FillRow> {
   const repos = deps.repos
   if (!repos.fillRepo.listForRun || !repos.fillRepo.deleteLast) throw new Error('fill-history-unavailable')
-  const history = await repos.fillRepo.listForRun(runId)
+  const history = byIdAsc(await repos.fillRepo.listForRun(runId))
   const last = history[history.length - 1]
   if (!last) throw new DomainError('no-fill')
 

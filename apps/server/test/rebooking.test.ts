@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { applyBuyFill, DomainError, emptyState, parseUsd, roundDiv, type ISODate, type RunState } from '@st/core'
-import { ageBuckets } from '@st/strategies'
+import { ageBuckets, progressView } from '@st/strategies'
 import { deleteLastFill, manualFill, rebookFill, rebuildState, signedCents, type BookingDeps, type FillRow } from '../src/domain/booking'
 import { fakeRepos } from './booking.test'
 
@@ -11,6 +11,16 @@ const deps = (f: F): BookingDeps => ({ repos: f.repos as any, today: TODAY })
 const getState = (f: F, runId: number): Promise<RunState> => f.repos.bucketRepo.loadState(runId)
 const adjustRows = (f: F) => f._stores.ledger.filter((l: any) => l.kind === 'adjust')
 const asJson = (v: unknown) => JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? x.toString() : x))
+
+// Mimics the real SQL listing, which has no ORDER BY: the fake returns the run's
+// fills rotated (neither id-ascending nor id-descending).
+function scrambleListForRun(f: F) {
+  const real = f.repos.fillRepo.listForRun
+  f.repos.fillRepo.listForRun = async (runId: number) => {
+    const rows = await real(runId)
+    return rows.length > 1 ? [...rows.slice(1), rows[0]] : rows
+  }
+}
 
 function createRun(f: F, poolCents = 100_000, bucketCount = 10): Promise<number> {
   return f.repos.runRepo.create({
@@ -145,6 +155,51 @@ describe('rebookFill', () => {
     expect(JSON.parse(adj[0].ref).reason).toBe('fill-edit')
   })
 
+  test('resolves the target fill even when listForRun returns scrambled order', async () => {
+    const f = fakeRepos()
+    const runId = await createRun(f, 100_000, 3)
+    await manualFill(runId, { side: 'buy', shares: 10, price: '10.00', fee: '5.00', filledOn: '2026-01-08' }, deps(f))
+    await manualFill(runId, { side: 'buy', shares: 5, price: '15.00', fee: '2.50', filledOn: '2026-01-09' }, deps(f))
+    scrambleListForRun(f) // listForRun now yields fills in order [2, 1]
+
+    await rebookFill(runId, { fillId: 1, shares: 8, priceStr: '12.00', feeCents: 300 }, deps(f))
+
+    expect(f._stores.fills.find((x: any) => x.id === 1)).toMatchObject({ shares: 8, price: 120_000n, fee: 300 })
+    expect(f._stores.fills.find((x: any) => x.id === 2)).toMatchObject({ shares: 5, price: 150_000n, fee: 250 })
+    const st = await getState(f, runId)
+    expect(st.buckets[0]).toMatchObject({ state: 'held', shares: 8, buyPrice: 120_000n, buyFeeCents: 300 })
+    expect(st.buckets[1]).toMatchObject({ state: 'held', shares: 5, buyPrice: 150_000n })
+    expect(st.cashCents).toBe(100_000 + buyEffect('12.00', 8, 300) + buyEffect('15.00', 5, 250))
+    const adj = adjustRows(f)
+    expect(adj).toHaveLength(1)
+    expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-edit' })
+  })
+
+  test('rebooking a buy whose bucket was later sold keeps closed and realized consistent', async () => {
+    const f = fakeRepos()
+    const runId = await createRun(f, 100_000, 2)
+    await manualFill(runId, { side: 'buy', shares: 10, price: '10.00', fee: '5.00', filledOn: '2026-01-08' }, deps(f))
+    await manualFill(runId, { side: 'sell', shares: 10, price: '20.00', filledOn: '2026-01-09' }, deps(f))
+
+    const before = await getState(f, runId)
+    expect(before.closed).toHaveLength(1)
+    expect(before.closed[0]).toMatchObject({ index: 0, buyFeeCents: 500, sellFeeCents: 0 })
+    expect(progressView(before).realizedCents).toBe(10_000 - 500)
+
+    await rebookFill(runId, { fillId: 1, shares: 10, priceStr: '10.00', feeCents: 900 }, deps(f))
+
+    const st = await getState(f, runId)
+    expect(st.buckets[0].state).toBe('empty')
+    expect(st.closed).toHaveLength(1)
+    expect(st.closed[0]).toMatchObject({ index: 0, shares: 10, buyPrice: 100_000n, soldPrice: 200_000n, buyFeeCents: 900, sellFeeCents: 0 })
+    expect(progressView(st).realizedCents).toBe(10_000 - 900) // shifted by −400 from the edited buy fee
+    expect(st.cashCents).toBe(100_000 + buyEffect('10.00', 10, 900) + sellEffect('20.00', 10))
+    const adj = adjustRows(f)
+    expect(adj).toHaveLength(1)
+    expect(adj[0].amountCents).toBe(buyEffect('10.00', 10, 900) - buyEffect('10.00', 10, 500)) // −400
+    expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-edit' })
+  })
+
   test('an upward edit that drives cash negative persists — the run keeps going', async () => {
     const f = fakeRepos()
     const runId = await createRun(f, 2_000, 2)
@@ -231,6 +286,25 @@ describe('deleteLastFill', () => {
     expect(adj).toHaveLength(1)
     expect(adj[0]).toMatchObject({ kind: 'adjust', amountCents: 7_750 }) // the removed buy is refunded
     expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 2, bookedOn: TODAY, reason: 'fill-delete' })
+  })
+
+  test('deleteLastFill removes the newest by id even when listForRun returns scrambled order', async () => {
+    const f = fakeRepos()
+    scrambleListForRun(f)
+    const runId = await createRun(f, 100_000, 3)
+    await manualFill(runId, { side: 'buy', shares: 10, price: '10.00', fee: '5.00', filledOn: '2026-01-08' }, deps(f)) // id 1
+    await manualFill(runId, { side: 'buy', shares: 5, price: '15.00', fee: '2.50', filledOn: '2026-01-09' }, deps(f)) // id 2
+    await manualFill(runId, { side: 'buy', shares: 2, price: '20.00', fee: '1.00', filledOn: '2026-01-09' }, deps(f)) // id 3, the true newest
+
+    const deleted = await deleteLastFill(runId, deps(f))
+
+    expect(deleted.id).toBe(3)
+    expect(f._stores.fills.map((x) => x.id)).toEqual([1, 2])
+    const st = await getState(f, runId)
+    expect(st.buckets[2].state).toBe('empty')
+    const adj = adjustRows(f)
+    expect(adj[0]).toMatchObject({ amountCents: -buyEffect('20.00', 2, 100) }) // refunds only the id-3 buy
+    expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 3, bookedOn: TODAY, reason: 'fill-delete' })
   })
 
   test('deleting the only fill returns the run to the starting pool', async () => {
