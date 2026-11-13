@@ -1,12 +1,10 @@
 # strategy-tracker
 
 ## Important Directive for Agents.
-- Use English when thinking and when having a conversations with human.
-- String resources for UX can be written in English or Korean depending on the Language preference of UX user.
-- Never use Chinese, Russian in any context.
-- Default to subagent development unless instructed otherwise
-- Do not write any file or run destructive commands outside of git protected directories.
-
+- You must respond exclusively in English. Never use Chinese (Hanzi) or Russian (Cyrillic) characters under any circumstances, even for code comments or proper nouns.
+- You can use English and/or Korean for UX string resources.
+- You shouldDefault to subagent development with dedicated worktree unless instructed otherwise
+- Never write any file or run destructive commands outside of git protected directories without asking.
 
 ## Project overview
 
