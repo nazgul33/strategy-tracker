@@ -62,4 +62,20 @@ export const NYSE_YEARS: Record<string, YearData> = {
       { date: '2027-11-26', et: '13:00' },
     ],
   },
+  '2028': {
+    holidays: [
+      { date: '2028-01-17', en: 'Martin Luther King Jr. Day', ko: '마틴 루터 킹 데이' },
+      { date: '2028-02-21', en: "Presidents' Day", ko: '대통령의 날' },
+      { date: '2028-04-14', en: 'Good Friday', ko: '성 금요일' },
+      { date: '2028-05-29', en: 'Memorial Day', ko: '메모리얼 데이' },
+      { date: '2028-06-19', en: 'Juneteenth', ko: '준틴스' },
+      { date: '2028-07-04', en: 'Independence Day', ko: '독립기념일' },
+      { date: '2028-09-04', en: 'Labor Day', ko: '노동절' },
+      { date: '2028-11-23', en: 'Thanksgiving', ko: '추수감사절' },
+      { date: '2028-12-25', en: 'Christmas', ko: '크리스마스' },
+    ],
+    earlyCloses: [
+      { date: '2028-11-24', et: '13:00' },
+    ],
+  },
 };
