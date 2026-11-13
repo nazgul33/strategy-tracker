@@ -4,6 +4,10 @@ import type { SimRepoSurface } from '../sim/sim'
 import { authMiddleware, makeToken } from './auth'
 
 export interface HttpRepoSurface extends RepoSurface {
+  priceHistoryRepo: {
+    upsertMany(rows: { ticker: string; tradeDate: string; close: bigint }[]): Promise<number>
+    listForTicker(ticker: string, from?: string): Promise<{ tradeDate: string; close: bigint }[]>
+  }
   settingsRepo: { getAll(): Promise<Record<string, string>>; set(key: string, value: string): Promise<void> }
   poolEditRepo: { insert(input: { runId: number; poolCents: number }): Promise<void> }
   runRepo: RepoSurface['runRepo'] & { updatePool(id: number, poolCents: number): Promise<void>; updateStatusMany(ids: number[], from: string[], to: string): Promise<number>; updateGaps(id: number, buyGapPpm: number, sellGapPpm: number): Promise<void> }

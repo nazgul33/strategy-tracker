@@ -118,6 +118,32 @@ describeIf('db integration', () => {
     expect(rejected).toBe(true)
   })
 
+  test('price history: upsert is idempotent, listForTicker merges runs', async () => {
+    const ticker = 'PH' + Date.now()
+    const first = await repos.priceHistoryRepo.upsertMany([
+      { ticker, tradeDate: '2026-02-10', close: 11000000n },
+      { ticker, tradeDate: '2026-02-11', close: 11100000n },
+    ])
+    expect(first).toBe(2)
+    const second = await repos.priceHistoryRepo.upsertMany([
+      { ticker, tradeDate: '2026-02-10', close: 11050000n }, // revised close
+      { ticker, tradeDate: '2026-02-11', close: 11100000n },
+    ])
+    expect(second).toBe(2)
+
+    let rows = await repos.priceHistoryRepo.listForTicker(ticker)
+    expect(rows.map((r: any) => r.tradeDate)).toEqual(['2026-02-10', '2026-02-11'])
+    expect(rows[0].close).toBe(11050000n)
+
+    const other = await repos.priceHistoryRepo.listForTicker(ticker, '2026-02-11')
+    expect(other.length).toBe(1)
+    expect(other[0].tradeDate).toBe('2026-02-11')
+    expect(await repos.priceHistoryRepo.listForTicker('NOPE' + Date.now())).toEqual([])
+
+    // DATE column must arrive as a plain ISO string, never a Date instance
+    expect(rows[0].tradeDate instanceof Date).toBe(false)
+  })
+
   test('order cancel reason round trip', async () => {
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'RT' + Date.now(), name: `rt-cancel-${Date.now()}`, poolCents: 1000, costPpm: 10 })
     await repos.orderRepo.insertMany([{

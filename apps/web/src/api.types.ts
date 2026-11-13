@@ -109,6 +109,17 @@ export interface PendingFillDto {
   createdAt: string;
 }
 
+export interface PriceHistoryBar {
+  readonly tradeDate: string;
+  /** settled daily close, myriadths as decimal string (jsonBig) */
+  readonly close: string;
+}
+
+export interface PriceHistoryDto {
+  readonly start: string | null;
+  readonly bars: PriceHistoryBar[];
+}
+
 export interface SettingsDto {
   visionBaseUrl: string;
   visionModel: string;

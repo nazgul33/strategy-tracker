@@ -7,6 +7,7 @@ import { seedRun, manualFill, cancelOrder } from '../../domain/booking'
 import type { RawFill } from '@st/ingest'
 import { jsonBig, type HttpDeps } from '../app'
 import { MAX_PPM, isValidPpm } from '../../domain/ppm'
+import { prevTradingDay, type ISODate } from '@st/calendar'
 
 const SEED_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -137,6 +138,78 @@ export function runsRouter(deps: HttpDeps): Hono {
     await deps.repos.runRepo.updateGaps(id, body.buyGapPpm, body.sellGapPpm)
     return c.body(null, 204)
   })
+  // daily closes for the run's ticker, for the price-history chart.
+  // The pipeline only collects from the first morning run on, so the caller
+  // can ask to backfill a start date (the day before the first buy); collected
+  // days are served from the DB and never refetched — settled closes are final.
+  r.get('/runs/:id/price-history', async (c) => {
+    const id = Number(c.req.param('id'))
+    const run = await deps.repos.runRepo.get(id)
+    if (!run) return c.json({ error: 'not found' }, 404)
+
+    const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+    const want = c.req.query('start')
+    const rows = await deps.repos.priceHistoryRepo.listForTicker(run.ticker)
+    let start = rows.length > 0 ? rows[0].tradeDate : null
+
+    const today = deps.today()
+    const needBackfill =
+      want !== undefined && DATE_RE.test(want) && want < today && (start === null || want < start)
+    if (needBackfill) {
+      // backfill only ever fills gaps before the collected range (or seeds it)
+      const fetched = await backfillPriceHistory(deps, run.ticker, want, today)
+      if (fetched.length > 0) {
+        await deps.repos.priceHistoryRepo.upsertMany(fetched.map((b) => ({ ticker: run.ticker, ...b })))
+        const have = new Map(rows.map((r) => [r.tradeDate, r.close]))
+        for (const b of fetched) have.set(b.tradeDate, b.close)
+        rows.length = 0
+        for (const [tradeDate, close] of [...have].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+          rows.push({ tradeDate, close })
+        }
+        start = rows[0].tradeDate
+      }
+    }
+
+    let out = rows
+    if (start !== null && want !== undefined && DATE_RE.test(want)) out = rows.filter((r) => r.tradeDate >= want)
+    return c.json(jsonBig({ start, bars: out }))
+  })
+
+  // walk trading days backwards from prevTradingDay(today) until the daily
+  // bars cover `start`; Yahoo data is finite, so stop after `maxDays` tries
+  async function backfillPriceHistory(
+    deps: HttpDeps,
+    ticker: string,
+    start: string,
+    today: ISODate,
+    maxDays = 400,
+  ): Promise<{ tradeDate: ISODate; close: bigint }[]> {
+    if (!deps.fetchDailyBars) return []
+    const out: { tradeDate: ISODate; close: bigint }[] = []
+    let from = start
+    let guard = 0
+    while (guard++ < maxDays) {
+      const to = prevTradingDay(today)
+      let bars
+      try {
+        bars = await deps.fetchDailyBars(ticker, from, to)
+      } catch (e) {
+        console.error('daily bars fetch failed:', ticker, String(e))
+        break
+      }
+      const known = new Set(out.map((b) => b.tradeDate))
+      const fresh = bars.filter((b) => b.tradeDate <= to && !known.has(b.tradeDate))
+      if (fresh.length === 0) break
+      out.push(...fresh)
+      const earliest = out.reduce((m, b) => (b.tradeDate < m ? b.tradeDate : m), out[0].tradeDate)
+      if (earliest <= start) break
+      const prev = prevTradingDay(earliest)
+      if (prev === earliest) break
+      from = prev
+    }
+    return out.sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1))
+  }
+
   r.get('/runs/:id/orders', async (c) => {
     const id = Number(c.req.param('id'))
     const date = c.req.query('date')

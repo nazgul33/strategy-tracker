@@ -70,6 +70,9 @@ async function main(): Promise<void> {
     repos,
     params: () => DEFAULT_MR_PARAMS,
     digestLang,
+    persistClose: async (ticker, tradeDate, close) => {
+      await repos.priceHistoryRepo.upsertMany([{ ticker, tradeDate, close }])
+    },
   }
   const jobs = startJobs(dayDeps, (m) => console.log(`[jobs] ${m}`))
 

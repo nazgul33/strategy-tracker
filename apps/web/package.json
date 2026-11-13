@@ -9,9 +9,10 @@
     "test": "bun test src"
   },
   "dependencies": {
-    "@st/core": "workspace:*",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "@st/calendar": "workspace:*",
+    "@st/core": "workspace:*"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^21.0.4",

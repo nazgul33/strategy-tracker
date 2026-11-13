@@ -15,6 +15,8 @@ export interface DayDeps {
   repos: RepoSurface
   params: (run: any) => MrParams
   digestLang: 'en' | 'ko'
+  /** optional: store the sanity-checked close for the price history chart */
+  persistClose?: (ticker: string, tradeDate: ISODate, close: bigint) => Promise<void>
 }
 
 export type MorningResult = 'weekend' | 'closed' | 'conflict' | 'data-error' | 'sent'
@@ -119,6 +121,16 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
       status: 'open',
     }))
     await deps.repos.orderRepo.insertMany(rows)
+
+    // collect history once the close passed the sanity check above; a failed
+    // backfill must not break the digest (fire-and-warn)
+    if (deps.persistClose) {
+      try {
+        await deps.persistClose(run.ticker, closeDate, close)
+      } catch (e) {
+        console.error('price history persist failed:', run.ticker, String(e))
+      }
+    }
 
     await deps.repos.bucketRepo.saveState(run.id, state)
 

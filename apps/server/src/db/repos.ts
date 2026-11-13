@@ -1,9 +1,15 @@
 import type { RunState } from '@st/core'
-import { eq, and, lt, sql, inArray } from 'drizzle-orm'
+import { eq, and, lt, sql, inArray, gte } from 'drizzle-orm'
 import * as s from './schema'
 
 function serializeState(state: RunState): string {
   return JSON.stringify(state, (_, v) => typeof v === 'bigint' ? v.toString() : v)
+}
+
+// Tickers arrive from many places (DB rows, client query params, Yahoo bars);
+// price_history keys must be canonical or the cache would fragment.
+function normTicker(t: unknown): string {
+  return String(t).trim().toUpperCase().slice(0, 16)
 }
 
 export function getRepos(db: any) {
@@ -113,6 +119,23 @@ export function getRepos(db: any) {
     async listForRun(runId: number) { return db.select().from(s.fills).where(eq(s.fills.runId, runId)) },
   }
 
+  const priceHistoryRepo = {
+    // Idempotent by (ticker, tradeDate): refetching a day overwrites its close.
+    async upsertMany(rows: { ticker: string; tradeDate: string; close: bigint }[]): Promise<number> {
+      if (!rows.length) return 0
+      await db.insert(s.priceHistory).values(
+        rows.map((r) => ({ ticker: normTicker(r.ticker), tradeDate: r.tradeDate, close: r.close })),
+      ).onDuplicateKeyUpdate({ set: { close: sql`values(${s.priceHistory.close})` } })
+      return rows.length
+    },
+    async listForTicker(ticker: string, from?: string) {
+      const where = from
+        ? and(eq(s.priceHistory.ticker, normTicker(ticker)), gte(s.priceHistory.tradeDate, from))
+        : eq(s.priceHistory.ticker, normTicker(ticker))
+      return db.select().from(s.priceHistory).where(where).orderBy(s.priceHistory.tradeDate)
+    },
+  }
+
   const pendingRepo = {
     async insert(p: any) { const [r] = await db.insert(s.pendingFills).values(p); return (r as any).insertId },
     async listPending() { return db.select().from(s.pendingFills).where(eq(s.pendingFills.status, 'pending')) },
@@ -191,5 +214,5 @@ export function getRepos(db: any) {
       return db.select().from(s.simDays).where(eq(s.simDays.simRunId, id)).orderBy(s.simDays.tradeDate)
     },
   }
-  return { runRepo, orderRepo, fillRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo, settingsRepo, poolEditRepo, simRepo }
+  return { runRepo, orderRepo, fillRepo, priceHistoryRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo, settingsRepo, poolEditRepo, simRepo }
 }

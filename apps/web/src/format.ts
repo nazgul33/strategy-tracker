@@ -28,7 +28,7 @@ export function signedCentsUsd(cents: number | null | undefined): string {
   return text;
 }
 
-/** Myriadths (as the API's decimal string) → `$226.8100` trimmed of trailing zeros. */
+/** Myriadths (as the API's decimal string) → `$226.81` — always two decimals. */
 export function priceUsd(myriadths: string | number | null | undefined): string {
   if (myriadths === null || myriadths === undefined || myriadths === '') return '—';
   const whole = String(myriadths).trim();
@@ -36,11 +36,10 @@ export function priceUsd(myriadths: string | number | null | undefined): string 
   const value = BigInt(whole);
   const negative = value < 0n;
   const abs = negative ? -value : value;
-  const units = abs / 10_000n;
-  const frac = abs % 10_000n;
-  if (frac === 0n) return `${negative ? '-' : ''}$${groups(units)}`;
-  const fracText = frac.toString().padStart(4, '0').replace(/0+$/, '');
-  return `${negative ? '-' : ''}$${groups(units)}.${fracText}`;
+  const cents = (abs + 50n) / 100n; // myriadths → cents, half-up
+  const dollars = cents / 100n;
+  const frac = (cents % 100n).toString().padStart(2, '0');
+  return `${negative ? '-' : ''}$${groups(dollars)}.${frac}`;
 }
 
 /** Myriadths → 4-decimal string, for editing in a text input. */

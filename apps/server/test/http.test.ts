@@ -101,11 +101,27 @@ function makeFakes() {
     async getRun() { return null },
     async listDays() { return [] },
   }
+  const priceHistory: { ticker: string; tradeDate: string; close: bigint }[] = []
+  const priceHistoryRepo = {
+    async upsertMany(rows: { ticker: string; tradeDate: string; close: bigint }[]) {
+      for (const r of rows) {
+        const hit = priceHistory.find((x) => x.ticker === r.ticker && x.tradeDate === r.tradeDate)
+        if (hit) hit.close = r.close
+        else priceHistory.push({ ...r })
+      }
+      return rows.length
+    },
+    async listForTicker(ticker: string, from?: string) {
+      return priceHistory
+        .filter((r) => r.ticker === ticker && (!from || r.tradeDate >= from))
+        .sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1))
+    },
+  }
   const repos: HttpRepoSurface = {
     runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo,
-    settingsRepo, poolEditRepo, simRepo,
+    settingsRepo, poolEditRepo, simRepo, priceHistoryRepo,
   } as any
-  return { repos, runs, poolEdits, fills, ledger, orders, pending, notifications, sent, settings, states, simRuns }
+  return { repos, runs, poolEdits, fills, ledger, orders, pending, notifications, sent, settings, states, simRuns, priceHistory }
 }
 
 const PASSWORD = 'secret'
@@ -739,5 +755,60 @@ describe('http sim gaps', () => {
     const rows = await (await app2.request('/api/sim', { headers: auth2 })).json()
     expect(rows[0].buyGapPpm).toBe(0)
     expect(rows[1].sellGapPpm).toBe(20000)
+  })
+})
+
+describe('http price-history', async () => {
+  const loginAs = async (app: ReturnType<typeof createApp>) => {
+    const res = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    return { Authorization: `Bearer ${(await res.json()).token}` }
+  }
+  // weekday-only calendar the backfill loop walks through, given today=2026-11-10
+  const ALL_BARS = ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-09']
+
+  test('serves collected bars sorted, close as string; 404 for unknown run', async () => {
+    const f = makeFakes()
+    f.runs.push({ id: 1, ticker: 'AAPL', name: 'r1', status: 'active' } as any)
+    await f.repos.priceHistoryRepo.upsertMany([
+      { ticker: 'AAPL', tradeDate: '2026-11-09', close: 5000n },
+      { ticker: 'AAPL', tradeDate: '2026-11-05', close: 4800n },
+    ])
+    const app = createApp(makeDeps(f))
+    const auth = await loginAs(app)
+    const res = await app.request('/api/runs/1/price-history', { headers: auth })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.start).toBe('2026-11-05')
+    expect(body.bars.map((b: any) => b.tradeDate)).toEqual(['2026-11-05', '2026-11-09'])
+    expect(body.bars[0].close).toBe('4800')
+    const miss = await app.request('/api/runs/99/price-history', { headers: auth })
+    expect(miss.status).toBe(404)
+  })
+
+  test('?start backfills once from Yahoo, persists, and second call reuses DB', async () => {
+    const f = makeFakes()
+    f.runs.push({ id: 1, ticker: 'AAPL', name: 'r1', status: 'active' } as any)
+    const calls: [string, string][] = []
+    const deps = makeDeps(f)
+    deps.fetchDailyBars = async (_ticker: string, from: string, to: string) => {
+      calls.push([from, to])
+      return ALL_BARS.filter((d) => d >= from && d <= to).map((d) => ({ tradeDate: d, close: BigInt(d.slice(8)) * 100n }))
+    }
+    const app = createApp(deps)
+    const auth = await loginAs(app)
+
+    const res = await app.request('/api/runs/1/price-history?start=2026-11-02', { headers: auth })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(calls.length).toBe(1)
+    expect(calls[0]).toEqual(['2026-11-02', '2026-11-09']) // to = prev trading day of today
+    expect(body.bars.length).toBe(6)
+    expect(body.start).toBe('2026-11-02')
+    expect(f.priceHistory.length).toBe(6) // persisted for reuse
+
+    calls.length = 0
+    const res2 = await app.request('/api/runs/1/price-history?start=2026-11-02', { headers: auth })
+    expect((await res2.json()).bars.length).toBe(6)
+    expect(calls.length).toBe(0) // collected history is never refetched
   })
 })

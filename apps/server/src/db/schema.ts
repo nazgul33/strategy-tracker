@@ -1,4 +1,4 @@
-import { mysqlTable, bigint, int, varchar, text, date, timestamp, json, mysqlEnum } from 'drizzle-orm/mysql-core'
+import { mysqlTable, bigint, int, varchar, text, date, timestamp, json, mysqlEnum, primaryKey } from 'drizzle-orm/mysql-core'
 
 export const strategyRuns = mysqlTable('strategy_runs', {
   id: int('id').primaryKey().autoincrement(),
@@ -128,6 +128,16 @@ export const settings = mysqlTable('settings', {
   key: varchar('key', { length: 64 }).primaryKey(),
   value: text('value').notNull(),
 })
+
+// Yahoo daily closes keyed by (ticker, trade_date): same-day refetch overwrites
+// the close instead of duplicating; the morning pipeline backfills it.
+export const priceHistory = mysqlTable('price_history', {
+  ticker: varchar('ticker', { length: 16 }).notNull(),
+  tradeDate: date('trade_date', { mode: 'string' }).notNull(),
+  close: bigint('close', { mode: 'bigint' }).notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.ticker, t.tradeDate] }),
+}))
 
 import { uniqueIndex } from 'drizzle-orm/mysql-core'
 

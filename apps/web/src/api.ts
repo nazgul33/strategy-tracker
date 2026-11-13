@@ -10,6 +10,7 @@ import type {
   NotificationDto,
   OrderDto,
   PendingFillDto,
+  PriceHistoryDto,
   RunDetailDto,
   RunDto,
   RunStatus,
@@ -100,6 +101,7 @@ export interface Api {
   bulkSetRunStatus(ids: number[], status: RunStatus): Promise<number>;
   setPool(id: number, amountCents: number): Promise<void>;
   setGaps(id: number, input: { buyGapPpm: number; sellGapPpm: number }): Promise<void>;
+  priceHistory(id: number, start?: string): Promise<PriceHistoryDto>;
   listOrders(id: number, date?: string): Promise<OrderDto[]>;
   cancelOrder(runId: number, orderId: number, reason: string): Promise<void>;
   listFills(id: number): Promise<FillDto[]>;
@@ -156,6 +158,7 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
       send<{ updated: number }>('POST', '/api/runs/bulk-status', { ids, status }).then((r) => r.updated),
     setPool: (id, amountCents) => send<{ ok: true }>('POST', `/api/runs/${id}/pool`, { amountCents }).then(() => undefined),
     setGaps: (id, input) => send<{ ok: true }>('POST', `/api/runs/${id}/gaps`, input).then(() => undefined),
+    priceHistory: (id, start) => get<PriceHistoryDto>(`/api/runs/${id}/price-history${start ? `?start=${start}` : ''}`),
     listOrders: (id, date) => get<OrderDto[]>(`/api/runs/${id}/orders${date ? `?date=${date}` : ''}`),
     cancelOrder: (runId, orderId, reason) =>
       send<{ ok: true }>('POST', `/api/runs/${runId}/orders/${orderId}/cancel`, { reason }).then(() => undefined),
