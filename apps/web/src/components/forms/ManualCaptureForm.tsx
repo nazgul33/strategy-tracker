@@ -6,12 +6,14 @@ import { centsToUsdText, todayIso } from '../../format';
 import { Button, Field, Input } from '../ui';
 
 // Fee text the server would book for these inputs (same feeCents half-up math
-// as booking.ts), or '' when the run has no cost or price/shares are invalid.
+// as booking.ts), or '' when the run has no usable cost, price/shares are
+// invalid, or the fee would not be accepted by the fee field.
 export function autoFeeUsd(shares: string, price: string, costPpm: number | undefined): string {
-  if (costPpm === undefined) return '';
+  if (costPpm === undefined || !Number.isInteger(costPpm) || costPpm < 0) return '';
   const priceUsd = usdOrNull(price);
   if (priceUsd === null || !Number.isInteger(Number(shares)) || Number(shares) <= 0) return '';
-  return centsToUsdText(feeCents(parseUsd(priceUsd), Number(shares), costPpm));
+  const text = centsToUsdText(feeCents(parseUsd(priceUsd), Number(shares), costPpm));
+  return usdFeeOrNull(text) === null ? '' : text;
 }
 
 // Manual fill capture — the exact fields POST /runs/:id/fills accepts:
