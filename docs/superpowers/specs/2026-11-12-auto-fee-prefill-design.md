@@ -56,7 +56,7 @@ the Fee field should be filled automatically using the run's configured cost
 ## Tests
 
 Extend `apps/web/src/components/forms/ManualCaptureForm.test.tsx`:
-- Valid price + shares → Fee input shows the `feeCents` result (e.g. 340.23 × 100 @ 30 ppm → `0.10`).
+- Valid price + shares → Fee input shows the `feeCents` result (e.g. 340.23 × 100 @ 30 ppm → `1.02`).
 - Editing price afterwards updates an auto fee.
 - Typing a fee, then editing price → typed fee survives.
 - Clearing the fee, then editing price → prefills again.
