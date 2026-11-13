@@ -1,5 +1,5 @@
 import type { RunState } from '@st/core'
-import { eq, and, lt, sql, inArray, gte } from 'drizzle-orm'
+import { eq, and, lt, sql, inArray, gte, desc } from 'drizzle-orm'
 import * as s from './schema'
 
 function serializeState(state: RunState): string {
@@ -116,7 +116,17 @@ export function getRepos(db: any) {
 
   const fillRepo = {
     async insert(fill: any) { await db.insert(s.fills).values(fill) },
-    async listForRun(runId: number) { return db.select().from(s.fills).where(eq(s.fills.runId, runId)) },
+    async listForRun(runId: number) { return db.select().from(s.fills).where(eq(s.fills.runId, runId)).orderBy(s.fills.id) },
+    // Run-scoped guard: a foreign fillId can never be touched. Field names
+    // match the fills schema; price is bigint myriadths.
+    async update(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number }): Promise<void> {
+      await db.update(s.fills).set(patch).where(and(eq(s.fills.id, fillId), eq(s.fills.runId, runId)))
+    },
+    // Newest by id — same byIdAsc 'last' semantics the domain uses. No-op when empty.
+    async deleteLast(runId: number): Promise<void> {
+      const last = await db.select({ id: s.fills.id }).from(s.fills).where(eq(s.fills.runId, runId)).orderBy(desc(s.fills.id)).limit(1)
+      if (last[0]) await db.delete(s.fills).where(eq(s.fills.id, last[0].id))
+    },
   }
 
   const priceHistoryRepo = {
