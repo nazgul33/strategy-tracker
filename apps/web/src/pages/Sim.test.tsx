@@ -2,6 +2,8 @@
 // GlobalRegistrator.register(), otherwise onChange handlers silently never fire.
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test';
+import { installFetchStub, restoreFetch } from '../testing/fetchStub';
+import type { FetchCalls } from '../testing/fetchStub';
 
 GlobalRegistrator.register();
 
@@ -22,7 +24,7 @@ interface FetchCall {
   body: Record<string, unknown>;
 }
 
-const realFetch = globalThis.fetch;
+let stub: FetchCalls;
 let calls: FetchCall[] = [];
 
 function setInputValue(el: HTMLInputElement, value: string) {
@@ -78,6 +80,8 @@ async function submitForm() {
   await act(async () => {
     await Promise.resolve();
   });
+  // Mirror the helper's recorded non-GET calls into the local shape.
+  calls = stub.map((c) => ({ url: c.url, body: c.body as Record<string, unknown> }));
 }
 
 describe('SimPage gap fields', () => {
@@ -86,16 +90,7 @@ describe('SimPage gap fields', () => {
 
   beforeEach(() => {
     calls = [];
-    globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: string }) => {
-      if (String(url) === '/api/sim' && init?.method === 'POST') {
-        calls.push({ url: String(url), body: JSON.parse(init.body ?? '{}') as Record<string, unknown> });
-        return new Response(JSON.stringify({ id: 3, dayCount: 5 }), {
-          status: 201,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
-      return new Response(JSON.stringify([]), { status: 200, headers: { 'content-type': 'application/json' } });
-    }) as unknown as typeof fetch;
+    stub = installFetchStub([{ method: 'POST', url: '/api/sim', status: 201, json: { id: 3, dayCount: 5 } }]);
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -104,7 +99,7 @@ describe('SimPage gap fields', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    globalThis.fetch = realFetch;
+    restoreFetch();
   });
 
   afterAll(() => {
