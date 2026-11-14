@@ -19,6 +19,23 @@ export function emptyState(bucketCount: number): RunState {
   return { buckets, cashCents: 0, closed: [], ages: {} }
 }
 
+/**
+ * Bucket a next buy should take: the lowest empty index never present in
+ * `closed` (never used), else the lowest empty (previously closed) index,
+ * else null when every bucket is held. Shared by planning and booking so
+ * the two can never drift.
+ */
+export function nextBuyBucketIndex(state: RunState): number | null {
+  const closedIdx = new Set(state.closed.map((c) => c.index))
+  let fallback: number | null = null
+  for (const b of state.buckets) {
+    if (b.state !== 'empty') continue
+    if (!closedIdx.has(b.index)) return b.index
+    if (fallback === null) fallback = b.index
+  }
+  return fallback
+}
+
 export function advanceDay(state: RunState, maxAgeDays = 20): RunState {
   const next = clone(state)
   for (const b of next.buckets) {
