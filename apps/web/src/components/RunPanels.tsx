@@ -102,22 +102,52 @@ export function FillsPanel({
   costPpm?: number;
   onMutated?: () => void;
 }) {
+  const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.listFills(runId), [runId]);
   const [edit, setEdit] = useState<FillDto | null>(null);
+  const [confirmDel, setConfirmDel] = useState<FillDto | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [delError, setDelError] = useState(false);
+
+  const submitDelete = async () => {
+    if (!confirmDel) return;
+    setBusy(true);
+    setDelError(false);
+    try {
+      await api.deleteFill(runId, confirmDel.id);
+      setConfirmDel(null);
+      await reload();
+      onMutated?.();
+    } catch {
+      setDelError(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading) return <Spinner />;
   if (error) return <PanelState error={error} onRetry={() => void reload()} />;
-  // Fills arrive oldest→newest, so the last row is the deletable one.
   const fills = data ?? [];
-  const lastFillId = fills.length ? fills[fills.length - 1]!.id : undefined;
+  // One deletable fill per bucket: the newest (max id) row of that bucket —
+  // the server only accepts deleting a bucket's last fill. The list from
+  // GET /fills is id-ascending, so the last row seen per bucket wins.
+  const newestPerBucket = new Map<number, number>();
+  for (const f of fills) newestPerBucket.set(f.bucketIdx, f.id);
+  const deletableIds = new Set(newestPerBucket.values());
   return (
     <>
-      <FillTable fills={fills} onEdit={setEdit} />
+      <FillTable
+        fills={fills}
+        onEdit={setEdit}
+        deletableIds={deletableIds}
+        onDelete={(f) => setConfirmDel(f)}
+      />
       {edit && (
         <FillDialog
           runId={runId}
           costPpm={costPpm}
           fill={edit}
-          deletable={edit.id === lastFillId}
+          deletable={deletableIds.has(edit.id)}
           onClose={() => setEdit(null)}
           onSaved={() => {
             setEdit(null);
@@ -125,6 +155,22 @@ export function FillsPanel({
             onMutated?.();
           }}
         />
+      )}
+      {confirmDel && (
+        <Modal title={t('dialog.delete')} onClose={() => setConfirmDel(null)}>
+          <p className="text-sm">{t('dialog.deleteWarning', { n: confirmDel.shares })}</p>
+          {delError && (
+            <div className="mt-3">
+              <ErrorNote message={t('dialog.deleteFailed')} />
+            </div>
+          )}
+          <div className="mt-4 flex justify-end gap-2">
+            <Button onClick={() => setConfirmDel(null)}>{t('cancel')}</Button>
+            <Button variant="danger" busy={busy} onClick={() => void submitDelete()}>
+              {t('dialog.deleteConfirm')}
+            </Button>
+          </div>
+        </Modal>
       )}
     </>
   );

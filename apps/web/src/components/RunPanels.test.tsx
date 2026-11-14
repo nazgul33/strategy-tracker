@@ -18,9 +18,23 @@ declare global {
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-// FillsDto wire shape (price = myriadths string, fee = cents); server returns
-// fills oldest→newest, so id 3 (sell) is the deletable last row here.
+// FillsDto wire shape (price = myriadths string, fee = cents); the server lists
+// fills id-ascending, so the deletable set is the newest row of each bucket —
+// here {1, 3}: id 3 is bucket 0's last fill, id 1 is bucket 1's last fill.
 const FILLS = [
+  {
+    id: 1,
+    runId: 7,
+    ticker: 'QQQ',
+    side: 'buy' as const,
+    bucketIdx: 1,
+    shares: 4,
+    price: '3000000',
+    fee: 90,
+    source: 'manual' as const,
+    filledOn: '2026-11-10',
+    createdAt: '2026-11-10T15:30:00Z',
+  },
   {
     id: 2,
     runId: 7,
@@ -57,14 +71,22 @@ interface FetchCall {
 
 const realFetch = globalThis.fetch;
 let calls: FetchCall[] = [];
+let failDelete = false;
 
 function stubFetch() {
   calls = [];
+  failDelete = false;
   globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: string }) => {
     const u = String(url);
     const method = init?.method ?? 'GET';
     if (method !== 'GET') {
       calls.push({ method, url: u, body: JSON.parse(init?.body ?? '{}') as Record<string, unknown> });
+      if (method === 'DELETE' && failDelete) {
+        return new Response(JSON.stringify({ error: 'not-last' }), {
+          status: 422,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
       const payload = method === 'DELETE' ? { ok: true, deletedFillId: 3 } : { ok: true };
       return new Response(JSON.stringify(payload), {
         status: 200,
@@ -149,6 +171,10 @@ describe('FillsPanel', () => {
     expect(document.getElementById('fillEdit-2')).not.toBeNull();
     expect(document.getElementById('fillEdit-3')).not.toBeNull();
     expect(document.body.textContent ?? '').not.toContain('No fills.');
+    // One row-level Delete per bucket: that bucket's newest fill (ids 1 and 3).
+    expect(document.getElementById('fillDelete-1')).not.toBeNull();
+    expect(document.getElementById('fillDelete-3')).not.toBeNull();
+    expect(document.getElementById('fillDelete-2')).toBeNull();
   });
 
   it('edits the buy row: prefilled, PUTs the payload, fires onMutated once, unmounts', async () => {
@@ -169,15 +195,56 @@ describe('FillsPanel', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it('shows Delete only when editing the last fill', async () => {
+  it("shows Delete in the dialog for each bucket's last fill", async () => {
     await click(document.getElementById('fillEdit-3')!);
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="fillDeleteBtn"]')).not.toBeNull();
     await click(button('Cancel'));
 
+    await click(document.getElementById('fillEdit-1')!);
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="fillDeleteBtn"]')).not.toBeNull();
+    await click(button('Cancel'));
+
+    // id 2 shares bucket 0 with the newer id 3, so the server would reject it.
     await click(document.getElementById('fillEdit-2')!);
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="fillDeleteBtn"]')).toBeNull();
+  });
+
+  it('deletes from the row: confirm modal, DELETE recorded, onMutated fired', async () => {
+    await click(document.getElementById('fillDelete-1')!);
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog!.textContent ?? '').toContain('(4 shares)');
+
+    await click(button('Delete for real'));
+
+    const del = calls.filter((c) => c.method === 'DELETE');
+    expect(del.length).toBe(1);
+    expect(del[0]!.url).toContain('/api/runs/7/fills/1');
+    expect(mutated).toBe(1);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('row delete cancel: no DELETE call, dialog closed', async () => {
+    await click(document.getElementById('fillDelete-1')!);
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    await click(button('Cancel'));
+
+    expect(calls.filter((c) => c.method === 'DELETE').length).toBe(0);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('row delete rejected by the server: dialog stays open with the error, onMutated not fired', async () => {
+    failDelete = true;
+    await click(document.getElementById('fillDelete-1')!);
+    await click(button('Delete for real'));
+
+    expect(calls.filter((c) => c.method === 'DELETE').length).toBe(1);
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(document.body.textContent ?? '').toContain('Delete failed.');
+    expect(mutated).toBe(0);
   });
 
   it('deletes the last fill through the confirm step: DELETE recorded, onMutated fired', async () => {

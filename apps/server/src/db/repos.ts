@@ -1,5 +1,5 @@
 import type { RunState } from '@st/core'
-import { eq, and, lt, sql, inArray, gte, desc } from 'drizzle-orm'
+import { eq, and, lt, sql, inArray, gte } from 'drizzle-orm'
 import * as s from './schema'
 
 function serializeState(state: RunState): string {
@@ -122,15 +122,9 @@ export function getRepos(db: any) {
     async update(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number }): Promise<void> {
       await db.update(s.fills).set(patch).where(and(eq(s.fills.id, fillId), eq(s.fills.runId, runId)))
     },
-    // Newest by id — same byIdAsc 'last' semantics the domain uses. No-op when empty.
-    async deleteLast(runId: number): Promise<void> {
-      const last = await db.select({ id: s.fills.id }).from(s.fills).where(eq(s.fills.runId, runId)).orderBy(desc(s.fills.id)).limit(1)
-      if (last[0]) await db.delete(s.fills).where(eq(s.fills.id, last[0].id))
-    },
-    // newest id for the delete-last guard in routes; null when the run has no fills
-    async lastId(runId: number): Promise<number | null> {
-      const row = await db.select({ id: s.fills.id }).from(s.fills).where(eq(s.fills.runId, runId)).orderBy(desc(s.fills.id)).limit(1)
-      return row[0]?.id ?? null
+    // Run-scoped guard: a foreign fillId can never be touched. No-op when absent.
+    async deleteById(runId: number, fillId: number): Promise<void> {
+      await db.delete(s.fills).where(and(eq(s.fills.id, fillId), eq(s.fills.runId, runId)))
     },
   }
 

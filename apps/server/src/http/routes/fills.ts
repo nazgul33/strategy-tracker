@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { DomainError } from '@st/core'
-import { rebookFill, deleteLastFill } from '../../domain/booking'
+import { rebookFill, deleteFill } from '../../domain/booking'
 import type { HttpDeps } from '../app'
 
 // Editing captured fills. Auth is already handled by the app-level middleware.
@@ -34,20 +34,20 @@ export function fillsRouter(deps: HttpDeps): Hono {
 
   r.delete('/runs/:id/fills/:fillId', async (c) => {
     const runId = Number(c.req.param('id'))
+    // a non-numeric id can never name the newest fill of a bucket
+    const raw = c.req.param('fillId')
+    if (!/^\d+$/.test(raw)) return c.json({ error: 'not-last' }, 422)
     const run = await deps.repos.runRepo.get(runId)
     if (!run) return c.json({ error: 'no-run' }, 404)
-    const last = await deps.repos.fillRepo.lastId(runId)
-    if (last === null) return c.json({ error: 'no-fill' }, 422)
-    // only the newest fill is deletable; the id must match exactly
-    const raw = c.req.param('fillId')
-    if (!/^\d+$/.test(raw) || Number(raw) !== last) return c.json({ error: 'not-last' }, 422)
+    let deleted: { id: number }
     try {
-      await deleteLastFill(runId, bookingDeps())
+      // the domain guards per-bucket newness and books the compensating adjust
+      deleted = await deleteFill(runId, Number(raw), bookingDeps())
     } catch (e) {
       if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
       throw e
     }
-    return c.json({ ok: true, deletedFillId: last })
+    return c.json({ ok: true, deletedFillId: deleted.id })
   })
   return r
 }
