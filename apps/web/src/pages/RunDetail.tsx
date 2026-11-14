@@ -70,8 +70,14 @@ export function RunDetailPage({ id }: { id: number }) {
     }
   };
 
-  const [recalcing, setRecalcing] = useState(false);
-  const recalc = async () => { setRecalcing(true); try { await api.recalcRun(id); await reload(); } finally { setRecalcing(false); } };
+  const recalc = async () => {
+    try {
+      await api.recalcRun(id);
+      await reload();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   if (loading && !data) return <Spinner />;
   if (!data) {
