@@ -2,9 +2,10 @@
 // switches stay cheap and a panel-level failure never blanks the whole page.
 import { useState } from 'react';
 
-import { api } from '../api';
+import { api, type FillDto } from '../api';
 import { useAsync } from '../components/hooks';
 import { FillTable } from './FillTable';
+import { FillDialog } from './forms/FillDialog';
 import { NoticeList } from './NoticeList';
 import { OrderTable } from './OrderTable';
 import { Button, ErrorNote, Input, Modal, Select, Spinner } from './ui';
@@ -92,11 +93,41 @@ export function OrdersPanel({ runId }: { runId: number }) {
   );
 }
 
-export function FillsPanel({ runId }: { runId: number }) {
+export function FillsPanel({
+  runId,
+  costPpm,
+  onMutated,
+}: {
+  runId: number;
+  costPpm?: number;
+  onMutated?: () => void;
+}) {
   const { data, error, loading, reload } = useAsync(() => api.listFills(runId), [runId]);
+  const [edit, setEdit] = useState<FillDto | null>(null);
   if (loading) return <Spinner />;
   if (error) return <PanelState error={error} onRetry={() => void reload()} />;
-  return <FillTable fills={data ?? []} />;
+  // Fills arrive oldest→newest, so the last row is the deletable one.
+  const fills = data ?? [];
+  const lastFillId = fills.length ? fills[fills.length - 1]!.id : undefined;
+  return (
+    <>
+      <FillTable fills={fills} onEdit={setEdit} />
+      {edit && (
+        <FillDialog
+          runId={runId}
+          costPpm={costPpm}
+          fill={edit}
+          deletable={edit.id === lastFillId}
+          onClose={() => setEdit(null)}
+          onSaved={() => {
+            setEdit(null);
+            void reload();
+            onMutated?.();
+          }}
+        />
+      )}
+    </>
+  );
 }
 
 export function NotificationsPanel({ runId }: { runId: number }) {

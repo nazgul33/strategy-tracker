@@ -237,6 +237,7 @@ export function FillDialog({
           <Button onClick={onClose}>{t('cancel')}</Button>
           {modify && deletable && (
             <Button
+              data-testid="fillDeleteBtn"
               onClick={() => {
                 setError(null);
                 setConfirming(true);
