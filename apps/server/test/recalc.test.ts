@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { emptyState, type ISODate, type RunState } from '@st/core'
-import { manualFill, recalcRunState, type BookingDeps } from '../src/domain/booking'
+import { manualFill, type BookingDeps } from '../src/domain/booking'
+import { recalcRunState } from '../src/domain/recompute'
 import { fakeRepos } from './booking.test'
 
 const TODAY: ISODate = '2026-11-10'

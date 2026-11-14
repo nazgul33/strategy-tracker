@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { applyBuyFill, DomainError, emptyState, parseUsd, roundDiv, type ISODate, type RunState } from '@st/core'
 import { ageBuckets, progressView } from '@st/strategies'
-import { deleteFill, manualFill, rebookFill, rebuildState, signedCents, type BookingDeps, type FillRow } from '../src/domain/booking'
+import { manualFill, type BookingDeps, type FillRow } from '../src/domain/booking'
+import { deleteFill, rebookFill, rebuildState, signedCents } from '../src/domain/recompute'
 import { fakeRepos } from './booking.test'
 
 const TODAY: ISODate = '2026-01-15'
