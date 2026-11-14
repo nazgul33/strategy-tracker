@@ -71,6 +71,19 @@ export function fakeRepos() {
   }
   const fillRepo = {
     async insert(fill: any) { fills.push({ id: fillSeq++, ...fill }) },
+    async listForRun(runId: number) {
+      return fills.filter((f) => f.runId === runId).map((f) => ({ ...f })).sort((a, b) => a.id - b.id)
+    },
+    async update(runId: number, fillId: number, patch: any) {
+      const f = fills.find((x) => x.runId === runId && x.id === fillId)
+      if (f) Object.assign(f, patch)
+    },
+    async deleteLast(runId: number) {
+      const owned = fills.filter((f) => f.runId === runId)
+      if (!owned.length) return
+      const last = owned.reduce((a, b) => (b.id > a.id ? b : a))
+      fills.splice(fills.indexOf(last), 1)
+    },
   }
   const pendingRepo = {
     async insert(p: any) { const id = pendingSeq++; pending.push({ id, ...p }); return id },

@@ -167,4 +167,64 @@ describeIf('db integration', () => {
     await repos.orderRepo.setStatus(open.id, 'open') // legacy call: must not clear nor set a reason
     expect((await repos.orderRepo.get(open.id))!.cancelReason).toBe('stale-price')
   })
+
+  test('fillRepo: update is run-scoped, listForRun is id-ascending, deleteLast peels newest id', async () => {
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'FE' + Date.now(), name: 'fill-edit-' + Date.now(), poolCents: 1000, costPpm: 10 })
+    const otherId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'FX' + Date.now(), name: 'fill-edit-other-' + Date.now(), poolCents: 1000, costPpm: 10 })
+    await repos.fillRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker: 'F', shares: 10, price: 1000000n, fee: 5, filledOn: '2026-01-05', source: 'manual' })
+    await repos.fillRepo.insert({ runId, bucketIdx: 1, side: 'buy', ticker: 'F', shares: 20, price: 2000000n, fee: 7, filledOn: '2026-01-06', source: 'manual' })
+    await repos.fillRepo.insert({ runId: otherId, bucketIdx: 0, side: 'buy', ticker: 'F', shares: 30, price: 3000000n, fee: 9, filledOn: '2026-01-07', source: 'manual' })
+
+    let fills = await repos.fillRepo.listForRun(runId)
+    expect(fills.length).toBe(2)
+    expect(fills.map((f: any) => f.shares)).toEqual([10, 20])
+
+    // update the older fill's shares/price/fee — price is bigint myriadths
+    const olderId = fills[0].id
+    await repos.fillRepo.update(runId, olderId, { shares: 12, price: 1800000n, fee: 400 })
+    fills = await repos.fillRepo.listForRun(runId)
+    const updated = fills.find((f: any) => f.id === olderId)
+    expect(updated.shares).toBe(12)
+    expect(updated.price).toBe(1800000n)
+    expect(typeof updated.price).toBe('bigint')
+    expect(updated.fee).toBe(400)
+    const untouched = fills.find((f: any) => f.id !== olderId)
+    expect(untouched.shares).toBe(20)
+    expect(untouched.price).toBe(2000000n)
+    expect(untouched.fee).toBe(7)
+
+    // a fillId from a different run must not be touched
+    const foreignId = (await repos.fillRepo.listForRun(otherId))[0].id
+    await repos.fillRepo.update(runId, foreignId, { shares: 999 })
+    const foreignAfter = await repos.fillRepo.listForRun(otherId)
+    expect(foreignAfter.length).toBe(1)
+    expect(foreignAfter[0].shares).toBe(30)
+    expect((await repos.fillRepo.listForRun(runId)).length).toBe(2)
+
+    // ascending id order is guaranteed by SQL, not by insertion luck: shove
+    // the older row's id past the newer row's and re-read
+    const before = await repos.fillRepo.listForRun(runId)
+    const lo = before[0].id
+    const hi = before[1].id
+    await db.execute(sql.raw(`UPDATE fills SET id = ${hi + 10} WHERE id = ${lo}`))
+    const shuffled = await repos.fillRepo.listForRun(runId)
+    expect(shuffled.map((f: any) => f.id)).toEqual([hi, hi + 10])
+    expect(shuffled.map((f: any) => f.shares)).toEqual([20, 12])
+
+    // deleteLast follows the domain's byIdAsc 'last' semantics: only the
+    // newest-id row goes, the other run's fill survives
+    await repos.fillRepo.deleteLast(runId)
+    let after = await repos.fillRepo.listForRun(runId)
+    expect(after.length).toBe(1)
+    expect(after[0].id).toBe(hi)
+    expect(after[0].shares).toBe(20)
+    expect((await repos.fillRepo.listForRun(otherId)).length).toBe(1)
+
+    await repos.fillRepo.deleteLast(runId)
+    expect(await repos.fillRepo.listForRun(runId)).toEqual([])
+
+    // deleteLast on an empty run is a harmless no-op
+    await repos.fillRepo.deleteLast(runId)
+    expect(await repos.fillRepo.listForRun(runId)).toEqual([])
+  })
 })

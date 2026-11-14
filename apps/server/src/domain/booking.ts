@@ -1,5 +1,5 @@
-import { applyBuyFill, applySellFill, parseUsd, DomainError, type ISODate, type RunState, type Bucket } from '@st/core'
-import { feeCents, centsFromUsd, formatUsd } from '@st/core/money'
+import { applyBuyFill, applySellFill, emptyState, parseUsd, DomainError, type ISODate, type RunState, type Bucket } from '@st/core'
+import { feeCents, centsFromUsd, formatUsd, roundDiv } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { ExtractResult, RawFill } from '@st/ingest'
 
@@ -15,7 +15,14 @@ export interface RepoSurface {
   runRepo: { list(): Promise<any[]>; get(id: number): Promise<any>; create(input: any): Promise<number>; updateStatus(id: number, status: string): Promise<void> }
   bucketRepo: { loadState(runId: number): Promise<RunState>; saveState(runId: number, state: RunState): Promise<void> }
   orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; markStale(date: string): Promise<any>; get(id: number): Promise<any | null>; setStatus(id: number, status: string, cancelReason?: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
-  fillRepo: { insert(fill: any): Promise<any> }
+  fillRepo: {
+    insert(fill: any): Promise<any>
+    // Fill-history surface used by rebook/delete (Cash Model A rebuild).
+    // Optional until the db repos implement them.
+    listForRun?(runId: number): Promise<FillRow[]>
+    update?(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number }): Promise<void>
+    deleteLast?(runId: number): Promise<void>
+  }
   pendingRepo: { insert(p: any): Promise<number>; listPending(): Promise<any[]>; decide(id: number, status: string, edited?: any): Promise<boolean> }
   captureRepo: { hasHash(runId: number, hash: string): Promise<boolean>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
   ledgerRepo: { insert(l: any): Promise<any>; listForRun(runId: number): Promise<any[]> }
@@ -24,11 +31,20 @@ export interface RepoSurface {
 
 export interface BookingDeps { repos: RepoSurface; today: ISODate }
 
+// Signed cash effect of one fill, in cents: buys spend gross + fee, sells
+// receive gross - fee. Mirrors the ledger delta runBooking books per fill.
+export function signedCents(f: { side: 'buy' | 'sell'; price: bigint; shares: number; fee: number }): number {
+  const gross = Number(roundDiv(f.price * BigInt(f.shares), 100n))
+  return f.side === 'buy' ? -(gross + f.fee) : gross - f.fee
+}
+
 export type CaptureOutcome = 'duplicate' | 'rejected' | { pending: PendingFillRow[] }
 
 export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; status: string }
 
 export interface OrderRow { id: number; runId: number; tradeDate: string; kind: string; bucketIdx: number; limitPrice: bigint; shares: number; status: string }
+
+export interface FillRow { id: number; runId: number; bucketIdx: number; side: 'buy' | 'sell'; ticker: string; shares: number; price: bigint; fee: number; filledOn: ISODate; source: string }
 
 interface BookInput {
   runId: number
@@ -224,4 +240,85 @@ export async function seedRun(runId: number, seed: { cashCents: number; buckets:
   }
   state.cashCents = seed.cashCents
   await repos.bucketRepo.saveState(runId, state)
+}
+
+// SQL listings carry no ORDER BY, so never trust row-return order: id-ascending
+// is the canonical history order (matches the MAX(id) delete in fillRepo).
+const byIdAsc = <T extends { id: number }>(rows: readonly T[]): T[] => [...rows].sort((a, b) => a.id - b.id)
+
+// Cash Model A: the run state is fully derived from the starting pool plus the
+// fill history. Pure — returns a fresh RunState and never mutates the inputs.
+export function rebuildState(fills: readonly FillRow[], poolCents: number, today: ISODate, bucketCount: number): RunState {
+  let state = emptyState(bucketCount)
+  state.cashCents = poolCents
+  for (const f of byIdAsc(fills)) {
+    state = f.side === 'buy'
+      ? applyBuyFill(state, f.bucketIdx, f.shares, f.price, f.fee, f.filledOn)
+      : applySellFill(state, f.bucketIdx, f.shares, f.price, f.fee, f.filledOn)
+    if (f.side === 'buy') {
+      state.ages[f.bucketIdx] = ageBuckets(state.ages, today, { [f.bucketIdx]: f.filledOn })[f.bucketIdx]!
+    }
+  }
+  return state
+}
+
+export interface RebookEdit { fillId: number; shares: number; priceStr: string; feeCents: number | null }
+
+// Fix the shares/price/fee of a buy fill, then re-derive the whole run state
+// from history. The cash difference vs the stored state is booked as one
+// 'adjust' ledger row so the books keep matching the (possibly negative) cash.
+export async function rebookFill(runId: number, edit: RebookEdit, deps: BookingDeps): Promise<FillRow> {
+  const repos = deps.repos
+  if (!repos.fillRepo.listForRun || !repos.fillRepo.update) throw new Error('fill-history-unavailable')
+  const history = byIdAsc(await repos.fillRepo.listForRun(runId))
+  const match = history.find((f) => f.id === edit.fillId)
+  if (!match) throw new DomainError('no-fill')
+  if (match.side === 'sell') throw new DomainError('immutable-field')
+
+  let price: bigint
+  try {
+    price = parseUsd(edit.priceStr)
+  } catch {
+    throw new DomainError('invalid-fill')
+  }
+  if (!Number.isInteger(edit.shares) || edit.shares <= 0 || price <= 0n) throw new DomainError('invalid-fill')
+  const run = await repos.runRepo.get(runId)
+  const fee = edit.feeCents === null ? feeCents(price, edit.shares, run.costPpm) : edit.feeCents
+  if (!Number.isInteger(fee) || fee < 0) throw new DomainError('invalid-fill')
+
+  // Replay the patched history first: an invalid result (e.g. bucket conflicts)
+  // surfaces as a DomainError before anything is written.
+  const state = await repos.bucketRepo.loadState(runId)
+  const patched = history.map((f) => (f.id === edit.fillId ? { ...f, shares: edit.shares, price, fee } : f))
+  const rebuilt = rebuildState(patched, run.poolCents, deps.today, state.buckets.length)
+
+  const delta = rebuilt.cashCents - state.cashCents
+  await repos.bucketRepo.saveState(runId, rebuilt)
+  await repos.fillRepo.update(runId, edit.fillId, { shares: edit.shares, price, fee })
+  if (delta !== 0) {
+    await repos.ledgerRepo.insert({ runId, kind: 'adjust', amountCents: delta, ref: JSON.stringify({ fillId: edit.fillId, bookedOn: deps.today, reason: 'fill-edit' }) })
+  }
+  return { ...match, shares: edit.shares, price, fee }
+}
+
+// Remove the newest fill and rebuild state from the remaining history. Orders
+// are never reopened. Returns the deleted row; books a compensating 'adjust'.
+export async function deleteLastFill(runId: number, deps: BookingDeps): Promise<FillRow> {
+  const repos = deps.repos
+  if (!repos.fillRepo.listForRun || !repos.fillRepo.deleteLast) throw new Error('fill-history-unavailable')
+  const history = byIdAsc(await repos.fillRepo.listForRun(runId))
+  const last = history[history.length - 1]
+  if (!last) throw new DomainError('no-fill')
+
+  const run = await repos.runRepo.get(runId)
+  const state = await repos.bucketRepo.loadState(runId)
+  const rebuilt = rebuildState(history.slice(0, -1), run.poolCents, deps.today, state.buckets.length)
+
+  const delta = rebuilt.cashCents - state.cashCents
+  await repos.bucketRepo.saveState(runId, rebuilt)
+  await repos.fillRepo.deleteLast(runId)
+  if (delta !== 0) {
+    await repos.ledgerRepo.insert({ runId, kind: 'adjust', amountCents: delta, ref: JSON.stringify({ fillId: last.id, bookedOn: deps.today, reason: 'fill-delete' }) })
+  }
+  return last
 }

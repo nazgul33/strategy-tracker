@@ -9,6 +9,7 @@
  * ThemeLangToggle flips.
  */
 :root {
+  color-scheme: light;
   --bg: 0 0% 100%;
   --fg: 240 10% 3.9%;
   --card: 0 0% 100%;
@@ -27,6 +28,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --bg: 240 10% 3.9%;
   --fg: 0 0% 98%;
   --card: 240 10% 5.9%;

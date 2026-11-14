@@ -1,6 +1,6 @@
 // Run detail: header + progress stats, price-history chart, bucket board,
 // lifecycle actions, the Edit-run modal (pool top-up + price gaps), and the
-// tabbed panels (orders / pending / fills / history / notifications / manual).
+// tabbed panels (orders / pending / fills / history / notifications).
 import { useState } from 'react';
 
 import { api, ApiError, usdToCents } from '../api';
@@ -8,7 +8,7 @@ import type { RunStatus } from '../api';
 import { BucketBoard } from '../components/BucketBoard';
 import { useAsync } from '../components/hooks';
 import { PriceChart } from '../components/PriceChart';
-import { ManualCaptureForm } from '../components/forms/ManualCaptureForm';
+import { FillDialog } from '../components/forms/FillDialog';
 import { PendingTable } from '../components/forms/PendingTable';
 import { FillsPanel, NotificationsPanel, OrdersPanel } from '../components/RunPanels';
 import { RunHistory } from '../components/RunHistory';
@@ -29,7 +29,7 @@ import { gapToPpm, isGapText, ppmToPercentText } from '../gaps';
 import { useT } from '../i18n';
 import { enumLabelKey, pnlBadgeTone, poolAfterTopUp, runActions, runStatusTone, toneFor } from '../viewmodels';
 
-type Tab = 'orders' | 'pending' | 'fills' | 'history' | 'notifications' | 'manual';
+type Tab = 'orders' | 'pending' | 'fills' | 'history' | 'notifications';
 
 const TABS: { id: Tab; labelKey: string }[] = [
   { id: 'orders', labelKey: 'tabOrders' },
@@ -37,7 +37,6 @@ const TABS: { id: Tab; labelKey: string }[] = [
   { id: 'fills', labelKey: 'tabFills' },
   { id: 'history', labelKey: 'tabHistory' },
   { id: 'notifications', labelKey: 'tabNotifications' },
-  { id: 'manual', labelKey: 'tabManual' },
 ];
 
 export function RunDetailPage({ id }: { id: number }) {
@@ -50,6 +49,7 @@ export function RunDetailPage({ id }: { id: number }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [showClose, setShowClose] = useState(false);
   const [showPool, setShowPool] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
 
   const selectTab = (next: Tab) => {
     setTab(next);
@@ -117,6 +117,9 @@ export function RunDetailPage({ id }: { id: number }) {
               </Button>
             ),
           )}
+          <Button data-testid="tabManual" variant="secondary" onClick={() => setManualOpen(true)}>
+            {t('tabManual')}
+          </Button>
         </div>
       </div>
 
@@ -166,19 +169,11 @@ export function RunDetailPage({ id }: { id: number }) {
       <Card>
         {tab === 'orders' && <OrdersPanel runId={id} />}
         {tab === 'pending' && <PendingTable key={`p${panelKey}`} runId={id} />}
-        {tab === 'fills' && <FillsPanel key={`f${panelKey}`} runId={id} />}
+        {tab === 'fills' && (
+          <FillsPanel key={`f${panelKey}`} runId={id} costPpm={run.costPpm} onMutated={() => { setPanelKey((k) => k + 1); void reload(); }} />
+        )}
         {tab === 'history' && <RunHistory closed={run.state.closed} />}
         {tab === 'notifications' && <NotificationsPanel key={`n${panelKey}`} runId={id} />}
-        {tab === 'manual' && (
-          <ManualCaptureForm
-            runId={id}
-            costPpm={run.costPpm}
-            onAdded={() => {
-              setPanelKey((k) => k + 1);
-              void reload();
-            }}
-          />
-        )}
       </Card>
 
       {showClose && (
@@ -209,6 +204,11 @@ export function RunDetailPage({ id }: { id: number }) {
           onClose={() => setShowPool(false)}
           onSaved={() => void reload()}
         />
+      )}
+      {manualOpen && (
+        <FillDialog runId={run.id} costPpm={run.costPpm} initialSide="buy" lockSide
+          onClose={() => setManualOpen(false)}
+          onSaved={() => { setManualOpen(false); setPanelKey((k) => k + 1); void reload(); }} />
       )}
     </div>
   );

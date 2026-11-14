@@ -2,9 +2,15 @@ import type { FillDto } from '../api';
 import { fillSourceTone, myriadthsToUsdText, notionalCents } from '../viewmodels';
 import { centsUsd, isoDate, priceUsd } from '../format';
 import { useT } from '../i18n';
-import { Badge, EmptyNote, TableWrap, Td, Th } from './ui';
+import { Badge, Button, EmptyNote, TableWrap, Td, Th } from './ui';
 
-export function FillTable({ fills }: { fills: FillDto[] }) {
+interface FillTableProps {
+  fills: FillDto[];
+  /** Opens the edit dialog for one fill; omit it to hide the actions column. */
+  onEdit?: (fill: FillDto) => void;
+}
+
+export function FillTable({ fills, onEdit }: FillTableProps) {
   const t = useT();
   if (fills.length === 0) return <EmptyNote>{t('fillEmpty')}</EmptyNote>;
   return (
@@ -19,6 +25,7 @@ export function FillTable({ fills }: { fills: FillDto[] }) {
           <Th>{t('fillColFilled')}</Th>
           <Th>{t('fillColSource')}</Th>
           <Th className="text-right">{t('fillColBucket')}</Th>
+          {onEdit && <Th className="text-right">{t('fillColActions')}</Th>}
         </tr>
       </thead>
       <tbody>
@@ -40,6 +47,13 @@ export function FillTable({ fills }: { fills: FillDto[] }) {
               <Badge tone={fillSourceTone(f.source)}>{t(enumSourceKey(f.source))}</Badge>
             </Td>
             <Td className="text-right tabular-nums">{f.bucketIdx + 1}</Td>
+            {onEdit && (
+              <Td className="text-right">
+                <Button variant="secondary" id={`fillEdit-${f.id}`} onClick={() => onEdit(f)}>
+                  {t('fillEdit')}
+                </Button>
+              </Td>
+            )}
           </tr>
         ))}
       </tbody>

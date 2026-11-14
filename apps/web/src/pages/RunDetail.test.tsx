@@ -184,3 +184,52 @@ describe('RunDetailPage edit-run modal', () => {
     expect(buttonByText('Save').disabled).toBe(true);
   });
 });
+
+describe('RunDetailPage add-fill button', () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+
+  beforeEach(async () => {
+    stubFetch();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root.render(d(RunDetailPage, { id: 1 })));
+    await flush();
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    globalThis.fetch = realFetch;
+  });
+
+  it('keeps the tab bar data-only and puts Add fill in the header actions row', () => {
+    // Header actions row is `gap-2 items-center`; the tab row is `gap-1`.
+    const tabRow = document.querySelector('div.flex.flex-wrap.gap-1');
+    expect(tabRow).not.toBeNull();
+    expect([...tabRow!.querySelectorAll('button')].map((b) => b.textContent)).toEqual([
+      'Orders',
+      'Pending',
+      'Fills',
+      'History',
+      'Alerts',
+    ]);
+    const btns = Array.from(document.querySelectorAll('[data-testid="tabManual"]'));
+    expect(btns.length).toBe(1);
+    expect(btns[0]!.textContent).toBe('Add fill');
+    // No inline manual form any more: the Shares input only exists inside the dialog.
+    expect(document.querySelector('[data-testid="manualSideSelect"]')).toBeNull();
+  });
+
+  it('opens the shared fill dialog with the side locked to buy', async () => {
+    await act(async () => {
+      (document.querySelector('[data-testid="tabManual"]') as HTMLElement).click();
+    });
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    const side = document.querySelector('[data-testid="manualSideSelect"]') as HTMLSelectElement | null;
+    expect(side).not.toBeNull();
+    expect(side!.disabled).toBe(true);
+    expect(side!.value).toBe('buy');
+  });
+});
