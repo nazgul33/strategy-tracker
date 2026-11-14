@@ -2,6 +2,7 @@
 // GlobalRegistrator.register(), otherwise onChange handlers silently never fire.
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { json } from '../testing/fetchStub';
 
 GlobalRegistrator.register();
 
@@ -26,24 +27,22 @@ const BARS = [
   { tradeDate: '2026-11-06', close: '465000' }, // $46.50
 ];
 
+// The url-only stub named in the design doc section 6: it is the only stub that
+// must capture request URLs (historyUrls feeds the start= assertion), so it keeps
+// a minimal file-local fetch and collapses just the Response boilerplate into the
+// helper's json() builder.
 function stubFetch(bars: { tradeDate: string; close: string }[]) {
   historyUrls = [];
   globalThis.fetch = (async (url: unknown) => {
     const u = String(url);
     if (u.includes('/fills')) {
-      return new Response(
-        JSON.stringify([{ id: 1, runId: 1, side: 'buy', filledOn: '2026-11-05' }]),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
+      return json([{ id: 1, runId: 1, side: 'buy', filledOn: '2026-11-05' }]);
     }
     if (u.includes('/price-history')) {
       historyUrls.push(u);
-      return new Response(JSON.stringify({ start: bars[0]?.tradeDate ?? null, bars }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
+      return json({ start: bars[0]?.tradeDate ?? null, bars });
     }
-    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+    return json([]);
   }) as unknown as typeof fetch;
 }
 
