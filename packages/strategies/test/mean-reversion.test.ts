@@ -227,3 +227,14 @@ describe('computeOrders with gaps', () => {
     expect(plan.orders.find(o => o.kind === 'sell_loc')?.limitPrice).toBe(sellTarget(parseUsd('90'), 200, 100n))
   })
 })
+
+test('progressView aggregates repeated closed rows of one index', () => {
+  const s = emptyState(2); s.cashCents = 0
+  s.closed = [
+    { index: 0, shares: 60, buyPrice: 1000000n, soldPrice: 1020000n, buyFeeCents: 1, sellFeeCents: 2, openedOn: '2026-01-02', closedOn: '2026-01-09' },
+    { index: 0, shares: 40, buyPrice: 1000000n, soldPrice: 990000n, buyFeeCents: 1, sellFeeCents: 2, openedOn: '2026-01-02', closedOn: '2026-01-10' },
+  ]
+  const pv = progressView(s)
+  expect(pv.realizedCents).toBe(11997 - 4003) // per-row roundDiv, then summed
+  expect(pv.winRate).toBe(0.5)                // two tranches: one win, one loss
+})
