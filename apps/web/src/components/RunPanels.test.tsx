@@ -1,5 +1,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test';
+import { installFetchStub, restoreFetch } from '../testing/fetchStub';
+import type { FetchCalls } from '../testing/fetchStub';
 
 GlobalRegistrator.register();
 
@@ -69,7 +71,7 @@ interface FetchCall {
   body: Record<string, unknown>;
 }
 
-const realFetch = globalThis.fetch;
+let stub: FetchCalls;
 let calls: FetchCall[] = [];
 let failDelete = false;
 let delDelta = 0; // deltaCents returned by the DELETE stub
@@ -78,32 +80,22 @@ function stubFetch() {
   calls = [];
   failDelete = false;
   delDelta = 0;
-  globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: string }) => {
-    const u = String(url);
-    const method = init?.method ?? 'GET';
-    if (method !== 'GET') {
-      calls.push({ method, url: u, body: JSON.parse(init?.body ?? '{}') as Record<string, unknown> });
-      if (method === 'DELETE' && failDelete) {
-        return new Response(JSON.stringify({ error: 'not-last' }), {
-          status: 422,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
-      const payload =
-      method === 'DELETE' ? { ok: true, deletedFillId: 3, deltaCents: delDelta } : { ok: true };
-      return new Response(JSON.stringify(payload), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-    if (u.includes('/api/runs/7/fills')) {
-      return new Response(JSON.stringify(FILLS), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
-  }) as unknown as typeof fetch;
+  // The DELETE route reads the flags through getters, which the helper
+  // re-evaluates on every request — same semantics as the old closures.
+  stub = installFetchStub([
+    { url: '/api/runs/7/fills', json: FILLS },
+    {
+      method: 'DELETE',
+      url: '/api/runs/',
+      get status() {
+        return failDelete ? 422 : 200;
+      },
+      get json() {
+        return failDelete ? { error: 'not-last' } : { ok: true, deletedFillId: 3, deltaCents: delDelta };
+      },
+    },
+    { method: 'PUT', url: '', json: { ok: true } },
+  ]);
 }
 
 async function flush() {
@@ -112,6 +104,8 @@ async function flush() {
       await Promise.resolve();
     });
   }
+  // Mirror the helper's recorded non-GET calls into the local shape.
+  calls = stub.map((c) => ({ method: c.method, url: c.url, body: c.body as Record<string, unknown> }));
 }
 
 function setInputValue(el: HTMLInputElement, value: string) {
@@ -161,13 +155,13 @@ describe('FillsPanel', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    globalThis.fetch = realFetch;
+    restoreFetch();
   });
 
   afterAll(() => {
     GlobalRegistrator.unregister();
     delete globalThis.IS_REACT_ACT_ENVIRONMENT;
-    globalThis.fetch = realFetch;
+    restoreFetch();
   });
 
   it('renders the fills table from the stubbed GET with an Edit button per row', () => {

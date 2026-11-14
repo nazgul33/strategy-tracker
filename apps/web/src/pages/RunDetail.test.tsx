@@ -2,6 +2,8 @@
 // GlobalRegistrator.register(), otherwise onChange handlers silently never fire.
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { installFetchStub, restoreFetch } from '../testing/fetchStub';
+import type { FetchCalls, Route } from '../testing/fetchStub';
 
 GlobalRegistrator.register();
 
@@ -21,8 +23,6 @@ afterAll(() => {
   GlobalRegistrator.unregister();
   delete globalThis.IS_REACT_ACT_ENVIRONMENT;
 });
-
-const realFetch = globalThis.fetch;
 
 interface Post {
   url: string;
@@ -45,40 +45,35 @@ const RUN = {
   state: { buckets: [], cashCents: 100_000, closed: [], ages: {} },
 };
 
+const BARS = {
+  start: '2026-11-04',
+  bars: [
+    { tradeDate: '2026-11-04', close: '470500' },
+    { tradeDate: '2026-11-05', close: '482500' },
+  ],
+};
+
+let calls: FetchCalls;
 let posts: Post[] = [];
-let gets: string[] = []; // URLs of non-POST calls recorded by stubFetchWithRecalc
+let runGetCount = 0;
+
+// Sub-resource GETs must come before the bare /api/runs/1 route: the helper
+// matches by substring, so the run route would otherwise swallow them.
+const SUB_ROUTES: Route[] = [
+  { url: '/price-history', json: BARS },
+  { url: '/orders', json: [] },
+  { url: '/fills', json: [] },
+  { url: '/notifications', json: [] },
+  { url: '/closed', json: [] },
+];
 
 function stubFetch() {
-  posts = [];
-  globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: string }) => {
-    const u = String(url);
-    if (init?.method === 'POST') {
-      posts.push({ url: u, body: JSON.parse(init.body ?? '{}') as Record<string, unknown> });
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-    if (u.includes('/price-history')) {
-      return new Response(
-        JSON.stringify({
-          start: '2026-11-04',
-          bars: [
-            { tradeDate: '2026-11-04', close: '470500' },
-            { tradeDate: '2026-11-05', close: '482500' },
-          ],
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
-    }
-    if (u.match(/\/api\/runs\/1$/)) {
-      return new Response(JSON.stringify(RUN), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
-  }) as unknown as typeof fetch;
+  const routes: Route[] = [
+    { method: 'POST', url: '', json: { ok: true } },
+    ...SUB_ROUTES,
+    { url: '/api/runs/1', json: RUN },
+  ];
+  calls = installFetchStub(routes);
 }
 
 async function flush() {
@@ -87,6 +82,8 @@ async function flush() {
       await Promise.resolve();
     });
   }
+  // Mirror recorded calls into `posts`; the helper only records non-GET calls.
+  posts = calls.map((c) => ({ url: c.url, body: c.body as Record<string, unknown> }));
 }
 
 function setInputValue(el: HTMLInputElement, value: string) {
@@ -136,7 +133,7 @@ describe('RunDetailPage edit-run modal', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    globalThis.fetch = realFetch;
+    restoreFetch();
   });
 
   it('renders the price chart and no standalone gap pane', () => {
@@ -202,7 +199,7 @@ describe('RunDetailPage add-fill button', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    globalThis.fetch = realFetch;
+    restoreFetch();
   });
 
   it('keeps the tab bar data-only and puts Add fill in the header actions row', () => {
@@ -251,53 +248,38 @@ const RUN_WITH_HISTORY = {
   state: { ...RUN.state, closed: [CLOSED_ROW] },
 };
 
-// stubFetch variant with a switchable POST /api/runs/1/recalc endpoint.
+// Route set with a switchable POST /api/runs/1/recalc endpoint. The helper
+// re-reads status/json on every matched request, so mutating `flag` mid-test
+// switches the endpoint between the 422 and 200 shapes.
 function stubFetchWithRecalc(): { recalcFails: boolean; recalcCode: string; deltaCents: number; fillCount: number } {
-  posts = [];
-  gets = [];
   const flag = { recalcFails: true, recalcCode: 'no-run', deltaCents: 0, fillCount: 3 };
-  globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: string }) => {
-    const u = String(url);
-    if (init?.method === 'POST' && u.endsWith('/recalc')) {
-      posts.push({ url: u, body: {} });
-      return flag.recalcFails
-        ? new Response(JSON.stringify({ error: flag.recalcCode }), {
-            status: 422,
-            headers: { 'content-type': 'application/json' },
-          })
-        : new Response(JSON.stringify({ ok: true, deltaCents: flag.deltaCents, fillCount: flag.fillCount }), {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          });
-    }
-    if (init?.method === 'POST') {
-      posts.push({ url: u, body: JSON.parse(init.body ?? '{}') as Record<string, unknown> });
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-    if (u.includes('/price-history')) {
-      return new Response(
-        JSON.stringify({
-          start: '2026-11-04',
-          bars: [
-            { tradeDate: '2026-11-04', close: '470500' },
-            { tradeDate: '2026-11-05', close: '482500' },
-          ],
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
-    }
-    if (u.match(/\/api\/runs\/1$/)) {
-      gets.push(u);
-      return new Response(JSON.stringify(RUN_WITH_HISTORY), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
-  }) as unknown as typeof fetch;
+  runGetCount = 0;
+  const routes: Route[] = [
+    {
+      method: 'POST',
+      url: '/recalc',
+      get status() {
+        return flag.recalcFails ? 422 : 200;
+      },
+      get json() {
+        return flag.recalcFails
+          ? { error: flag.recalcCode }
+          : { ok: true, deltaCents: flag.deltaCents, fillCount: flag.fillCount };
+      },
+    },
+    { method: 'POST', url: '', json: { ok: true } },
+    ...SUB_ROUTES,
+    {
+      url: '/api/runs/1',
+      // Counted here because the helper records non-GET calls only:
+      // one fire per GET of the run itself.
+      get json() {
+        runGetCount += 1;
+        return RUN_WITH_HISTORY;
+      },
+    },
+  ];
+  calls = installFetchStub(routes);
   return flag;
 }
 
@@ -324,7 +306,7 @@ describe('RunDetailPage history recalc error handling', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    globalThis.fetch = realFetch;
+    restoreFetch();
   });
 
   it('shows the localized recalc error and clears it on the next successful recalc', async () => {
@@ -386,12 +368,12 @@ describe('RunDetailPage recalc result popup', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    globalThis.fetch = realFetch;
+    restoreFetch();
   });
 
   const popup = () => document.querySelector('[data-testid="recalcResult"]');
   // GETs of the run itself — one per useAsync reload().
-  const runGets = () => gets.filter((g) => /\/api\/runs\/1$/.test(g)).length;
+  const runGets = () => runGetCount;
 
   it('shows the result popup after a successful recalc', async () => {
     await act(async () => {

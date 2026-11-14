@@ -1,5 +1,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test';
+import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
+import type { FetchCalls } from '../../testing/fetchStub';
 
 GlobalRegistrator.register();
 
@@ -24,7 +26,7 @@ interface FetchCall {
   body: Record<string, unknown>;
 }
 
-const realFetch = globalThis.fetch;
+let stub: FetchCalls;
 let calls: FetchCall[] = [];
 let putFailure: { status: number; error: string } | null = null;
 let deltaCents = 0; // booked cash adjustment returned by the PUT/DELETE stubs
@@ -73,6 +75,8 @@ async function clickButton(text: string) {
   await act(async () => {
     await Promise.resolve();
   });
+  // Mirror the helper's recorded non-GET calls into the local shape.
+  calls = stub.map((c) => ({ method: c.method, url: c.url, body: c.body as Record<string, unknown> }));
 }
 
 // FillDto fixture (api.types.ts wire shape: price = myriadths string, fee = cents).
@@ -115,22 +119,34 @@ describe('FillDialog', () => {
     saved = 0;
     closed = 0;
     deltaCents = 0;
-    globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: string }) => {
-      const method = String(init?.method ?? 'GET');
-      const u = String(url);
-      calls.push({ method, url: u, body: JSON.parse(init?.body ?? '{}') as Record<string, unknown> });
-      if (method === 'PUT' && putFailure) {
-        return new Response(JSON.stringify({ error: putFailure.error }), {
-          status: putFailure.status,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
-      const body =
-        method === 'DELETE'
-          ? { ok: true, deletedFillId: 3, deltaCents }
-          : { ok: true, fill: { id: 3 }, deltaCents };
-      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-    }) as unknown as typeof fetch;
+    // Route getters re-read the flags on every request — same semantics as
+    // the old closure-based stub.
+    stub = installFetchStub([
+      {
+        method: 'DELETE',
+        url: '/api/runs/',
+        get json() {
+          return { ok: true, deletedFillId: 3, deltaCents };
+        },
+      },
+      {
+        method: 'PUT',
+        url: '/api/runs/',
+        get status() {
+          return putFailure ? putFailure.status : 200;
+        },
+        get json() {
+          return putFailure ? { error: putFailure.error } : { ok: true, fill: { id: 3 }, deltaCents };
+        },
+      },
+      {
+        method: 'POST',
+        url: '',
+        get json() {
+          return { ok: true, fill: { id: 3 }, deltaCents };
+        },
+      },
+    ]);
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -139,7 +155,7 @@ describe('FillDialog', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    globalThis.fetch = realFetch;
+    restoreFetch();
   });
 
   afterAll(() => {

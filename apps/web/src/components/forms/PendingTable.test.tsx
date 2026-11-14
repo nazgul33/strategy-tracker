@@ -1,6 +1,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import type { PendingFillDto } from '../../api.types';
+import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
 
 GlobalRegistrator.register();
 
@@ -18,14 +19,6 @@ declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined;
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-
-interface FetchCall {
-  url: string;
-  method: string;
-}
-
-const realFetch = globalThis.fetch;
-let calls: FetchCall[] = [];
 
 // One valid, complete pending row (no override highlight) for the table.
 const ROW: PendingFillDto = {
@@ -45,24 +38,25 @@ const ROW: PendingFillDto = {
 
 // GET /api/pending always returns [ROW]; every POST (the confirm) replies
 // 409 with the given server error code.
+let gets = 0;
+
 function stubFetch(confirmCode: string) {
-  globalThis.fetch = (async (url: unknown, init?: { method?: string }) => {
-    const method = init?.method ?? 'GET';
-    calls.push({ url: String(url), method });
-    if (method === 'GET') {
-      return new Response(JSON.stringify([ROW]), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-    return new Response(JSON.stringify({ error: confirmCode }), {
-      status: 409,
-      headers: { 'content-type': 'application/json' },
-    });
-  }) as unknown as typeof fetch;
+  gets = 0;
+  installFetchStub([
+    { method: 'POST', url: '/api/pending', status: 409, json: { error: confirmCode } },
+    {
+      url: '/api/pending',
+      // The getter fires on every matched GET, so it doubles as the
+      // reload counter the integrity-guard assertions read via pendingGets().
+      get json() {
+        gets += 1;
+        return [ROW];
+      },
+    },
+  ]);
 }
 
-const pendingGets = () => calls.filter((c) => c.method === 'GET' && c.url === '/api/pending').length;
+const pendingGets = () => gets;
 
 function confirmButton(): HTMLButtonElement {
   const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Confirm');
@@ -97,7 +91,6 @@ describe('PendingTable', () => {
   let root: ReturnType<typeof createRoot>;
 
   beforeEach(() => {
-    calls = [];
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -106,7 +99,7 @@ describe('PendingTable', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    globalThis.fetch = realFetch;
+    restoreFetch();
   });
 
   afterAll(() => {
