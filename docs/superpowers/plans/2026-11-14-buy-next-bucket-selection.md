@@ -77,7 +77,8 @@ Depends on: nothing. Must land before Tasks 2 and 3.
      empty, both in `closed` → expect `0` (lowest closed index).
    - held buckets are ignored even when a closed one is free:
      `emptyState(2)`; fill 0; full-sell 0; fill 1 → bucket 0 is empty but
-     closed, bucket 1 is held → expect `null`.
+     closed, bucket 1 is held → expect `0` (no fresh empty remains, so the
+     closed-empty fallback applies; `null` only when every bucket is held).
    Construct closed entries only through `applyBuyFill`/`applySellFill`, never
    hand-craft `RunState.closed` objects (keeps bigint discipline).
 
