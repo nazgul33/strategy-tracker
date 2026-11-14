@@ -58,18 +58,22 @@ table rows for every deletable fill.
 
 1. In `db.test.ts`, inside the existing test `'fillRepo: update is run-scoped,
    listForRun is id-ascending, deleteLast peels newest id'` (rename it to end
-   with `deleteById is run-scoped`), after the shuffled-id assertions and
-   *before* the existing `deleteLast` assertions, add coverage for the new
-   method:
-   - `await repos.fillRepo.deleteById(runId, foreignId)` (the other run's fill
-     id) leaves both runs' lists untouched — run-scoped guard, mirroring
-     `update`.
+   with `deleteById is run-scoped`), *replace the whole `deleteLast` tail*
+   (the three `deleteLast` calls and their assertions after the shuffled-id
+   block) with coverage for the new method. The state at that point: the
+   run's fills are ids `[hi, hi + 10]` (shares `[20, 12]`) and `foreignId` is
+   the other run's only fill id. Assert:
+   - `await repos.fillRepo.deleteById(runId, foreignId)` leaves both runs'
+     lists untouched — run-scoped guard, mirroring `update` (still 2 and 1).
    - `await repos.fillRepo.deleteById(runId, hi)` deletes exactly that row:
-     remaining `runId` fill is the `lo`-row (now id `hi + 10`), the other run's
-     fill survives.
+     remaining `runId` fill is the row with id `hi + 10` and shares `12`; the
+     other run's fill still exists.
    - `await repos.fillRepo.deleteById(runId, 99999999)` on a not-present id is
-     a harmless no-op.
-   Keep the old `deleteLast` assertions in place for now (Task 2 removes them).
+     a harmless no-op (list unchanged).
+   - `await repos.fillRepo.deleteById(runId, hi + 10)` empties the run, and a
+     repeat call on the now-empty run is a harmless no-op.
+   The `deleteLast` method itself stays in `repos.ts` for now (Task 2 deletes
+   it together with `lastId`); the db test simply stops referencing it.
 2. In `repos.ts` `fillRepo`, add next to `update`:
 
    ```ts
@@ -122,8 +126,8 @@ table rows for every deletable fill.
      '5.00' 2026-01-08 (id 1, bucket 0), then buy 5 @ '15.00' fee '2.50'
      2026-01-09 (id 2, bucket 1). `deleteFill(runId, 1, deps(f))` resolves:
      `deleted.id === 1`, fills are `[2]`, bucket 0 `empty`, bucket 1 still
-     `held` 5 shares, `cashCents === 92_500` (100_000 − buyEffect('15.00', 5,
-     250)), one adjust row `{ amountCents: 10_500, ref: { fillId: 1, bookedOn:
+     `held` 5 shares, `cashCents === 92_250` (100_000 − buyEffect('15.00', 5,
+     250) = 100_000 − 7_750), one adjust row `{ amountCents: 10_500, ref: { fillId: 1, bookedOn:
      TODAY, reason: 'fill-delete' } }`.
    - **same-bucket older id rejected**: buy 8 @ '16.00' 2026-01-08 (id 1) then
      a full-close sell (insert the sell_loc order first, exactly like the
@@ -183,9 +187,8 @@ table rows for every deletable fill.
 4. In `app.ts` line ~15 the `fillRepo` intersection keeps only
    `listForRun(runId: number): Promise<any[]>` (drop `lastId`).
 5. In `repos.ts` delete the `deleteLast` and `lastId` methods and their
-   comments; in `db.test.ts` drop the three `deleteLast` assertions (keep the
-   `deleteById` ones from Task 1, rewording the "deleteLast peels newest id"
-   phrasing).
+   comments. (`db.test.ts` no longer references `deleteLast` — Task 1 already
+   replaced that coverage.)
 6. In `http.test.ts`:
    - Fake: replace `deleteLast` and `lastId` with `deleteById` (same splice-by-
      run-and-id body as Task 1's `booking.test.ts` fake).
