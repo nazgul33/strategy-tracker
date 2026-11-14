@@ -229,7 +229,7 @@ describe('FillDialog', () => {
 
     await clickButton('Delete');
     expect(document.body.textContent).toContain(
-      'Delete the last fill (10 shares)? Cash and positions are recomputed.',
+      "Delete this bucket's last fill (10 shares)? Cash and positions are recomputed.",
     );
 
     // Cancel returns to the form without deleting.

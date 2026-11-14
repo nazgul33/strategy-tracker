@@ -30,7 +30,7 @@
   "dialog.delete": "Delete",
   "dialog.deleteConfirm": "Delete for real",
   "dialog.deleteFailed": "Delete failed.",
-  "dialog.deleteWarning": "Delete the last fill ({n} shares)? Cash and positions are recomputed.",
+  "dialog.deleteWarning": "Delete this bucket's last fill ({n} shares)? Cash and positions are recomputed.",
   "dialog.editFill": "Edit fill",
   "dialog.save": "Save",
   "digest.closed": "Market closed",
