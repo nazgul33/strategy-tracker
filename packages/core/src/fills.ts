@@ -127,7 +127,20 @@ export function applySellFill(
     nb.filledOn = ''
     delete next.ages[bucketIndex]
   } else {
+    const buyFeePart = Math.round((bucket.buyFeeCents * shares) / bucket.shares)
+    const trancheEntry: ClosedBucket = {
+      index: bucket.index,
+      shares,
+      buyPrice: bucket.buyPrice,
+      soldPrice: price,
+      buyFeeCents: buyFeePart,
+      sellFeeCents: feeCents,
+      openedOn: bucket.filledOn,
+      closedOn,
+    }
+    next.closed = [...next.closed, trancheEntry]
     nb.shares = bucket.shares - shares
+    nb.buyFeeCents = bucket.buyFeeCents - buyFeePart
   }
   next.cashCents += proceeds - feeCents
   return next
