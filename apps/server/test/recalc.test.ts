@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { emptyState, type ISODate, type RunState } from '@st/core'
-import { manualFill, recalcRunState, type BookingDeps } from '../src/domain/booking'
+import { manualFill, type BookingDeps } from '../src/domain/booking'
+import { recalcRunState } from '../src/domain/recompute'
 import { fakeRepos } from './booking.test'
 
 const TODAY: ISODate = '2026-11-10'
@@ -33,13 +34,15 @@ describe('recalcRunState', () => {
     const before = await getState(f, runId)
     const ledgerLen = ledgerForRun(f, runId).length
 
-    const rebuilt = await recalcRunState(runId, deps(f))
+    const res = await recalcRunState(runId, deps(f))
 
     expect(ledgerForRun(f, runId).length).toBe(ledgerLen)
     expect(adjustRows(f).length).toBe(0)
     const st = await getState(f, runId)
     expect(st.cashCents).toBe(before.cashCents)
-    expect(rebuilt.cashCents).toBe(before.cashCents)
+    expect(res.state.cashCents).toBe(before.cashCents)
+    expect(res.deltaCents).toBe(0)
+    expect(res.fillCount).toBe(2)
     expect(st.closed.length).toBe(1)
     expect(st.closed[0]!.shares).toBe(120)
     expect(st.buckets[0]!.state).toBe('held')
@@ -61,12 +64,14 @@ describe('recalcRunState', () => {
     const ordersLen = f._stores.orders.length
     const pendingLen = f._stores.pending.length
 
-    await recalcRunState(runId, deps(f))
+    const res = await recalcRunState(runId, deps(f))
 
     const st = await getState(f, runId)
     expect(st.closed.length).toBe(1)
     expect(st.closed[0]!.shares).toBe(120)
     expect(st.buckets[0]!.shares).toBe(180)
+    expect(res.fillCount).toBe(2)
+    expect(res.deltaCents).toBe(0)
     // fills, ledger, orders and pending rows are never touched by recalc
     expect(asJson(f._stores.fills)).toBe(fillsSnap)
     expect(ledgerForRun(f, runId).length).toBe(ledgerLen)
@@ -87,9 +92,11 @@ describe('recalcRunState', () => {
     await f.repos.bucketRepo.saveState(runId, drifted)
     const ledgerLen = ledgerForRun(f, runId).length
 
-    const rebuilt = await recalcRunState(runId, deps(f))
+    const res = await recalcRunState(runId, deps(f))
 
-    expect(rebuilt.cashCents).toBe(derived)
+    expect(res.state.cashCents).toBe(derived)
+    expect(res.deltaCents).toBe(-500)
+    expect(res.fillCount).toBe(2)
     expect((await getState(f, runId)).cashCents).toBe(derived)
     const rows = adjustRows(f)
     expect(rows.length).toBe(1)
@@ -97,5 +104,26 @@ describe('recalcRunState', () => {
     expect(rows[0]!.amountCents).toBe(-500)
     expect(JSON.parse(rows[0]!.ref)).toEqual({ bookedOn: TODAY, reason: 'recalc' })
     expect(ledgerForRun(f, runId).length).toBe(ledgerLen + 1)
+  })
+
+  test('recalcRunState reports a positive delta when stored cash undershoots', async () => {
+    const f = fakeRepos()
+    const runId = await createRun(f)
+    await manualFill(runId, { side: 'buy', shares: 300, price: '10.00', filledOn: '2026-11-03' }, deps(f))
+    await manualFill(runId, { side: 'sell', shares: 120, price: '11.00', filledOn: '2026-11-05' }, deps(f))
+    const derived = (await getState(f, runId)).cashCents
+    // the mirror case: the stored number undershoots the derived cash by 500
+    const drifted = await getState(f, runId)
+    drifted.cashCents -= 500
+    await f.repos.bucketRepo.saveState(runId, drifted)
+
+    const res = await recalcRunState(runId, deps(f))
+
+    expect(res.state.cashCents).toBe(derived)
+    expect(res.deltaCents).toBe(500)
+    expect((await getState(f, runId)).cashCents).toBe(derived)
+    const rows = adjustRows(f)
+    expect(rows.length).toBe(1)
+    expect(rows[0]!.amountCents).toBe(500)
   })
 })

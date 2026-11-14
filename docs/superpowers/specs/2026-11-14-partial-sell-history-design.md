@@ -179,3 +179,29 @@ r.post('/runs/:id/recalc', async (c) => {
 - Automatic recalc in the day pipeline or on every sell confirm.
 - Multi-bucket spill in one fill (`applySellFill` still rejects it).
 - New `ClosedBucket` fields or any SQL migration.
+
+## Recalc and drift
+
+Cash Model A: the *derived* cash of a run is `poolCents` minus the signed cash
+effect of every fill in history (`rebuildState` replays exactly that). Recalc
+(`POST /api/runs/:id/recalc`, `recalcRunState` in `domain/recompute.ts`)
+re-derives state from fills and, when stored cash differs from derived cash,
+books exactly one compensating `adjust` ledger row (`ref.reason: 'recalc'`)
+and reports the signed correction as `deltaCents` (rebuilt minus stored).
+
+Two legitimate flows write stored cash or the starting pool *directly*,
+without a matching fill, so derived cash intentionally lags reality there:
+
+- `seedRun` (`domain/booking.ts`) applies seed buckets and then overwrites
+  `state.cashCents` with the operator's number — that value is authoritative
+  until the first recalc, which re-derives it from history.
+- Editing a run's pool (Settings) moves `poolCents`, the base of the formula,
+  while the stored state keeps the old base until something rebuilds it.
+
+Consequently an Update on a seeded or pool-edited run may book **one large
+adjust row** — that is the repair working as designed, not a bug: it is the
+one-time correction that re-anchors the books to `poolCents` minus history.
+The web UI surfaces this via the recalc result popup (`deltaCents` and
+`fillCount` in the response), so the operator sees the magnitude before the
+books move silently. Subsequent Updates on a straight run report
+`deltaCents: 0` and book nothing (idempotent).
