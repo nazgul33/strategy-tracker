@@ -74,4 +74,4 @@ The NYSE calendar is committed static data (`NYSE_YEARS` in `packages/calendar/s
 - All user-facing copy via en/ko catalogs.
 - Schedules in `America/New_York`.
 - `fetch` always injectable for tests.
-- Commit style: `feat|fix|docs|test|chore:`.
+- Commit style: `feat|fix|docs|test|refactor|chore:`.
