@@ -4,6 +4,7 @@ import { api, ApiError, usdFeeOrNull, usdOrNull, type FillUpdatePayload, type Ma
 import { useT } from '../../i18n';
 import { centsToUsdText, isoDate, priceInputValue, todayIso, usdTextToCents } from '../../format';
 import type { FillDto } from '../../api.types';
+import { RecalcResultModal, type RecalcResult } from '../RecalcSummary';
 import { Button, Field, Input, Modal, Select } from '../ui';
 
 // Fee text the server would book for these inputs (same feeCents half-up math
@@ -29,6 +30,8 @@ export interface FillDialogProps {
   fill?: FillDto;
   /** Show the Delete step (fill is the bucket's last one). */
   deletable?: boolean;
+  /** Fill lives in a closed bucket: edits re-book cash on a settled bucket. */
+  bucketClosed?: boolean;
   initialSide?: 'buy' | 'sell';
   /** Lock the side select even in add mode. */
   lockSide?: boolean;
@@ -41,6 +44,7 @@ export function FillDialog({
   costPpm,
   fill,
   deletable = false,
+  bucketClosed = false,
   initialSide = 'buy',
   lockSide = false,
   onClose,
@@ -57,6 +61,9 @@ export function FillDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // Recompute outcome of the last successful save/delete; while set, the
+  // render swaps the form for the shared result popup (null = no result yet).
+  const [doneResult, setDoneResult] = useState<RecalcResult | null>(null);
 
   const showFailure = (err: unknown) => {
     if (err instanceof ApiError) {
@@ -119,10 +126,16 @@ export function FillDialog({
     }
     setBusy(true);
     try {
-      if (payload && fill) await api.updateFill(runId, fill.id, payload);
+      let deltaCents: number | undefined;
+      if (payload && fill) deltaCents = (await api.updateFill(runId, fill.id, payload)).deltaCents;
       else if (input) await api.addManualFill(runId, input);
-      onSaved();
-      onClose();
+      // A nonzero delta means the save re-booked cash on a closed bucket: keep
+      // the dialog open on a success step so the number is actually seen.
+      if (deltaCents !== undefined && deltaCents !== 0) setDoneResult({ deltaCents });
+      else {
+        onSaved();
+        onClose();
+      }
     } catch (err) {
       showFailure(err);
     } finally {
@@ -135,9 +148,13 @@ export function FillDialog({
     setBusy(true);
     setError(null);
     try {
-      await api.deleteFill(runId, fill.id);
-      onSaved();
-      onClose();
+      const res = await api.deleteFill(runId, fill.id);
+      // Same contract as submit(): a booked adjustment gets its own step.
+      if (res.deltaCents !== 0) setDoneResult({ deltaCents: res.deltaCents });
+      else {
+        onSaved();
+        onClose();
+      }
     } catch (err) {
       showFailure(err);
       setConfirming(false);
@@ -152,10 +169,30 @@ export function FillDialog({
     </p>
   );
 
+  // Closed buckets are settled: touching their fills re-books cash retroactively.
+  const closedNote = bucketClosed && (
+    <p className="rounded-md bg-warning/10 px-2 py-1.5 text-sm text-warning">{t('closedFillWarning')}</p>
+  );
+
+  // Save/delete booked a cash adjustment: the form is replaced by the shared
+  // result popup; dismissing it (OK, ✕ or backdrop) acknowledges and notifies.
+  if (doneResult !== null) {
+    return (
+      <RecalcResultModal
+        result={doneResult}
+        onClose={() => {
+          onSaved();
+          onClose();
+        }}
+      />
+    );
+  }
+
   if (confirming && fill) {
     return (
       <Modal title={t('dialog.delete')} onClose={onClose}>
         <p className="text-sm">{t('dialog.deleteWarning', { n: fill.shares })}</p>
+        {closedNote}
         {errorLine}
         <div className="mt-3 flex items-center gap-3">
           <Button variant="danger" busy={busy} onClick={() => void remove()}>
@@ -232,6 +269,7 @@ export function FillDialog({
             required
           />
         </Field>
+        {closedNote}
         {errorLine}
         <div className="flex items-center gap-3">
           <Button onClick={onClose}>{t('cancel')}</Button>

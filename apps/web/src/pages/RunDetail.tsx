@@ -1,13 +1,15 @@
 // Run detail: header + progress stats, price-history chart, bucket board,
-// lifecycle actions, the Edit-run modal (pool top-up + price gaps), and the
-// tabbed panels (orders / pending / fills / history / notifications).
+// lifecycle actions, the Edit-run modal (extracted to forms/EditRunModal),
+// and the tabbed panels (orders / pending / fills / history / notifications).
 import { useState } from 'react';
 
-import { api, ApiError, usdToCents } from '../api';
+import { api, ApiError } from '../api';
 import type { RunStatus } from '../api';
 import { BucketBoard } from '../components/BucketBoard';
 import { useAsync } from '../components/hooks';
 import { PriceChart } from '../components/PriceChart';
+import { RecalcResultModal, type RecalcResult } from '../components/RecalcSummary';
+import { EditRunModal } from '../components/forms/EditRunModal';
 import { FillDialog } from '../components/forms/FillDialog';
 import { PendingTable } from '../components/forms/PendingTable';
 import { FillsPanel, NotificationsPanel, OrdersPanel } from '../components/RunPanels';
@@ -17,17 +19,14 @@ import {
   Button,
   Card,
   ErrorNote,
-  Field,
-  Input,
   Modal,
   SectionTitle,
   Spinner,
   Stat,
 } from '../components/ui';
 import { bpPercent, centsUsd, gapText, isoDateTime, percent, signedCentsUsd } from '../format';
-import { gapToPpm, isGapText, ppmToPercentText } from '../gaps';
 import { useT } from '../i18n';
-import { enumLabelKey, pnlBadgeTone, poolAfterTopUp, runActions, runStatusTone, toneFor } from '../viewmodels';
+import { enumLabelKey, pnlBadgeTone, runActions, runStatusTone, toneFor } from '../viewmodels';
 
 type Tab = 'orders' | 'pending' | 'fills' | 'history' | 'notifications';
 
@@ -50,6 +49,7 @@ export function RunDetailPage({ id }: { id: number }) {
   const [showClose, setShowClose] = useState(false);
   const [showPool, setShowPool] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [recalcResult, setRecalcResult] = useState<RecalcResult | null>(null);
 
   const selectTab = (next: Tab) => {
     setTab(next);
@@ -73,10 +73,20 @@ export function RunDetailPage({ id }: { id: number }) {
   const recalc = async () => {
     setActionError(null);
     try {
-      await api.recalcRun(id);
+      const res = await api.recalcRun(id);
+      // fillCount is only reported by the recalc endpoint (never absent here).
+      setRecalcResult({ deltaCents: res.deltaCents, fillCount: res.fillCount! });
       await reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      if (err instanceof ApiError) {
+        // fillErr.* pattern: known recalcErr.* keys read localized, the rest
+        // fall back to the raw server code.
+        const key = `recalcErr.${err.code}`;
+        const msg = t(key);
+        setActionError(msg === key ? err.code : msg);
+      } else {
+        setActionError(err instanceof Error ? err.message : String(err));
+      }
     }
   };
 
@@ -180,7 +190,16 @@ export function RunDetailPage({ id }: { id: number }) {
         {tab === 'orders' && <OrdersPanel runId={id} />}
         {tab === 'pending' && <PendingTable key={`p${panelKey}`} runId={id} />}
         {tab === 'fills' && (
-          <FillsPanel key={`f${panelKey}`} runId={id} costPpm={run.costPpm} onMutated={() => { setPanelKey((k) => k + 1); void reload(); }} />
+          <FillsPanel
+            key={`f${panelKey}`}
+            runId={id}
+            costPpm={run.costPpm}
+            closedIndexes={run.state.closed.map((c) => c.index)}
+            onMutated={() => {
+              setPanelKey((k) => k + 1);
+              void reload();
+            }}
+          />
         )}
         {tab === 'history' && <RunHistory closed={run.state.closed} onRecalc={recalc} />}
         {tab === 'notifications' && <NotificationsPanel key={`n${panelKey}`} runId={id} />}
@@ -220,124 +239,19 @@ export function RunDetailPage({ id }: { id: number }) {
           onClose={() => setManualOpen(false)}
           onSaved={() => { setManualOpen(false); setPanelKey((k) => k + 1); void reload(); }} />
       )}
-    </div>
-  );
-}
-
-// Combined run edit: pool top-up + buy/sell price gaps, one Save. The pool
-// field is a top-up (the endpoint sets an absolute amount, so we send
-// current + addition); the gap fields are percent text in, integer ppm out
-// (blank = 0 = strategy default), mirroring the old GapEditForm.
-function EditRunModal({
-  runId,
-  poolCents,
-  initialBuyPpm,
-  initialSellPpm,
-  onClose,
-  onSaved,
-}: {
-  runId: number;
-  poolCents: number;
-  initialBuyPpm: number;
-  initialSellPpm: number;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const t = useT();
-  const [amount, setAmount] = useState('');
-  const [buyGap, setBuyGap] = useState(ppmToPercentText(initialBuyPpm));
-  const [sellGap, setSellGap] = useState(ppmToPercentText(initialSellPpm));
-  const [fieldError, setFieldError] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  const gapsValid = (buyGap === '' || isGapText(buyGap)) && (sellGap === '' || isGapText(sellGap));
-
-  const submit = async () => {
-    if (busy || !gapsValid) return;
-    let total: number | null = null;
-    if (amount !== '') {
-      const add = usdToCents(amount);
-      total = add === null ? null : poolAfterTopUp(poolCents, add);
-      if (total === null) {
-        setFieldError(t('poolInvalidAmount'));
-        return;
-      }
-    }
-    setBusy(true);
-    setSubmitError(null);
-    try {
-      if (total !== null) await api.setPool(runId, total);
-      await api.setGaps(runId, { buyGapPpm: gapToPpm(buyGap), sellGapPpm: gapToPpm(sellGap) });
-      setSaved(true);
-      onSaved();
-    } catch (err) {
-      if (err instanceof ApiError) setSubmitError(`${t('runDetail.gapSaveFailed')} (${err.code})`);
-      else setSubmitError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal title={t('poolTitle')} onClose={onClose}>
-      {saved ? (
-        <div className="space-y-3">
-          <div role="status" className="rounded border border-positive/40 bg-positive/10 px-3 py-2 text-sm text-positive">
-            {t('poolAdded')}
-          </div>
-          <div className="flex justify-end">
-            <Button onClick={onClose}>{t('close')}</Button>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {fieldError !== null && <ErrorNote message={fieldError} />}
-          {submitError !== null && <ErrorNote message={submitError} />}
-          <Field label={t('poolAddAmount')}>
-            <Input
-              data-testid="poolTopupInput"
-              value={amount}
-              onChange={(e) => {
-                setAmount(e.target.value);
-                setFieldError(null);
-              }}
-              inputMode="decimal"
-              placeholder="1000"
-              autoFocus
-            />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label={t('runDetail.buyGap')}>
-              <Input
-                data-testid="gapBuyInput"
-                value={buyGap}
-                onChange={(e) => setBuyGap(e.target.value)}
-                inputMode="decimal"
-                placeholder="0"
-                invalid={buyGap !== '' && !isGapText(buyGap)}
-              />
-            </Field>
-            <Field label={t('runDetail.sellGap')}>
-              <Input
-                data-testid="gapSellInput"
-                value={sellGap}
-                onChange={(e) => setSellGap(e.target.value)}
-                inputMode="decimal"
-                placeholder="0"
-                invalid={sellGap !== '' && !isGapText(sellGap)}
-              />
-            </Field>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button onClick={onClose}>{t('cancel')}</Button>
-            <Button variant="primary" busy={busy} disabled={!gapsValid} data-testid="runSaveBtn" onClick={() => void submit()}>
-              {t('poolAddBtn')}
-            </Button>
-          </div>
+      {recalcResult !== null && (
+        <div data-testid="recalcResult">
+          <RecalcResultModal
+            result={recalcResult}
+            // Dismissing (OK, ✕ or backdrop) reloads the run: a zero-delta edit
+            // can still re-open a closed bucket or change cash shown elsewhere.
+            onClose={() => {
+              setRecalcResult(null);
+              void reload();
+            }}
+          />
         </div>
       )}
-    </Modal>
+    </div>
   );
 }

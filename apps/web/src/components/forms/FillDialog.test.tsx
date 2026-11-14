@@ -27,6 +27,7 @@ interface FetchCall {
 const realFetch = globalThis.fetch;
 let calls: FetchCall[] = [];
 let putFailure: { status: number; error: string } | null = null;
+let deltaCents = 0; // booked cash adjustment returned by the PUT/DELETE stubs
 
 function setInputValue(el: HTMLInputElement, value: string) {
   // Bypass React's value tracker so onChange fires (same as user typing).
@@ -113,6 +114,7 @@ describe('FillDialog', () => {
     putFailure = null;
     saved = 0;
     closed = 0;
+    deltaCents = 0;
     globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: string }) => {
       const method = String(init?.method ?? 'GET');
       const u = String(url);
@@ -123,7 +125,10 @@ describe('FillDialog', () => {
           headers: { 'content-type': 'application/json' },
         });
       }
-      const body = method === 'DELETE' ? { ok: true, deletedFillId: 3 } : { ok: true, fill: { id: 3 } };
+      const body =
+        method === 'DELETE'
+          ? { ok: true, deletedFillId: 3, deltaCents }
+          : { ok: true, fill: { id: 3 }, deltaCents };
       return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
     }) as unknown as typeof fetch;
     container = document.createElement('div');
@@ -275,6 +280,96 @@ describe('FillDialog', () => {
     expect(msg).not.toBeNull();
     expect(msg!.length).toBeGreaterThan(0);
     expect(msg).toContain('weird-code');
+  });
+
+  it('edit mode with bucketClosed shows the closed-bucket warning', async () => {
+    await render({ fill: fillDto(), bucketClosed: true });
+    expect(document.querySelector('[role="dialog"]')!.textContent ?? '').toContain(
+      'This fill belongs to a closed position. Saving re-derives all later history and may book a cash adjustment.',
+    );
+  });
+
+  it('delete confirm with bucketClosed shows the closed-bucket warning', async () => {
+    await render({ fill: fillDto(), bucketClosed: true, deletable: true });
+    await clickButton('Delete');
+    expect(document.querySelector('[role="dialog"]')!.textContent ?? '').toContain(
+      'This fill belongs to a closed position. Saving re-derives all later history and may book a cash adjustment.',
+    );
+  });
+
+  it('edit save with a nonzero delta: success step shows the summary, OK saves and closes', async () => {
+    deltaCents = -120;
+    await render({ fill: fillDto() });
+    await clickButton('Save');
+    // Form replaced by the booked-adjustment summary; nothing propagates yet.
+    expect(document.getElementById('manualSharesInput')).toBeNull();
+    expect(document.body.textContent ?? '').toContain('-$1.20');
+    expect(document.body.textContent ?? '').not.toContain('Rebuilt run state');
+    // The shared result popup is what renders here, not an ad-hoc copy.
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
+    expect(saved).toBe(0);
+    expect(closed).toBe(0);
+
+    await clickButton('OK');
+    expect(saved).toBe(1);
+    expect(closed).toBe(1);
+  });
+
+  it('delete with a nonzero delta: same success step, OK saves and closes', async () => {
+    deltaCents = 80;
+    await render({ fill: fillDto(), deletable: true });
+    await clickButton('Delete');
+    await clickButton('Delete for real');
+    expect(document.body.textContent ?? '').toContain('$0.80');
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
+    expect(saved).toBe(0);
+    expect(closed).toBe(0);
+
+    await clickButton('OK');
+    expect(saved).toBe(1);
+    expect(closed).toBe(1);
+  });
+
+  it('edit save with a nonzero delta: the X button dismisses and still saves and closes', async () => {
+    deltaCents = -120;
+    await render({ fill: fillDto() });
+    await clickButton('Save');
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
+
+    await act(async () => {
+      document
+        .querySelector('[role="dialog"] button[aria-label="Cancel"]')!
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(saved).toBe(1);
+    expect(closed).toBe(1);
+  });
+
+  it('delete with a nonzero delta: backdrop dismiss saves and closes too', async () => {
+    deltaCents = 80;
+    await render({ fill: fillDto(), deletable: true });
+    await clickButton('Delete');
+    await clickButton('Delete for real');
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
+
+    await act(async () => {
+      document
+        .querySelector('[role="dialog"]')!
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(saved).toBe(1);
+    expect(closed).toBe(1);
+  });
+
+  it('edit mode without bucketClosed shows no warning', async () => {
+    await render({ fill: fillDto() });
+    expect(document.querySelector('[role="dialog"]')!.textContent ?? '').not.toContain('closed position');
   });
 });
 

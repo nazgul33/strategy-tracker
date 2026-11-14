@@ -6,6 +6,7 @@ import { api, type FillDto } from '../api';
 import { useAsync } from '../components/hooks';
 import { FillTable } from './FillTable';
 import { FillDialog } from './forms/FillDialog';
+import { RecalcResultModal, type RecalcResult } from './RecalcSummary';
 import { NoticeList } from './NoticeList';
 import { OrderTable } from './OrderTable';
 import { Button, ErrorNote, Input, Modal, Select, Spinner } from './ui';
@@ -96,10 +97,13 @@ export function OrdersPanel({ runId }: { runId: number }) {
 export function FillsPanel({
   runId,
   costPpm,
+  closedIndexes = [],
   onMutated,
 }: {
   runId: number;
   costPpm?: number;
+  /** Indexes of the run's closed buckets (warn before touching their fills). */
+  closedIndexes?: number[];
   onMutated?: () => void;
 }) {
   const t = useT();
@@ -108,16 +112,20 @@ export function FillsPanel({
   const [confirmDel, setConfirmDel] = useState<FillDto | null>(null);
   const [busy, setBusy] = useState(false);
   const [delError, setDelError] = useState(false);
+  // Booked cash delta from the last row delete; while set, the shared result
+  // modal holds onMutated back until it is dismissed (null = none).
+  const [delResult, setDelResult] = useState<RecalcResult | null>(null);
 
   const submitDelete = async () => {
     if (!confirmDel) return;
     setBusy(true);
     setDelError(false);
     try {
-      await api.deleteFill(runId, confirmDel.id);
+      const res = await api.deleteFill(runId, confirmDel.id);
       setConfirmDel(null);
       await reload();
-      onMutated?.();
+      if (res.deltaCents !== 0) setDelResult({ deltaCents: res.deltaCents });
+      else onMutated?.();
     } catch {
       setDelError(true);
     } finally {
@@ -148,6 +156,7 @@ export function FillsPanel({
           costPpm={costPpm}
           fill={edit}
           deletable={deletableIds.has(edit.id)}
+          bucketClosed={closedIndexes.includes(edit.bucketIdx)}
           onClose={() => setEdit(null)}
           onSaved={() => {
             setEdit(null);
@@ -159,6 +168,9 @@ export function FillsPanel({
       {confirmDel && (
         <Modal title={t('dialog.delete')} onClose={() => setConfirmDel(null)}>
           <p className="text-sm">{t('dialog.deleteWarning', { n: confirmDel.shares })}</p>
+          {closedIndexes.includes(confirmDel.bucketIdx) && (
+            <p className="mt-2 rounded-md bg-warning/10 px-2 py-1.5 text-sm text-warning">{t('closedFillWarning')}</p>
+          )}
           {delError && (
             <div className="mt-3">
               <ErrorNote message={t('dialog.deleteFailed')} />
@@ -171,6 +183,15 @@ export function FillsPanel({
             </Button>
           </div>
         </Modal>
+      )}
+      {delResult !== null && (
+        <RecalcResultModal
+          result={delResult}
+          onClose={() => {
+            setDelResult(null);
+            onMutated?.();
+          }}
+        />
       )}
     </>
   );

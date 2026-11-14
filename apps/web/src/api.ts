@@ -24,8 +24,33 @@ export type * from './api.types';
 
 export type Http = (url: string, init?: RequestInit) => Promise<Response>;
 
+/** Server error codes (Hono routes + domain errors) plus the `http-${status}`
+ * fallback for responses without a JSON `{error}` body. */
+export type ApiErrorCode =
+  | 'unauthorized'
+  | 'not-found'
+  | 'no-run'
+  | 'not-pending'
+  | 'pending-not-pending'
+  | 'ticker-mismatch'
+  | 'order-not-found'
+  | 'order-not-open'
+  | 'invalid-reason'
+  | 'invalid-body'
+  | 'not-last'
+  | 'no-bucket-for-sell'
+  | 'no-fill'
+  | 'invalid-fill'
+  | 'immutable-field'
+  | 'bucket-not-empty'
+  | 'bucket-not-found'
+  | 'bucket-not-held'
+  | 'invalid-shares'
+  | 'too-many-shares'
+  | `http-${number}`;
+
 export class ApiError extends Error {
-  constructor(readonly status: number, readonly code: string) {
+  constructor(readonly status: number, readonly code: ApiErrorCode) {
     super(code);
   }
 }
@@ -116,10 +141,11 @@ export interface Api {
   listFills(id: number): Promise<FillDto[]>;
   listNotifications(id: number): Promise<NotificationDto[]>;
   addManualFill(runId: number, fill: ManualFillInput): Promise<void>;
-  updateFill(runId: number, fillId: number, body: FillUpdatePayload): Promise<{ ok: true }>;
-  deleteFill(runId: number, fillId: number): Promise<{ ok: true; deletedFillId: number }>;
-  /** Recompute run state from booked fills: 200 `{ok:true}`, 404 `no-run`, 422 domain error kind. */
-  recalcRun(runId: number): Promise<void>;
+  updateFill(runId: number, fillId: number, body: FillUpdatePayload): Promise<{ ok: true; deltaCents: number }>;
+  deleteFill(runId: number, fillId: number): Promise<{ ok: true; deletedFillId: number; deltaCents: number }>;
+  /** Recompute run state from booked fills: 200 `{ok:true,deltaCents,fillCount}`,
+   * 404 `no-run`, 422 domain error kind. */
+  recalcRun(runId: number): Promise<{ ok: true; deltaCents: number; fillCount: number }>;
   triggerMorning(): Promise<string>;
   listPending(): Promise<PendingFillDto[]>;
   confirmPending(id: number, overrides?: { shares?: number; price?: string; filledOn?: string }): Promise<void>;
@@ -188,10 +214,14 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
       return send<{ ok: true }>('POST', `/api/runs/${runId}/fills`, body).then(() => undefined);
     },
     updateFill: (runId, fillId, body) =>
-      send<{ ok: true }>('PUT', `/api/runs/${runId}/fills/${fillId}`, { ...body, feeCents: body.feeCents ?? null }),
+      send<{ ok: true; deltaCents: number }>(
+        'PUT',
+        `/api/runs/${runId}/fills/${fillId}`,
+        { ...body, feeCents: body.feeCents ?? null },
+      ),
     deleteFill: (runId, fillId) =>
-      send<{ ok: true; deletedFillId: number }>('DELETE', `/api/runs/${runId}/fills/${fillId}`),
-    recalcRun: (runId) => send<{ ok: true }>('POST', `/api/runs/${runId}/recalc`).then(() => undefined),
+      send<{ ok: true; deletedFillId: number; deltaCents: number }>('DELETE', `/api/runs/${runId}/fills/${fillId}`),
+    recalcRun: (runId) => send<{ ok: true; deltaCents: number; fillCount: number }>('POST', `/api/runs/${runId}/recalc`),
     triggerMorning: () => send<{ result: string }>('POST', '/api/trigger/morning').then((r) => r.result),
     listPending: () => get<PendingFillDto[]>('/api/pending'),
     confirmPending: (id, overrides) =>
@@ -233,7 +263,10 @@ async function call<T>(http: Http, url: string, init?: RequestInit): Promise<T> 
   } catch {
     body = {};
   }
-  if (!res.ok) throw new ApiError(res.status, String(body.error ?? `http-${res.status}`));
+  if (!res.ok) {
+    const code = typeof body.error === 'string' ? body.error : `http-${res.status}`;
+    throw new ApiError(res.status, code as ApiErrorCode);
+  }
   return body as T;
 }
 
