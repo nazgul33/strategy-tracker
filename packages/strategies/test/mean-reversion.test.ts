@@ -106,6 +106,37 @@ describe('computeOrders', () => {
     expect(forced.bucketIndex).toBe(1)
     expect(forced.ageDays).toBe(101)
   })
+  test('buy plan skips a previously closed bucket', () => {
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
+    let state = emptyState(3)
+    state = applyBuyFill(state, 0, 10, 3402200n, 34, '2026-11-02')
+    state = applySellFill(state, 0, 10, 3402300n, 34, '2026-11-05')
+    state = applyBuyFill(state, 1, 5, 3402200n, 17, '2026-11-06')
+    const plan = computeOrders(run, state, { lastClose: 3402300n })
+    const buys = plan.orders.filter((o) => o.kind === 'buy_loc')
+    expect(buys.length).toBe(1)
+    expect(buys[0]!.bucketIndex).toBe(2)
+  })
+  test('buy plan reuses a closed bucket only when none is fresh', () => {
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
+    let state = emptyState(2)
+    state = applyBuyFill(state, 0, 10, 3402200n, 34, '2026-11-02')
+    state = applySellFill(state, 0, 10, 3402300n, 34, '2026-11-05')
+    state = applyBuyFill(state, 1, 5, 3402200n, 17, '2026-11-06')
+    state = applySellFill(state, 1, 5, 3402300n, 17, '2026-11-09')
+    const plan = computeOrders(run, state, { lastClose: 3402300n })
+    const buy = plan.orders.find((o) => o.kind === 'buy_loc')!
+    expect(buy.bucketIndex).toBe(0)
+  })
+  test('buy plan still targets a fresh empty bucket when another is closed', () => {
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
+    let state = emptyState(2)
+    state = applyBuyFill(state, 1, 5, 3402200n, 17, '2026-11-02')
+    state = applySellFill(state, 1, 5, 3402300n, 17, '2026-11-05')
+    const plan = computeOrders(run, state, { lastClose: 3402300n })
+    const buy = plan.orders.find((o) => o.kind === 'buy_loc')!
+    expect(buy.bucketIndex).toBe(0)
+  })
 })
 
 describe('progressView', () => {
