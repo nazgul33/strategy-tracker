@@ -22,18 +22,20 @@ export function emptyState(bucketCount: number): RunState {
 /**
  * Bucket a next buy should take: the lowest empty index never present in
  * `closed` (never used), else the lowest empty (previously closed) index,
- * else null when every bucket is held. Shared by planning and booking so
+ * else null when no bucket is empty. Shared by planning and booking so
  * the two can never drift.
  */
 export function nextBuyBucketIndex(state: RunState): number | null {
   const closedIdx = new Set(state.closed.map((c) => c.index))
+  let fresh: number | null = null
   let fallback: number | null = null
   for (const b of state.buckets) {
     if (b.state !== 'empty') continue
-    if (!closedIdx.has(b.index)) return b.index
-    if (fallback === null) fallback = b.index
+    // Min explicitly so "lowest" never relies on bucket array order.
+    if (closedIdx.has(b.index)) fallback = fallback === null ? b.index : Math.min(fallback, b.index)
+    else fresh = fresh === null ? b.index : Math.min(fresh, b.index)
   }
-  return fallback
+  return fresh ?? fallback
 }
 
 export function advanceDay(state: RunState, maxAgeDays = 20): RunState {

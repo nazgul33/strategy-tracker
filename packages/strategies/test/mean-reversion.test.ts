@@ -99,7 +99,7 @@ describe('computeOrders', () => {
     const buy = plan.orders.find((o) => o.kind === 'buy_loc')!
     const loc = plan.orders.find((o) => o.kind === 'sell_loc')!
     const forced = plan.orders.find((o) => o.kind === 'market_sell')!
-    expect(buy.bucketIndex).toBe(2) // lowest empty bucket
+    expect(buy.bucketIndex).toBe(2) // next never-used empty bucket
     expect(buy.ageDays).toBeUndefined()
     expect(loc.bucketIndex).toBe(0)
     expect(loc.ageDays).toBe(15)
