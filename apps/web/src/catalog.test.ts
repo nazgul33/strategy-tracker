@@ -21,6 +21,19 @@ describe('i18n catalogs', () => {
     expect(keysOf(koEntries)).toEqual(keysOf(enEntries));
   });
 
+  // Flat catalogs stay alphabetically ordered so scanning for a key (or
+  // slotting a new one in) is predictable; localeCompare matches reading order.
+  test('both catalogs list their keys in localeCompare order', () => {
+    for (const [name, entries] of [['en', enEntries], ['ko', koEntries]] as const) {
+      const keys = entries.map(([key]) => key);
+      const offenders: string[] = [];
+      for (let i = 1; i < keys.length; i++) {
+        if (keys[i - 1]!.localeCompare(keys[i]!) > 0) offenders.push(`${keys[i - 1]} must come after ${keys[i]}`);
+      }
+      expect(offenders, `${name} catalog` ).toEqual([]);
+    }
+  });
+
   test('every key interpolates the same placeholders in both languages', () => {
     const koValues = new Map(koEntries);
     const mismatches = enEntries
