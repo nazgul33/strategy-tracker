@@ -200,7 +200,9 @@ From the design reviewer's pass, resolved consistently:
 
 - On a morning when a bucket is both past max age and would otherwise get a sell LOC: the
   forced `MARKET SELL` **replaces** the sell LOC — one instruction per bucket per day.
-- A buy order fills the **lowest free bucket index**.
+- A buy order fills the **next never-used bucket index** (lowest empty index absent from
+  `closed`; a previously closed bucket is reused only when no fresh one remains) —
+  see `2026-11-14-buy-next-bucket-design.md`.
 - Reporting semantics: `cash = opening pool + confirmed sell proceeds − buys − fees`;
   realized P&L booked when a bucket fully closes; win rate = closed buckets in profit ÷ all
   closed buckets.

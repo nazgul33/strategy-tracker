@@ -1,5 +1,5 @@
-import { test, expect } from 'bun:test'
-import { emptyState, applyBuyFill, applySellFill, advanceDay } from '../src/fills'
+import { test, expect, describe } from 'bun:test'
+import { emptyState, applyBuyFill, applySellFill, advanceDay, nextBuyBucketIndex } from '../src/fills'
 import { DomainError } from '../src/domain'
 import { roundDiv } from '../src/money'
 
@@ -173,4 +173,61 @@ test('state survives JSON round-trip (ages keys become strings)', () => {
   const sold = applySellFill(next, 0, 10, 1000000n, 0, '2026-02-05')
   expect(sold.buckets[0].state).toBe('empty')
   expect(sold.ages[0]).toBeUndefined()
+})
+
+describe('nextBuyBucketIndex', () => {
+  test('fresh state and progressively filled buckets', () => {
+    const s0 = emptyState(3)
+    expect(nextBuyBucketIndex(s0)).toBe(0)
+    const s1 = applyBuyFill(s0, 0, 10, 1000000n, 0)
+    expect(nextBuyBucketIndex(s1)).toBe(1)
+    const s2 = applyBuyFill(s1, 1, 10, 1000000n, 0)
+    expect(nextBuyBucketIndex(s2)).toBe(2)
+    const s3 = applyBuyFill(s2, 2, 10, 1000000n, 0)
+    expect(nextBuyBucketIndex(s3)).toBeNull()
+  })
+
+  test('skips a closed bucket', () => {
+    let s = emptyState(3)
+    s = applyBuyFill(s, 0, 10, 1000000n, 0)
+    s = applySellFill(s, 0, 10, 1000000n, 0, '2026-01-05')
+    // bucket 0 is empty again but closed
+    expect(s.buckets[0]!.state).toBe('empty')
+    expect(s.closed.some((c) => c.index === 0)).toBe(true)
+    expect(nextBuyBucketIndex(s)).toBe(1)
+  })
+
+  test('closed bucket in the middle', () => {
+    let s = emptyState(3)
+    s = applyBuyFill(s, 1, 10, 1000000n, 0)
+    s = applySellFill(s, 1, 10, 1000000n, 0, '2026-01-05')
+    // buckets 0 and 2 are empty and never used
+    expect(nextBuyBucketIndex(s)).toBe(0)
+    s = applyBuyFill(s, 0, 10, 1000000n, 0)
+    expect(nextBuyBucketIndex(s)).toBe(2)
+  })
+
+  test('all closed falls back to the lowest closed index', () => {
+    let s = emptyState(2)
+    s = applyBuyFill(s, 0, 10, 1000000n, 0)
+    s = applySellFill(s, 0, 10, 1000000n, 0, '2026-01-05')
+    s = applyBuyFill(s, 1, 10, 1000000n, 0)
+    s = applySellFill(s, 1, 10, 1000000n, 0, '2026-01-06')
+    expect(s.closed.length).toBe(2)
+    expect(nextBuyBucketIndex(s)).toBe(0)
+  })
+
+  test('held buckets are ignored even when a closed one is free', () => {
+    let s = emptyState(2)
+    s = applyBuyFill(s, 0, 10, 1000000n, 0)
+    s = applySellFill(s, 0, 10, 1000000n, 0, '2026-01-05')
+    s = applyBuyFill(s, 1, 10, 1000000n, 0)
+    // bucket 0 is empty but closed; bucket 1 is held. No never-used bucket
+    // remains, so the fallback takes the free closed bucket 0; the held
+    // bucket 1 does not block the pick. (The plan text said null here, but
+    // null is only for an all-held state with no empty bucket at all — see
+    // docs/superpowers/specs/2026-11-14-buy-next-bucket-design.md.)
+    expect(s.buckets[1]!.state).toBe('held')
+    expect(nextBuyBucketIndex(s)).toBe(0)
+  })
 })
