@@ -71,6 +71,7 @@ export function RunDetailPage({ id }: { id: number }) {
   };
 
   const recalc = async () => {
+    setActionError(null);
     try {
       await api.recalcRun(id);
       await reload();

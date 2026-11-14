@@ -233,3 +233,111 @@ describe('RunDetailPage add-fill button', () => {
     expect(side!.value).toBe('buy');
   });
 });
+
+const CLOSED_ROW = {
+  index: 0,
+  shares: 120,
+  buyPrice: '4000000', // myriadths
+  soldPrice: '4200000',
+  buyFeeCents: 500,
+  sellFeeCents: 500,
+  openedOn: '2026-11-02',
+  closedOn: '2026-11-05',
+};
+
+const RUN_WITH_HISTORY = {
+  ...RUN,
+  state: { ...RUN.state, closed: [CLOSED_ROW] },
+};
+
+// stubFetch variant with a switchable POST /api/runs/1/recalc endpoint.
+function stubFetchWithRecalc(): { recalcFails: boolean } {
+  posts = [];
+  const flag = { recalcFails: true };
+  globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: string }) => {
+    const u = String(url);
+    if (init?.method === 'POST' && u.endsWith('/recalc')) {
+      posts.push({ url: u, body: {} });
+      return flag.recalcFails
+        ? new Response(JSON.stringify({ error: 'no-run' }), {
+            status: 422,
+            headers: { 'content-type': 'application/json' },
+          })
+        : new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+    }
+    if (init?.method === 'POST') {
+      posts.push({ url: u, body: JSON.parse(init.body ?? '{}') as Record<string, unknown> });
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (u.includes('/price-history')) {
+      return new Response(
+        JSON.stringify({
+          start: '2026-11-04',
+          bars: [
+            { tradeDate: '2026-11-04', close: '470500' },
+            { tradeDate: '2026-11-05', close: '482500' },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    if (u.match(/\/api\/runs\/1$/)) {
+      return new Response(JSON.stringify(RUN_WITH_HISTORY), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as unknown as typeof fetch;
+  return flag;
+}
+
+const recalcPosts = () => posts.filter((p) => p.url.endsWith('/recalc'));
+
+describe('RunDetailPage history recalc error handling', () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+  let recalcFlag: { recalcFails: boolean };
+
+  beforeEach(async () => {
+    recalcFlag = stubFetchWithRecalc();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root.render(d(RunDetailPage, { id: 1 })));
+    await flush();
+    await act(async () => {
+      buttonByText('History').click();
+    });
+    await flush();
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    globalThis.fetch = realFetch;
+  });
+
+  it('shows the recalc error code and clears it on the next successful recalc', async () => {
+    await act(async () => {
+      buttonByText('Update').click();
+    });
+    await flush();
+    expect(document.body.textContent).toContain('no-run');
+    expect(recalcPosts().length).toBe(1);
+
+    recalcFlag.recalcFails = false;
+    await act(async () => {
+      buttonByText('Update').click();
+    });
+    await flush();
+    expect(document.body.textContent).not.toContain('no-run');
+    expect(recalcPosts().length).toBe(2);
+  });
+});
