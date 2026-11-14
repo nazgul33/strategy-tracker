@@ -145,7 +145,19 @@ describe('rebookFill', () => {
     const st = await getState(f, runId)
     expect(st.buckets[0]).toMatchObject({ state: 'held', shares: 12, buyPrice: 180_000n })
     expect(st.buckets[1]).toMatchObject({ state: 'held', shares: 10, buyPrice: 200_000n })
-    expect(st.closed).toHaveLength(0)
+    // One ClosedBucket row per sell tranche (partial-sell-history spec): the
+    // 10-share partial against the 20-share bucket-1 buy.
+    expect(st.closed).toHaveLength(1)
+    expect(st.closed[0]).toMatchObject({
+      index: 1,
+      shares: 10,
+      buyPrice: 200_000n,
+      soldPrice: 210_000n,
+      buyFeeCents: 50, // bucket buy fee 100c * 10/20 shares, remainder stays on the bucket
+      sellFeeCents: 50,
+      openedOn: '2026-01-09',
+      closedOn: '2026-01-12',
+    })
     expect(st.ages[0]).toBe(ageOf('2026-01-08'))
     expect(st.ages[1]).toBe(ageOf('2026-01-09'))
     expect(st.cashCents).toBe(100_000 + buyEffect('18.00', 12, 400) + buyEffect('20.00', 20, 100) + sellEffect('21.00', 10, 50))
