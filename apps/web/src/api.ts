@@ -141,10 +141,11 @@ export interface Api {
   listFills(id: number): Promise<FillDto[]>;
   listNotifications(id: number): Promise<NotificationDto[]>;
   addManualFill(runId: number, fill: ManualFillInput): Promise<void>;
-  updateFill(runId: number, fillId: number, body: FillUpdatePayload): Promise<{ ok: true }>;
-  deleteFill(runId: number, fillId: number): Promise<{ ok: true; deletedFillId: number }>;
-  /** Recompute run state from booked fills: 200 `{ok:true}`, 404 `no-run`, 422 domain error kind. */
-  recalcRun(runId: number): Promise<void>;
+  updateFill(runId: number, fillId: number, body: FillUpdatePayload): Promise<{ ok: true; deltaCents: number }>;
+  deleteFill(runId: number, fillId: number): Promise<{ ok: true; deletedFillId: number; deltaCents: number }>;
+  /** Recompute run state from booked fills: 200 `{ok:true,deltaCents,fillCount}`,
+   * 404 `no-run`, 422 domain error kind. */
+  recalcRun(runId: number): Promise<{ ok: true; deltaCents: number; fillCount: number }>;
   triggerMorning(): Promise<string>;
   listPending(): Promise<PendingFillDto[]>;
   confirmPending(id: number, overrides?: { shares?: number; price?: string; filledOn?: string }): Promise<void>;
@@ -213,10 +214,14 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
       return send<{ ok: true }>('POST', `/api/runs/${runId}/fills`, body).then(() => undefined);
     },
     updateFill: (runId, fillId, body) =>
-      send<{ ok: true }>('PUT', `/api/runs/${runId}/fills/${fillId}`, { ...body, feeCents: body.feeCents ?? null }),
+      send<{ ok: true; deltaCents: number }>(
+        'PUT',
+        `/api/runs/${runId}/fills/${fillId}`,
+        { ...body, feeCents: body.feeCents ?? null },
+      ),
     deleteFill: (runId, fillId) =>
-      send<{ ok: true; deletedFillId: number }>('DELETE', `/api/runs/${runId}/fills/${fillId}`),
-    recalcRun: (runId) => send<{ ok: true }>('POST', `/api/runs/${runId}/recalc`).then(() => undefined),
+      send<{ ok: true; deletedFillId: number; deltaCents: number }>('DELETE', `/api/runs/${runId}/fills/${fillId}`),
+    recalcRun: (runId) => send<{ ok: true; deltaCents: number; fillCount: number }>('POST', `/api/runs/${runId}/recalc`),
     triggerMorning: () => send<{ result: string }>('POST', '/api/trigger/morning').then((r) => r.result),
     listPending: () => get<PendingFillDto[]>('/api/pending'),
     confirmPending: (id, overrides) =>

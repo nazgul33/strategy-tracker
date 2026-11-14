@@ -163,3 +163,25 @@ describe('ApiErrorCode', () => {
     expect([code, fallback]).toBeTruthy();
   });
 });
+
+// Fill/recalc mutations report the cash delta they booked so the UI can show
+// the consequence (server wave A responses).
+describe('fill mutation deltas', () => {
+  test('updateFill resolves with deltaCents', async () => {
+    const http: Http = async () => Response.json({ ok: true, deltaCents: -120 });
+    const api = createApi(http, { getToken: () => null });
+    await expect(api.updateFill(1, 2, { qty: 10, priceCents: 5000 })).resolves.toEqual({ ok: true, deltaCents: -120 });
+  });
+
+  test('deleteFill resolves with deletedFillId and deltaCents', async () => {
+    const http: Http = async () => Response.json({ ok: true, deletedFillId: 7, deltaCents: 80 });
+    const api = createApi(http, { getToken: () => null });
+    await expect(api.deleteFill(1, 7)).resolves.toEqual({ ok: true, deletedFillId: 7, deltaCents: 80 });
+  });
+
+  test('recalcRun resolves with deltaCents and fillCount', async () => {
+    const http: Http = async () => Response.json({ ok: true, deltaCents: 250, fillCount: 4 });
+    const api = createApi(http, { getToken: () => null });
+    await expect(api.recalcRun(1)).resolves.toEqual({ ok: true, deltaCents: 250, fillCount: 4 });
+  });
+});
