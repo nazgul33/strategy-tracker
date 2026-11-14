@@ -29,6 +29,8 @@ export interface FillDialogProps {
   fill?: FillDto;
   /** Show the Delete step (fill is the bucket's last one). */
   deletable?: boolean;
+  /** Fill lives in a closed bucket: edits re-book cash on a settled bucket. */
+  bucketClosed?: boolean;
   initialSide?: 'buy' | 'sell';
   /** Lock the side select even in add mode. */
   lockSide?: boolean;
@@ -41,6 +43,7 @@ export function FillDialog({
   costPpm,
   fill,
   deletable = false,
+  bucketClosed = false,
   initialSide = 'buy',
   lockSide = false,
   onClose,
@@ -152,10 +155,16 @@ export function FillDialog({
     </p>
   );
 
+  // Closed buckets are settled: touching their fills re-books cash retroactively.
+  const closedNote = bucketClosed && (
+    <p className="rounded-md bg-warning/10 px-2 py-1.5 text-sm text-warning">{t('closedFillWarning')}</p>
+  );
+
   if (confirming && fill) {
     return (
       <Modal title={t('dialog.delete')} onClose={onClose}>
         <p className="text-sm">{t('dialog.deleteWarning', { n: fill.shares })}</p>
+        {closedNote}
         {errorLine}
         <div className="mt-3 flex items-center gap-3">
           <Button variant="danger" busy={busy} onClick={() => void remove()}>
@@ -232,6 +241,7 @@ export function FillDialog({
             required
           />
         </Field>
+        {closedNote}
         {errorLine}
         <div className="flex items-center gap-3">
           <Button onClick={onClose}>{t('cancel')}</Button>

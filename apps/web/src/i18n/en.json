@@ -22,6 +22,7 @@
   "cancelReasonStalePrice": "Price no longer valid",
   "cancelReasonOther": "Other",
   "close": "Close",
+  "closedFillWarning": "This fill belongs to a closed position. Saving re-derives all later history and may book a cash adjustment.",
   "confirm": "Confirm",
   "confirmClose": "Close this run? No further buys.",
   "create": "Create",

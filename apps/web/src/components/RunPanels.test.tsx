@@ -259,4 +259,34 @@ describe('FillsPanel', () => {
     expect(mutated).toBe(1);
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
+
+  // Re-render the shared root with closed bucket 0 (fills 2 and 3 live there).
+  async function mountClosedBucketPanel() {
+    await act(async () => {
+      root.render(d(LangProvider, null, d(FillsPanel, { runId: 7, closedIndexes: [0], onMutated: () => {} })));
+    });
+    await flush();
+  }
+
+  it('row delete confirm warns when the bucket is closed', async () => {
+    await mountClosedBucketPanel();
+    await click(document.getElementById('fillDelete-3')!); // bucket 0, closed
+    expect(document.querySelector('[role="dialog"]')!.textContent ?? '').toContain(
+      'This fill belongs to a closed position. Saving re-derives all later history and may book a cash adjustment.',
+    );
+  });
+
+  it('row delete confirm does not warn for an open bucket', async () => {
+    await mountClosedBucketPanel();
+    await click(document.getElementById('fillDelete-1')!); // bucket 1, open
+    expect(document.querySelector('[role="dialog"]')!.textContent ?? '').not.toContain('closed position');
+  });
+
+  it('edit dialog warns when the fill is in a closed bucket', async () => {
+    await mountClosedBucketPanel();
+    await click(document.getElementById('fillEdit-2')!); // bucket 0, closed
+    expect(document.querySelector('[role="dialog"]')!.textContent ?? '').toContain(
+      'This fill belongs to a closed position. Saving re-derives all later history and may book a cash adjustment.',
+    );
+  });
 });

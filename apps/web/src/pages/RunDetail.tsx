@@ -189,7 +189,7 @@ export function RunDetailPage({ id }: { id: number }) {
         {tab === 'orders' && <OrdersPanel runId={id} />}
         {tab === 'pending' && <PendingTable key={`p${panelKey}`} runId={id} />}
         {tab === 'fills' && (
-          <FillsPanel key={`f${panelKey}`} runId={id} costPpm={run.costPpm} onMutated={() => { setPanelKey((k) => k + 1); void reload(); }} />
+          <FillsPanel key={`f${panelKey}`} runId={id} costPpm={run.costPpm} closedIndexes={run.state.closed.map((c) => c.index)} onMutated={() => { setPanelKey((k) => k + 1); void reload(); }} />
         )}
         {tab === 'history' && <RunHistory closed={run.state.closed} onRecalc={recalc} />}
         {tab === 'notifications' && <NotificationsPanel key={`n${panelKey}`} runId={id} />}

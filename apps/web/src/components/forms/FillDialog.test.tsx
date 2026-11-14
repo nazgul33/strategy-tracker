@@ -276,6 +276,26 @@ describe('FillDialog', () => {
     expect(msg!.length).toBeGreaterThan(0);
     expect(msg).toContain('weird-code');
   });
+
+  it('edit mode with bucketClosed shows the closed-bucket warning', async () => {
+    await render({ fill: fillDto(), bucketClosed: true });
+    expect(document.querySelector('[role="dialog"]')!.textContent ?? '').toContain(
+      'This fill belongs to a closed position. Saving re-derives all later history and may book a cash adjustment.',
+    );
+  });
+
+  it('delete confirm with bucketClosed shows the closed-bucket warning', async () => {
+    await render({ fill: fillDto(), bucketClosed: true, deletable: true });
+    await clickButton('Delete');
+    expect(document.querySelector('[role="dialog"]')!.textContent ?? '').toContain(
+      'This fill belongs to a closed position. Saving re-derives all later history and may book a cash adjustment.',
+    );
+  });
+
+  it('edit mode without bucketClosed shows no warning', async () => {
+    await render({ fill: fillDto() });
+    expect(document.querySelector('[role="dialog"]')!.textContent ?? '').not.toContain('closed position');
+  });
 });
 
 describe('autoFeeUsd', () => {

@@ -22,6 +22,7 @@
   "cancelReasonStalePrice": "호가 유효기간 만료",
   "cancelReasonOther": "기타",
   "close": "닫기",
+  "closedFillWarning": "이 체결은 청산된 포지션에 속합니다. 저장하면 이후 내역이 다시 계산되고 현금 조정이 발생할 수 있습니다.",
   "confirm": "확인",
   "confirmClose": "이 런을 종료할까요? 이후에는 매수하지 않습니다.",
   "create": "생성",

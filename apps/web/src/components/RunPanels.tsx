@@ -96,10 +96,13 @@ export function OrdersPanel({ runId }: { runId: number }) {
 export function FillsPanel({
   runId,
   costPpm,
+  closedIndexes = [],
   onMutated,
 }: {
   runId: number;
   costPpm?: number;
+  /** Indexes of the run's closed buckets (warn before touching their fills). */
+  closedIndexes?: number[];
   onMutated?: () => void;
 }) {
   const t = useT();
@@ -148,6 +151,7 @@ export function FillsPanel({
           costPpm={costPpm}
           fill={edit}
           deletable={deletableIds.has(edit.id)}
+          bucketClosed={closedIndexes.includes(edit.bucketIdx)}
           onClose={() => setEdit(null)}
           onSaved={() => {
             setEdit(null);
@@ -159,6 +163,9 @@ export function FillsPanel({
       {confirmDel && (
         <Modal title={t('dialog.delete')} onClose={() => setConfirmDel(null)}>
           <p className="text-sm">{t('dialog.deleteWarning', { n: confirmDel.shares })}</p>
+          {closedIndexes.includes(confirmDel.bucketIdx) && (
+            <p className="mt-2 rounded-md bg-warning/10 px-2 py-1.5 text-sm text-warning">{t('closedFillWarning')}</p>
+          )}
           {delError && (
             <div className="mt-3">
               <ErrorNote message={t('dialog.deleteFailed')} />
