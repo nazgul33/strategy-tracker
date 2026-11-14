@@ -8,6 +8,7 @@ import type { RunStatus } from '../api';
 import { BucketBoard } from '../components/BucketBoard';
 import { useAsync } from '../components/hooks';
 import { PriceChart } from '../components/PriceChart';
+import { RecalcResultModal, type RecalcResult } from '../components/RecalcSummary';
 import { EditRunModal } from '../components/forms/EditRunModal';
 import { FillDialog } from '../components/forms/FillDialog';
 import { PendingTable } from '../components/forms/PendingTable';
@@ -48,6 +49,7 @@ export function RunDetailPage({ id }: { id: number }) {
   const [showClose, setShowClose] = useState(false);
   const [showPool, setShowPool] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [recalcResult, setRecalcResult] = useState<RecalcResult | null>(null);
 
   const selectTab = (next: Tab) => {
     setTab(next);
@@ -71,7 +73,8 @@ export function RunDetailPage({ id }: { id: number }) {
   const recalc = async () => {
     setActionError(null);
     try {
-      await api.recalcRun(id);
+      const res = await api.recalcRun(id);
+      setRecalcResult({ deltaCents: res.deltaCents, fillCount: res.fillCount });
       await reload();
     } catch (err) {
       if (err instanceof ApiError) {
@@ -225,6 +228,11 @@ export function RunDetailPage({ id }: { id: number }) {
         <FillDialog runId={run.id} costPpm={run.costPpm} initialSide="buy" lockSide
           onClose={() => setManualOpen(false)}
           onSaved={() => { setManualOpen(false); setPanelKey((k) => k + 1); void reload(); }} />
+      )}
+      {recalcResult !== null && (
+        <div data-testid="recalcResult">
+          <RecalcResultModal result={recalcResult} onClose={() => setRecalcResult(null)} />
+        </div>
       )}
     </div>
   );

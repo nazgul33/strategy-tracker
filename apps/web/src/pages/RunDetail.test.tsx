@@ -251,9 +251,9 @@ const RUN_WITH_HISTORY = {
 };
 
 // stubFetch variant with a switchable POST /api/runs/1/recalc endpoint.
-function stubFetchWithRecalc(): { recalcFails: boolean; recalcCode: string } {
+function stubFetchWithRecalc(): { recalcFails: boolean; recalcCode: string; deltaCents: number; fillCount: number } {
   posts = [];
-  const flag = { recalcFails: true, recalcCode: 'no-run' };
+  const flag = { recalcFails: true, recalcCode: 'no-run', deltaCents: 0, fillCount: 3 };
   globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: string }) => {
     const u = String(url);
     if (init?.method === 'POST' && u.endsWith('/recalc')) {
@@ -263,7 +263,7 @@ function stubFetchWithRecalc(): { recalcFails: boolean; recalcCode: string } {
             status: 422,
             headers: { 'content-type': 'application/json' },
           })
-        : new Response(JSON.stringify({ ok: true }), {
+        : new Response(JSON.stringify({ ok: true, deltaCents: flag.deltaCents, fillCount: flag.fillCount }), {
             status: 200,
             headers: { 'content-type': 'application/json' },
           });
@@ -358,5 +358,68 @@ describe('RunDetailPage history recalc error handling', () => {
     });
     await flush();
     expect(document.body.textContent).toContain('zzz');
+  });
+});
+
+describe('RunDetailPage recalc result popup', () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+  let recalcFlag: { recalcFails: boolean; recalcCode: string; deltaCents: number; fillCount: number };
+
+  beforeEach(async () => {
+    recalcFlag = stubFetchWithRecalc();
+    recalcFlag.recalcFails = false;
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root.render(d(RunDetailPage, { id: 1 })));
+    await flush();
+    await act(async () => {
+      buttonByText('History').click();
+    });
+    await flush();
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    globalThis.fetch = realFetch;
+  });
+
+  const popup = () => document.querySelector('[data-testid="recalcResult"]');
+
+  it('shows the result popup after a successful recalc', async () => {
+    await act(async () => {
+      buttonByText('Update').click();
+    });
+    await flush();
+    expect(popup()).not.toBeNull();
+    expect(popup()!.textContent).toContain('Recalculation complete');
+    expect(popup()!.textContent).toContain('No cash adjustment was needed.');
+    expect(popup()!.textContent).toContain('Rebuilt run state from 3 fills.');
+  });
+
+  it('reports a booked cash adjustment in the popup', async () => {
+    recalcFlag.deltaCents = -120;
+    await act(async () => {
+      buttonByText('Update').click();
+    });
+    await flush();
+    expect(popup()).not.toBeNull();
+    expect(popup()!.textContent).toContain('Cash was off by');
+    expect(popup()!.textContent).toContain('-$1.20');
+  });
+
+  it('dismisses the popup on OK', async () => {
+    await act(async () => {
+      buttonByText('Update').click();
+    });
+    await flush();
+    expect(popup()).not.toBeNull();
+    await act(async () => {
+      buttonByText('OK').click();
+    });
+    await flush();
+    expect(popup()).toBeNull();
   });
 });
