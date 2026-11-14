@@ -232,7 +232,15 @@ export function RunDetailPage({ id }: { id: number }) {
       )}
       {recalcResult !== null && (
         <div data-testid="recalcResult">
-          <RecalcResultModal result={recalcResult} onClose={() => setRecalcResult(null)} />
+          <RecalcResultModal
+            result={recalcResult}
+            // Dismissing (OK, ✕ or backdrop) reloads the run: a zero-delta edit
+            // can still re-open a closed bucket or change cash shown elsewhere.
+            onClose={() => {
+              setRecalcResult(null);
+              void reload();
+            }}
+          />
         </div>
       )}
     </div>

@@ -46,6 +46,7 @@ const RUN = {
 };
 
 let posts: Post[] = [];
+let gets: string[] = []; // URLs of non-POST calls recorded by stubFetchWithRecalc
 
 function stubFetch() {
   posts = [];
@@ -253,6 +254,7 @@ const RUN_WITH_HISTORY = {
 // stubFetch variant with a switchable POST /api/runs/1/recalc endpoint.
 function stubFetchWithRecalc(): { recalcFails: boolean; recalcCode: string; deltaCents: number; fillCount: number } {
   posts = [];
+  gets = [];
   const flag = { recalcFails: true, recalcCode: 'no-run', deltaCents: 0, fillCount: 3 };
   globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: string }) => {
     const u = String(url);
@@ -288,6 +290,7 @@ function stubFetchWithRecalc(): { recalcFails: boolean; recalcCode: string; delt
       );
     }
     if (u.match(/\/api\/runs\/1$/)) {
+      gets.push(u);
       return new Response(JSON.stringify(RUN_WITH_HISTORY), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -387,6 +390,8 @@ describe('RunDetailPage recalc result popup', () => {
   });
 
   const popup = () => document.querySelector('[data-testid="recalcResult"]');
+  // GETs of the run itself — one per useAsync reload().
+  const runGets = () => gets.filter((g) => /\/api\/runs\/1$/.test(g)).length;
 
   it('shows the result popup after a successful recalc', async () => {
     await act(async () => {
@@ -410,16 +415,50 @@ describe('RunDetailPage recalc result popup', () => {
     expect(popup()!.textContent).toContain('-$1.20');
   });
 
-  it('dismisses the popup on OK', async () => {
+  it('dismisses the popup on OK and refetches the run', async () => {
     await act(async () => {
       buttonByText('Update').click();
     });
     await flush();
     expect(popup()).not.toBeNull();
+    const before = runGets();
     await act(async () => {
       buttonByText('OK').click();
     });
     await flush();
     expect(popup()).toBeNull();
+    expect(runGets()).toBe(before + 1);
+  });
+
+  it('refetches the run when the popup is dismissed with the X button', async () => {
+    await act(async () => {
+      buttonByText('Update').click();
+    });
+    await flush();
+    const before = runGets();
+    await act(async () => {
+      document
+        .querySelector('[data-testid="recalcResult"] [role="dialog"] button[aria-label="Cancel"]')!
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flush();
+    expect(popup()).toBeNull();
+    expect(runGets()).toBe(before + 1);
+  });
+
+  it('refetches the run when the popup is dismissed by clicking the backdrop', async () => {
+    await act(async () => {
+      buttonByText('Update').click();
+    });
+    await flush();
+    const before = runGets();
+    await act(async () => {
+      document
+        .querySelector('[data-testid="recalcResult"] [role="dialog"]')!
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flush();
+    expect(popup()).toBeNull();
+    expect(runGets()).toBe(before + 1);
   });
 });

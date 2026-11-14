@@ -292,6 +292,29 @@ describe('FillsPanel', () => {
     expect(mutated).toBe(1);
   });
 
+  it('row delete result modal: the X button dismisses and fires onMutated too', async () => {
+    delDelta = 80;
+    await click(document.getElementById('fillDelete-1')!);
+    await click(button('Delete for real'));
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
+    expect(mutated).toBe(0);
+    await click(document.querySelector('[role="dialog"] button[aria-label="Cancel"]')!);
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).toBeNull();
+    expect(mutated).toBe(1);
+  });
+
+  it('dialog delete result modal: backdrop dismiss fires onMutated too', async () => {
+    delDelta = -120;
+    await click(document.getElementById('fillEdit-3')!);
+    await click(document.querySelector('[data-testid="fillDeleteBtn"]')!);
+    await click(button('Delete for real'));
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
+    expect(mutated).toBe(0);
+    await click(document.querySelector('[role="dialog"]')!);
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).toBeNull();
+    expect(mutated).toBe(1);
+  });
+
   // Re-render the shared root with closed bucket 0 (fills 2 and 3 live there).
   async function mountClosedBucketPanel() {
     await act(async () => {

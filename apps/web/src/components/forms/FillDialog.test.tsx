@@ -330,6 +330,43 @@ describe('FillDialog', () => {
     expect(closed).toBe(1);
   });
 
+  it('edit save with a nonzero delta: the X button dismisses and still saves and closes', async () => {
+    deltaCents = -120;
+    await render({ fill: fillDto() });
+    await clickButton('Save');
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
+
+    await act(async () => {
+      document
+        .querySelector('[role="dialog"] button[aria-label="Cancel"]')!
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(saved).toBe(1);
+    expect(closed).toBe(1);
+  });
+
+  it('delete with a nonzero delta: backdrop dismiss saves and closes too', async () => {
+    deltaCents = 80;
+    await render({ fill: fillDto(), deletable: true });
+    await clickButton('Delete');
+    await clickButton('Delete for real');
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
+
+    await act(async () => {
+      document
+        .querySelector('[role="dialog"]')!
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(saved).toBe(1);
+    expect(closed).toBe(1);
+  });
+
   it('edit mode without bucketClosed shows no warning', async () => {
     await render({ fill: fillDto() });
     expect(document.querySelector('[role="dialog"]')!.textContent ?? '').not.toContain('closed position');
