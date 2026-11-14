@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 
 import { installFetchStub, json, restoreFetch } from './fetchStub';
+import type { Route } from './fetchStub';
 
 const realFetch = globalThis.fetch;
 
@@ -88,7 +89,7 @@ describe('installFetchStub', () => {
   });
 
   it('reads route status and json at request time so tests can mutate a route', async () => {
-    const route = { url: '/api/pending/9/confirm', method: 'POST', status: 409, json: { error: 'ticker-mismatch' } };
+    const route: Route = { url: '/api/pending/9/confirm', method: 'POST', status: 409, json: { error: 'ticker-mismatch' } };
     installFetchStub([route]);
 
     expect(await call('/api/pending/9/confirm', { method: 'POST', body: '{}' })).toEqual({
