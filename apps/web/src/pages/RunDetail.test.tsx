@@ -251,15 +251,15 @@ const RUN_WITH_HISTORY = {
 };
 
 // stubFetch variant with a switchable POST /api/runs/1/recalc endpoint.
-function stubFetchWithRecalc(): { recalcFails: boolean } {
+function stubFetchWithRecalc(): { recalcFails: boolean; recalcCode: string } {
   posts = [];
-  const flag = { recalcFails: true };
+  const flag = { recalcFails: true, recalcCode: 'no-run' };
   globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: string }) => {
     const u = String(url);
     if (init?.method === 'POST' && u.endsWith('/recalc')) {
       posts.push({ url: u, body: {} });
       return flag.recalcFails
-        ? new Response(JSON.stringify({ error: 'no-run' }), {
+        ? new Response(JSON.stringify({ error: flag.recalcCode }), {
             status: 422,
             headers: { 'content-type': 'application/json' },
           })
@@ -303,7 +303,7 @@ const recalcPosts = () => posts.filter((p) => p.url.endsWith('/recalc'));
 describe('RunDetailPage history recalc error handling', () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
-  let recalcFlag: { recalcFails: boolean };
+  let recalcFlag: { recalcFails: boolean; recalcCode: string };
 
   beforeEach(async () => {
     recalcFlag = stubFetchWithRecalc();
@@ -324,12 +324,12 @@ describe('RunDetailPage history recalc error handling', () => {
     globalThis.fetch = realFetch;
   });
 
-  it('shows the recalc error code and clears it on the next successful recalc', async () => {
+  it('shows the localized recalc error and clears it on the next successful recalc', async () => {
     await act(async () => {
       buttonByText('Update').click();
     });
     await flush();
-    expect(document.body.textContent).toContain('no-run');
+    expect(document.body.textContent).toContain('Run not found.');
     expect(recalcPosts().length).toBe(1);
 
     recalcFlag.recalcFails = false;
@@ -337,7 +337,26 @@ describe('RunDetailPage history recalc error handling', () => {
       buttonByText('Update').click();
     });
     await flush();
-    expect(document.body.textContent).not.toContain('no-run');
+    expect(document.body.textContent).not.toContain('Run not found.');
     expect(recalcPosts().length).toBe(2);
+  });
+
+  it('localizes known domain error codes instead of showing the raw code', async () => {
+    recalcFlag.recalcCode = 'bucket-not-held';
+    await act(async () => {
+      buttonByText('Update').click();
+    });
+    await flush();
+    expect(document.body.textContent).toContain('This bucket is not currently held.');
+    expect(document.body.textContent).not.toContain('bucket-not-held');
+  });
+
+  it('falls back to the raw code for unknown recalc errors', async () => {
+    recalcFlag.recalcCode = 'zzz';
+    await act(async () => {
+      buttonByText('Update').click();
+    });
+    await flush();
+    expect(document.body.textContent).toContain('zzz');
   });
 });

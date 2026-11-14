@@ -76,7 +76,15 @@ export function RunDetailPage({ id }: { id: number }) {
       await api.recalcRun(id);
       await reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      if (err instanceof ApiError) {
+        // fillErr.* pattern: known recalcErr.* keys read localized, the rest
+        // fall back to the raw server code.
+        const key = `recalcErr.${err.code}`;
+        const msg = t(key);
+        setActionError(msg === key ? err.code : msg);
+      } else {
+        setActionError(err instanceof Error ? err.message : String(err));
+      }
     }
   };
 
