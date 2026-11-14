@@ -1,5 +1,5 @@
 import type { Bucket, ClosedBucket, DayPlan, Notice, PlannedOrder, Run, RunState } from '@st/core'
-import { bucketBudgetCents as coreBucketBudget, ceilCents, floorCents, formatUsd, roundDiv, sellTarget as coreSellTarget } from '@st/core'
+import { bucketBudgetCents as coreBucketBudget, ceilCents, floorCents, formatUsd, nextBuyBucketIndex, roundDiv, sellTarget as coreSellTarget } from '@st/core'
 import { nextTradingDay } from '@st/calendar'
 import type { ISODate } from '@st/core'
 
@@ -84,13 +84,9 @@ export function computeOrders(
   const skips: PlannedOrder[] = []
   const notices: Notice[] = []
 
-  // BUY: lowest-index empty bucket
-  const emptyIndices = state.buckets
-    .filter((b) => b.state === 'empty')
-    .map((b) => b.index)
-    .sort((a, b) => a - b)
-  const lowestEmpty = emptyIndices.length ? emptyIndices[0]! : null
-  if (lowestEmpty === null) {
+  // BUY: next never-used empty bucket (closed buckets only as last resort)
+  const nextBuy = nextBuyBucketIndex(state)
+  if (nextBuy === null) {
     notices.push({ code: 'no-bucket-available' })
   } else {
     const limit = buyLimit(ctx.lastClose, run.buyGapPpm)
@@ -98,7 +94,7 @@ export function computeOrders(
     if (shares === 0) {
       notices.push({ code: 'shares-zero', params: { price: formatUsd(limit) } })
     } else {
-      orders.push({ kind: 'buy_loc', bucketIndex: lowestEmpty, limitPrice: limit, shares })
+      orders.push({ kind: 'buy_loc', bucketIndex: nextBuy, limitPrice: limit, shares })
     }
   }
 

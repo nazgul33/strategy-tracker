@@ -19,6 +19,25 @@ export function emptyState(bucketCount: number): RunState {
   return { buckets, cashCents: 0, closed: [], ages: {} }
 }
 
+/**
+ * Bucket a next buy should take: the lowest empty index never present in
+ * `closed` (never used), else the lowest empty (previously closed) index,
+ * else null when no bucket is empty. Shared by planning and booking so
+ * the two can never drift.
+ */
+export function nextBuyBucketIndex(state: RunState): number | null {
+  const closedIdx = new Set(state.closed.map((c) => c.index))
+  let fresh: number | null = null
+  let fallback: number | null = null
+  for (const b of state.buckets) {
+    if (b.state !== 'empty') continue
+    // Min explicitly so "lowest" never relies on bucket array order.
+    if (closedIdx.has(b.index)) fallback = fallback === null ? b.index : Math.min(fallback, b.index)
+    else fresh = fresh === null ? b.index : Math.min(fresh, b.index)
+  }
+  return fresh ?? fallback
+}
+
 export function advanceDay(state: RunState, maxAgeDays = 20): RunState {
   const next = clone(state)
   for (const b of next.buckets) {
@@ -108,7 +127,20 @@ export function applySellFill(
     nb.filledOn = ''
     delete next.ages[bucketIndex]
   } else {
+    const buyFeePart = Math.round((bucket.buyFeeCents * shares) / bucket.shares)
+    const trancheEntry: ClosedBucket = {
+      index: bucket.index,
+      shares,
+      buyPrice: bucket.buyPrice,
+      soldPrice: price,
+      buyFeeCents: buyFeePart,
+      sellFeeCents: feeCents,
+      openedOn: bucket.filledOn,
+      closedOn,
+    }
+    next.closed = [...next.closed, trancheEntry]
     nb.shares = bucket.shares - shares
+    nb.buyFeeCents = bucket.buyFeeCents - buyFeePart
   }
   next.cashCents += proceeds - feeCents
   return next

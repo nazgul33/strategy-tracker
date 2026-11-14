@@ -478,3 +478,50 @@ describe('booking', () => {
     expect(stored.cancelReason).toBeUndefined()
   })
 })
+
+describe('buy bucket selection', () => {
+  test('manual buy after a closed cycle skips the closed bucket', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'next1', poolCents: 1000000, costPpm: 100, initialRunState: emptyState(3) })
+    // Full cycle in bucket 0: buy then full-size sell (fallback matching) closes it.
+    await manualFill(runId, { side: 'buy', shares: 5, price: '5.00', filledOn: '2026-11-02' }, deps)
+    await manualFill(runId, { side: 'sell', shares: 5, price: '6.00', filledOn: '2026-11-03' }, deps)
+    let state = await f.repos.bucketRepo.loadState(runId)
+    expect(state.buckets[0].state).toBe('empty')
+    expect(state.closed.length).toBe(1)
+    // Next buy must skip closed bucket 0 and take the fresh slot 1.
+    await manualFill(runId, { side: 'buy', shares: 5, price: '5.00', filledOn: '2026-11-04' }, deps)
+    state = await f.repos.bucketRepo.loadState(runId)
+    expect(state.buckets[1].state).toBe('held')
+    expect(state.buckets[0].state).toBe('empty')
+    expect(state.closed.length).toBe(1)
+  })
+
+  test('manual buy reuses lowest closed bucket when all buckets closed', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'next2', poolCents: 1000000, costPpm: 100, initialRunState: emptyState(2) })
+    // Close both buckets: 0, then the never-used 1 (new allocation order).
+    await manualFill(runId, { side: 'buy', shares: 5, price: '5.00', filledOn: '2026-11-02' }, deps)
+    await manualFill(runId, { side: 'sell', shares: 5, price: '6.00', filledOn: '2026-11-03' }, deps)
+    await manualFill(runId, { side: 'buy', shares: 5, price: '5.00', filledOn: '2026-11-03' }, deps)
+    await manualFill(runId, { side: 'sell', shares: 5, price: '6.00', filledOn: '2026-11-04' }, deps)
+    let state = await f.repos.bucketRepo.loadState(runId)
+    expect(state.closed.map((c: any) => c.index).sort((a: number, b: number) => a - b)).toEqual([0, 1])
+    // No never-used empty left: reuse the lowest closed index, 0.
+    await manualFill(runId, { side: 'buy', shares: 5, price: '5.00', filledOn: '2026-11-05' }, deps)
+    state = await f.repos.bucketRepo.loadState(runId)
+    expect(state.buckets[0].state).toBe('held')
+    expect(f._stores.fills[f._stores.fills.length - 1]!.bucketIdx).toBe(0)
+  })
+
+  test('seedRun fills 0,1 in order', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'next3', poolCents: 1000000, costPpm: 100, initialRunState: emptyState(2) })
+    await seedRun(runId, { cashCents: 500, buckets: [{ shares: 5, buyPrice: '10.00', filledOn: '2026-11-03' }, { shares: 3, buyPrice: '12.00', filledOn: '2026-11-04' }] }, deps)
+    const idxs = f._stores.fills.filter((x: any) => x.runId === runId).map((x: any) => x.bucketIdx)
+    expect(idxs).toEqual([0, 1])
+  })
+})

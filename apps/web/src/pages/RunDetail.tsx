@@ -70,6 +70,16 @@ export function RunDetailPage({ id }: { id: number }) {
     }
   };
 
+  const recalc = async () => {
+    setActionError(null);
+    try {
+      await api.recalcRun(id);
+      await reload();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   if (loading && !data) return <Spinner />;
   if (!data) {
     return error ? (
@@ -172,7 +182,7 @@ export function RunDetailPage({ id }: { id: number }) {
         {tab === 'fills' && (
           <FillsPanel key={`f${panelKey}`} runId={id} costPpm={run.costPpm} onMutated={() => { setPanelKey((k) => k + 1); void reload(); }} />
         )}
-        {tab === 'history' && <RunHistory closed={run.state.closed} />}
+        {tab === 'history' && <RunHistory closed={run.state.closed} onRecalc={recalc} />}
         {tab === 'notifications' && <NotificationsPanel key={`n${panelKey}`} runId={id} />}
       </Card>
 

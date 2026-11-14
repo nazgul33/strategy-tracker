@@ -1,5 +1,5 @@
-import { test, expect } from 'bun:test'
-import { emptyState, applyBuyFill, applySellFill, advanceDay } from '../src/fills'
+import { test, expect, describe } from 'bun:test'
+import { emptyState, applyBuyFill, applySellFill, advanceDay, nextBuyBucketIndex } from '../src/fills'
 import { DomainError } from '../src/domain'
 import { roundDiv } from '../src/money'
 
@@ -24,7 +24,12 @@ test('partial sell', () => {
   expect(out.buckets[0]!.state).toBe('held')
   expect(out.buckets[0]!.shares).toBe(180)
   expect(out.buckets[0]!.buyPrice).toBe(1000000n)
-  expect(out.closed.length).toBe(0)
+  // 2026-11-14: partial sells now record a tranche row (spec 2026-11-14-partial-sell-history)
+  expect(out.closed.length).toBe(1)
+  expect(out.closed[0]).toEqual({
+    index: 0, shares: 120, buyPrice: 1000000n, soldPrice: 1020000n,
+    buyFeeCents: 0, sellFeeCents: 21, openedOn: '', closedOn: '',
+  })
   const proceeds = Number(roundDiv(1020000n * 120n, 100n))
   // cash increased by proceeds - 21 relative to after buy
   expect(out.cashCents - b.cashCents).toBe(proceeds - 21)
@@ -38,13 +43,15 @@ test('full sell', () => {
   expect(out.buckets[0]!.state).toBe('empty')
   expect(out.buckets[0]!.shares).toBe(0)
   expect(out.buckets[0]!.buyPrice).toBe(0n)
-  const cb = out.closed[0]!
+  // 2026-11-14: the partial tranche now precedes the closing row (spec 2026-11-14-partial-sell-history)
+  expect(out.closed.length).toBe(2)
+  const cb = out.closed[1]!
   expect(cb.openedOn).toBe('2026-01-02')
   expect(cb.closedOn).toBe('2026-02-05')
-  expect(cb.buyFeeCents).toBe(20)
+  expect(cb.buyFeeCents).toBe(12) // 20 - round(20 * 120 / 300)
   expect(cb.sellFeeCents).toBe(21)
   const realized = Number(roundDiv((cb.soldPrice - cb.buyPrice) * BigInt(cb.shares), 100n)) - cb.buyFeeCents - cb.sellFeeCents
-  expect(realized).toBe(35959)
+  expect(realized).toBe(35967)
 })
 
 test('throws', () => {
@@ -173,4 +180,94 @@ test('state survives JSON round-trip (ages keys become strings)', () => {
   const sold = applySellFill(next, 0, 10, 1000000n, 0, '2026-02-05')
   expect(sold.buckets[0].state).toBe('empty')
   expect(sold.ages[0]).toBeUndefined()
+})
+
+describe('nextBuyBucketIndex', () => {
+  test('fresh state and progressively filled buckets', () => {
+    const s0 = emptyState(3)
+    expect(nextBuyBucketIndex(s0)).toBe(0)
+    const s1 = applyBuyFill(s0, 0, 10, 1000000n, 0)
+    expect(nextBuyBucketIndex(s1)).toBe(1)
+    const s2 = applyBuyFill(s1, 1, 10, 1000000n, 0)
+    expect(nextBuyBucketIndex(s2)).toBe(2)
+    const s3 = applyBuyFill(s2, 2, 10, 1000000n, 0)
+    expect(nextBuyBucketIndex(s3)).toBeNull()
+  })
+
+  test('skips a closed bucket', () => {
+    let s = emptyState(3)
+    s = applyBuyFill(s, 0, 10, 1000000n, 0)
+    s = applySellFill(s, 0, 10, 1000000n, 0, '2026-01-05')
+    // bucket 0 is empty again but closed
+    expect(s.buckets[0]!.state).toBe('empty')
+    expect(s.closed.some((c) => c.index === 0)).toBe(true)
+    expect(nextBuyBucketIndex(s)).toBe(1)
+  })
+
+  test('closed bucket in the middle', () => {
+    let s = emptyState(3)
+    s = applyBuyFill(s, 1, 10, 1000000n, 0)
+    s = applySellFill(s, 1, 10, 1000000n, 0, '2026-01-05')
+    // buckets 0 and 2 are empty and never used
+    expect(nextBuyBucketIndex(s)).toBe(0)
+    s = applyBuyFill(s, 0, 10, 1000000n, 0)
+    expect(nextBuyBucketIndex(s)).toBe(2)
+  })
+
+  test('all closed falls back to the lowest closed index', () => {
+    let s = emptyState(2)
+    s = applyBuyFill(s, 0, 10, 1000000n, 0)
+    s = applySellFill(s, 0, 10, 1000000n, 0, '2026-01-05')
+    s = applyBuyFill(s, 1, 10, 1000000n, 0)
+    s = applySellFill(s, 1, 10, 1000000n, 0, '2026-01-06')
+    expect(s.closed.length).toBe(2)
+    expect(nextBuyBucketIndex(s)).toBe(0)
+  })
+
+  test('held buckets are ignored even when a closed one is free', () => {
+    let s = emptyState(2)
+    s = applyBuyFill(s, 0, 10, 1000000n, 0)
+    s = applySellFill(s, 0, 10, 1000000n, 0, '2026-01-05')
+    s = applyBuyFill(s, 1, 10, 1000000n, 0)
+    // bucket 0 is empty but closed; bucket 1 is held. No never-used bucket
+    // remains, so the fallback takes the free closed bucket 0; the held
+    // bucket 1 does not block the pick. (The plan text said null here, but
+    // null is only for an all-held state with no empty bucket at all — see
+    // docs/superpowers/specs/2026-11-14-buy-next-bucket-design.md.)
+    expect(s.buckets[1]!.state).toBe('held')
+    expect(nextBuyBucketIndex(s)).toBe(0)
+  })
+})
+
+test('partial sell appends a tranche row', () => {
+  const s = emptyState(1); s.cashCents = 0
+  const b = applyBuyFill(s, 0, 300, 1000000n, 7, '2026-01-02')
+  const out = applySellFill(b, 0, 120, 1020000n, 21, '2026-01-09')
+  expect(out.closed.length).toBe(1)
+  expect(out.closed[0]).toEqual({
+    index: 0, shares: 120, buyPrice: 1000000n, soldPrice: 1020000n,
+    buyFeeCents: 3, sellFeeCents: 21, openedOn: '2026-01-02', closedOn: '2026-01-09',
+  })
+  expect(out.buckets[0]!.state).toBe('held')
+  expect(out.buckets[0]!.shares).toBe(180)
+  expect(out.buckets[0]!.buyPrice).toBe(1000000n)
+  expect(out.buckets[0]!.buyFeeCents).toBe(4) // 7 - round(7 * 120 / 300)
+})
+
+test('buy fees sum exactly across partial and closing rows', () => {
+  const s = emptyState(1); s.cashCents = 0
+  const b = applyBuyFill(s, 0, 300, 1000000n, 7, '2026-01-02')
+  const p = applySellFill(b, 0, 120, 1020000n, 21, '2026-01-09')
+  const out = applySellFill(p, 0, 180, 990000n, 25, '2026-02-01')
+  expect(out.closed.length).toBe(2)
+  expect(out.closed.reduce((n, c) => n + c.buyFeeCents, 0)).toBe(7)
+  expect(out.closed.reduce((n, c) => n + c.sellFeeCents, 0)).toBe(46)
+  expect(out.buckets[0]!.state).toBe('empty')
+})
+
+test('over-sell guard survives partial rows', () => {
+  const s = emptyState(1); s.cashCents = 0
+  const b = applyBuyFill(s, 0, 300, 1000000n, 0)
+  const p = applySellFill(b, 0, 250, 1020000n, 0)
+  expect(() => applySellFill(p, 0, 51, 1020000n, 0)).toThrow() // DomainError too-many-shares
 })
