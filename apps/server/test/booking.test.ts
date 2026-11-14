@@ -82,12 +82,6 @@ export function fakeRepos() {
       const gi = fills.findIndex((f) => f.runId === runId && f.id === fillId)
       if (gi >= 0) fills.splice(gi, 1)
     },
-    async deleteLast(runId: number) {
-      const owned = fills.filter((f) => f.runId === runId)
-      if (!owned.length) return
-      const last = owned.reduce((a, b) => (b.id > a.id ? b : a))
-      fills.splice(fills.indexOf(last), 1)
-    },
   }
   const pendingRepo = {
     async insert(p: any) { const id = pendingSeq++; pending.push({ id, ...p }); return id },

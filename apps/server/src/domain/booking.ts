@@ -22,7 +22,6 @@ export interface RepoSurface {
     listForRun?(runId: number): Promise<FillRow[]>
     update?(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number }): Promise<void>
     deleteById?(runId: number, fillId: number): Promise<void>
-    deleteLast?(runId: number): Promise<void>
   }
   pendingRepo: { insert(p: any): Promise<number>; listPending(): Promise<any[]>; decide(id: number, status: string, edited?: any): Promise<boolean> }
   captureRepo: { hasHash(runId: number, hash: string): Promise<boolean>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
@@ -244,7 +243,7 @@ export async function seedRun(runId: number, seed: { cashCents: number; buckets:
 }
 
 // SQL listings carry no ORDER BY, so never trust row-return order: id-ascending
-// is the canonical history order (matches the MAX(id) delete in fillRepo).
+// is the canonical history order (matches the per-bucket MAX(id) guard in deleteFill).
 const byIdAsc = <T extends { id: number }>(rows: readonly T[]): T[] => [...rows].sort((a, b) => a.id - b.id)
 
 // Cash Model A: the run state is fully derived from the starting pool plus the
@@ -302,24 +301,27 @@ export async function rebookFill(runId: number, edit: RebookEdit, deps: BookingD
   return { ...match, shares: edit.shares, price, fee }
 }
 
-// Remove the newest fill and rebuild state from the remaining history. Orders
-// are never reopened. Returns the deleted row; books a compensating 'adjust'.
-export async function deleteLastFill(runId: number, deps: BookingDeps): Promise<FillRow> {
+// Delete any fill that is the newest in its bucket (MAX(id) within bucketIdx).
+// Deletes by id and rebuilds state from the remaining history; orders are never
+// reopened. Returns the deleted row; books a compensating 'adjust'.
+export async function deleteFill(runId: number, fillId: number, deps: BookingDeps): Promise<FillRow> {
   const repos = deps.repos
-  if (!repos.fillRepo.listForRun || !repos.fillRepo.deleteLast) throw new Error('fill-history-unavailable')
+  if (!repos.fillRepo.listForRun || !repos.fillRepo.deleteById) throw new Error('fill-history-unavailable')
   const history = byIdAsc(await repos.fillRepo.listForRun(runId))
-  const last = history[history.length - 1]
-  if (!last) throw new DomainError('no-fill')
+  const fill = history.find((f) => f.id === fillId)
+  if (!fill) throw new DomainError('no-fill')
+  const bucketLast = history.reduce((m, f) => (f.bucketIdx === fill.bucketIdx && f.id > m ? f.id : m), -1)
+  if (fill.id !== bucketLast) throw new DomainError('not-last')
 
   const run = await repos.runRepo.get(runId)
   const state = await repos.bucketRepo.loadState(runId)
-  const rebuilt = rebuildState(history.slice(0, -1), run.poolCents, deps.today, state.buckets.length)
+  const rebuilt = rebuildState(history.filter((f) => f.id !== fillId), run.poolCents, deps.today, state.buckets.length)
 
   const delta = rebuilt.cashCents - state.cashCents
   await repos.bucketRepo.saveState(runId, rebuilt)
-  await repos.fillRepo.deleteLast(runId)
+  await repos.fillRepo.deleteById(runId, fillId)
   if (delta !== 0) {
-    await repos.ledgerRepo.insert({ runId, kind: 'adjust', amountCents: delta, ref: JSON.stringify({ fillId: last.id, bookedOn: deps.today, reason: 'fill-delete' }) })
+    await repos.ledgerRepo.insert({ runId, kind: 'adjust', amountCents: delta, ref: JSON.stringify({ fillId, bookedOn: deps.today, reason: 'fill-delete' }) })
   }
-  return last
+  return fill
 }

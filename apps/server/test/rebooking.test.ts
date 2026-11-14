@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { applyBuyFill, DomainError, emptyState, parseUsd, roundDiv, type ISODate, type RunState } from '@st/core'
 import { ageBuckets, progressView } from '@st/strategies'
-import { deleteLastFill, manualFill, rebookFill, rebuildState, signedCents, type BookingDeps, type FillRow } from '../src/domain/booking'
+import { deleteFill, manualFill, rebookFill, rebuildState, signedCents, type BookingDeps, type FillRow } from '../src/domain/booking'
 import { fakeRepos } from './booking.test'
 
 const TODAY: ISODate = '2026-01-15'
@@ -266,14 +266,14 @@ describe('rebookFill', () => {
   })
 })
 
-describe('deleteLastFill', () => {
+describe('deleteFill', () => {
   test('removes the newest fill and rebuilds state from the rest', async () => {
     const f = fakeRepos()
     const runId = await createRun(f, 100_000, 2)
     await manualFill(runId, { side: 'buy', shares: 10, price: '10.00', fee: '5.00', filledOn: '2026-01-08' }, deps(f))
     await manualFill(runId, { side: 'buy', shares: 5, price: '15.00', fee: '2.50', filledOn: '2026-01-09' }, deps(f))
 
-    const deleted = await deleteLastFill(runId, deps(f))
+    const deleted = await deleteFill(runId, 2, deps(f))
 
     expect(deleted.id).toBe(2)
     expect(f._stores.fills).toHaveLength(1)
@@ -288,7 +288,27 @@ describe('deleteLastFill', () => {
     expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 2, bookedOn: TODAY, reason: 'fill-delete' })
   })
 
-  test('deleteLastFill removes the newest by id even when listForRun returns scrambled order', async () => {
+  test('deletes a bucket-last fill that is not the globally newest fill', async () => {
+    const f = fakeRepos()
+    const runId = await createRun(f, 100_000, 2)
+    await manualFill(runId, { side: 'buy', shares: 10, price: '10.00', fee: '5.00', filledOn: '2026-01-08' }, deps(f)) // id 1, bucket 0
+    await manualFill(runId, { side: 'buy', shares: 5, price: '15.00', fee: '2.50', filledOn: '2026-01-09' }, deps(f)) // id 2, bucket 1
+
+    const deleted = await deleteFill(runId, 1, deps(f))
+
+    expect(deleted.id).toBe(1)
+    expect(f._stores.fills.map((x) => x.id)).toEqual([2])
+    const st = await getState(f, runId)
+    expect(st.buckets[0].state).toBe('empty')
+    expect(st.buckets[1]).toMatchObject({ state: 'held', shares: 5 })
+    expect(st.cashCents).toBe(92_250) // 100_000 − buyEffect('15.00', 5, 250)
+    const adj = adjustRows(f)
+    expect(adj).toHaveLength(1)
+    expect(adj[0]).toMatchObject({ kind: 'adjust', amountCents: 10_500 }) // the removed bucket-0 buy is refunded
+    expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-delete' })
+  })
+
+  test('deleteFill removes a fill by id even when listForRun returns scrambled order', async () => {
     const f = fakeRepos()
     scrambleListForRun(f)
     const runId = await createRun(f, 100_000, 3)
@@ -296,7 +316,7 @@ describe('deleteLastFill', () => {
     await manualFill(runId, { side: 'buy', shares: 5, price: '15.00', fee: '2.50', filledOn: '2026-01-09' }, deps(f)) // id 2
     await manualFill(runId, { side: 'buy', shares: 2, price: '20.00', fee: '1.00', filledOn: '2026-01-09' }, deps(f)) // id 3, the true newest
 
-    const deleted = await deleteLastFill(runId, deps(f))
+    const deleted = await deleteFill(runId, 3, deps(f))
 
     expect(deleted.id).toBe(3)
     expect(f._stores.fills.map((x) => x.id)).toEqual([1, 2])
@@ -312,7 +332,7 @@ describe('deleteLastFill', () => {
     const runId = await createRun(f, 100_000, 2)
     await manualFill(runId, { side: 'buy', shares: 10, price: '10.00', fee: '5.00', filledOn: '2026-01-08' }, deps(f))
 
-    await deleteLastFill(runId, deps(f))
+    await deleteFill(runId, 1, deps(f))
 
     expect(f._stores.fills).toHaveLength(0)
     const st = await getState(f, runId)
@@ -326,10 +346,40 @@ describe('deleteLastFill', () => {
     const f = fakeRepos()
     const runId = await createRun(f, 100_000, 2)
 
-    const err = await expectKind(() => deleteLastFill(runId, deps(f)))
+    const err = await expectKind(() => deleteFill(runId, 1, deps(f)))
 
     expect(err.kind).toBe('no-fill')
     expect((await getState(f, runId)).cashCents).toBe(100_000)
+    expect(adjustRows(f)).toHaveLength(0)
+  })
+
+  test('an older fill of the same bucket is rejected as not-last, state untouched', async () => {
+    const f = fakeRepos()
+    const runId = await createRun(f, 100_000, 2)
+    await manualFill(runId, { side: 'buy', shares: 8, price: '16.00', filledOn: '2026-01-08' }, deps(f)) // id 1, bucket 0
+    await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-01-09', kind: 'sell_loc', bucketIdx: 0, limitPrice: parseUsd('17.00'), shares: 8, status: 'open' }])
+    await manualFill(runId, { side: 'sell', shares: 8, price: '17.00', filledOn: '2026-01-09' }, deps(f)) // id 2, same bucket 0
+    const stateBefore = asJson(await getState(f, runId))
+
+    const err = await expectKind(() => deleteFill(runId, 1, deps(f)))
+
+    expect(err.kind).toBe('not-last')
+    expect(asJson(await getState(f, runId))).toBe(stateBefore)
+    expect(f._stores.fills).toHaveLength(2)
+    expect(adjustRows(f)).toHaveLength(0)
+  })
+
+  test('an unknown fillId fails with no-fill before anything is written', async () => {
+    const f = fakeRepos()
+    const runId = await createRun(f, 100_000, 2)
+    await manualFill(runId, { side: 'buy', shares: 10, price: '10.00', fee: '5.00', filledOn: '2026-01-08' }, deps(f))
+    const stateBefore = asJson(await getState(f, runId))
+
+    const err = await expectKind(() => deleteFill(runId, 99, deps(f)))
+
+    expect(err.kind).toBe('no-fill')
+    expect(asJson(await getState(f, runId))).toBe(stateBefore)
+    expect(f._stores.fills).toHaveLength(1)
     expect(adjustRows(f)).toHaveLength(0)
   })
 
@@ -341,7 +391,7 @@ describe('deleteLastFill', () => {
     await manualFill(runId, { side: 'sell', shares: 8, price: '17.00', filledOn: '2026-01-09' }, deps(f))
     expect((await getState(f, runId)).closed).toHaveLength(1)
 
-    await deleteLastFill(runId, deps(f))
+    await deleteFill(runId, 2, deps(f))
 
     const st = await getState(f, runId)
     expect(st.buckets[0]).toMatchObject({ state: 'held', shares: 8, buyPrice: 160_000n, filledOn: '2026-01-08' })

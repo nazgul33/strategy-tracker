@@ -69,14 +69,9 @@ function makeFakes() {
       if (gi < 0) throw new Error('no fill')
       fills[gi] = { ...fills[gi], ...patch }
     },
-    async deleteLast(runId: number) {
-      const gi = fills.reduce((last: number, x: any, i: number) => (x.runId === runId ? i : last), -1)
-      if (gi < 0) throw new Error('no fill')
-      fills.splice(gi, 1)
-    },
-    async lastId(runId: number) {
-      const ids = fills.filter((x) => x.runId === runId).map((x) => x.id as number)
-      return ids.length ? Math.max(...ids) : null
+    async deleteById(runId: number, fillId: number) {
+      const gi = fills.findIndex((x) => x.runId === runId && x.id === fillId)
+      if (gi >= 0) fills.splice(gi, 1)
     },
   }
   const pendingRepo = {
@@ -1038,13 +1033,33 @@ describe('fill edit + delete endpoints', () => {
     expect(run.progressView.cashCents).toBe(100000)
   })
 
-  test('DELETE older fill id -> 422 not-last, nothing removed', async () => {
+  test('DELETE a bucket-last fill that is not globally newest -> 200', async () => {
     const f = makeFakes()
     const app = createApp(makeDeps(f))
     const auth = await loginAs(app)
     const id = await createRun(app, auth, { name: 'r1', ticker: 'AAPL', costPpm: 0, poolCents: 100000 })
     await postFill(app, auth, id, { side: 'buy', shares: 1, price: '10.0000', filledOn: '2026-11-10' })
     await postFill(app, auth, id, { side: 'buy', shares: 1, price: '11.0000', filledOn: '2026-11-10' })
+    const res = await app.request(`/api/runs/${id}/fills/1`, { method: 'DELETE', headers: auth })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, deletedFillId: 1 })
+    expect(f.fills.map((x: any) => x.id)).toEqual([2])
+    expect(f.states.get(id)!.cashCents).toBe(98900)
+    const last = f.ledger[f.ledger.length - 1]
+    expect(last.kind).toBe('adjust')
+    expect(last.amountCents).toBe(1000)
+    expect(JSON.parse(last.ref)).toEqual({ fillId: 1, bookedOn: '2026-11-10', reason: 'fill-delete' })
+    const rows = await (await app.request(`/api/runs/${id}/fills`, { headers: auth })).json()
+    expect(rows.length).toBe(1)
+  })
+
+  test('DELETE non-newest fill of the same bucket -> 422 not-last', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const auth = await loginAs(app)
+    const id = await createRun(app, auth, { name: 'r1', ticker: 'AAPL', costPpm: 0, poolCents: 100000 })
+    await postFill(app, auth, id, { side: 'buy', shares: 2, price: '10.0000', filledOn: '2026-11-10' })
+    await postFill(app, auth, id, { side: 'sell', shares: 2, price: '11.0000', filledOn: '2026-11-10' })
     const res = await app.request(`/api/runs/${id}/fills/1`, { method: 'DELETE', headers: auth })
     expect(res.status).toBe(422)
     expect(await res.json()).toEqual({ error: 'not-last' })
@@ -1057,10 +1072,24 @@ describe('fill edit + delete endpoints', () => {
     const auth = await loginAs(app)
     const id = await createRun(app, auth, { name: 'r1', ticker: 'AAPL', costPpm: 0, poolCents: 100000 })
     await postFill(app, auth, id, { side: 'buy', shares: 1, price: '10.0000', filledOn: '2026-11-10' })
-    for (const bad of ['abc', '1.5', '-2', '0']) {
+    for (const bad of ['abc', '1.5', '-2']) {
       const res = await app.request(`/api/runs/${id}/fills/${bad}`, { method: 'DELETE', headers: auth })
       expect(res.status).toBe(422)
       expect(await res.json()).toEqual({ error: 'not-last' })
+    }
+    expect(f.fills.length).toBe(1)
+  })
+
+  test('DELETE unknown numeric fillId -> 422 no-fill', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const auth = await loginAs(app)
+    const id = await createRun(app, auth, { name: 'r1', ticker: 'AAPL', costPpm: 0, poolCents: 100000 })
+    await postFill(app, auth, id, { side: 'buy', shares: 1, price: '10.0000', filledOn: '2026-11-10' })
+    for (const bad of ['99', '0']) {
+      const res = await app.request(`/api/runs/${id}/fills/${bad}`, { method: 'DELETE', headers: auth })
+      expect(res.status).toBe(422)
+      expect(await res.json()).toEqual({ error: 'no-fill' })
     }
     expect(f.fills.length).toBe(1)
   })
