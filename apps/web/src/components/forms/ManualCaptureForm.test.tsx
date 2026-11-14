@@ -9,7 +9,8 @@ GlobalRegistrator.register();
 const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { act } = await import('react');
-const { ManualCaptureForm, autoFeeUsd } = await import('./ManualCaptureForm');
+const { ManualCaptureForm } = await import('./ManualCaptureForm');
+const { autoFeeUsd } = await import('./FillDialog');
 
 const d = React.createElement;
 
