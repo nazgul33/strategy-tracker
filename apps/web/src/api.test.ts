@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createApi, usdToCents } from './api';
-import type { Http } from './api';
+import { ApiError, createApi, usdToCents } from './api';
+import type { ApiErrorCode, Http } from './api';
 
 // Users naturally type comma-grouped amounts ("1,000"); core's parseUsd
 // rejects commas, so the web layer strips standard grouping before parsing.
@@ -129,5 +129,37 @@ describe('cancelOrder', () => {
     const http: Http = async () => Response.json({ error: 'invalid-reason' }, { status: 400 });
     const api = createApi(http, { getToken: () => null });
     await expect(api.cancelOrder(4, 9, 'bogus')).rejects.toMatchObject({ status: 400, code: 'invalid-reason' });
+  });
+});
+
+// Typed error codes: ApiError.code is an ApiErrorCode union (server codes +
+// `http-${status}` fallback), not a bare string. Runtime behavior is unchanged;
+// the compile-time contract is what these tests pin down.
+describe('ApiErrorCode', () => {
+  test('server error code rides back unchanged', async () => {
+    const http: Http = async () => Response.json({ error: 'not-last' }, { status: 409 });
+    const api = createApi(http, { getToken: () => null });
+    const err = await api.addManualFill(1, { side: 'buy', shares: 1, price: '1', filledOn: '2026-01-02' }).then(
+      () => null,
+      (e: unknown) => e as ApiError,
+    );
+    expect(err?.code).toBe('not-last');
+  });
+
+  test('non-JSON error body falls back to http-${status}', async () => {
+    const http: Http = async () => new Response('boom', { status: 500 });
+    const api = createApi(http, { getToken: () => null });
+    const err = await api.getRun(1).then(() => null, (e: unknown) => e as ApiError);
+    expect(err?.code).toBe('http-500');
+  });
+
+  // Compile-time assertions: `const code: ApiErrorCode = err.code` only
+  // typechecks once the property is typed as the union (a bare `string` fails),
+  // and the literal fallback only typechecks via the `http-${number}` arm.
+  test('code narrows to the union (compile-time)', () => {
+    const err = new ApiError(409, 'not-last');
+    const code: ApiErrorCode = err.code;
+    const fallback: ApiErrorCode = 'http-500';
+    expect([code, fallback]).toBeTruthy();
   });
 });

@@ -24,8 +24,33 @@ export type * from './api.types';
 
 export type Http = (url: string, init?: RequestInit) => Promise<Response>;
 
+/** Server error codes (Hono routes + domain errors) plus the `http-${status}`
+ * fallback for responses without a JSON `{error}` body. */
+export type ApiErrorCode =
+  | 'unauthorized'
+  | 'not-found'
+  | 'no-run'
+  | 'not-pending'
+  | 'pending-not-pending'
+  | 'ticker-mismatch'
+  | 'order-not-found'
+  | 'order-not-open'
+  | 'invalid-reason'
+  | 'invalid-body'
+  | 'not-last'
+  | 'no-bucket-for-sell'
+  | 'no-fill'
+  | 'invalid-fill'
+  | 'immutable-field'
+  | 'bucket-not-empty'
+  | 'bucket-not-found'
+  | 'bucket-not-held'
+  | 'invalid-shares'
+  | 'too-many-shares'
+  | `http-${number}`;
+
 export class ApiError extends Error {
-  constructor(readonly status: number, readonly code: string) {
+  constructor(readonly status: number, readonly code: ApiErrorCode) {
     super(code);
   }
 }
@@ -233,7 +258,10 @@ async function call<T>(http: Http, url: string, init?: RequestInit): Promise<T> 
   } catch {
     body = {};
   }
-  if (!res.ok) throw new ApiError(res.status, String(body.error ?? `http-${res.status}`));
+  if (!res.ok) {
+    const code = typeof body.error === 'string' ? body.error : `http-${res.status}`;
+    throw new ApiError(res.status, code as ApiErrorCode);
+  }
   return body as T;
 }
 
