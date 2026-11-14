@@ -851,7 +851,7 @@ describe('fill edit + delete endpoints', () => {
       method: 'PUT', body: JSON.stringify({ qty: 300, priceCents: 1005, feeCents: 2855 }), headers: { ...json, ...auth },
     })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true })
+    expect(await res.json()).toEqual({ ok: true, deltaCents: -289902 }) // -204355 - 85547
     // fill row patched: price '10.05' = 100500 myriadths
     expect(f.fills.length).toBe(1)
     expect(f.fills[0].shares).toBe(300)
@@ -888,6 +888,7 @@ describe('fill edit + delete endpoints', () => {
       method: 'PUT', body: JSON.stringify({ qty: 100, priceCents: 5, feeCents: 0 }), headers: { ...json, ...auth },
     })
     expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, deltaCents: 99500 }) // cash 0 -> 99500
     expect(f.fills[0].price).toBe(500n) // '0.05'
     expect(f.states.get(id)!.cashCents).toBe(99500) // 100000 - 500
   })
@@ -1018,7 +1019,7 @@ describe('fill edit + delete endpoints', () => {
     expect(f.states.get(id)!.cashCents).toBe(98000)
     const res = await app.request(`/api/runs/${id}/fills/1`, { method: 'DELETE', headers: auth })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, deletedFillId: 1 })
+    expect(await res.json()).toEqual({ ok: true, deletedFillId: 1, deltaCents: 2000 })
     expect(f.fills.length).toBe(0)
     const state = f.states.get(id)!
     expect(state.cashCents).toBe(100000) // back to the pool
@@ -1042,7 +1043,7 @@ describe('fill edit + delete endpoints', () => {
     await postFill(app, auth, id, { side: 'buy', shares: 1, price: '11.0000', filledOn: '2026-11-10' })
     const res = await app.request(`/api/runs/${id}/fills/1`, { method: 'DELETE', headers: auth })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, deletedFillId: 1 })
+    expect(await res.json()).toEqual({ ok: true, deletedFillId: 1, deltaCents: 1000 })
     expect(f.fills.map((x: any) => x.id)).toEqual([2])
     expect(f.states.get(id)!.cashCents).toBe(98900)
     const last = f.ledger[f.ledger.length - 1]
@@ -1146,7 +1147,7 @@ describe('POST /runs/:id/recalc endpoint', () => {
 
     const res = await app.request(`/api/runs/${id}/recalc`, { method: 'POST', headers: auth })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true })
+    expect(await res.json()).toEqual({ ok: true, deltaCents: 0, fillCount: 2 })
     const st = f.states.get(id)!
     expect(st.cashCents).toBe(cash)
     expect(st.closed.length).toBe(1)
@@ -1168,11 +1169,32 @@ describe('POST /runs/:id/recalc endpoint', () => {
 
     const res = await app.request(`/api/runs/${id}/recalc`, { method: 'POST', headers: auth })
     expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, deltaCents: 0, fillCount: 2 })
     const st = f.states.get(id)!
     expect(st.closed.length).toBe(1)
     expect(st.closed[0].shares).toBe(120)
     expect(st.buckets[0].shares).toBe(180)
     expect(adjustRows(f).length).toBe(0)
+  })
+
+  test('recalc on drifted cash -> reports the delta and books one adjust', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const auth = await loginAs(app)
+    const id = await createRun(app, auth, { name: 'r1', ticker: 'AAPL', costPpm: 0, poolCents: 1_000_000 })
+    await seedPartialSell(app, auth, id)
+    const trueCash = f.states.get(id)!.cashCents
+    // corrupt out-of-band: stored cash overshoots the cash derived from history
+    f.states.get(id)!.cashCents = trueCash + 777
+
+    const res = await app.request(`/api/runs/${id}/recalc`, { method: 'POST', headers: auth })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, deltaCents: -777, fillCount: 2 })
+    expect(f.states.get(id)!.cashCents).toBe(trueCash)
+    const adjusts = adjustRows(f)
+    expect(adjusts.length).toBe(1)
+    expect(adjusts[0].amountCents).toBe(-777)
+    expect(JSON.parse(adjusts[0].ref)).toEqual({ bookedOn: '2026-11-10', reason: 'recalc' })
   })
 
   test('recalc unknown run -> 404 no-run', async () => {

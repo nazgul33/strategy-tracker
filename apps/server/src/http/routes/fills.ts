@@ -20,16 +20,17 @@ export function fillsRouter(deps: HttpDeps): Hono {
       || (feeCents !== null && (!Number.isInteger(feeCents) || feeCents < 0))) return c.json({ error: 'invalid-body' }, 400)
     const run = await deps.repos.runRepo.get(runId)
     if (!run) return c.json({ error: 'no-run' }, 404)
+    let edited: { deltaCents: number }
     try {
       // no cash guard: an oversized qty is the operator's call, books go negative
-      await rebookFill(runId, {
+      edited = await rebookFill(runId, {
         fillId: Number(c.req.param('fillId')), shares: qty, priceStr: centsToStr(priceCents), feeCents: feeCents as number | null,
       }, bookingDeps())
     } catch (e) {
       if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
       throw e
     }
-    return c.json({ ok: true })
+    return c.json({ ok: true, deltaCents: edited.deltaCents })
   })
 
   r.delete('/runs/:id/fills/:fillId', async (c) => {
@@ -39,7 +40,7 @@ export function fillsRouter(deps: HttpDeps): Hono {
     if (!/^\d+$/.test(raw)) return c.json({ error: 'not-last' }, 422)
     const run = await deps.repos.runRepo.get(runId)
     if (!run) return c.json({ error: 'no-run' }, 404)
-    let deleted: { id: number }
+    let deleted: { fill: { id: number }; deltaCents: number }
     try {
       // the domain guards per-bucket newness and books the compensating adjust
       deleted = await deleteFill(runId, Number(raw), bookingDeps())
@@ -47,7 +48,7 @@ export function fillsRouter(deps: HttpDeps): Hono {
       if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
       throw e
     }
-    return c.json({ ok: true, deletedFillId: deleted.id })
+    return c.json({ ok: true, deletedFillId: deleted.fill.id, deltaCents: deleted.deltaCents })
   })
 
   // Re-derive the run state from the fill history without touching any row.
@@ -55,13 +56,14 @@ export function fillsRouter(deps: HttpDeps): Hono {
     const runId = Number(c.req.param('id'))
     const run = await deps.repos.runRepo.get(runId)
     if (!run) return c.json({ error: 'no-run' }, 404)
+    let recalc: { deltaCents: number; fillCount: number }
     try {
-      await recalcRunState(runId, bookingDeps())
+      recalc = await recalcRunState(runId, bookingDeps())
     } catch (e) {
       if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
       throw e
     }
-    return c.json({ ok: true })
+    return c.json({ ok: true, deltaCents: recalc.deltaCents, fillCount: recalc.fillCount })
   })
   return r
 }

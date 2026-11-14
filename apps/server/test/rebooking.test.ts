@@ -90,7 +90,7 @@ describe('rebookFill', () => {
     await manualFill(runId, { side: 'buy', shares: 10, price: '10.00', fee: '5.00', filledOn: '2026-01-08' }, deps(f))
     expect((await getState(f, runId)).cashCents).toBe(89_500)
 
-    await rebookFill(runId, { fillId: 1, shares: 12, priceStr: '18.00', feeCents: 400 }, deps(f))
+    const res = await rebookFill(runId, { fillId: 1, shares: 12, priceStr: '18.00', feeCents: 400 }, deps(f))
 
     const st = await getState(f, runId)
     expect(st.cashCents).toBe(78_000) // 100_000 − (21_600 gross + 400 fee)
@@ -102,6 +102,8 @@ describe('rebookFill', () => {
     expect(adj).toHaveLength(1)
     expect(adj[0]).toMatchObject({ runId, kind: 'adjust', amountCents: buyEffect('18.00', 12, 400) - buyEffect('10.00', 10, 500) }) // −22_000 − (−10_500)
     expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-edit' })
+    expect(res.fill).toMatchObject({ id: 1, runId, bucketIdx: 0, side: 'buy', shares: 12, price: 180_000n, fee: 400, filledOn: '2026-01-08' })
+    expect(res.deltaCents).toBe(adj[0].amountCents)
   })
 
   test('rebooking to the same values leaves cash and ledger untouched', async () => {
@@ -109,12 +111,14 @@ describe('rebookFill', () => {
     const runId = await createRun(f, 100_000, 2)
     await manualFill(runId, { side: 'buy', shares: 10, price: '10.00', fee: '5.00', filledOn: '2026-01-08' }, deps(f))
 
-    await rebookFill(runId, { fillId: 1, shares: 10, priceStr: '10.00', feeCents: 500 }, deps(f))
+    const res = await rebookFill(runId, { fillId: 1, shares: 10, priceStr: '10.00', feeCents: 500 }, deps(f))
 
     const st = await getState(f, runId)
     expect(st.cashCents).toBe(89_500)
     expect(st.buckets[0]).toMatchObject({ state: 'held', shares: 10, buyPrice: 100_000n })
     expect(adjustRows(f)).toHaveLength(0)
+    expect(res.fill).toMatchObject({ id: 1, shares: 10, price: 100_000n, fee: 500 })
+    expect(res.deltaCents).toBe(0)
   })
 
   test('state is derived from the whole history, so editing the first fill is safe', async () => {
@@ -123,7 +127,7 @@ describe('rebookFill', () => {
     await manualFill(runId, { side: 'buy', shares: 10, price: '10.00', fee: '5.00', filledOn: '2026-01-08' }, deps(f))
     await manualFill(runId, { side: 'buy', shares: 5, price: '15.00', fee: '2.50', filledOn: '2026-01-09' }, deps(f))
 
-    await rebookFill(runId, { fillId: 1, shares: 8, priceStr: '12.00', feeCents: 300 }, deps(f))
+    const res = await rebookFill(runId, { fillId: 1, shares: 8, priceStr: '12.00', feeCents: 300 }, deps(f))
 
     const st = await getState(f, runId)
     expect(st.buckets[0]).toMatchObject({ state: 'held', shares: 8, buyPrice: 120_000n, buyFeeCents: 300 })
@@ -132,6 +136,7 @@ describe('rebookFill', () => {
     const adj = adjustRows(f)
     expect(adj).toHaveLength(1)
     expect(adj[0].amountCents).toBe(buyEffect('12.00', 8, 300) - buyEffect('10.00', 10, 500))
+    expect(res.deltaCents).toBe(adj[0].amountCents)
   })
 
   test('editing an early fill keeps later fills — unlike the old undo path', async () => {
@@ -141,7 +146,7 @@ describe('rebookFill', () => {
     await manualFill(runId, { side: 'buy', shares: 20, price: '20.00', fee: '1.00', filledOn: '2026-01-09' }, deps(f))
     await manualFill(runId, { side: 'sell', shares: 10, price: '21.00', fee: '0.50', filledOn: '2026-01-12' }, deps(f))
 
-    await rebookFill(runId, { fillId: 1, shares: 12, priceStr: '18.00', feeCents: 400 }, deps(f))
+    const res = await rebookFill(runId, { fillId: 1, shares: 12, priceStr: '18.00', feeCents: 400 }, deps(f))
 
     const st = await getState(f, runId)
     expect(st.buckets[0]).toMatchObject({ state: 'held', shares: 12, buyPrice: 180_000n })
@@ -166,6 +171,7 @@ describe('rebookFill', () => {
     expect(adj).toHaveLength(1)
     expect(adj[0].amountCents).toBe(buyEffect('18.00', 12, 400) - buyEffect('10.00', 3, 500))
     expect(JSON.parse(adj[0].ref).reason).toBe('fill-edit')
+    expect(res.deltaCents).toBe(adj[0].amountCents)
   })
 
   test('resolves the target fill even when listForRun returns scrambled order', async () => {
@@ -175,7 +181,7 @@ describe('rebookFill', () => {
     await manualFill(runId, { side: 'buy', shares: 5, price: '15.00', fee: '2.50', filledOn: '2026-01-09' }, deps(f))
     scrambleListForRun(f) // listForRun now yields fills in order [2, 1]
 
-    await rebookFill(runId, { fillId: 1, shares: 8, priceStr: '12.00', feeCents: 300 }, deps(f))
+    const res = await rebookFill(runId, { fillId: 1, shares: 8, priceStr: '12.00', feeCents: 300 }, deps(f))
 
     expect(f._stores.fills.find((x: any) => x.id === 1)).toMatchObject({ shares: 8, price: 120_000n, fee: 300 })
     expect(f._stores.fills.find((x: any) => x.id === 2)).toMatchObject({ shares: 5, price: 150_000n, fee: 250 })
@@ -186,6 +192,8 @@ describe('rebookFill', () => {
     const adj = adjustRows(f)
     expect(adj).toHaveLength(1)
     expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-edit' })
+    expect(res.fill).toMatchObject({ id: 1, shares: 8, price: 120_000n, fee: 300 })
+    expect(res.deltaCents).toBe(adj[0].amountCents)
   })
 
   test('rebooking a buy whose bucket was later sold keeps closed and realized consistent', async () => {
@@ -199,7 +207,7 @@ describe('rebookFill', () => {
     expect(before.closed[0]).toMatchObject({ index: 0, buyFeeCents: 500, sellFeeCents: 0 })
     expect(progressView(before).realizedCents).toBe(10_000 - 500)
 
-    await rebookFill(runId, { fillId: 1, shares: 10, priceStr: '10.00', feeCents: 900 }, deps(f))
+    const res = await rebookFill(runId, { fillId: 1, shares: 10, priceStr: '10.00', feeCents: 900 }, deps(f))
 
     const st = await getState(f, runId)
     expect(st.buckets[0].state).toBe('empty')
@@ -211,6 +219,7 @@ describe('rebookFill', () => {
     expect(adj).toHaveLength(1)
     expect(adj[0].amountCents).toBe(buyEffect('10.00', 10, 900) - buyEffect('10.00', 10, 500)) // −400
     expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-edit' })
+    expect(res.deltaCents).toBe(-400)
   })
 
   test('an upward edit that drives cash negative persists — the run keeps going', async () => {
@@ -218,13 +227,14 @@ describe('rebookFill', () => {
     const runId = await createRun(f, 2_000, 2)
     await manualFill(runId, { side: 'buy', shares: 1, price: '10.00', filledOn: '2026-01-08' }, deps(f))
 
-    await rebookFill(runId, { fillId: 1, shares: 100, priceStr: '100.00', feeCents: 0 }, deps(f))
+    const res = await rebookFill(runId, { fillId: 1, shares: 100, priceStr: '100.00', feeCents: 0 }, deps(f))
 
     const st = await getState(f, runId)
     expect(st.cashCents).toBe(2_000 + buyEffect('100.00', 100))
     expect(st.cashCents).toBeLessThan(0)
     expect(f._stores.fills[0].shares).toBe(100)
     expect(adjustRows(f)).toHaveLength(1)
+    expect(res.deltaCents).toBe(buyEffect('100.00', 100) - buyEffect('10.00', 1))
   })
 
   test('editing a sell is rejected as immutable, state untouched', async () => {
@@ -286,9 +296,9 @@ describe('deleteFill', () => {
     await manualFill(runId, { side: 'buy', shares: 10, price: '10.00', fee: '5.00', filledOn: '2026-01-08' }, deps(f))
     await manualFill(runId, { side: 'buy', shares: 5, price: '15.00', fee: '2.50', filledOn: '2026-01-09' }, deps(f))
 
-    const deleted = await deleteFill(runId, 2, deps(f))
+    const res = await deleteFill(runId, 2, deps(f))
 
-    expect(deleted.id).toBe(2)
+    expect(res.fill.id).toBe(2)
     expect(f._stores.fills).toHaveLength(1)
     expect(f._stores.fills[0].shares).toBe(10)
     const st = await getState(f, runId)
@@ -299,6 +309,7 @@ describe('deleteFill', () => {
     expect(adj).toHaveLength(1)
     expect(adj[0]).toMatchObject({ kind: 'adjust', amountCents: 7_750 }) // the removed buy is refunded
     expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 2, bookedOn: TODAY, reason: 'fill-delete' })
+    expect(res.deltaCents).toBe(7_750)
   })
 
   test('deletes a bucket-last fill that is not the globally newest fill', async () => {
@@ -307,9 +318,9 @@ describe('deleteFill', () => {
     await manualFill(runId, { side: 'buy', shares: 10, price: '10.00', fee: '5.00', filledOn: '2026-01-08' }, deps(f)) // id 1, bucket 0
     await manualFill(runId, { side: 'buy', shares: 5, price: '15.00', fee: '2.50', filledOn: '2026-01-09' }, deps(f)) // id 2, bucket 1
 
-    const deleted = await deleteFill(runId, 1, deps(f))
+    const res = await deleteFill(runId, 1, deps(f))
 
-    expect(deleted.id).toBe(1)
+    expect(res.fill.id).toBe(1)
     expect(f._stores.fills.map((x) => x.id)).toEqual([2])
     const st = await getState(f, runId)
     expect(st.buckets[0].state).toBe('empty')
@@ -319,6 +330,7 @@ describe('deleteFill', () => {
     expect(adj).toHaveLength(1)
     expect(adj[0]).toMatchObject({ kind: 'adjust', amountCents: 10_500 }) // the removed bucket-0 buy is refunded
     expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-delete' })
+    expect(res.deltaCents).toBe(10_500)
   })
 
   test('deleteFill removes a fill by id even when listForRun returns scrambled order', async () => {
@@ -329,15 +341,16 @@ describe('deleteFill', () => {
     await manualFill(runId, { side: 'buy', shares: 5, price: '15.00', fee: '2.50', filledOn: '2026-01-09' }, deps(f)) // id 2
     await manualFill(runId, { side: 'buy', shares: 2, price: '20.00', fee: '1.00', filledOn: '2026-01-09' }, deps(f)) // id 3, the true newest
 
-    const deleted = await deleteFill(runId, 3, deps(f))
+    const res = await deleteFill(runId, 3, deps(f))
 
-    expect(deleted.id).toBe(3)
+    expect(res.fill.id).toBe(3)
     expect(f._stores.fills.map((x) => x.id)).toEqual([1, 2])
     const st = await getState(f, runId)
     expect(st.buckets[2].state).toBe('empty')
     const adj = adjustRows(f)
     expect(adj[0]).toMatchObject({ amountCents: -buyEffect('20.00', 2, 100) }) // refunds only the id-3 buy
     expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 3, bookedOn: TODAY, reason: 'fill-delete' })
+    expect(res.deltaCents).toBe(-buyEffect('20.00', 2, 100))
   })
 
   test('deleting the only fill returns the run to the starting pool', async () => {
@@ -345,8 +358,10 @@ describe('deleteFill', () => {
     const runId = await createRun(f, 100_000, 2)
     await manualFill(runId, { side: 'buy', shares: 10, price: '10.00', fee: '5.00', filledOn: '2026-01-08' }, deps(f))
 
-    await deleteFill(runId, 1, deps(f))
+    const res = await deleteFill(runId, 1, deps(f))
 
+    expect(res.fill.id).toBe(1)
+    expect(res.deltaCents).toBe(10_500)
     expect(f._stores.fills).toHaveLength(0)
     const st = await getState(f, runId)
     expect(st.cashCents).toBe(100_000)
@@ -404,14 +419,16 @@ describe('deleteFill', () => {
     await manualFill(runId, { side: 'sell', shares: 8, price: '17.00', filledOn: '2026-01-09' }, deps(f))
     expect((await getState(f, runId)).closed).toHaveLength(1)
 
-    await deleteFill(runId, 2, deps(f))
+    const res = await deleteFill(runId, 2, deps(f))
 
+    expect(res.fill.id).toBe(2)
     const st = await getState(f, runId)
     expect(st.buckets[0]).toMatchObject({ state: 'held', shares: 8, buyPrice: 160_000n, filledOn: '2026-01-08' })
     expect(st.closed).toHaveLength(0)
     expect(st.ages[0]).toBe(ageOf('2026-01-08'))
     expect(st.cashCents).toBe(100_000 + buyEffect('16.00', 8))
     expect(adjustRows(f)[0].amountCents).toBe(-sellEffect('17.00', 8))
+    expect(res.deltaCents).toBe(-sellEffect('17.00', 8))
     const order = f._stores.orders.find((o: any) => o.kind === 'sell_loc')
     expect(order.status).toBe('filled') // orders never reopen on delete
   })
