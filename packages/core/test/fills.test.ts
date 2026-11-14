@@ -24,7 +24,12 @@ test('partial sell', () => {
   expect(out.buckets[0]!.state).toBe('held')
   expect(out.buckets[0]!.shares).toBe(180)
   expect(out.buckets[0]!.buyPrice).toBe(1000000n)
-  expect(out.closed.length).toBe(0)
+  // 2026-11-14: partial sells now record a tranche row (spec 2026-11-14-partial-sell-history)
+  expect(out.closed.length).toBe(1)
+  expect(out.closed[0]).toEqual({
+    index: 0, shares: 120, buyPrice: 1000000n, soldPrice: 1020000n,
+    buyFeeCents: 0, sellFeeCents: 21, openedOn: '', closedOn: '',
+  })
   const proceeds = Number(roundDiv(1020000n * 120n, 100n))
   // cash increased by proceeds - 21 relative to after buy
   expect(out.cashCents - b.cashCents).toBe(proceeds - 21)
@@ -38,13 +43,15 @@ test('full sell', () => {
   expect(out.buckets[0]!.state).toBe('empty')
   expect(out.buckets[0]!.shares).toBe(0)
   expect(out.buckets[0]!.buyPrice).toBe(0n)
-  const cb = out.closed[0]!
+  // 2026-11-14: the partial tranche now precedes the closing row (spec 2026-11-14-partial-sell-history)
+  expect(out.closed.length).toBe(2)
+  const cb = out.closed[1]!
   expect(cb.openedOn).toBe('2026-01-02')
   expect(cb.closedOn).toBe('2026-02-05')
-  expect(cb.buyFeeCents).toBe(20)
+  expect(cb.buyFeeCents).toBe(12) // 20 - round(20 * 120 / 300)
   expect(cb.sellFeeCents).toBe(21)
   const realized = Number(roundDiv((cb.soldPrice - cb.buyPrice) * BigInt(cb.shares), 100n)) - cb.buyFeeCents - cb.sellFeeCents
-  expect(realized).toBe(35959)
+  expect(realized).toBe(35967)
 })
 
 test('throws', () => {
@@ -230,4 +237,37 @@ describe('nextBuyBucketIndex', () => {
     expect(s.buckets[1]!.state).toBe('held')
     expect(nextBuyBucketIndex(s)).toBe(0)
   })
+})
+
+test('partial sell appends a tranche row', () => {
+  const s = emptyState(1); s.cashCents = 0
+  const b = applyBuyFill(s, 0, 300, 1000000n, 7, '2026-01-02')
+  const out = applySellFill(b, 0, 120, 1020000n, 21, '2026-01-09')
+  expect(out.closed.length).toBe(1)
+  expect(out.closed[0]).toEqual({
+    index: 0, shares: 120, buyPrice: 1000000n, soldPrice: 1020000n,
+    buyFeeCents: 3, sellFeeCents: 21, openedOn: '2026-01-02', closedOn: '2026-01-09',
+  })
+  expect(out.buckets[0]!.state).toBe('held')
+  expect(out.buckets[0]!.shares).toBe(180)
+  expect(out.buckets[0]!.buyPrice).toBe(1000000n)
+  expect(out.buckets[0]!.buyFeeCents).toBe(4) // 7 - round(7 * 120 / 300)
+})
+
+test('buy fees sum exactly across partial and closing rows', () => {
+  const s = emptyState(1); s.cashCents = 0
+  const b = applyBuyFill(s, 0, 300, 1000000n, 7, '2026-01-02')
+  const p = applySellFill(b, 0, 120, 1020000n, 21, '2026-01-09')
+  const out = applySellFill(p, 0, 180, 990000n, 25, '2026-02-01')
+  expect(out.closed.length).toBe(2)
+  expect(out.closed.reduce((n, c) => n + c.buyFeeCents, 0)).toBe(7)
+  expect(out.closed.reduce((n, c) => n + c.sellFeeCents, 0)).toBe(46)
+  expect(out.buckets[0]!.state).toBe('empty')
+})
+
+test('over-sell guard survives partial rows', () => {
+  const s = emptyState(1); s.cashCents = 0
+  const b = applyBuyFill(s, 0, 300, 1000000n, 0)
+  const p = applySellFill(b, 0, 250, 1020000n, 0)
+  expect(() => applySellFill(p, 0, 51, 1020000n, 0)).toThrow() // DomainError too-many-shares
 })
