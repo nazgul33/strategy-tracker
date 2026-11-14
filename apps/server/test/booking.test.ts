@@ -78,6 +78,10 @@ export function fakeRepos() {
       const f = fills.find((x) => x.runId === runId && x.id === fillId)
       if (f) Object.assign(f, patch)
     },
+    async deleteById(runId: number, fillId: number) {
+      const gi = fills.findIndex((f) => f.runId === runId && f.id === fillId)
+      if (gi >= 0) fills.splice(gi, 1)
+    },
     async deleteLast(runId: number) {
       const owned = fills.filter((f) => f.runId === runId)
       if (!owned.length) return

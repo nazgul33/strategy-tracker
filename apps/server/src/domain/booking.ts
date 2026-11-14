@@ -21,6 +21,7 @@ export interface RepoSurface {
     // Optional until the db repos implement them.
     listForRun?(runId: number): Promise<FillRow[]>
     update?(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number }): Promise<void>
+    deleteById?(runId: number, fillId: number): Promise<void>
     deleteLast?(runId: number): Promise<void>
   }
   pendingRepo: { insert(p: any): Promise<number>; listPending(): Promise<any[]>; decide(id: number, status: string, edited?: any): Promise<boolean> }

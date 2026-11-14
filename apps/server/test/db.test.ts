@@ -168,7 +168,7 @@ describeIf('db integration', () => {
     expect((await repos.orderRepo.get(open.id))!.cancelReason).toBe('stale-price')
   })
 
-  test('fillRepo: update is run-scoped, listForRun is id-ascending, deleteLast peels newest id', async () => {
+  test('fillRepo: update is run-scoped, listForRun is id-ascending, deleteById is run-scoped', async () => {
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'FE' + Date.now(), name: 'fill-edit-' + Date.now(), poolCents: 1000, costPpm: 10 })
     const otherId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'FX' + Date.now(), name: 'fill-edit-other-' + Date.now(), poolCents: 1000, costPpm: 10 })
     await repos.fillRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker: 'F', shares: 10, price: 1000000n, fee: 5, filledOn: '2026-01-05', source: 'manual' })
@@ -211,20 +211,27 @@ describeIf('db integration', () => {
     expect(shuffled.map((f: any) => f.id)).toEqual([hi, hi + 10])
     expect(shuffled.map((f: any) => f.shares)).toEqual([20, 12])
 
-    // deleteLast follows the domain's byIdAsc 'last' semantics: only the
-    // newest-id row goes, the other run's fill survives
-    await repos.fillRepo.deleteLast(runId)
-    let after = await repos.fillRepo.listForRun(runId)
-    expect(after.length).toBe(1)
-    expect(after[0].id).toBe(hi)
-    expect(after[0].shares).toBe(20)
+    // deleteById is run-scoped: a foreign id must not touch either run
+    await repos.fillRepo.deleteById(runId, foreignId)
+    expect((await repos.fillRepo.listForRun(runId)).map((f: any) => f.id)).toEqual([hi, hi + 10])
     expect((await repos.fillRepo.listForRun(otherId)).length).toBe(1)
 
-    await repos.fillRepo.deleteLast(runId)
-    expect(await repos.fillRepo.listForRun(runId)).toEqual([])
+    // own id deletes exactly that row, not merely the newest
+    await repos.fillRepo.deleteById(runId, hi)
+    let after = await repos.fillRepo.listForRun(runId)
+    expect(after.length).toBe(1)
+    expect(after[0].id).toBe(hi + 10)
+    expect(after[0].shares).toBe(12)
+    expect((await repos.fillRepo.listForRun(otherId)).length).toBe(1)
 
-    // deleteLast on an empty run is a harmless no-op
-    await repos.fillRepo.deleteLast(runId)
+    // a not-present id is a harmless no-op
+    await repos.fillRepo.deleteById(runId, 99999999)
+    expect((await repos.fillRepo.listForRun(runId)).map((f: any) => f.id)).toEqual([hi + 10])
+
+    // empties the run, and a repeat call on the now-empty run is a no-op
+    await repos.fillRepo.deleteById(runId, hi + 10)
+    expect(await repos.fillRepo.listForRun(runId)).toEqual([])
+    await repos.fillRepo.deleteById(runId, hi + 10)
     expect(await repos.fillRepo.listForRun(runId)).toEqual([])
   })
 })
