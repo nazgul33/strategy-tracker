@@ -19,7 +19,12 @@ table rows for every deletable fill.
 - Safety rule: a fill is deletable iff it has the highest id among the fills of
   its own `bucketIdx`. A same-bucket older fill must be rejected
   (`DomainError('not-last')`) because a later same-bucket fill depends on it.
-  Unknown id → `DomainError('no-fill')`.
+  Unknown id → `DomainError('no-fill')`. SHIPPED DEVIATION: the web
+   derives the deletable set client-side from the id-ascending fills list
+   (`newestPerBucket` in `FillsPanel`) — the `fills` DTO carries no
+   `lastId` flag. The spec's "`fills` return list gains a per-row `lastId`
+   boolean" line was superseded during implementation; `lastId` now refers
+   only to the removed legacy `fillRepo.lastId` helper.
 - HTTP contract (`DELETE /api/runs/:id/fills/:fillId`, auth enforced by app
   middleware): 404 `no-run`; non-numeric fillId → 422 `not-last` (route-level
   guard); everything else delegated to the domain, `DomainError.kind` → 422
