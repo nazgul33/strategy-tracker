@@ -72,10 +72,12 @@ interface FetchCall {
 const realFetch = globalThis.fetch;
 let calls: FetchCall[] = [];
 let failDelete = false;
+let delDelta = 0; // deltaCents returned by the DELETE stub
 
 function stubFetch() {
   calls = [];
   failDelete = false;
+  delDelta = 0;
   globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: string }) => {
     const u = String(url);
     const method = init?.method ?? 'GET';
@@ -87,7 +89,8 @@ function stubFetch() {
           headers: { 'content-type': 'application/json' },
         });
       }
-      const payload = method === 'DELETE' ? { ok: true, deletedFillId: 3 } : { ok: true };
+      const payload =
+      method === 'DELETE' ? { ok: true, deletedFillId: 3, deltaCents: delDelta } : { ok: true };
       return new Response(JSON.stringify(payload), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -258,6 +261,33 @@ describe('FillsPanel', () => {
     expect(del[0]!.url).toContain('/api/runs/7/fills/3');
     expect(mutated).toBe(1);
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('row delete with a nonzero delta: result modal first, OK dismisses and fires onMutated', async () => {
+    delDelta = 80;
+    await click(document.getElementById('fillDelete-1')!);
+    await click(button('Delete for real'));
+
+    // Confirm modal is gone; the result modal is up with the booked adjustment.
+    expect(document.body.textContent ?? '').toContain('Recalculation complete');
+    expect(document.body.textContent ?? '').toContain('$0.80');
+    expect(mutated).toBe(0);
+
+    await click(button('OK'));
+    expect(document.body.textContent ?? '').not.toContain('Recalculation complete');
+    expect(mutated).toBe(1);
+  });
+
+  it('dialog delete with a nonzero delta also gates onMutated behind the OK', async () => {
+    delDelta = -120;
+    await click(document.getElementById('fillEdit-3')!);
+    await click(document.querySelector('[data-testid="fillDeleteBtn"]')!);
+    await click(button('Delete for real'));
+    // FillDialog's own success step holds onSaved, so onMutated waits for OK.
+    expect(document.body.textContent ?? '').toContain('-$1.20');
+    expect(mutated).toBe(0);
+    await click(button('OK'));
+    expect(mutated).toBe(1);
   });
 
   // Re-render the shared root with closed bucket 0 (fills 2 and 3 live there).

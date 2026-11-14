@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { feeCents, parseUsd } from '@st/core/money';
 import { api, ApiError, usdFeeOrNull, usdOrNull, type FillUpdatePayload, type ManualFillInput } from '../../api';
 import { useT } from '../../i18n';
-import { centsToUsdText, isoDate, priceInputValue, todayIso, usdTextToCents } from '../../format';
+import { centsToUsdText, isoDate, priceInputValue, signedCentsUsd, todayIso, usdTextToCents } from '../../format';
 import type { FillDto } from '../../api.types';
 import { Button, Field, Input, Modal, Select } from '../ui';
 
@@ -60,6 +60,9 @@ export function FillDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // Booked cash delta returned by the last successful save/delete; while set,
+  // the render swaps the form for a success step (null = no result yet).
+  const [doneResult, setDoneResult] = useState<number | null>(null);
 
   const showFailure = (err: unknown) => {
     if (err instanceof ApiError) {
@@ -122,10 +125,16 @@ export function FillDialog({
     }
     setBusy(true);
     try {
-      if (payload && fill) await api.updateFill(runId, fill.id, payload);
+      let deltaCents: number | undefined;
+      if (payload && fill) deltaCents = (await api.updateFill(runId, fill.id, payload)).deltaCents;
       else if (input) await api.addManualFill(runId, input);
-      onSaved();
-      onClose();
+      // A nonzero delta means the save re-booked cash on a closed bucket: keep
+      // the dialog open on a success step so the number is actually seen.
+      if (deltaCents !== undefined && deltaCents !== 0) setDoneResult(deltaCents);
+      else {
+        onSaved();
+        onClose();
+      }
     } catch (err) {
       showFailure(err);
     } finally {
@@ -138,9 +147,13 @@ export function FillDialog({
     setBusy(true);
     setError(null);
     try {
-      await api.deleteFill(runId, fill.id);
-      onSaved();
-      onClose();
+      const res = await api.deleteFill(runId, fill.id);
+      // Same contract as submit(): a booked adjustment gets its own step.
+      if (res.deltaCents !== 0) setDoneResult(res.deltaCents);
+      else {
+        onSaved();
+        onClose();
+      }
     } catch (err) {
       showFailure(err);
       setConfirming(false);
@@ -159,6 +172,27 @@ export function FillDialog({
   const closedNote = bucketClosed && (
     <p className="rounded-md bg-warning/10 px-2 py-1.5 text-sm text-warning">{t('closedFillWarning')}</p>
   );
+
+  // Save/delete booked a cash adjustment: the form is replaced by a summary
+  // the operator has to acknowledge; OK is what notifies the parent.
+  if (doneResult !== null) {
+    return (
+      <Modal title={t('recalcDone.title')} onClose={onClose}>
+        <p className="text-sm">{t('recalcDone.adjusted', { delta: signedCentsUsd(doneResult) })}</p>
+        <div className="mt-4 flex justify-end">
+          <Button
+            variant="primary"
+            onClick={() => {
+              onSaved();
+              onClose();
+            }}
+          >
+            {t('recalcDone.ok')}
+          </Button>
+        </div>
+      </Modal>
+    );
+  }
 
   if (confirming && fill) {
     return (

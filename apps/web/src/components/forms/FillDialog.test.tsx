@@ -27,6 +27,7 @@ interface FetchCall {
 const realFetch = globalThis.fetch;
 let calls: FetchCall[] = [];
 let putFailure: { status: number; error: string } | null = null;
+let deltaCents = 0; // booked cash adjustment returned by the PUT/DELETE stubs
 
 function setInputValue(el: HTMLInputElement, value: string) {
   // Bypass React's value tracker so onChange fires (same as user typing).
@@ -113,6 +114,7 @@ describe('FillDialog', () => {
     putFailure = null;
     saved = 0;
     closed = 0;
+    deltaCents = 0;
     globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: string }) => {
       const method = String(init?.method ?? 'GET');
       const u = String(url);
@@ -123,7 +125,10 @@ describe('FillDialog', () => {
           headers: { 'content-type': 'application/json' },
         });
       }
-      const body = method === 'DELETE' ? { ok: true, deletedFillId: 3 } : { ok: true, fill: { id: 3 } };
+      const body =
+        method === 'DELETE'
+          ? { ok: true, deletedFillId: 3, deltaCents }
+          : { ok: true, fill: { id: 3 }, deltaCents };
       return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
     }) as unknown as typeof fetch;
     container = document.createElement('div');
@@ -290,6 +295,36 @@ describe('FillDialog', () => {
     expect(document.querySelector('[role="dialog"]')!.textContent ?? '').toContain(
       'This fill belongs to a closed position. Saving re-derives all later history and may book a cash adjustment.',
     );
+  });
+
+  it('edit save with a nonzero delta: success step shows the summary, OK saves and closes', async () => {
+    deltaCents = -120;
+    await render({ fill: fillDto() });
+    await clickButton('Save');
+    // Form replaced by the booked-adjustment summary; nothing propagates yet.
+    expect(document.getElementById('manualSharesInput')).toBeNull();
+    expect(document.body.textContent ?? '').toContain('-$1.20');
+    expect(document.body.textContent ?? '').not.toContain('Rebuilt run state');
+    expect(saved).toBe(0);
+    expect(closed).toBe(0);
+
+    await clickButton('OK');
+    expect(saved).toBe(1);
+    expect(closed).toBe(1);
+  });
+
+  it('delete with a nonzero delta: same success step, OK saves and closes', async () => {
+    deltaCents = 80;
+    await render({ fill: fillDto(), deletable: true });
+    await clickButton('Delete');
+    await clickButton('Delete for real');
+    expect(document.body.textContent ?? '').toContain('$0.80');
+    expect(saved).toBe(0);
+    expect(closed).toBe(0);
+
+    await clickButton('OK');
+    expect(saved).toBe(1);
+    expect(closed).toBe(1);
   });
 
   it('edit mode without bucketClosed shows no warning', async () => {

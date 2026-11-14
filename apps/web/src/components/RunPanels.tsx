@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import { api, type FillDto } from '../api';
 import { useAsync } from '../components/hooks';
+import { signedCentsUsd } from '../format';
 import { FillTable } from './FillTable';
 import { FillDialog } from './forms/FillDialog';
 import { NoticeList } from './NoticeList';
@@ -111,16 +112,20 @@ export function FillsPanel({
   const [confirmDel, setConfirmDel] = useState<FillDto | null>(null);
   const [busy, setBusy] = useState(false);
   const [delError, setDelError] = useState(false);
+  // Booked cash delta from the last row delete; while set, a result modal
+  // holds onMutated back until the operator acknowledges it (null = none).
+  const [delResult, setDelResult] = useState<number | null>(null);
 
   const submitDelete = async () => {
     if (!confirmDel) return;
     setBusy(true);
     setDelError(false);
     try {
-      await api.deleteFill(runId, confirmDel.id);
+      const res = await api.deleteFill(runId, confirmDel.id);
       setConfirmDel(null);
       await reload();
-      onMutated?.();
+      if (res.deltaCents !== 0) setDelResult(res.deltaCents);
+      else onMutated?.();
     } catch {
       setDelError(true);
     } finally {
@@ -175,6 +180,22 @@ export function FillsPanel({
             <Button onClick={() => setConfirmDel(null)}>{t('cancel')}</Button>
             <Button variant="danger" busy={busy} onClick={() => void submitDelete()}>
               {t('dialog.deleteConfirm')}
+            </Button>
+          </div>
+        </Modal>
+      )}
+      {delResult !== null && (
+        <Modal title={t('recalcDone.title')} onClose={() => setDelResult(null)}>
+          <p className="text-sm">{t('recalcDone.adjusted', { delta: signedCentsUsd(delResult) })}</p>
+          <div className="mt-4 flex justify-end">
+            <Button
+              variant="primary"
+              onClick={() => {
+                setDelResult(null);
+                onMutated?.();
+              }}
+            >
+              {t('recalcDone.ok')}
             </Button>
           </div>
         </Modal>
