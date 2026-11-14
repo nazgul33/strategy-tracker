@@ -4,9 +4,9 @@ import { useState } from 'react';
 
 import { api, type FillDto } from '../api';
 import { useAsync } from '../components/hooks';
-import { signedCentsUsd } from '../format';
 import { FillTable } from './FillTable';
 import { FillDialog } from './forms/FillDialog';
+import { RecalcResultModal, type RecalcResult } from './RecalcSummary';
 import { NoticeList } from './NoticeList';
 import { OrderTable } from './OrderTable';
 import { Button, ErrorNote, Input, Modal, Select, Spinner } from './ui';
@@ -112,9 +112,9 @@ export function FillsPanel({
   const [confirmDel, setConfirmDel] = useState<FillDto | null>(null);
   const [busy, setBusy] = useState(false);
   const [delError, setDelError] = useState(false);
-  // Booked cash delta from the last row delete; while set, a result modal
-  // holds onMutated back until the operator acknowledges it (null = none).
-  const [delResult, setDelResult] = useState<number | null>(null);
+  // Booked cash delta from the last row delete; while set, the shared result
+  // modal holds onMutated back until it is dismissed (null = none).
+  const [delResult, setDelResult] = useState<RecalcResult | null>(null);
 
   const submitDelete = async () => {
     if (!confirmDel) return;
@@ -124,7 +124,7 @@ export function FillsPanel({
       const res = await api.deleteFill(runId, confirmDel.id);
       setConfirmDel(null);
       await reload();
-      if (res.deltaCents !== 0) setDelResult(res.deltaCents);
+      if (res.deltaCents !== 0) setDelResult({ deltaCents: res.deltaCents });
       else onMutated?.();
     } catch {
       setDelError(true);
@@ -185,20 +185,13 @@ export function FillsPanel({
         </Modal>
       )}
       {delResult !== null && (
-        <Modal title={t('recalcDone.title')} onClose={() => setDelResult(null)}>
-          <p className="text-sm">{t('recalcDone.adjusted', { delta: signedCentsUsd(delResult) })}</p>
-          <div className="mt-4 flex justify-end">
-            <Button
-              variant="primary"
-              onClick={() => {
-                setDelResult(null);
-                onMutated?.();
-              }}
-            >
-              {t('recalcDone.ok')}
-            </Button>
-          </div>
-        </Modal>
+        <RecalcResultModal
+          result={delResult}
+          onClose={() => {
+            setDelResult(null);
+            onMutated?.();
+          }}
+        />
       )}
     </>
   );

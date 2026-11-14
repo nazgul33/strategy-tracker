@@ -74,7 +74,8 @@ export function RunDetailPage({ id }: { id: number }) {
     setActionError(null);
     try {
       const res = await api.recalcRun(id);
-      setRecalcResult({ deltaCents: res.deltaCents, fillCount: res.fillCount });
+      // fillCount is only reported by the recalc endpoint (never absent here).
+      setRecalcResult({ deltaCents: res.deltaCents, fillCount: res.fillCount! });
       await reload();
     } catch (err) {
       if (err instanceof ApiError) {

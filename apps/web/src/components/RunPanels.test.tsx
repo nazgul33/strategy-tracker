@@ -271,6 +271,7 @@ describe('FillsPanel', () => {
     // Confirm modal is gone; the result modal is up with the booked adjustment.
     expect(document.body.textContent ?? '').toContain('Recalculation complete');
     expect(document.body.textContent ?? '').toContain('$0.80');
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
     expect(mutated).toBe(0);
 
     await click(button('OK'));
@@ -285,6 +286,7 @@ describe('FillsPanel', () => {
     await click(button('Delete for real'));
     // FillDialog's own success step holds onSaved, so onMutated waits for OK.
     expect(document.body.textContent ?? '').toContain('-$1.20');
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
     expect(mutated).toBe(0);
     await click(button('OK'));
     expect(mutated).toBe(1);

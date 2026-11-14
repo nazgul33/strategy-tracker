@@ -305,6 +305,8 @@ describe('FillDialog', () => {
     expect(document.getElementById('manualSharesInput')).toBeNull();
     expect(document.body.textContent ?? '').toContain('-$1.20');
     expect(document.body.textContent ?? '').not.toContain('Rebuilt run state');
+    // The shared result popup is what renders here, not an ad-hoc copy.
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
     expect(saved).toBe(0);
     expect(closed).toBe(0);
 
@@ -319,6 +321,7 @@ describe('FillDialog', () => {
     await clickButton('Delete');
     await clickButton('Delete for real');
     expect(document.body.textContent ?? '').toContain('$0.80');
+    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
     expect(saved).toBe(0);
     expect(closed).toBe(0);
 
