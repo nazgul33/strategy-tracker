@@ -1,10 +1,12 @@
 // Closed buckets ("history"): P&L derived from the booked fill numbers only
 // (myriadths bigint math, never floats) — display of what the server booked.
+import { useState } from 'react';
+
 import type { ClosedBucketDto } from '../api';
 import { daysBetween, toneFor, pnlBadgeTone } from '../viewmodels';
 import { isoDate, priceUsd, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
-import { Badge, EmptyNote, TableWrap, Td, Th } from './ui';
+import { Badge, Button, EmptyNote, TableWrap, Td, Th } from './ui';
 
 const TEXT_TONE = { positive: 'text-positive', negative: 'text-destructive', neutral: '' } as const;
 
@@ -16,9 +18,19 @@ export function closedPnlCents(c: ClosedBucketDto): number {
   return Number(rounded);
 }
 
-export function RunHistory({ closed }: { closed: ClosedBucketDto[] }) {
+export function RunHistory({ closed, onRecalc }: { closed: ClosedBucketDto[]; onRecalc?: () => Promise<void> }) {
   const t = useT();
+  const [busy, setBusy] = useState<number | null>(null);
   if (closed.length === 0) return <EmptyNote>{t('historyEmpty')}</EmptyNote>;
+  const handle = async (i: number) => {
+    if (!onRecalc) return;
+    setBusy(i);
+    try {
+      await onRecalc();
+    } finally {
+      setBusy(null);
+    }
+  };
   return (
     <TableWrap>
       <thead>
@@ -31,14 +43,15 @@ export function RunHistory({ closed }: { closed: ClosedBucketDto[] }) {
           <Th className="text-right">{t('historyColSell')}</Th>
           <Th className="text-right">{t('historyColPnl')}</Th>
           <Th className="text-right">{t('historyColDays')}</Th>
+          {onRecalc && <Th className="text-right">{t('historyColActions')}</Th>}
         </tr>
       </thead>
       <tbody>
-        {closed.map((c) => {
+        {closed.map((c, i) => {
           const pnl = closedPnlCents(c);
           const tone = toneFor(pnl);
           return (
-            <tr key={`${c.index}-${c.closedOn}`}>
+            <tr key={`${c.index}-${i}`}>
               <Td className="text-right tabular-nums">{c.index + 1}</Td>
               <Td className="whitespace-nowrap tabular-nums">{isoDate(c.openedOn)}</Td>
               <Td className="whitespace-nowrap tabular-nums">{isoDate(c.closedOn)}</Td>
@@ -51,6 +64,13 @@ export function RunHistory({ closed }: { closed: ClosedBucketDto[] }) {
                 </Badge>
               </Td>
               <Td className="text-right tabular-nums">{daysBetween(c.openedOn, c.closedOn)}</Td>
+              {onRecalc && (
+                <Td className="text-right">
+                  <Button disabled={busy !== null} onClick={() => void handle(i)}>
+                    {t('updateButton')}
+                  </Button>
+                </Td>
+              )}
             </tr>
           );
         })}

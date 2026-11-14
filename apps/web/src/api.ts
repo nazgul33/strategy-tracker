@@ -118,6 +118,8 @@ export interface Api {
   addManualFill(runId: number, fill: ManualFillInput): Promise<void>;
   updateFill(runId: number, fillId: number, body: FillUpdatePayload): Promise<{ ok: true }>;
   deleteFill(runId: number, fillId: number): Promise<{ ok: true; deletedFillId: number }>;
+  /** Recompute run state from booked fills: 200 `{ok:true}`, 404 `no-run`, 422 domain error kind. */
+  recalcRun(runId: number): Promise<void>;
   triggerMorning(): Promise<string>;
   listPending(): Promise<PendingFillDto[]>;
   confirmPending(id: number, overrides?: { shares?: number; price?: string; filledOn?: string }): Promise<void>;
@@ -189,6 +191,7 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
       send<{ ok: true }>('PUT', `/api/runs/${runId}/fills/${fillId}`, { ...body, feeCents: body.feeCents ?? null }),
     deleteFill: (runId, fillId) =>
       send<{ ok: true; deletedFillId: number }>('DELETE', `/api/runs/${runId}/fills/${fillId}`),
+    recalcRun: (runId) => send<{ ok: true }>('POST', `/api/runs/${runId}/recalc`).then(() => undefined),
     triggerMorning: () => send<{ result: string }>('POST', '/api/trigger/morning').then((r) => r.result),
     listPending: () => get<PendingFillDto[]>('/api/pending'),
     confirmPending: (id, overrides) =>
