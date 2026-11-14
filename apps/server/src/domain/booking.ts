@@ -324,3 +324,24 @@ export async function deleteFill(runId: number, fillId: number, deps: BookingDep
   }
   return fill
 }
+
+// Re-derive the run state from the full fill history (Cash Model A) and store
+// it, without touching fills, orders or pending rows. Repairs state corrupted
+// out-of-band (e.g. legacy rows predating partial-sell tranches). If the stored
+// cash drifted from the derived cash, book one compensating 'adjust' row so the
+// ledger keeps matching reality. Returns the rebuilt state.
+export async function recalcRunState(runId: number, deps: BookingDeps): Promise<RunState> {
+  const repos = deps.repos
+  if (!repos.fillRepo.listForRun) throw new Error('fill-history-unavailable')
+  const history = byIdAsc(await repos.fillRepo.listForRun(runId))
+  const run = await repos.runRepo.get(runId)
+  const state = await repos.bucketRepo.loadState(runId)
+  const rebuilt = rebuildState(history, run.poolCents, deps.today, state.buckets.length)
+
+  const delta = rebuilt.cashCents - state.cashCents
+  await repos.bucketRepo.saveState(runId, rebuilt)
+  if (delta !== 0) {
+    await repos.ledgerRepo.insert({ runId, kind: 'adjust', amountCents: delta, ref: JSON.stringify({ bookedOn: deps.today, reason: 'recalc' }) })
+  }
+  return rebuilt
+}
