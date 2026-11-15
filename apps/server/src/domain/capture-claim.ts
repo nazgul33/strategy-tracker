@@ -1,4 +1,14 @@
-import type { RepoSurface } from './booking'
+// Only the repo methods the claim needs, declared here so this module stays
+// independent of booking.ts (which imports claimCapture, never the other way
+// round). RepoSurface satisfies it structurally.
+export interface CaptureClaimRepos {
+  captureRepo: {
+    findByHash(runId: number, hash: string): Promise<{ id: number } | null>
+    setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void>
+    insert(c: any): Promise<{ inserted: boolean; id?: number }>
+  }
+  pendingRepo: { listPending(): Promise<Array<{ captureId: number | null }>> }
+}
 
 // Resolves which `captures` row a read of this image attaches to. A seen image
 // is re-read onto its existing row unless one of that row's fills still awaits
@@ -6,14 +16,14 @@ import type { RepoSurface } from './booking'
 // Must run inside the run lock: the lookup, the status write and the caller's
 // pending inserts are one decide→write span.
 export async function claimCapture(
-  repos: Pick<RepoSurface, 'captureRepo' | 'pendingRepo'>,
+  repos: CaptureClaimRepos,
   runId: number,
   hash: string,
   status: 'parsed' | 'unparseable',
 ): Promise<number | null> {
   const existing = await repos.captureRepo.findByHash(runId, hash)
   if (existing) {
-    const live = (await repos.pendingRepo.listPending()).some((p: any) => p.captureId === existing.id)
+    const live = (await repos.pendingRepo.listPending()).some((p) => p.captureId === existing.id)
     if (live) return null
     await repos.captureRepo.setStatus(existing.id, status)
     return existing.id

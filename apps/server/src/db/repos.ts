@@ -163,8 +163,8 @@ export function getRepos(db: any) {
         .where(and(eq(s.captures.runId, runId), eq(s.captures.imageHash, hash))).limit(1)
       return rows[0] ?? null
     },
-    async setStatus(id: number, status: string): Promise<void> {
-      await db.update(s.captures).set({ status: status as any }).where(eq(s.captures.id, id))
+    async setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void> {
+      await db.update(s.captures).set({ status }).where(eq(s.captures.id, id))
     },
     async insert(c: any): Promise<{ inserted: boolean; id?: number }> {
       try {

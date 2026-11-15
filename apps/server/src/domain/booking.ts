@@ -30,7 +30,7 @@ export interface RepoSurface {
     deleteById?(runId: number, fillId: number): Promise<void>
   }
   pendingRepo: { insert(p: any): Promise<number>; listPending(): Promise<any[]>; decide(id: number, status: string, edited?: any): Promise<boolean> }
-  captureRepo: { findByHash(runId: number, hash: string): Promise<{ id: number; status: string } | null>; setStatus(id: number, status: string): Promise<void>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
+  captureRepo: { findByHash(runId: number, hash: string): Promise<{ id: number; status: string } | null>; setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
   ledgerRepo: { insert(l: any): Promise<any>; listForRun(runId: number): Promise<any[]> }
   notificationRepo: { insert(n: any): Promise<any> }
 }
