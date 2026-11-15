@@ -114,9 +114,10 @@ booked price is right": while the fill still matches the correction's snapshot, 
 same fill + same proposed price is never proposed again, whatever screenshot it comes
 from. The same holds for an open correction (it is reused, not duplicated). Once the
 fill is hand-edited the old row is stale (the same predicate that sets `stale` on the
-Pending page), so it no longer blocks and a new correction may be proposed. A *different* proposed price for the same fill is
-a new correction. An `applied` correction never suppresses anything (if the fill is
-later hand-edited back and a screenshot disagrees again, a new correction appears).
+Pending page), so it no longer blocks and a new correction may be proposed. A
+*different* proposed price for the same fill is a new correction. An `applied`
+correction never suppresses anything (if the fill is later hand-edited back and a
+screenshot disagrees again, a new correction appears).
 
 ### Capture flow (`apps/server/src/domain/booking.ts` / `capture-dedup.ts`)
 

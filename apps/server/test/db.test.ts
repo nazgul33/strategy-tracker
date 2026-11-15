@@ -427,7 +427,14 @@ describeIf('db integration', () => {
     const after = await repos.fillRepo.listForRun(runId)
     expect(after.length).toBe(bookedBefore.length)
     const sell1111 = after.find((f: any) => f.side === 'sell' && f.filledOn === '2026-11-11')
+    expect(sell1111).toBeDefined()
     expect(sell1111.price).toBe(parseUsd('64.07'))
+    const buy1110 = after.find((f: any) => f.side === 'buy' && f.filledOn === '2026-11-10')
+    expect(buy1110).toBeDefined()
+    expect(buy1110.price).toBe(parseUsd('56.06'))
+    const sell1112 = after.find((f: any) => f.side === 'sell' && f.filledOn === '2026-11-12')
+    expect(sell1112).toBeDefined()
+    expect(sell1112.price).toBe(parseUsd('65.53'))
     expect((await repos.correctionRepo.get(correctionId)).status).toBe('applied')
 
     // the capture is no longer live: correction applied, its pending buy rejected
@@ -436,6 +443,7 @@ describeIf('db integration', () => {
     const second: any = await ingestCapture(runId, image, ext, deps)
     expect(second).not.toBe('duplicate')
     expect(second.pending.length).toBe(1)
+    expect(second.pending[0].side).toBe('buy')
     expect(second.pending[0].shares).toBe(78)
     expect(second.conflicts).toBeUndefined()
   })
