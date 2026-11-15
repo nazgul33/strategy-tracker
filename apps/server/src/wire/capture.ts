@@ -7,7 +7,7 @@ import type { Lang } from '@st/telegram/i18n';
 import { confirmPendingFill, ingestCapture } from '../domain/booking';
 import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/booking';
 
-type PendingRow = { id: number; side: string; ticker: string; shares: number; price: bigint | string; bucketIdx: number | null; status: string };
+type PendingRow = { id: number; side: string; ticker: string; shares: number; price: bigint | string; bucketIdx: number | null; filledOn: string; status: string };
 
 export interface CaptureRepos extends RepoSurface {
   pendingRepo: RepoSurface['pendingRepo'] & { get(id: number): Promise<PendingRow | null> };
@@ -138,6 +138,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
         side: row.side,
         shares: row.shares,
         price: row.price,
+        date: row.filledOn,
       });
       await deps.send(chatId, text, { reply_markup: buildPendingKeyboard(String(row.id)) });
     }
@@ -168,7 +169,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       const price = typeof row.price === 'string' ? row.price : formatUsd(row.price);
       await deps.send(
         chatId,
-        t('booked', lang, { ticker: row.ticker, side: row.side, shares: row.shares, price, bucket: row.bucketIdx ?? 0 }),
+        t('booked', lang, { ticker: row.ticker, side: row.side, shares: row.shares, price, bucket: row.bucketIdx ?? 0, date: row.filledOn }),
       );
     } else {
       const row = await deps.repos.pendingRepo.get(id);
