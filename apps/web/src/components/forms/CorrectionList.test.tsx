@@ -211,6 +211,34 @@ describe('CorrectionList', () => {
     expect(changed).toBe(1);
   });
 
+  it('422 apply shows the localized fill error', async () => {
+    stub([ROW], [{ method: 'POST', url: '/api/corrections/1/apply', status: 422, json: { error: 'invalid-fill' } }]);
+    await render();
+
+    await click('Apply');
+
+    expect(container.textContent).toContain('Fill does not match this bucket — delete it and re-enter.');
+  });
+
+  it('unknown 422 code falls back to the raw code', async () => {
+    stub([ROW], [{ method: 'POST', url: '/api/corrections/1/apply', status: 422, json: { error: 'weird-kind' } }]);
+    await render();
+
+    await click('Apply');
+
+    expect(container.textContent).toContain('weird-kind');
+  });
+
+  it('apply with onChanged given loads the list exactly once more', async () => {
+    stub([ROW], [{ method: 'POST', url: '/api/corrections/1/apply', json: { ok: true, deltaCents: 5 } }]);
+    await render({ onChanged: () => {} });
+    expect(gets).toBe(1);
+
+    await click('Apply');
+
+    expect(gets).toBe(2);
+  });
+
   it("runId filter hides other runs' corrections", async () => {
     stub([ROW, { ...ROW, id: 2, runId: 8, fillId: 9, ticker: 'TQQQ' }]);
     await render({ runId: 7 });

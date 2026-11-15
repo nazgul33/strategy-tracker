@@ -46,6 +46,12 @@ export function CorrectionList({
         setActionError(t('correctionAlreadyHandled'));
         await reload();
         onChanged?.();
+      } else if (err instanceof ApiError) {
+        // Same rule as FillDialog: known fillErr.* codes read localized, the
+        // rest fall back to the raw server code (ApiError.message).
+        const key = `fillErr.${err.code}`;
+        const msg = t(key);
+        setActionError(msg === key ? err.message : msg);
       } else {
         setActionError(err instanceof Error ? err.message : String(err));
       }

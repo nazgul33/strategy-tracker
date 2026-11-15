@@ -194,6 +194,7 @@
   "pendingFeeOverride": "Fee",
   "pendingInvalidOverride": "Enter a positive number, or leave blank.",
   "pendingNeedsOverride": "This pending fill is missing data — confirm it with at least one of the fields below filled in.",
+  "pendingPageTitle": "Pending",
   "pendingPriceOverride": "Price",
   "pendingQtyOverride": "Qty",
   "pendingReject": "Reject",

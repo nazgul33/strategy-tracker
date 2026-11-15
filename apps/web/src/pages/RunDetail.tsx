@@ -191,11 +191,11 @@ export function RunDetailPage({ id }: { id: number }) {
         {tab === 'orders' && <OrdersPanel runId={id} />}
         {tab === 'pending' && (
           <div className="space-y-6">
+            {/* No remount key: CorrectionList reloads itself after an action. */}
             <CorrectionList
-              key={`c${panelKey}`}
               runId={id}
               onChanged={() => {
-                setPanelKey((k) => k + 1);
+                setPanelKey((k) => k + 1); // re-read PendingTable only
                 void reload();
               }}
             />
