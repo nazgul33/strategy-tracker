@@ -36,11 +36,11 @@ const ROW: PendingFillDto = {
   createdAt: '2026-11-10T14:30:00Z',
 };
 
-// GET /api/pending always returns [ROW]; every POST (the confirm) replies
-// 409 with the given server error code.
+// GET /api/pending always returns [row] (default ROW); every POST (the
+// confirm) replies 409 with the given server error code.
 let gets = 0;
 
-function stubFetch(confirmCode: string) {
+function stubFetch(confirmCode: string, row: PendingFillDto = ROW) {
   gets = 0;
   installFetchStub([
     { method: 'POST', url: '/api/pending', status: 409, json: { error: confirmCode } },
@@ -50,7 +50,7 @@ function stubFetch(confirmCode: string) {
       // reload counter the integrity-guard assertions read via pendingGets().
       get json() {
         gets += 1;
-        return [ROW];
+        return [row];
       },
     },
   ]);
@@ -131,5 +131,25 @@ describe('PendingTable', () => {
 
     expect(container.textContent).toContain('Already handled');
     expect(pendingGets()).toBe(2);
+  });
+
+  it('trade date column shows the detected date above the override input', async () => {
+    stubFetch('conflict');
+    await renderTable(root);
+    const cell = container.querySelectorAll('tbody tr td')[0]!;
+    expect(cell.textContent).toContain('2026-11-10');
+    const input = cell.querySelector('input[type=date]') as HTMLInputElement | null;
+    expect(input).toBeTruthy();
+    expect(input!.value).toBe('');
+  });
+
+  it('empty detected trade date renders an em dash and keeps the flagged override input', async () => {
+    stubFetch('conflict', { ...ROW, filledOn: '' });
+    await renderTable(root);
+    const cell = container.querySelectorAll('tbody tr td')[0]!;
+    expect(cell.textContent).toContain('—');
+    const input = cell.querySelector('input[type=date]') as HTMLInputElement | null;
+    expect(input).toBeTruthy();
+    expect(input!.className).toContain('border-warning');
   });
 });
