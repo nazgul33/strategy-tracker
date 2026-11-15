@@ -236,10 +236,10 @@ export async function rollStale(tradeDate: ISODate, deps: BookingDeps): Promise<
 
 export const CANCEL_REASONS = ['broker-filled', 'strategy-change', 'stale-price', 'other'] as const
 
-export async function cancelOrder(runId: number, orderId: number, reason: string, deps: BookingDeps): Promise<any> {
+export async function cancelOrder(runId: number, orderId: number, reason: string, deps: BookingDeps): Promise<OrderRow & { cancelReason: string }> {
   if (!(CANCEL_REASONS as readonly string[]).includes(reason)) throw new Error('invalid-reason')
   const repos = deps.repos
-  const order = await repos.orderRepo.get(orderId)
+  const order: OrderRow | null = await repos.orderRepo.get(orderId)
   if (!order || order.runId !== runId) throw new Error('order-not-found')
   if (order.status !== 'open') throw new Error('order-not-open')
   await repos.orderRepo.setStatus(orderId, 'cancelled', reason)

@@ -242,8 +242,9 @@ export function runsRouter(deps: HttpDeps): Hono {
     const id = Number(c.req.param('id'))
     const orderId = Number(c.req.param('orderId'))
     const body = await c.req.json().catch(() => ({}))
+    let order
     try {
-      await cancelOrder(id, orderId, body?.reason, { repos: deps.repos as any, today: deps.today() })
+      order = await cancelOrder(id, orderId, body?.reason, { repos: deps.repos as any, today: deps.today() })
     } catch (e: any) {
       const code = e?.message
       if (code === 'invalid-reason') return c.json({ error: 'invalid-reason' }, 400)
@@ -251,13 +252,12 @@ export function runsRouter(deps: HttpDeps): Hono {
       if (code === 'order-not-open') return c.json({ error: 'order-not-open' }, 409)
       return c.json({ error: code ?? 'error' }, 422)
     }
-    const order = (await deps.repos.orderRepo.get(orderId))!
     const lang = deps.defaultSettings.digestLang
     const text = tgT('order-cancelled', lang, {
       kind: order.kind,
       bucket: order.bucketIdx,
       price: formatUsd(order.limitPrice),
-      reason: tgT('reason-' + body.reason, lang),
+      reason: tgT('reason-' + order.cancelReason, lang),
     })
     for (const chatId of deps.allowedChatIds) {
       await deps.repos.notificationRepo.insert({ runId: id, chatId, text })
