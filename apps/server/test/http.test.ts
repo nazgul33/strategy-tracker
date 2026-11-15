@@ -85,7 +85,7 @@ function makeFakes() {
     },
     async get(id: number) { return pending.find((x) => x.id === id) ?? null },
   }
-  const captureRepo = { async hasHash() { return false }, async insert(c: any) { return { inserted: true, id: 1 } } }
+  const captureRepo = { async findByHash() { return null }, async setStatus() {}, async insert(c: any) { return { inserted: true, id: 1 } } }
   const ledgerRepo = {
     async insert(l: any) { ledger.push({ id: ledger.length + 1, ...l }) },
     async listForRun(runId: number) { return ledger.filter((l) => l.runId === runId) },

@@ -150,7 +150,14 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
     },
   };
   const captureRepo = {
-    hasHash: async (runId: number, imageHash: string) => captures.some((c) => c.runId === runId && c.imageHash === imageHash),
+    findByHash: async (runId: number, imageHash: string) => {
+      const c = captures.find((x) => x.runId === runId && x.imageHash === imageHash);
+      return c ? { id: c.id, status: c.status } : null;
+    },
+    setStatus: async (id: number, status: string) => {
+      const c = captures.find((x) => x.id === id);
+      if (c) c.status = status;
+    },
     insert: async (c: { runId: number; chatId: string | null; imageHash: string; status: string }) => {
       if (captures.some((x) => x.runId === c.runId && x.imageHash === c.imageHash)) return { inserted: false as const };
       captures.push({ id: captures.length + 1, runId: c.runId, imageHash: c.imageHash, status: c.status });
@@ -281,6 +288,16 @@ describe('capture onPhoto — dedup and failures', () => {
     expect(h.pending.length).toBe(1);
     expect(h.sent.length).toBe(2);
     expect(h.sent[1]!.text).toBe('Duplicate capture — all fills already booked or pending.');
+  });
+
+  test('same image after rejecting its fill is read again', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    await h.handlers.onConfirm(`no:${h.pending[0]!.id}`, false);
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(h.captures.length).toBe(1);
+    expect(h.pending.map((p) => p.status)).toEqual(['rejected', 'pending']);
+    expect(h.sent.at(-1)!.text).not.toBe('Duplicate capture — all fills already booked or pending.');
   });
 
   test('extract failure: no pending row, user sees the reason, admin notified', async () => {

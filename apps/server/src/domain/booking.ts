@@ -3,6 +3,7 @@ import { feeCents, centsFromUsd, formatUsd } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { ExtractResult, RawFill } from '@st/ingest'
 import { matchCapturedFills, type CaptureConflict } from './capture-dedup'
+import { claimCapture } from './capture-claim'
 import { withRunLock } from './run-lock'
 
 // The conflict shape belongs to the dedup matcher; re-exported so the booking
@@ -29,7 +30,7 @@ export interface RepoSurface {
     deleteById?(runId: number, fillId: number): Promise<void>
   }
   pendingRepo: { insert(p: any): Promise<number>; listPending(): Promise<any[]>; decide(id: number, status: string, edited?: any): Promise<boolean> }
-  captureRepo: { hasHash(runId: number, hash: string): Promise<boolean>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
+  captureRepo: { findByHash(runId: number, hash: string): Promise<{ id: number; status: string } | null>; setStatus(id: number, status: string): Promise<void>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
   ledgerRepo: { insert(l: any): Promise<any>; listForRun(runId: number): Promise<any[]> }
   notificationRepo: { insert(n: any): Promise<any> }
 }
@@ -138,25 +139,15 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
   const hash = await sha256(buf)
   const repos = deps.repos
 
-  if (await repos.captureRepo.hasHash(runId, hash)) {
-    await repos.captureRepo.insert({ runId, chatId: null, imageHash: hash, status: 'duplicate' })
-    return 'duplicate'
-  }
-
-  if (!extract.ok) {
-    await repos.captureRepo.insert({ runId, chatId: null, imageHash: hash, status: 'unparseable' })
-    return 'rejected'
-  }
-
-  const res = await repos.captureRepo.insert({ runId, chatId: null, imageHash: hash, status: 'parsed' })
-  if (!res.inserted) return 'duplicate'
-  const captureId = res.id!
-
-  // Dedup reads and the pending inserts are one decide→write span: a concurrent
-  // capture of the same trades must see the first one's rows, not re-book them.
-  // Runs under the per-run lock, so this must never nest with another
-  // withRunLock on this runId.
+  // The capture claim, dedup reads and the pending inserts are one decide→write
+  // span: a concurrent capture of the same image or trades must see the first
+  // one's rows, not re-book them. Runs under the per-run lock, so this must
+  // never nest with another withRunLock on this runId.
   return withRunLock(runId, async () => {
+    const captureId = await claimCapture(repos, runId, hash, extract.ok ? 'parsed' : 'unparseable')
+    if (captureId === null) return 'duplicate'
+    if (!extract.ok) return 'rejected'
+
     const { fresh, conflicts } = await matchCapturedFills(repos, runId, extract.fills, deps.today)
     if (fresh.length === 0 && conflicts.length === 0) return 'duplicate'
 
