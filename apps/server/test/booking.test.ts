@@ -7,6 +7,7 @@ import {
   ingestCapture, confirmPendingFill, manualFill, rollStale, seedRun, sha256, cancelOrder,
   type BookingDeps, type PendingFillRow,
 } from '../src/domain/booking'
+import { withRunLock } from '../src/domain/run-lock'
 
 function serializeState(state: RunState): string {
   return JSON.stringify(state, (_, v) => typeof v === 'bigint' ? v.toString() : v)
@@ -376,6 +377,31 @@ describe('booking', () => {
     f.repos.captureRepo.insert = origInsert
   })
 
+  test('concurrent confirms on one run serialize', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'cc', poolCents: 1_000_000, costPpm: 100, initialRunState: emptyState(2) })
+    const pid1 = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 5, price: parseUsd('10.00'), fee: null, filledOn: '2026-11-06', status: 'pending' })
+    const pid2 = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 5, price: parseUsd('10.00'), fee: null, filledOn: '2026-11-06', status: 'pending' })
+    let inflight = 0, maxInflight = 0
+    const origLoad = f.repos.bucketRepo.loadState
+    f.repos.bucketRepo.loadState = async (rid: number) => {
+      inflight++
+      maxInflight = Math.max(maxInflight, inflight)
+      await new Promise((r) => setTimeout(r, 1))
+      const s = await origLoad(rid)
+      inflight--
+      return s
+    }
+    await Promise.all([confirmPendingFill(pid1, null, deps), confirmPendingFill(pid2, null, deps)])
+    f.repos.bucketRepo.loadState = origLoad
+    expect(maxInflight).toBe(1)
+    const idxs = f._stores.fills.map((x: any) => x.bucketIdx).sort((a: number, b: number) => a - b)
+    expect(idxs).toEqual([0, 1])
+    const state = await f.repos.bucketRepo.loadState(runId)
+    expect(state.buckets.filter((b: any) => b.state === 'held').length).toBe(2)
+  })
+
   test('declared fee pending used verbatim', async () => {
     const f = fakeRepos()
     const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
@@ -627,5 +653,39 @@ describe('capture dedup against booked fills and pending rows', () => {
       trade('buy', 88, '56.06'),
     ), deps) as any
     expect(out.pending.length).toBe(5)
+  })
+
+  test('concurrent identical captures serialize: second returns duplicate', async () => {
+    const { f, deps, runId } = await setup('race1')
+    const slow = (obj: any, keys: string[]) => { for (const k of keys) { const orig = obj[k]; obj[k] = (...a: any[]) => new Promise((res) => setTimeout(() => res(orig(...a)), 1)) } }
+    slow(f.repos.pendingRepo, ['insert', 'listPending'])
+    slow(f.repos.fillRepo, ['listForRun', 'insert'])
+    const out = await Promise.all([
+      ingestCapture(runId, img('RACE-A'), ext(trade('buy', 10, '58.32', '2026-11-15')), deps),
+      ingestCapture(runId, img('RACE-B'), ext(trade('buy', 10, '58.32', '2026-11-15')), deps),
+    ])
+    expect(out[0]).not.toBe('duplicate')   // distinct hashes: both pass the hash check
+    expect(out[1]).toBe('duplicate')       // second sees the first's pending row
+    expect(f._stores.pending.length).toBe(1)
+  })
+})
+
+describe('withRunLock', () => {
+  test('serializes by key and survives rejections', async () => {
+    const log: string[] = []
+    const slow = (s: string, ms: number) => withRunLock(1, async () => { log.push(s + 's'); await new Promise((r) => setTimeout(r, ms)); log.push(s + 'e') })
+    const a = slow('a', 5)
+    const b = withRunLock(1, async () => { throw new Error('boom') })
+    const c = slow('c', 1)
+    await Promise.allSettled([a, b, c])
+    expect(log).toEqual(['as', 'ae', 'cs', 'ce'])
+    await expect(b).rejects.toThrow('boom')
+  })
+
+  test('does not serialize across keys', async () => {
+    let active = 0, max = 0
+    const j = (id: number) => withRunLock(id, async () => { active++; max = Math.max(max, active); await new Promise((r) => setTimeout(r, 2)); active-- })
+    await Promise.all([j(1), j(2)])
+    expect(max).toBe(2)
   })
 })
