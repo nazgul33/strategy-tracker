@@ -4,6 +4,7 @@ import { buildPendingKeyboard } from '@st/telegram';
 import type { FillRow, LedgerRow } from '../src/db/schema';
 import { makeCaptureHandlers } from '../src/wire/capture';
 import { parseEnv, todayEt } from '../src/wire/deps';
+import { fakeCorrectionRepo } from './fake-corrections';
 
 // ---------- parseEnv ----------
 
@@ -177,8 +178,9 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
       return notifications.length;
     },
   };
-  const repos = { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo };
-  return { repos, pending, fills, ledger, notifications, captures, stateFor };
+  const correctionFake = fakeCorrectionRepo();
+  const repos = { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, ledgerRepo, notificationRepo };
+  return { repos, pending, fills, ledger, notifications, captures, corrections: correctionFake.store, stateFor };
 }
 
 const visionFetch = (async (url: string) => {

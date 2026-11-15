@@ -4,6 +4,7 @@ import { makeToken, verifyToken } from '../src/http/auth'
 import { emptyState } from '@st/core'
 import type { RunState } from '@st/core'
 import { CANCEL_REASONS } from '../src/domain/booking'
+import { fakeCorrectionRepo } from './fake-corrections'
 
 function makeFakes() {
   let runIdSeq = 1
@@ -13,6 +14,7 @@ function makeFakes() {
   const ledger: any[] = []
   const orders: any[] = []
   const pending: any[] = []
+  const correctionFake = fakeCorrectionRepo()
   const notifications: any[] = []
   const settings: Record<string, string> = {}
   const states = new Map<number, RunState>()
@@ -127,10 +129,10 @@ function makeFakes() {
     },
   }
   const repos: HttpRepoSurface = {
-    runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo,
+    runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, ledgerRepo, notificationRepo,
     settingsRepo, poolEditRepo, simRepo, priceHistoryRepo,
   } as any
-  return { repos, runs, poolEdits, fills, ledger, orders, pending, notifications, sent, settings, states, simRuns, priceHistory }
+  return { repos, corrections: correctionFake.store, runs, poolEdits, fills, ledger, orders, pending, notifications, sent, settings, states, simRuns, priceHistory }
 }
 
 const PASSWORD = 'secret'

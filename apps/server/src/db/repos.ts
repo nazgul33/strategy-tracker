@@ -1,6 +1,7 @@
 import type { RunState } from '@st/core'
 import { eq, and, lt, sql, inArray, gte } from 'drizzle-orm'
 import * as s from './schema'
+import type { CorrectionRepo } from '../domain/correction-types'
 
 function serializeState(state: RunState): string {
   return JSON.stringify(state, (_, v) => typeof v === 'bigint' ? v.toString() : v)
@@ -157,6 +158,35 @@ export function getRepos(db: any) {
     },
   }
 
+  const correctionRepo: CorrectionRepo = {
+    async insert(c) { const [r] = await db.insert(s.fillCorrections).values(c); return (r as any).insertId },
+    async get(id) {
+      const rows = await db.select().from(s.fillCorrections).where(eq(s.fillCorrections.id, id))
+      return rows[0] ?? null
+    },
+    async listOpen() {
+      return db.select().from(s.fillCorrections).where(eq(s.fillCorrections.status, 'open')).orderBy(s.fillCorrections.id)
+    },
+    // Same "only from open" guard as pendingRepo.decide.
+    async decide(id, status) {
+      const [res] = await db.update(s.fillCorrections).set({ status })
+        .where(and(eq(s.fillCorrections.id, id), eq(s.fillCorrections.status, 'open')))
+      return (res as any)?.affectedRows > 0
+    },
+    // Applied corrections never block; dismissed ones stick ("I checked, the booked price is right").
+    async findBlocking(fillId, proposedPrice) {
+      const rows = await db.select().from(s.fillCorrections)
+        .where(and(eq(s.fillCorrections.fillId, fillId), eq(s.fillCorrections.proposedPrice, proposedPrice), inArray(s.fillCorrections.status, ['open', 'dismissed'])))
+        .orderBy(s.fillCorrections.id).limit(1)
+      return rows[0] ?? null
+    },
+    async hasOpenForCapture(captureId) {
+      const rows = await db.select({ id: s.fillCorrections.id }).from(s.fillCorrections)
+        .where(and(eq(s.fillCorrections.captureId, captureId), eq(s.fillCorrections.status, 'open'))).limit(1)
+      return rows.length > 0
+    },
+  }
+
   const captureRepo = {
     async findByHash(runId: number, hash: string): Promise<{ id: number; status: string } | null> {
       const rows = await db.select({ id: s.captures.id, status: s.captures.status }).from(s.captures)
@@ -227,5 +257,5 @@ export function getRepos(db: any) {
       return db.select().from(s.simDays).where(eq(s.simDays.simRunId, id)).orderBy(s.simDays.tradeDate)
     },
   }
-  return { runRepo, orderRepo, fillRepo, priceHistoryRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo, settingsRepo, poolEditRepo, simRepo }
+  return { runRepo, orderRepo, fillRepo, priceHistoryRepo, pendingRepo, correctionRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo, settingsRepo, poolEditRepo, simRepo }
 }

@@ -5,6 +5,7 @@ import type { ExtractResult, RawFill } from '@st/ingest'
 import { matchCapturedFills, type CaptureConflict } from './capture-dedup'
 import { claimCapture } from './capture-claim'
 import { withRunLock } from './run-lock'
+import type { CorrectionRepo } from './correction-types'
 
 // The conflict shape belongs to the dedup matcher; re-exported so the booking
 // surface keeps being the single place its consumers import from.
@@ -30,6 +31,7 @@ export interface RepoSurface {
     deleteById?(runId: number, fillId: number): Promise<void>
   }
   pendingRepo: { insert(p: any): Promise<number>; listPending(): Promise<any[]>; decide(id: number, status: string, edited?: any): Promise<boolean> }
+  correctionRepo: CorrectionRepo
   captureRepo: { findByHash(runId: number, hash: string): Promise<{ id: number; status: string } | null>; setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
   ledgerRepo: { insert(l: any): Promise<any>; listForRun(runId: number): Promise<any[]> }
   notificationRepo: { insert(n: any): Promise<any> }

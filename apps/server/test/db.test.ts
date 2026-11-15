@@ -342,4 +342,43 @@ describeIf('db integration', () => {
       { capture_id: captureId, status: 'pending' },
     ])
   })
+
+  test('correction repo: insert, findBlocking, decide, hasOpenForCapture', async () => {
+    const uniq = Date.now()
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'CR' + uniq, name: 'corr-' + uniq, poolCents: 1_000_000, costPpm: 10 })
+    const fillId = 1000 + (uniq % 1_000_000)
+    const captureId = 2000 + (uniq % 1_000_000)
+    const input = {
+      runId, fillId, captureId, side: 'sell' as const, ticker: 'CR' + uniq,
+      bookedShares: 270, bookedFilledOn: '2026-11-12', bookedPrice: parseUsd('64.70'), bookedFee: 345,
+      proposedPrice: parseUsd('64.07'), proposedFee: 340,
+    }
+    const id = await repos.correctionRepo.insert(input)
+    expect(typeof id).toBe('number')
+
+    const row = await repos.correctionRepo.get(id)
+    expect(row).toMatchObject({ id, ...input, status: 'open' })
+    expect(typeof row.bookedPrice).toBe('bigint')
+    expect(typeof row.proposedPrice).toBe('bigint')
+    expect(typeof row.createdAt).toBe('string')
+    expect((await repos.correctionRepo.listOpen()).some((c: any) => c.id === id)).toBe(true)
+
+    expect((await repos.correctionRepo.findBlocking(fillId, parseUsd('64.07')))?.id).toBe(id)
+    expect(await repos.correctionRepo.findBlocking(fillId, parseUsd('64.70'))).toBeNull()
+    expect(await repos.correctionRepo.hasOpenForCapture(captureId)).toBe(true)
+
+    expect(await repos.correctionRepo.decide(id, 'dismissed')).toBe(true)
+    const blocking = await repos.correctionRepo.findBlocking(fillId, parseUsd('64.07'))
+    expect(blocking?.id).toBe(id)
+    expect(blocking?.status).toBe('dismissed')
+    expect(await repos.correctionRepo.hasOpenForCapture(captureId)).toBe(false)
+    expect((await repos.correctionRepo.listOpen()).some((c: any) => c.id === id)).toBe(false)
+    expect(await repos.correctionRepo.decide(id, 'applied')).toBe(false)
+
+    const id2 = await repos.correctionRepo.insert({ ...input, captureId: null, proposedPrice: parseUsd('63.50'), proposedFee: null })
+    expect((await repos.correctionRepo.get(id2))?.proposedFee).toBeNull()
+    expect((await repos.correctionRepo.get(id2))?.captureId).toBeNull()
+    expect(await repos.correctionRepo.decide(id2, 'applied')).toBe(true)
+    expect(await repos.correctionRepo.findBlocking(fillId, parseUsd('63.50'))).toBeNull()
+  })
 })

@@ -8,6 +8,7 @@ import {
   type BookingDeps, type PendingFillRow, type CaptureConflict,
 } from '../src/domain/booking'
 import { withRunLock } from '../src/domain/run-lock'
+import { fakeCorrectionRepo } from './fake-corrections'
 
 function serializeState(state: RunState): string {
   return JSON.stringify(state, (_, v) => typeof v === 'bigint' ? v.toString() : v)
@@ -31,6 +32,7 @@ export function fakeRepos() {
   const pending: any[] = []
   const captures: any[] = []
   const ledger: any[] = []
+  const corrections = fakeCorrectionRepo()
   let runSeq = 1, orderSeq = 1, fillSeq = 1, pendingSeq = 1, captureSeq = 1, ledgerSeq = 1
 
   const runRepo = {
@@ -115,8 +117,8 @@ export function fakeRepos() {
     async listForRun(runId: number) { return ledger.filter((l) => l.runId === runId) },
   }
   return {
-    repos: { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, captureRepo, ledgerRepo },
-    _stores: { runs, orders, fills, pending, captures, ledger },
+    repos: { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: corrections.repo, captureRepo, ledgerRepo },
+    _stores: { runs, orders, fills, pending, captures, ledger, corrections: corrections.store },
   }
 }
 
