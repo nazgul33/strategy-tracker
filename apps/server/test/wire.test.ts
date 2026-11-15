@@ -308,7 +308,7 @@ describe('capture onPhoto — happy path books via the real booking module', () 
       price: parseUsd('999.99'), fee: 0, filledOn: '2026-11-10', source: 'manual',
     } as never);
     // The matcher reads the list first; the recorder's later read sees the fill gone.
-    const real = h.repos.fillRepo.listForRun;
+    const real = h.repos.fillRepo.listForRun.bind(h.repos.fillRepo);
     let calls = 0;
     h.repos.fillRepo.listForRun = async (runId: number) => (calls++ === 0 ? real(runId) : []);
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });

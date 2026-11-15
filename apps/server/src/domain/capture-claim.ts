@@ -13,7 +13,8 @@ export interface CaptureClaimRepos {
 
 // Resolves which `captures` row a read of this image attaches to. A seen image
 // is re-read onto its existing row unless one of that row's fills still awaits
-// a decision or an open correction proposed from it is still undecided. Returns the capture id, or null when the upload is a duplicate.
+// a decision or an open correction proposed from it is still undecided.
+// Returns the capture id, or null when the upload is a duplicate.
 // Must run inside the run lock: the lookup, the status write and the caller's
 // pending inserts are one decide→write span.
 export async function claimCapture(

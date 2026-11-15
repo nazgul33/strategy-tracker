@@ -1,156 +1,8 @@
-import { describe, test, expect, beforeEach } from 'bun:test'
-import { createApp, type HttpDeps, type HttpRepoSurface } from '../src/http/app'
-import { makeToken, verifyToken } from '../src/http/auth'
-import { emptyState } from '@st/core'
-import type { RunState } from '@st/core'
+import { describe, test, expect } from 'bun:test'
+import { createApp } from '../src/http/app'
+import { makeToken } from '../src/http/auth'
 import { CANCEL_REASONS } from '../src/domain/booking'
-import { fakeCorrectionRepo } from './fake-corrections'
-
-function makeFakes() {
-  let runIdSeq = 1
-  const runs: any[] = []
-  const poolEdits: any[] = []
-  const fills: any[] = []
-  const ledger: any[] = []
-  const orders: any[] = []
-  const pending: any[] = []
-  const correctionFake = fakeCorrectionRepo()
-  const notifications: any[] = []
-  const settings: Record<string, string> = {}
-  const states = new Map<number, RunState>()
-  const bucketRepo = {
-    async loadState(runId: number) { return states.get(runId)! },
-    async saveState(runId: number, state: RunState) { states.set(runId, state) },
-  }
-  const runRepo = {
-    async list() { return [...runs] },
-    async get(id: number) { return runs.find((r) => r.id === id) ?? null },
-    async create(input: any) {
-      const id = runIdSeq++
-      const state = input.initialRunState
-      if (state) states.set(id, state)
-      runs.push({ id, strategyKey: input.strategyKey, ticker: input.ticker, name: input.name, poolCents: input.poolCents, costPpm: input.costPpm, buyGapPpm: input.buyGapPpm ?? 0, sellGapPpm: input.sellGapPpm ?? 0, status: 'active', stateJson: JSON.stringify(state, (_k, v) => typeof v === 'bigint' ? v.toString() : v), createdAt: new Date() })
-      return id
-    },
-    async updateStatus(id: number, status: string) {
-      const r = runs.find((x) => x.id === id); if (r) r.status = status
-    },
-    async updateStatusMany(ids: number[], from: string[], to: string) {
-      let n = 0
-      for (const r of runs) if (ids.includes(r.id) && from.includes(r.status)) { r.status = to; n += 1 }
-      return n
-    },
-    async updatePool(id: number, poolCents: number) {
-      const r = runs.find((x) => x.id === id); if (r) r.poolCents = poolCents
-    },
-    async updateGaps(id: number, buyGapPpm: number, sellGapPpm: number) {
-      const r = runs.find((x) => x.id === id); if (r) { r.buyGapPpm = buyGapPpm; r.sellGapPpm = sellGapPpm }
-    },
-  }
-  const orderRepo = {
-    async insertMany(os: any[]) { for (const o of os) orders.push({ id: orders.length + 1, ...o }) },
-    async listForDate(date: string) { return orders.filter((o) => o.tradeDate === date) },
-    async markStale() { return 0 },
-    async get(id: number) { return orders.find((x) => x.id === id) ?? null },
-    async setStatus(id: number, status: string, cancelReason?: string) {
-      const o = orders.find((x) => x.id === id)
-      if (o) { o.status = status; if (cancelReason !== undefined) o.cancelReason = cancelReason }
-    },
-    async listOpenBefore() { return [] },
-    async listForRun(runId: number, date?: string) {
-      let out = orders.filter((o) => o.runId === runId)
-      if (date) out = out.filter((o) => o.tradeDate === date)
-      return out
-    },
-  }
-  const fillRepo = {
-    async insert(f: any) { fills.push({ id: fills.length + 1, ...f }) },
-    async listForRun(runId: number) { return fills.filter((f) => f.runId === runId) },
-    async update(runId: number, fillId: number, patch: any) {
-      const gi = fills.findIndex((x) => x.runId === runId && x.id === fillId)
-      if (gi < 0) throw new Error('no fill')
-      fills[gi] = { ...fills[gi], ...patch }
-    },
-    async deleteById(runId: number, fillId: number) {
-      const gi = fills.findIndex((x) => x.runId === runId && x.id === fillId)
-      if (gi >= 0) fills.splice(gi, 1)
-    },
-  }
-  const pendingRepo = {
-    async insert(p: any) { const id = pending.length + 1; pending.push({ id, ...p }); return id },
-    async listPending() { return pending.filter((p) => p.status === 'pending') },
-    async decide(id: number, status: string, edited?: any): Promise<boolean> {
-      const p = pending.find((x) => x.id === id); if (!p || p.status !== 'pending') return false
-      p.status = status
-      if (edited) Object.assign(p, edited)
-      return true
-    },
-    async get(id: number) { return pending.find((x) => x.id === id) ?? null },
-  }
-  const captureRepo = { async findByHash() { return null }, async setStatus() {}, async insert(c: any) { return { inserted: true, id: 1 } } }
-  const ledgerRepo = {
-    async insert(l: any) { ledger.push({ id: ledger.length + 1, ...l }) },
-    async listForRun(runId: number) { return ledger.filter((l) => l.runId === runId) },
-  }
-  const notificationRepo = {
-    async insert(n: any) { notifications.push({ id: notifications.length + 1, ...n }) },
-    async listForRun(runId: number) { return notifications.filter((n) => n.runId === runId) },
-  }
-  const sent: { chatId: string; text: string }[] = []
-  const settingsRepo = {
-    async getAll() { return { ...settings } },
-    async set(key: string, value: string) { settings[key] = value },
-  }
-  const poolEditRepo = {
-    async insert(input: { runId: number; poolCents: number }) { poolEdits.push({ id: poolEdits.length + 1, ...input }) },
-  }
-  const simRuns: any[] = []
-  const simRepo = {
-    async insertRun(i: any) { simRuns.push({ id: simRuns.length + 1, createdAt: '2026-11-10T00:00:00Z', ...i }); return simRuns.length },
-    async insertDays() {},
-    async listRuns() { return simRuns },
-    async getRun() { return null },
-    async listDays() { return [] },
-  }
-  const priceHistory: { ticker: string; tradeDate: string; close: bigint }[] = []
-  const priceHistoryRepo = {
-    async upsertMany(rows: { ticker: string; tradeDate: string; close: bigint }[]) {
-      for (const r of rows) {
-        const hit = priceHistory.find((x) => x.ticker === r.ticker && x.tradeDate === r.tradeDate)
-        if (hit) hit.close = r.close
-        else priceHistory.push({ ...r })
-      }
-      return rows.length
-    },
-    async listForTicker(ticker: string, from?: string) {
-      return priceHistory
-        .filter((r) => r.ticker === ticker && (!from || r.tradeDate >= from))
-        .sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1))
-    },
-  }
-  const repos: HttpRepoSurface = {
-    runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, ledgerRepo, notificationRepo,
-    settingsRepo, poolEditRepo, simRepo, priceHistoryRepo,
-  } as any
-  return { repos, corrections: correctionFake.store, runs, poolEdits, fills, ledger, orders, pending, notifications, sent, settings, states, simRuns, priceHistory }
-}
-
-const PASSWORD = 'secret'
-const SECRET = 'session-secret'
-
-function makeDeps(fakes: ReturnType<typeof makeFakes>): HttpDeps {
-  return {
-    repos: fakes.repos,
-    password: PASSWORD,
-    sessionSecret: SECRET,
-    today: () => '2026-11-10',
-    defaultSettings: { visionBaseUrl: 'http://x', visionModel: 'm', digestLang: 'en' },
-    triggerMorning: async () => 'morning-ok',
-    fetchDailyBars: async () => [],
-    allowedChatIds: ['42'],
-    send: async (chatId: string, text: string) => { fakes.sent.push({ chatId, text }) },
-  }
-}
+import { makeFakes, makeDeps, PASSWORD, SECRET } from './http-fakes'
 
 describe('http auth', () => {
   test('wrong password 401 no cookie', async () => {
@@ -922,8 +774,12 @@ describe('fill edit + delete endpoints', () => {
       method: 'PUT', body: JSON.stringify({ qty: 2, priceCents: 1100, feeCents: 0 }), headers: { ...json, ...auth },
     })
     expect(res.status).toBe(200)
+    expect((await res.json()).deltaCents).toBe(-200) // cash drops: the sell now brings in 2200 instead of 2400
     expect(f.fills[1].price).toBe(110000n)
     expect(f.states.get(id)!.cashCents).toBe(100200) // 100000 - 2000 + 2200
+    const adjusts = f.ledger.filter((l) => l.kind === 'adjust')
+    expect(adjusts.length).toBe(1)
+    expect(adjusts[0].amountCents).toBe(-200)
   })
 
   test('PUT invalid bodies -> 400 invalid-body, and 400 beats 404', async () => {
@@ -1249,91 +1105,5 @@ describe('http fill edit date', () => {
     const keep = await app.request(`/api/runs/${id}/fills/${fillId}`, { method: 'PUT', body: JSON.stringify({ qty: 12, priceCents: 1000, feeCents: 500 }), headers: { 'content-type': 'application/json', ...auth } })
     expect(keep.status).toBe(200)
     expect(f.fills[0]!.filledOn).toBe('2026-11-03')
-  })
-})
-
-describe('http corrections', () => {
-  const json = { 'content-type': 'application/json' }
-  async function seed() {
-    const f = makeFakes()
-    const app = createApp(makeDeps(f))
-    const login = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: json })
-    const auth = { Authorization: `Bearer ${(await login.json()).token}` }
-    const create = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'SOXL', costPpm: 0, poolCents: 1_000_000 }), headers: { ...json, ...auth } })
-    const runId = (await create.json()).id as number
-    const post = (body: Record<string, unknown>) =>
-      app.request(`/api/runs/${runId}/fills`, { method: 'POST', body: JSON.stringify(body), headers: { ...json, ...auth } })
-    expect((await post({ side: 'buy', shares: 44, price: '60.00', fee: '0.00', filledOn: '2026-11-10' })).status).toBe(200)
-    expect((await post({ side: 'sell', shares: 44, price: '66.03', fee: '2.03', filledOn: '2026-11-11' })).status).toBe(200)
-    const sell = f.fills.find((x) => x.side === 'sell')!
-    const id = await f.repos.correctionRepo.insert({
-      runId, fillId: sell.id, captureId: null, side: 'sell', ticker: 'SOXL', bookedShares: 44, bookedFilledOn: '2026-11-11',
-      bookedPrice: sell.price, bookedFee: sell.fee, proposedPrice: 640_700n, proposedFee: 203,
-    })
-    const call = (method: string, path: string) => app.request(`/api${path}`, { method, headers: auth })
-    return { f, app, auth, runId, sell, id, call }
-  }
-
-  test('GET /corrections lists open rows with string prices and stale:false', async () => {
-    const { runId, sell, id, call } = await seed()
-    const res = await call('GET', '/corrections')
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual([{
-      id, runId, fillId: sell.id, captureId: null, side: 'sell', ticker: 'SOXL', bookedShares: 44, bookedFilledOn: '2026-11-11',
-      bookedPrice: '660300', bookedFee: 203, proposedPrice: '640700', proposedFee: 203,
-      status: 'open', createdAt: '2026-11-15 00:00:00', stale: false,
-    }])
-  })
-
-  test('GET /corrections requires auth', async () => {
-    const { app } = await seed()
-    expect((await app.request('/api/corrections')).status).toBe(401)
-  })
-
-  test('apply -> 200 {ok, deltaCents}; again -> 409 correction-not-open', async () => {
-    const { f, sell, id, call } = await seed()
-    const res = await call('POST', `/corrections/${id}/apply`)
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, deltaCents: -8624 })
-    expect(f.fills.find((x) => x.id === sell.id)!.price).toBe(640_700n)
-    expect(f.corrections.find((c) => c.id === id)!.status).toBe('applied')
-    const again = await call('POST', `/corrections/${id}/apply`)
-    expect(again.status).toBe(409)
-    expect(await again.json()).toEqual({ error: 'correction-not-open' })
-    expect(await (await call('GET', '/corrections')).json()).toEqual([])
-  })
-
-  test('apply on a stale correction -> 409 correction-stale; GET shows stale:true', async () => {
-    const { f, app, auth, runId, sell, id, call } = await seed()
-    const put = await app.request(`/api/runs/${runId}/fills/${sell.id}`, {
-      method: 'PUT', body: JSON.stringify({ qty: 44, priceCents: 6500, feeCents: 203 }), headers: { ...json, ...auth },
-    })
-    expect(put.status).toBe(200)
-    const res = await call('POST', `/corrections/${id}/apply`)
-    expect(res.status).toBe(409)
-    expect(await res.json()).toEqual({ error: 'correction-stale' })
-    expect(f.corrections.find((c) => c.id === id)!.status).toBe('open')
-    expect((await (await call('GET', '/corrections')).json())[0].stale).toBe(true)
-  })
-
-  test('unknown id -> 404 correction-not-found for apply and dismiss', async () => {
-    const { call } = await seed()
-    for (const action of ['apply', 'dismiss']) {
-      const res = await call('POST', `/corrections/999/${action}`)
-      expect(res.status).toBe(404)
-      expect(await res.json()).toEqual({ error: 'correction-not-found' })
-    }
-  })
-
-  test('dismiss -> 200 {ok}; again -> 409 correction-not-open', async () => {
-    const { f, sell, id, call } = await seed()
-    const res = await call('POST', `/corrections/${id}/dismiss`)
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true })
-    expect(f.corrections.find((c) => c.id === id)!.status).toBe('dismissed')
-    expect(f.fills.find((x) => x.id === sell.id)!.price).toBe(660_300n)
-    const again = await call('POST', `/corrections/${id}/dismiss`)
-    expect(again.status).toBe(409)
-    expect(await again.json()).toEqual({ error: 'correction-not-open' })
   })
 })

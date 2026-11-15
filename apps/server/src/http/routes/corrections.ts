@@ -1,12 +1,13 @@
 import { Hono } from 'hono'
-import { DomainError } from '@st/core'
+import { DomainError, type ISODate } from '@st/core'
+import type { BookingDeps } from '../../domain/booking'
 import { applyCorrection, dismissCorrection, listOpenCorrections } from '../../domain/corrections'
 import { jsonBig, type HttpDeps } from '../app'
 
 // Review of capture-proposed fill corrections. Auth is handled by the app-level middleware.
 export function correctionsRouter(deps: HttpDeps): Hono {
   const r = new Hono()
-  const bookingDeps = () => ({ repos: deps.repos as any, today: deps.today() as any })
+  const bookingDeps = (): BookingDeps => ({ repos: deps.repos, today: deps.today() as ISODate })
   const failure = (c: any, e: unknown) => {
     if (!(e instanceof DomainError)) throw e
     if (e.kind === 'correction-not-found') return c.json({ error: e.kind }, 404)

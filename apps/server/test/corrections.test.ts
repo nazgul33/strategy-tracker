@@ -77,6 +77,7 @@ describe('applyCorrection', () => {
     expect(adjustRows(f).length).toBe(1)
   })
 
+  // With copy-returning fakes the pre-lock read is a snapshot, so only the in-lock re-read can reject the second apply.
   test('concurrent applies rebook once', async () => {
     const { f, deps, sell, propose } = await setup()
     const id = await propose(sell, '64.07', 203)

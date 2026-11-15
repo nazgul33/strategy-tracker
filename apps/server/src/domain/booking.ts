@@ -152,9 +152,9 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
     if (!extract.ok) return 'rejected'
 
     const match = await matchCapturedFills(repos, runId, extract.fills, deps.today)
-    const { fresh } = match
-    if (fresh.length === 0 && match.conflicts.length === 0) return 'duplicate'
-    const conflicts = await recordCorrections(repos, runId, captureId, match.conflicts)
+    const { fresh, conflicts: matched } = match
+    if (fresh.length === 0 && matched.length === 0) return 'duplicate'
+    const conflicts = await recordCorrections(repos, runId, captureId, matched)
 
     const pendingRows: PendingFillRow[] = []
     for (const f of fresh) {

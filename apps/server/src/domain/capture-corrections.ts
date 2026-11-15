@@ -29,8 +29,9 @@ function pickBlocking(rows: CorrectionRow[], fill: SnapshotFill): CorrectionRow 
  * A stale row (the fill was hand-edited since) is ignored, so a new open
  * correction snapshots the booked fill as it is now.
  * A booked-fill conflict whose fill is no longer there is stamped 'fill-gone'
- * (nothing is inserted). Pending-row conflicts pass through untouched. Must run inside the run lock,
- * right after matchCapturedFills, so the cited fills cannot move.
+ * (nothing is inserted). Pending-row conflicts pass through untouched.
+ * Must run inside the run lock, right after matchCapturedFills, so the cited
+ * fills cannot move.
  */
 export async function recordCorrections(
   repos: CorrectionRecorderRepos,

@@ -951,10 +951,10 @@ describe('capture corrections', () => {
     await f.repos.correctionRepo.decide(firstId, 'dismissed')
     const b = await ingestCapture(runId, img('CORR-4B'), ext(sell44('64.70')), deps) as { conflicts: CaptureConflict[] }
     expect(f._stores.corrections.length).toBe(2)
-    const created = b.conflicts[0]!.correction!
-    expect(created.id).not.toBe(firstId)
-    expect(created.status).toBe('open')
-    expect(f._stores.corrections.find((c) => c.id === created.id)!.proposedPrice).toBe(parseUsd('64.70'))
+    const createdId = corrId(b.conflicts[0]!)
+    expect(createdId).not.toBe(firstId)
+    expect(b.conflicts[0]!.correction!.status).toBe('open')
+    expect(f._stores.corrections.find((c) => c.id === createdId)!.proposedPrice).toBe(parseUsd('64.70'))
   })
 
   test('a stale open correction is not reused', async () => {
@@ -965,10 +965,10 @@ describe('capture corrections', () => {
     await f.repos.fillRepo.update(runId, f._stores.fills[0]!.id, { price: parseUsd('64.70') })
     const b = await ingestCapture(runId, img('CORR-10B'), ext(sell44('64.07')), deps) as { conflicts: CaptureConflict[] }
     expect(f._stores.corrections.length).toBe(2)
-    const created = b.conflicts[0]!.correction!
-    expect(created.id).not.toBe(firstId)
-    expect(created.status).toBe('open')
-    expect(f._stores.corrections.find((c) => c.id === created.id)).toMatchObject({ bookedPrice: parseUsd('64.70'), proposedPrice: parseUsd('64.07'), status: 'open' })
+    const createdId = corrId(b.conflicts[0]!)
+    expect(createdId).not.toBe(firstId)
+    expect(b.conflicts[0]!.correction!.status).toBe('open')
+    expect(f._stores.corrections.find((c) => c.id === createdId)).toMatchObject({ bookedPrice: parseUsd('64.70'), proposedPrice: parseUsd('64.07'), status: 'open' })
   })
 
   test('a dismissal stops applying after the fill is hand-edited', async () => {
@@ -994,6 +994,23 @@ describe('capture corrections', () => {
     const c = await ingestCapture(runId, img('CORR-12C'), ext(sell44('64.07')), deps) as { conflicts: CaptureConflict[] }
     expect(f._stores.corrections.length).toBe(2)
     expect(c.conflicts[0]!.correction).toEqual(b.conflicts[0]!.correction)
+  })
+
+  test('a fresh open correction wins over a fresh dismissed one', async () => {
+    const { f, deps, runId } = await setup('corr14')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    const fill = f._stores.fills[0]!
+    const snapshot = {
+      runId, fillId: fill.id, captureId: null, side: 'sell' as const, ticker: 'SOXL', bookedShares: 44,
+      bookedFilledOn: '2026-11-11', bookedPrice: parseUsd('66.03'), bookedFee: 0, proposedPrice: parseUsd('64.07'), proposedFee: null,
+    }
+    const dismissedId = await f.repos.correctionRepo.insert(snapshot)
+    expect(await f.repos.correctionRepo.decide(dismissedId, 'dismissed')).toBe(true)
+    const openId = await f.repos.correctionRepo.insert(snapshot)
+    const out = await ingestCapture(runId, img('CORR-14'), ext(sell44('64.07')), deps) as { conflicts: CaptureConflict[] }
+    expect(out.conflicts[0]!.correction).toEqual({ id: openId, status: 'open' })
+    expect(corrId(out.conflicts[0]!)).not.toBe(dismissedId)
+    expect(f._stores.corrections.length).toBe(2)
   })
 
   test('an applied correction does not suppress a new one', async () => {

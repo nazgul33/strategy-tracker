@@ -269,6 +269,7 @@ describe('rebookFill', () => {
     const err = await expectKind(() => rebookFill(runId, { fillId: sell.id, shares: 9, priceStr: '17.00', feeCents: 30 }, deps(f)))
 
     expect(err).toBeInstanceOf(DomainError)
+    expect(err.kind).not.toBe('immutable-field')
     expect(asJson(await getState(f, runId))).toBe(stateBefore)
     expect(adjustRows(f)).toHaveLength(0)
     expect(asJson(f._stores.fills.find((x: any) => x.id === sell.id))).toBe(sellBefore)
