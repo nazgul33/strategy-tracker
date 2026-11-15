@@ -106,7 +106,27 @@ describe('CorrectionList', () => {
   it('renders nothing when there are no corrections', async () => {
     stub([]);
     await render();
+    expect(gets).toBe(1);
     expect(container.textContent).toBe('');
+  });
+
+  it('shows the load error instead of rendering nothing when GET fails', async () => {
+    gets = 0;
+    installFetchStub([
+      {
+        url: '/api/corrections',
+        status: 500,
+        get json() {
+          gets += 1;
+          return { error: 'boom-load' };
+        },
+      },
+    ]);
+    await render();
+    expect(gets).toBe(1);
+    expect(container.textContent).not.toBe('');
+    expect(container.textContent).toContain('Corrections (from screenshots)');
+    expect(container.textContent).toContain('boom-load');
   });
 
   it('shows booked → proposed price and fee change', async () => {
@@ -180,13 +200,15 @@ describe('CorrectionList', () => {
   });
 
   it('409 correction-not-open on apply shows "Already handled" and reloads', async () => {
+    let changed = 0;
     stub([ROW], [{ method: 'POST', url: '/api/corrections/1/apply', status: 409, json: { error: 'correction-not-open' } }]);
-    await render();
+    await render({ onChanged: () => (changed += 1) });
 
     await click('Apply');
 
     expect(container.textContent).toContain('Already handled');
     expect(gets).toBe(2);
+    expect(changed).toBe(1);
   });
 
   it("runId filter hides other runs' corrections", async () => {
@@ -199,6 +221,7 @@ describe('CorrectionList', () => {
   it('renders nothing when every correction belongs to another run', async () => {
     stub([{ ...ROW, runId: 8 }]);
     await render({ runId: 7 });
+    expect(gets).toBe(1);
     expect(container.textContent).toBe('');
   });
 });

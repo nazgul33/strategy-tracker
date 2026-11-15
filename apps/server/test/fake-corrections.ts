@@ -19,8 +19,8 @@ export function fakeCorrectionRepo(): { repo: CorrectionRepo; store: CorrectionR
       c.status = status
       return true
     },
-    async findBlocking(fillId, proposedPrice) {
-      return store.find((x) => x.fillId === fillId && x.proposedPrice === proposedPrice && (x.status === 'open' || x.status === 'dismissed')) ?? null
+    async listBlocking(fillId, proposedPrice) {
+      return store.filter((x) => x.fillId === fillId && x.proposedPrice === proposedPrice && (x.status === 'open' || x.status === 'dismissed'))
     },
     async hasOpenForCapture(captureId) {
       return store.some((x) => x.captureId === captureId && x.status === 'open')

@@ -344,7 +344,7 @@ describeIf('db integration', () => {
     ])
   })
 
-  test('correction repo: insert, findBlocking, decide, hasOpenForCapture', async () => {
+  test('correction repo: insert, listBlocking, decide, hasOpenForCapture', async () => {
     const uniq = Date.now()
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'CR' + uniq, name: 'corr-' + uniq, poolCents: 1_000_000, costPpm: 10 })
     const fillId = 1000 + (uniq % 1_000_000)
@@ -364,14 +364,16 @@ describeIf('db integration', () => {
     expect(typeof row.createdAt).toBe('string')
     expect((await repos.correctionRepo.listOpen()).some((c: any) => c.id === id)).toBe(true)
 
-    expect((await repos.correctionRepo.findBlocking(fillId, parseUsd('64.07')))?.id).toBe(id)
-    expect(await repos.correctionRepo.findBlocking(fillId, parseUsd('64.70'))).toBeNull()
+    expect((await repos.correctionRepo.listBlocking(fillId, parseUsd('64.07'))).map((c: any) => c.id)).toEqual([id])
+    expect(await repos.correctionRepo.listBlocking(fillId, parseUsd('64.70'))).toEqual([])
     expect(await repos.correctionRepo.hasOpenForCapture(captureId)).toBe(true)
 
     expect(await repos.correctionRepo.decide(id, 'dismissed')).toBe(true)
-    const blocking = await repos.correctionRepo.findBlocking(fillId, parseUsd('64.07'))
-    expect(blocking?.id).toBe(id)
-    expect(blocking?.status).toBe('dismissed')
+    const blocking = await repos.correctionRepo.listBlocking(fillId, parseUsd('64.07'))
+    expect(blocking.map((c: any) => [c.id, c.status])).toEqual([[id, 'dismissed']])
+    const id3 = await repos.correctionRepo.insert(input)
+    expect((await repos.correctionRepo.listBlocking(fillId, parseUsd('64.07'))).map((c: any) => [c.id, c.status])).toEqual([[id, 'dismissed'], [id3, 'open']])
+    expect(await repos.correctionRepo.decide(id3, 'applied')).toBe(true)
     expect(await repos.correctionRepo.hasOpenForCapture(captureId)).toBe(false)
     expect((await repos.correctionRepo.listOpen()).some((c: any) => c.id === id)).toBe(false)
     expect(await repos.correctionRepo.decide(id, 'applied')).toBe(false)
@@ -380,7 +382,7 @@ describeIf('db integration', () => {
     expect((await repos.correctionRepo.get(id2))?.proposedFee).toBeNull()
     expect((await repos.correctionRepo.get(id2))?.captureId).toBeNull()
     expect(await repos.correctionRepo.decide(id2, 'applied')).toBe(true)
-    expect(await repos.correctionRepo.findBlocking(fillId, parseUsd('63.50'))).toBeNull()
+    expect(await repos.correctionRepo.listBlocking(fillId, parseUsd('63.50'))).toEqual([])
   })
 
   test('capture conflict becomes a correction that fixes the booked sell', async () => {

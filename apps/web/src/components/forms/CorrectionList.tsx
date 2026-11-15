@@ -6,8 +6,9 @@ import { useAsync } from '../hooks';
 import { Button, Card, SectionTitle, TableWrap, Td, Th } from '../ui';
 
 // Open fill corrections proposed from later screenshots (booked → proposed
-// price/fee). Renders nothing while the (run-filtered) list is empty, so a
-// host can mount it unconditionally. `framed` wraps the section in its own Card
+// price/fee). Renders nothing while the (run-filtered) list is empty and the
+// load succeeded (a failed load shows its error), so a host can mount it
+// unconditionally. `framed` wraps the section in its own Card
 // (the Pending page); the run tab is already inside a Card.
 // Apply is hidden for stale rows (the booked fill changed since the screenshot)
 // — the only way out is Dismiss. A 409 correction-stale marks the row stale
@@ -44,6 +45,7 @@ export function CorrectionList({
       } else if (err instanceof ApiError && err.status === 409) {
         setActionError(t('correctionAlreadyHandled'));
         await reload();
+        onChanged?.();
       } else {
         setActionError(err instanceof Error ? err.message : String(err));
       }
@@ -52,7 +54,7 @@ export function CorrectionList({
     }
   };
 
-  if (visible.length === 0 && !actionError) return null;
+  if (visible.length === 0 && !actionError && !error) return null;
 
   const body = (
     <div className="space-y-3">

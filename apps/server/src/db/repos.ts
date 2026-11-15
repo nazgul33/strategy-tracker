@@ -174,11 +174,11 @@ export function getRepos(db: any) {
       return (res as any)?.affectedRows > 0
     },
     // Applied corrections never block; dismissed ones stick ("I checked, the booked price is right").
-    async findBlocking(fillId, proposedPrice) {
-      const rows = await db.select().from(s.fillCorrections)
+    // The caller drops snapshot-stale rows.
+    async listBlocking(fillId, proposedPrice) {
+      return db.select().from(s.fillCorrections)
         .where(and(eq(s.fillCorrections.fillId, fillId), eq(s.fillCorrections.proposedPrice, proposedPrice), inArray(s.fillCorrections.status, ['open', 'dismissed'])))
-        .orderBy(s.fillCorrections.id).limit(1)
-      return rows[0] ?? null
+        .orderBy(s.fillCorrections.id)
     },
     async hasOpenForCapture(captureId) {
       const rows = await db.select({ id: s.fillCorrections.id }).from(s.fillCorrections)

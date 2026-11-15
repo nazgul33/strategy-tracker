@@ -18,6 +18,23 @@ export interface CorrectionRepo {
   get(id: number): Promise<CorrectionRow | null>
   listOpen(): Promise<CorrectionRow[]>
   decide(id: number, status: 'applied' | 'dismissed'): Promise<boolean> // false unless it was 'open'
-  findBlocking(fillId: number, proposedPrice: bigint): Promise<CorrectionRow | null> // open or dismissed only
+  listBlocking(fillId: number, proposedPrice: bigint): Promise<CorrectionRow[]> // open or dismissed only, by id
   hasOpenForCapture(captureId: number): Promise<boolean>
+}
+
+// The booked-fill fields a snapshot covers; FillRow satisfies it structurally.
+export interface SnapshotFill {
+  side: 'buy' | 'sell'; ticker: string; shares: number; price: bigint; fee: number; filledOn: ISODate
+}
+
+// A correction is stale when its target fill is gone or no longer matches the
+// snapshot taken when it was proposed (hand edit, delete, or a sibling applied).
+export function isCorrectionStale(c: CorrectionRow, fill: SnapshotFill | undefined): boolean {
+  return !fill
+    || fill.side !== c.side
+    || fill.ticker !== c.ticker
+    || fill.shares !== c.bookedShares
+    || fill.filledOn !== c.bookedFilledOn
+    || fill.price !== c.bookedPrice
+    || fill.fee !== c.bookedFee
 }
