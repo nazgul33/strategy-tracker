@@ -99,20 +99,22 @@ describe('run-state writers hold the per-run lock', () => {
     const bucketRepo = f.repos.bucketRepo
     const loadState = bucketRepo.loadState.bind(bucketRepo)
     const saveState = bucketRepo.saveState.bind(bucketRepo)
+    const entered = deferred()
     let saves = 0
     bucketRepo.loadState = async (id: number) => { log.push('load'); return loadState(id) }
     bucketRepo.saveState = async (id: number, s: any) => {
       log.push('save-start')
-      if (saves++ === 0) await gate.promise
+      if (saves++ === 0) { entered.release(); await gate.promise }
       await saveState(id, s)
       log.push('save-end')
     }
 
     const booking = manualFill(runId, { side: 'buy', shares: 5, price: '10.00', fee: '0.00', filledOn: '2026-11-11' }, deps)
-    await tick()
-    const recalc = recalcRunState(runId, deps)
-    await tick()
+    let recalc: Promise<unknown> | undefined
     try {
+      await entered.promise
+      recalc = recalcRunState(runId, deps)
+      await tick()
       // the recalc has not even loaded state while the booking sits inside saveState
       expect(log).toEqual(['load', 'save-start'])
     } finally {
@@ -132,8 +134,9 @@ describe('run-state writers hold the per-run lock', () => {
       bookedShares: fill.shares, bookedFilledOn: fill.filledOn, bookedPrice: fill.price, bookedFee: fill.fee,
       proposedPrice: parseUsd('10.50'), proposedFee: 0,
     })
-    const timeout = new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), 1000))
-    const out = await Promise.race([applyCorrection(id, deps), timeout])
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<'timeout'>((r) => { timer = setTimeout(() => r('timeout'), 1000) })
+    const out = await Promise.race([applyCorrection(id, deps), timeout]).finally(() => clearTimeout(timer))
     expect(out).not.toBe('timeout')
     expect(f._stores.fills.find((x: any) => x.id === fill.id)!.price).toBe(parseUsd('10.50'))
   })
