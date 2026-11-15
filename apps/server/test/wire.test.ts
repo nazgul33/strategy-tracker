@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { emptyState, parseUsd } from '@st/core';
 import { buildPendingKeyboard } from '@st/telegram';
-import { t } from '@st/telegram/i18n';
+import { t, type Lang } from '@st/telegram/i18n';
 import type { FillRow, LedgerRow } from '../src/db/schema';
 import { makeCaptureHandlers } from '../src/wire/capture';
 import { parseEnv, todayEt } from '../src/wire/deps';
@@ -195,7 +195,7 @@ function activeRun(id: number, ticker: string): FakeRow {
   return { id, ticker, status: 'active', poolCents: 10_000_000, costPpm: 10 };
 }
 
-function makeCapture(opts: FakeOpts & { today?: string; fetchImpl?: typeof fetch; lang?: 'en' | 'ko' } = {}) {
+function makeCapture(opts: FakeOpts & { today?: string; fetchImpl?: typeof fetch; lang?: Lang } = {}) {
   const fakes = makeCaptureFakes(opts);
   const sent: { chatId: string; text: string; extra?: Record<string, unknown> }[] = [];
   const handlers = makeCaptureHandlers({
@@ -326,6 +326,55 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     expect(
       t('capture-conflict-gone', 'ko', { date: '2026-11-10', ticker: 'NVDA', side: 'buy', shares: 10, extracted: '180.50', id: 1 }),
     ).toBe('⚠️ 2026-11-10 NVDA buy 10주 — 추출 가격 $180.50, 예약된 체결 #1이(가) 더 이상 없습니다. 수정할 항목이 없습니다.');
+  });
+
+  // booked conflict (fill #1) + pending conflict (row #1) + one fresh fill, all in one screenshot
+  const mixedFetch = (async () => {
+    const content = JSON.stringify({
+      fills: [
+        { side: 'buy', ticker: 'NVDA', shares: 10, price: '180.50', date: '2026-11-10' },
+        { side: 'sell', ticker: 'NVDA', shares: 4, price: '200.00', date: '2026-11-10' },
+        { side: 'buy', ticker: 'NVDA', shares: 5, price: '170.00', date: '2026-11-10' },
+      ],
+    });
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as unknown as Response;
+  }) as unknown as typeof fetch;
+
+  async function mixedOutcome(lang: Lang) {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: mixedFetch, lang });
+    await h.repos.fillRepo.insert({
+      runId: 1, bucketIdx: 0, side: 'buy', ticker: 'NVDA', shares: 10,
+      price: parseUsd('999.99'), fee: 0, filledOn: '2026-11-10', source: 'manual',
+    } as never);
+    await h.repos.pendingRepo.insert({
+      runId: 1, captureId: null, bucketIdx: null, side: 'sell', ticker: 'NVDA', shares: 4,
+      price: parseUsd('190.00'), fee: null, filledOn: '2026-11-10',
+    });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    return h;
+  }
+
+  test('mixed outcome (conflicts + pending) sends the head, then conflict lines, then the booking prompt', async () => {
+    const h = await mixedOutcome('en');
+    expect(h.sent.map((s) => s.text)).toEqual([
+      'Conflicts — these were not booked:',
+      '⚠️ Conflict: buy 10 NVDA on 2026-11-10 — extracted $180.50, booked fill #1 has $999.99. Correction listed in Pending.',
+      '⚠️ Conflict: sell 4 NVDA on 2026-11-10 — extracted $200.00, but pending row #1 has $190.00. Resolve that row first.',
+      'Booked NVDA buy 5 sh @ $170.00 on 2026-11-10 — confirm?',
+    ]);
+    expect(h.sent.map((s) => s.extra !== undefined)).toEqual([false, false, false, true]);
+    expect(h.pending.length).toBe(2); // the seeded row + the fresh one
+    expect(h.corrections.length).toBe(1); // booked conflict only
+  });
+
+  test('mixed outcome renders the head and both conflict kinds in ko', async () => {
+    const h = await mixedOutcome('ko');
+    expect(h.sent.map((s) => s.text)).toEqual([
+      '충돌 — 아래 체결은 예약되지 않았습니다:',
+      '⚠️ 충돌: 2026-11-10 NVDA buy 10주 — 추출 가격 $180.50, 예약된 체결 #1 가격 $999.99. 수정 제안은 \'확인 대기\'에서 처리하세요.',
+      '⚠️ 충돌: 2026-11-10 NVDA sell 4주 — 추출 가격 $200.00, 대기 중 행 #1 가격 $190.00. 먼저 해당 행을 처리하세요.',
+      'NVDA buy 5주 @ $170.00 (2026-11-10) 예약 — 확인하시겠습니까?',
+    ]);
   });
 });
 
