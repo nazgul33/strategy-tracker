@@ -127,7 +127,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       return;
     }
     const pending = 'pending' in outcome ? outcome.pending : [];
-    const conflicts = Array.isArray(outcome) ? outcome : 'conflicts' in outcome ? outcome.conflicts : [];
+    const conflicts = 'conflicts' in outcome ? outcome.conflicts : [];
     if (pending.length > 0 && conflicts.length > 0) {
       await deps.send(chatId, t('capture-conflicts-head', lang));
     }
