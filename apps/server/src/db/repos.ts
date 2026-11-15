@@ -158,9 +158,13 @@ export function getRepos(db: any) {
   }
 
   const captureRepo = {
-    async hasHash(runId: number, hash: string): Promise<boolean> {
-      const rows = await db.select().from(s.captures).where(and(eq(s.captures.runId, runId), eq(s.captures.imageHash, hash)))
-      return rows.length > 0
+    async findByHash(runId: number, hash: string): Promise<{ id: number; status: string } | null> {
+      const rows = await db.select({ id: s.captures.id, status: s.captures.status }).from(s.captures)
+        .where(and(eq(s.captures.runId, runId), eq(s.captures.imageHash, hash))).limit(1)
+      return rows[0] ?? null
+    },
+    async setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void> {
+      await db.update(s.captures).set({ status }).where(eq(s.captures.id, id))
     },
     async insert(c: any): Promise<{ inserted: boolean; id?: number }> {
       try {
