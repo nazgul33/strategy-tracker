@@ -45,6 +45,7 @@ export function RunDetailPage({ id }: { id: number }) {
 
   const [tab, setTab] = useState<Tab>('orders');
   const [panelKey, setPanelKey] = useState(0);
+  const [tabKey, setTabKey] = useState(0);
   const [busyStatus, setBusyStatus] = useState<RunStatus | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showClose, setShowClose] = useState(false);
@@ -55,6 +56,7 @@ export function RunDetailPage({ id }: { id: number }) {
   const selectTab = (next: Tab) => {
     setTab(next);
     setPanelKey((k) => k + 1); // remount self-fetching panels so they re-read
+    setTabKey((k) => k + 1);
     void reload();
   };
 
@@ -191,11 +193,12 @@ export function RunDetailPage({ id }: { id: number }) {
         {tab === 'orders' && <OrdersPanel runId={id} />}
         {tab === 'pending' && (
           <div className="space-y-6">
-            {/* No remount key: CorrectionList reloads itself after an action. */}
+            {/* Keyed on tabKey (refresh on tab click) but not on panelKey: it reloads itself after an action. */}
             <CorrectionList
+              key={`c${tabKey}`}
               runId={id}
               onChanged={() => {
-                setPanelKey((k) => k + 1); // re-read PendingTable only
+                setPanelKey((k) => k + 1); // re-read the panelKey-keyed panels and the run
                 void reload();
               }}
             />

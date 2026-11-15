@@ -138,4 +138,15 @@ describe('RunDetailPage pending tab corrections', () => {
     expect(correctionGets).toBe(2);
     expect(runGets).toBe(runBefore + 1);
   });
+
+  it('re-clicking the Pending tab reloads the corrections list once', async () => {
+    expect(correctionGets).toBe(1);
+
+    await act(async () => {
+      buttonByText('Pending').click();
+    });
+    await flush();
+
+    expect(correctionGets).toBe(2);
+  });
 });

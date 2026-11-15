@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { emptyState, parseUsd } from '@st/core';
 import { buildPendingKeyboard } from '@st/telegram';
+import { t } from '@st/telegram/i18n';
 import type { FillRow, LedgerRow } from '../src/db/schema';
 import { makeCaptureHandlers } from '../src/wire/capture';
 import { parseEnv, todayEt } from '../src/wire/deps';
@@ -317,6 +318,9 @@ describe('capture onPhoto — happy path books via the real booking module', () 
       '⚠️ buy 10 NVDA on 2026-11-10 — extracted $180.50, but booked fill #1 no longer exists. Nothing to correct.',
     );
     expect(h.corrections.length).toBe(0);
+    expect(
+      t('capture-conflict-gone', 'ko', { date: '2026-11-10', ticker: 'NVDA', side: 'buy', shares: 10, extracted: '180.50', id: 1 }),
+    ).toBe('⚠️ 2026-11-10 NVDA buy 10주 — 추출 가격 $180.50, 예약된 체결 #1이(가) 더 이상 없습니다. 수정할 항목이 없습니다.');
   });
 });
 

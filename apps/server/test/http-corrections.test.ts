@@ -66,9 +66,9 @@ describe('http corrections', () => {
     expect((await (await call('GET', '/corrections')).json())[0].stale).toBe(true)
   })
 
-  test('apply refused by replay -> 422 with the kind, nothing changed', async () => {
+  test('apply refused by rebook validation -> 422 with the kind, nothing changed', async () => {
     const { f, runId, sell, call } = await seed()
-    // A zero price can never be rebooked: replay rejects it as invalid-fill.
+    // A zero price can never be rebooked: rebookFill's input validation rejects it as invalid-fill.
     const bad = await f.repos.correctionRepo.insert({
       runId, fillId: sell.id, captureId: null, side: 'sell', ticker: 'SOXL', bookedShares: 44, bookedFilledOn: '2026-11-11',
       bookedPrice: sell.price, bookedFee: sell.fee, proposedPrice: 0n, proposedFee: null,
