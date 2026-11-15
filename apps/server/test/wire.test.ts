@@ -310,7 +310,7 @@ describe('capture onPhoto — dedup and failures', () => {
     expect(h.captures.map((c) => c.status)).toEqual(['parsed']);
     expect(h.pending.length).toBe(1);
     expect(h.sent.length).toBe(2);
-    expect(h.sent[1]!.text).toBe('Duplicate capture — all fills already booked or pending.');
+    expect(h.sent[1]!.text).toBe('Duplicate capture — all fills already booked or pending, or a correction is waiting in Pending.');
   });
 
   test('same image after rejecting its fill is read again', async () => {
@@ -320,7 +320,7 @@ describe('capture onPhoto — dedup and failures', () => {
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     expect(h.captures.length).toBe(1);
     expect(h.pending.map((p) => p.status)).toEqual(['rejected', 'pending']);
-    expect(h.sent.at(-1)!.text).not.toBe('Duplicate capture — all fills already booked or pending.');
+    expect(h.sent.at(-1)!.text).not.toBe('Duplicate capture — all fills already booked or pending, or a correction is waiting in Pending.');
   });
 
   test('extract failure: no pending row, user sees the reason, admin notified', async () => {
