@@ -395,7 +395,7 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
     const { h, p } = await capturedPending('en');
     p.ticker = 'AAPL';
     await h.handlers.onConfirm(`yes:${p.id}`, true);
-    expect(h.sent.at(-1)!.text).toBe('Ticker does not match the run — reject this row and re-capture.');
+    expect(h.sent.at(-1)!.text).toBe('Ticker does not match the run — tap No to reject this fill, then re-capture.');
     expect(h.fills.length).toBe(0);
   });
 
@@ -403,13 +403,13 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
     const { h, p } = await capturedPending('ko');
     p.ticker = 'AAPL';
     await h.handlers.onConfirm(`yes:${p.id}`, true);
-    expect(h.sent.at(-1)!.text).toBe('티커가 런과 일치하지 않습니다 — 이 행을 반려하고 다시 캡처하세요.');
+    expect(h.sent.at(-1)!.text).toBe('티커가 런과 일치하지 않습니다 — \'No\'를 눌러 이 체결을 거부하고 다시 캡처하세요.');
   });
 
   test('confirming an already-handled row says so in en and ko', async () => {
     for (const [lang, text] of [
-      ['en', 'Already handled — this pending fill was already confirmed or rejected.'],
-      ['ko', '이미 처리되었습니다 — 이 대기 체결은 이미 확정되었거나 반려되었습니다.'],
+      ['en', 'Already handled — this fill was already confirmed or rejected.'],
+      ['ko', '이미 처리되었습니다 — 이 체결은 이미 확정되었거나 거부되었습니다.'],
     ] as const) {
       const { h, p } = await capturedPending(lang);
       await h.handlers.onConfirm(`yes:${p.id}`, true);
