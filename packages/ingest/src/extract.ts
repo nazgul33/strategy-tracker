@@ -28,10 +28,15 @@ function normalizeSide(s: any): 'buy' | 'sell' | null {
 
 const stripCommas = (v: any): any => (typeof v === 'string' ? v.replace(/,/g, '') : v);
 
+// mPOP shows overseas tickers with a trailing exchange code ("SOXL.N" = Nasdaq);
+// runs and fills store the bare symbol. Only .N/.O/.A are stripped, so dotted
+// tickers like "BRK.B" survive.
+const EXCHANGE_SUFFIX_RE = /\.(N|O|A)$/i;
+
 function normalizeFill(raw: any): RawFill | null {
   const side = normalizeSide(raw?.side);
   if (!side) return null;
-  const ticker = raw?.ticker;
+  const ticker = typeof raw?.ticker === 'string' ? raw.ticker.trim().replace(EXCHANGE_SUFFIX_RE, '') : raw?.ticker;
   const shares = Number(stripCommas(raw?.shares));
   const price = stripCommas(raw?.price);
   const fee = stripCommas(raw?.fee);

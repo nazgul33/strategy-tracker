@@ -191,6 +191,16 @@ describe('extract', () => {
     }
   });
 
+  test('m) exchange-suffixed tickers are normalized ("SOXL.N" -> "SOXL"), dotted tickers survive', async () => {
+    const content = '{"fills":[{"side":"매수","ticker":"SOXL.N","shares":"78","price":"58.3200"},{"side":"매도","ticker":"BRK.B","shares":"2","price":"410.00"},{"side":"매수","ticker":"KO.N","shares":"10","price":"70.1000"}]}';
+    const f = fakeFetch([okJson(content)]);
+    const r = await extractFills([{ base64: 'AAA', mime: 'image/png' }], CFG, f);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.fills.map((x) => x.ticker)).toEqual(['SOXL', 'BRK.B', 'KO']);
+    }
+  });
+
   test('200 with non-JSON body -> unparseable, not a crash', async () => {
     const f = fakeFetch([{ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } }]);
     const r = await extractFills([{ base64: 'AAA', mime: 'image/png' }], CFG, f);

@@ -5,7 +5,7 @@ The screenshot is a WIDE table: one row per order, columns include:
 
 Output ONE fill per table row that has 체결수량 > 0:
 - side: "buy" if 주문구분 contains 매수, "sell" if it contains 매도. Ignore the rest of the 주문구분 text (보통, LOO, 지정가, …).
-- ticker: the symbol from 종목코드 (e.g. "SOXL").
+- ticker: the symbol from 종목코드 WITHOUT the exchange suffix: a 기간체결 table shows "SOXL.N" — output "SOXL" (drop the ".N" / ".O" / ".A" exchange code; e.g. "BRK.B" keeps its ".B").
 - shares: 체결수량 ONLY — never 주문수량 or 미체결수량.
 - price: 체결단가 ONLY — NEVER 주문단가; they often differ (e.g. ordered 42.8400 but executed 56.8600).
 - If 체결수량 is 0 or blank, that order has NOT been executed: skip the row entirely.
