@@ -252,7 +252,14 @@ export async function cancelOrder(runId: number, orderId: number, reason: string
 // it does not derive from poolCents minus history; recalcRunState then re-
 // anchors it and books the one-time difference as an 'adjust' (reason
 // 'recalc'). See "Recalc and drift" in the partial-sell-history spec.
-export async function seedRun(runId: number, seed: { cashCents: number; buckets: Array<{ shares: number; buyPrice: string; filledOn: ISODate }> }, deps: BookingDeps): Promise<void> {
+// Runs under the per-run lock (the run row must already exist).
+type SeedInput = { cashCents: number; buckets: Array<{ shares: number; buyPrice: string; filledOn: ISODate }> }
+
+export function seedRun(runId: number, seed: SeedInput, deps: BookingDeps): Promise<void> {
+  return withRunLock(runId, () => seedUnlocked(runId, seed, deps))
+}
+
+async function seedUnlocked(runId: number, seed: SeedInput, deps: BookingDeps): Promise<void> {
   if (!Number.isInteger(seed.cashCents) || seed.cashCents < 0) throw new Error('invalid seed cash')
   const repos = deps.repos
   const run = await repos.runRepo.get(runId)

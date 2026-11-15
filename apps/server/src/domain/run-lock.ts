@@ -2,7 +2,8 @@
 // Two concurrent requests for one run could otherwise read the same state and
 // write a duplicate pending row, a double-booked fill or a colliding bucket.
 // In-process only: a second app instance on the same DB stays unprotected
-// (GitHub issue #1). Non-reentrant — never call withRunLock for a runId from
+// until multi-instance protection (DB transactions + SELECT ... FOR UPDATE)
+// exists. Non-reentrant — never call withRunLock for a runId from
 // inside a locked section on the same runId, the inner call would deadlock.
 const tails = new Map<number, Promise<void>>()
 
