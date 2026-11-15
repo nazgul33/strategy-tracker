@@ -1,6 +1,6 @@
 # Capture dedup against booked fills and pending rows
 
-Date: 2026-11-15. Status: awaiting approval.
+Date: 2026-11-15. Status: approved.
 
 ## Problem
 
@@ -21,6 +21,9 @@ re-inserts already-booked trades as new pending rows.
   Price normalizes through `parseUsd` so `58.32` and `58.3200` match.
   `filledOn` is the extracted date (`f.date ?? deps.today`), matching what
   the pending/fill rows store.
+  Ticker relies on `normalizeFill` stripping the exchange suffix
+  (기간체결 shows "SOXL.N"; booked runs store "SOXL" — see fix 2a5094d);
+  without it every dedup key would miss.
 - Multiset counting (Map<key, count> built from booked fills + pending
   rows), not a set: each extracted occurrence is skipped only while a
   matching booked/pending occurrence remains. Re-consuming a booked trade
