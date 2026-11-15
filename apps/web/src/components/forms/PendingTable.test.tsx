@@ -155,6 +155,20 @@ describe('PendingTable', () => {
     expect(cell.firstElementChild?.nextElementSibling).toBe(input);
   });
 
+  it('quantity and price cells stack the detected value in a div above the override input, like the date cell', async () => {
+    stubFetch('conflict');
+    await renderTable(root);
+    const cells = container.querySelectorAll('tbody tr td');
+    for (const [idx, text] of [[3, '10'], [4, '$12,345.00']] as const) {
+      const cell = cells[idx]!;
+      const input = cell.querySelector('input');
+      expect(input).toBeTruthy();
+      expect(cell.firstElementChild?.tagName).toBe('DIV');
+      expect(cell.firstElementChild?.textContent).toBe(text);
+      expect(cell.firstElementChild?.nextElementSibling).toBe(input);
+    }
+  });
+
   it('typing an override date keeps the detected date above it and confirm posts overrides.filledOn', async () => {
     const calls = installFetchStub([
       { method: 'POST', url: '/api/pending', json: { ok: true } },

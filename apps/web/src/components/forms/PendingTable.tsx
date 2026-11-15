@@ -110,7 +110,7 @@ export function PendingTable({ runId }: { runId?: number }) {
                   <Td className="font-medium">{r.ticker || '?'}</Td>
                   <Td>{r.side === 'buy' || r.side === 'sell' ? t(r.side === 'buy' ? 'orderSideBuy' : 'orderSideSell') : '?'}</Td>
                   <Td className="text-right tabular-nums">
-                    {r.shares > 0 ? r.shares : '?'}
+                    <div>{r.shares > 0 ? r.shares : '?'}</div>
                     <Input
                       className={`mt-1 w-24 ${bad('shares')}`}
                       placeholder={t('pendingQtyOverride')}
@@ -120,7 +120,7 @@ export function PendingTable({ runId }: { runId?: number }) {
                     />
                   </Td>
                   <Td className="text-right tabular-nums">
-                    {priceUsd(r.price)}
+                    <div>{priceUsd(r.price)}</div>
                     <Input
                       className={`mt-1 w-24 ${bad('price')}`}
                       placeholder={t('pendingPriceOverride')}
