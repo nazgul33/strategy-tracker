@@ -237,7 +237,27 @@ describe('rebookFill', () => {
     expect(res.deltaCents).toBe(buyEffect('100.00', 100) - buyEffect('10.00', 1))
   })
 
-  test('editing a sell is rejected as immutable, state untouched', async () => {
+  test('editing a sell price and fee rebuilds closed history and books one adjust', async () => {
+    const f = fakeRepos()
+    const runId = await createRun(f, 100_000, 2)
+    await bookBuy(f, runId, { idx: 1, shares: 8, price: '16.00', filledOn: '2026-01-08' })
+    await manualFill(runId, { side: 'sell', shares: 8, price: '17.00', fee: '0.30', filledOn: '2026-01-09' }, deps(f))
+
+    const sell = f._stores.fills.find((x: any) => x.side === 'sell')
+    const res = await rebookFill(runId, { fillId: sell.id, shares: 8, priceStr: '15.00', feeCents: 25 }, deps(f))
+
+    expect(f._stores.fills.find((x: any) => x.id === sell.id)).toMatchObject({ price: parseUsd('15.00'), fee: 25 })
+    const st = await getState(f, runId)
+    const closed = st.closed.find((c) => c.index === 1)
+    expect(closed?.soldPrice).toBe(parseUsd('15.00'))
+    const adj = adjustRows(f)
+    expect(adj).toHaveLength(1)
+    expect(JSON.parse(adj[0].ref).reason).toBe('fill-edit')
+    expect(res.deltaCents).toBe(sellEffect('15.00', 8, 25) - sellEffect('17.00', 8, 30))
+    expect(adj[0].amountCents).toBe(res.deltaCents)
+  })
+
+  test('a sell qty above what the bucket holds is rejected, nothing persisted', async () => {
     const f = fakeRepos()
     const runId = await createRun(f, 100_000, 2)
     await bookBuy(f, runId, { idx: 1, shares: 8, price: '16.00', filledOn: '2026-01-08' })
@@ -245,12 +265,13 @@ describe('rebookFill', () => {
 
     const stateBefore = asJson(await getState(f, runId))
     const sell = f._stores.fills.find((x: any) => x.side === 'sell')
-    const err = await expectKind(() => rebookFill(runId, { fillId: sell.id, shares: 4, priceStr: '15.00', feeCents: 300 }, deps(f)))
+    const sellBefore = asJson(sell)
+    const err = await expectKind(() => rebookFill(runId, { fillId: sell.id, shares: 9, priceStr: '17.00', feeCents: 30 }, deps(f)))
 
     expect(err).toBeInstanceOf(DomainError)
-    expect(err.kind).toBe('immutable-field')
     expect(asJson(await getState(f, runId))).toBe(stateBefore)
     expect(adjustRows(f)).toHaveLength(0)
+    expect(asJson(f._stores.fills.find((x: any) => x.id === sell.id))).toBe(sellBefore)
   })
 
   test('an unknown fillId fails before anything is written', async () => {

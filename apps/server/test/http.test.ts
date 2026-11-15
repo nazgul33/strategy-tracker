@@ -909,7 +909,7 @@ describe('fill edit + delete endpoints', () => {
     expect(f.states.get(id)!.cashCents).toBe(76477) // 200000 - 123400 - 123
   })
 
-  test('PUT on a sell fill -> 422 immutable-field', async () => {
+  test('PUT on a sell fill -> 200, price edited', async () => {
     const f = makeFakes()
     const app = createApp(makeDeps(f))
     const auth = await loginAs(app)
@@ -917,12 +917,11 @@ describe('fill edit + delete endpoints', () => {
     await postFill(app, auth, id, { side: 'buy', shares: 2, price: '10.0000', filledOn: '2026-11-10' })
     await postFill(app, auth, id, { side: 'sell', shares: 2, price: '12.0000', filledOn: '2026-11-10' })
     const res = await app.request(`/api/runs/${id}/fills/2`, {
-      method: 'PUT', body: JSON.stringify({ qty: 1, priceCents: 1200, feeCents: 0 }), headers: { ...json, ...auth },
+      method: 'PUT', body: JSON.stringify({ qty: 2, priceCents: 1100, feeCents: 0 }), headers: { ...json, ...auth },
     })
-    expect(res.status).toBe(422)
-    expect(await res.json()).toEqual({ error: 'immutable-field' })
-    expect(f.fills[1].shares).toBe(2) // untouched
-    expect(f.states.get(id)!.cashCents).toBe(100400)
+    expect(res.status).toBe(200)
+    expect(f.fills[1].price).toBe(110000n)
+    expect(f.states.get(id)!.cashCents).toBe(100200) // 100000 - 2000 + 2200
   })
 
   test('PUT invalid bodies -> 400 invalid-body, and 400 beats 404', async () => {
