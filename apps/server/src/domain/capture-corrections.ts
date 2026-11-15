@@ -28,7 +28,8 @@ function pickBlocking(rows: CorrectionRow[], fill: SnapshotFill): CorrectionRow 
  * (dismiss sticks) — both only while the fill still matches their snapshot.
  * A stale row (the fill was hand-edited since) is ignored, so a new open
  * correction snapshots the booked fill as it is now.
- * Pending-row conflicts pass through untouched. Must run inside the run lock,
+ * A booked-fill conflict whose fill is no longer there is stamped 'fill-gone'
+ * (nothing is inserted). Pending-row conflicts pass through untouched. Must run inside the run lock,
  * right after matchCapturedFills, so the cited fills cannot move.
  */
 export async function recordCorrections(
@@ -42,8 +43,12 @@ export async function recordCorrections(
   const out: CaptureConflict[] = []
   for (const c of conflicts) {
     const fill = c.bookedId === null ? undefined : fills.get(c.bookedId)
-    if (!fill) {
+    if (c.bookedId === null) {
       out.push(c)
+      continue
+    }
+    if (!fill) {
+      out.push({ ...c, correction: { id: null, status: 'fill-gone' } })
       continue
     }
     const proposedPrice = parseUsd(c.extractedPrice)

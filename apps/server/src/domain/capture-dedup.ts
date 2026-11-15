@@ -16,8 +16,9 @@ export interface CaptureConflict {
   bookedPrice: string | null
   pendingId: number | null
   pendingPrice: string | null
-  /** Set by recordCorrections for booked-fill conflicts; the matcher leaves null. */
-  correction: { id: number; status: 'open' | 'dismissed' } | null
+  /** Set by recordCorrections for booked-fill conflicts; the matcher leaves null.
+   * 'fill-gone': the cited booked fill vanished before a correction could be recorded. */
+  correction: { id: number; status: 'open' | 'dismissed' } | { id: null; status: 'fill-gone' } | null
 }
 
 /** What the dedup pass hands back to ingestCapture: the fills that are genuinely

@@ -300,6 +300,24 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     );
     expect(h.corrections.length).toBe(1);
   });
+
+  test('gone fill uses the gone line', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    await h.repos.fillRepo.insert({
+      runId: 1, bucketIdx: 0, side: 'buy', ticker: 'NVDA', shares: 10,
+      price: parseUsd('999.99'), fee: 0, filledOn: '2026-11-10', source: 'manual',
+    } as never);
+    // The matcher reads the list first; the recorder's later read sees the fill gone.
+    const real = h.repos.fillRepo.listForRun;
+    let calls = 0;
+    h.repos.fillRepo.listForRun = async (runId: number) => (calls++ === 0 ? real(runId) : []);
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(h.sent.length).toBe(1);
+    expect(h.sent[0]!.text).toBe(
+      '⚠️ buy 10 NVDA on 2026-11-10 — extracted $180.50, but booked fill #1 no longer exists. Nothing to correct.',
+    );
+    expect(h.corrections.length).toBe(0);
+  });
 });
 
 describe('capture onPhoto — dedup and failures', () => {
