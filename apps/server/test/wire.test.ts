@@ -415,6 +415,23 @@ describe('capture onPhoto — dedup and failures', () => {
     expect(h.captures.length).toBe(0);
     expect(h.sent[0]!.text).toBe('Multiple active runs for NVDA — use /capture <runId>.');
   });
+
+  test('gone fill in a Korean chat sends the Korean gone line through onPhoto', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')], lang: 'ko' });
+    await h.repos.fillRepo.insert({
+      runId: 1, bucketIdx: 0, side: 'buy', ticker: 'NVDA', shares: 10,
+      price: parseUsd('999.99'), fee: 0, filledOn: '2026-11-10', source: 'manual',
+    } as never);
+    const real = h.repos.fillRepo.listForRun.bind(h.repos.fillRepo);
+    let calls = 0;
+    h.repos.fillRepo.listForRun = async (runId: number) => (calls++ === 0 ? real(runId) : []);
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(h.sent.length).toBe(1);
+    expect(h.sent[0]!.text).toBe(
+      '⚠️ 2026-11-10 NVDA buy 10주 — 추출 가격 $180.50, 예약된 체결 #1이(가) 더 이상 없습니다. 수정할 항목이 없습니다.',
+    );
+    expect(h.corrections.length).toBe(0);
+  });
 });
 
 describe('capture onConfirm — human-readable errors (#7)', () => {
