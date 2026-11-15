@@ -153,7 +153,7 @@ async function main(): Promise<void> {
     ok(pend.length === 1 && pend[0]!.side === 'buy' && pend[0]!.shares === 30 &&
       pend[0]!.price === 1795000n && pend[0]!.fee === 50, 'pending row: buy 30 sh, price 1795000n (bigint), fee 50c')
     await capture.onPhoto('chat-1', IMG, 'NVDA 11/9 broker fill')
-    ok(captureMsgs.some((m) => m === 'Duplicate capture — already booked.'), 'same photo again -> duplicate-capture message')
+    ok(captureMsgs.some((m) => m === 'Duplicate capture — all fills already booked or pending.'), 'same photo again -> duplicate-capture message')
     ok((await repos.pendingRepo.listPending()).length === 1, 'duplicate created no second pending row')
     ok(visionHits.length === 2 && visionHits[0]!.model === 'e2e-vision',
       'both photos hit fake vision (hash guard runs after extraction), model echoed')

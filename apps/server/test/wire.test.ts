@@ -266,7 +266,7 @@ describe('capture onPhoto — dedup and failures', () => {
     expect(h.captures.map((c) => c.status)).toEqual(['parsed']);
     expect(h.pending.length).toBe(1);
     expect(h.sent.length).toBe(2);
-    expect(h.sent[1]!.text).toBe('Duplicate capture — already booked.');
+    expect(h.sent[1]!.text).toBe('Duplicate capture — all fills already booked or pending.');
   });
 
   test('extract failure: no pending row, user sees the reason, admin notified', async () => {
