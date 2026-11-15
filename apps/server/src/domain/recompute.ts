@@ -1,14 +1,7 @@
 import { applyBuyFill, applySellFill, emptyState, DomainError, parseUsd, type ISODate, type RunState } from '@st/core'
-import { feeCents, roundDiv } from '@st/core/money'
+import { feeCents } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { BookingDeps, FillRow } from './booking'
-
-// Signed cash effect of one fill, in cents: buys spend gross + fee, sells
-// receive gross - fee. Mirrors the ledger delta runBooking books per fill.
-export function signedCents(f: { side: 'buy' | 'sell'; price: bigint; shares: number; fee: number }): number {
-  const gross = Number(roundDiv(f.price * BigInt(f.shares), 100n))
-  return f.side === 'buy' ? -(gross + f.fee) : gross - f.fee
-}
 
 // SQL listings carry no ORDER BY, so never trust row-return order: id-ascending
 // is the canonical history order (matches the per-bucket MAX(id) guard in deleteFill).

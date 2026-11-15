@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { applyBuyFill, DomainError, emptyState, parseUsd, roundDiv, type ISODate, type RunState } from '@st/core'
 import { ageBuckets, progressView } from '@st/strategies'
 import { manualFill, type BookingDeps, type FillRow } from '../src/domain/booking'
-import { deleteFill, rebookFill, rebuildState, signedCents } from '../src/domain/recompute'
+import { deleteFill, rebookFill, rebuildState } from '../src/domain/recompute'
 import { fakeRepos } from './booking.test'
 
 const TODAY: ISODate = '2026-01-15'
@@ -55,14 +55,6 @@ async function expectKind(fn: () => Promise<unknown>): Promise<DomainError> {
   }
   throw new Error('expected a DomainError, but the call resolved')
 }
-
-describe('signedCents', () => {
-  test('buy charges gross + fee, sell credits gross − fee', () => {
-    expect(signedCents({ side: 'buy', price: 1_800_000n, shares: 12, fee: 400 })).toBe(-216_400)
-    expect(signedCents({ side: 'sell', price: 1_800_000n, shares: 12, fee: 400 })).toBe(215_600)
-    expect(signedCents({ side: 'buy', price: 15_000_000n, shares: 8, fee: 0 })).toBe(-1_200_000)
-  })
-})
 
 describe('rebuildState', () => {
   test('replays fills on top of the pool and is pure', () => {
