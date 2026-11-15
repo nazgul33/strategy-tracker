@@ -4,7 +4,7 @@ import type { RawFill } from '@st/ingest'
 
 /** A re-extracted fill that matches an existing booked/pending fill on everything
  * but price: the same trade with a price discrepancy — never a new row. */
-export interface CaptureConflict {
+interface ConflictBase {
   side: 'buy' | 'sell'
   ticker: string
   shares: number
@@ -12,14 +12,17 @@ export interface CaptureConflict {
   /** Canonical fee from the raw fill; null when the screenshot showed none. */
   extractedFee: string | null
   filledOn: ISODate
-  bookedId: number | null
-  bookedPrice: string | null
-  pendingId: number | null
-  pendingPrice: string | null
-  /** Set by recordCorrections for booked-fill conflicts; the matcher leaves null.
-   * 'fill-gone': the cited booked fill vanished before a correction could be recorded. */
-  correction: { id: number; status: 'open' | 'dismissed' } | { id: null; status: 'fill-gone' } | null
 }
+
+/** Set by recordCorrections for booked-fill conflicts; the matcher leaves null.
+ * 'fill-gone': the cited booked fill vanished before a correction could be recorded. */
+export type ConflictCorrection = { id: number; status: 'open' | 'dismissed' } | { id: null; status: 'fill-gone' } | null
+
+/** Discriminated on `matchedKind`: the conflict cites either a booked fill
+ * (and may carry a correction) or a still-pending row (never a correction). */
+export type CaptureConflict =
+  | (ConflictBase & { matchedKind: 'booked'; bookedId: number; bookedPrice: string; correction: ConflictCorrection })
+  | (ConflictBase & { matchedKind: 'pending'; pendingId: number; pendingPrice: string })
 
 /** What the dedup pass hands back to ingestCapture: the fills that are genuinely
  * new, plus one conflict per re-detected trade with a price discrepancy. */
@@ -147,10 +150,10 @@ export async function matchCapturedFills(
       if (loose.get(lk)?.length === 0) loose.delete(lk)
       const base = {
         side: f.side, ticker: f.ticker, shares: f.shares, extractedPrice: canon(f.price),
-        extractedFee: f.fee != null ? canon(f.fee) : null, filledOn, correction: null,
+        extractedFee: f.fee != null ? canon(f.fee) : null, filledOn,
       }
-      if (hit.kind === 'fill') conflicts.push({ ...base, bookedId: hit.id, bookedPrice: hit.price, pendingId: null, pendingPrice: null })
-      else conflicts.push({ ...base, bookedId: null, bookedPrice: null, pendingId: hit.id, pendingPrice: hit.price })
+      if (hit.kind === 'fill') conflicts.push({ ...base, matchedKind: 'booked', bookedId: hit.id, bookedPrice: hit.price, correction: null })
+      else conflicts.push({ ...base, matchedKind: 'pending', pendingId: hit.id, pendingPrice: hit.price })
       continue
     }
     fresh.push(f)
