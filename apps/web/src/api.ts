@@ -32,7 +32,6 @@ export type ApiErrorCode =
   | 'not-found'
   | 'no-run'
   | 'not-pending'
-  | 'pending-not-pending'
   | 'ticker-mismatch'
   | 'order-not-found'
   | 'order-not-open'
