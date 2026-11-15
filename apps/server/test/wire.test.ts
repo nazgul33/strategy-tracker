@@ -276,8 +276,29 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     expect(h.pending.length).toBe(0);
     expect(h.sent.length).toBe(1);
     expect(h.sent[0]!.text).toBe(
-      '⚠️ Conflict: buy 10 NVDA on 2026-11-10 — extracted $180.50, but booked fill #1 has $999.99. Fix the booked fill or reject the row.',
+      '⚠️ Conflict: buy 10 NVDA on 2026-11-10 — extracted $180.50, booked fill #1 has $999.99. Correction listed in Pending.',
     );
+    expect(h.corrections.length).toBe(1);
+    expect(h.corrections[0]).toMatchObject({ fillId: 1, proposedPrice: parseUsd('180.50'), status: 'open' });
+  });
+
+  test('dismissed correction conflict uses the dismissed line', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    await h.repos.fillRepo.insert({
+      runId: 1, bucketIdx: 0, side: 'buy', ticker: 'NVDA', shares: 10,
+      price: parseUsd('999.99'), fee: 0, filledOn: '2026-11-10', source: 'manual',
+    } as never);
+    const id = await h.repos.correctionRepo.insert({
+      runId: 1, fillId: 1, captureId: null, side: 'buy', ticker: 'NVDA', bookedShares: 10, bookedFilledOn: '2026-11-10',
+      bookedPrice: parseUsd('999.99'), bookedFee: 0, proposedPrice: parseUsd('180.50'), proposedFee: null,
+    });
+    await h.repos.correctionRepo.decide(id, 'dismissed');
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(h.sent.length).toBe(1);
+    expect(h.sent[0]!.text).toBe(
+      'ℹ️ buy 10 NVDA on 2026-11-10 — extracted $180.50, booked fill #1 has $999.99. You dismissed this correction before; not listed again.',
+    );
+    expect(h.corrections.length).toBe(1);
   });
 });
 

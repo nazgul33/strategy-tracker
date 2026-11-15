@@ -684,6 +684,7 @@ describe('capture dedup against booked fills and pending rows', () => {
     expect(conflicts[0]).toEqual({
       side: 'sell', ticker: 'SOXL', shares: 44, extractedPrice: '64.07', filledOn: '2026-11-11',
       bookedId: f._stores.fills[0]!.id, bookedPrice: '66.03', pendingId: null, pendingPrice: null,
+      extractedFee: null, correction: { id: f._stores.corrections[0]!.id, status: 'open' },
     })
     expect(f._stores.pending.length).toBe(0)
   })
@@ -698,6 +699,7 @@ describe('capture dedup against booked fills and pending rows', () => {
       side: 'buy', ticker: 'SOXL', shares: 78, extractedPrice: '58.99', filledOn: '2026-11-13',
       bookedId: null, bookedPrice: null,
       pendingId: f._stores.pending[0]!.id, pendingPrice: '58.32',
+      extractedFee: null, correction: null,
     })
     expect(f._stores.pending.length).toBe(1)
   })
@@ -837,9 +839,13 @@ describe('capture re-upload', () => {
     expect(first.conflicts.length).toBe(1)
     expect(first.pending.length).toBe(1)
     await f.repos.pendingRepo.decide(first.pending[0].id, 'rejected')
+    // the open correction proposed from this capture keeps it live
+    expect(await ingestCapture(runId, img('IMG_2109'), shot, deps)).toBe('duplicate')
+    await f.repos.correctionRepo.decide(first.conflicts[0].correction.id, 'dismissed')
     const out: any = await ingestCapture(runId, img('IMG_2109'), shot, deps)
     expect(out.conflicts.length).toBe(1)
     expect(out.conflicts[0].bookedPrice).toBe('66.03')
+    expect(out.conflicts[0].correction).toEqual({ id: first.conflicts[0].correction.id, status: 'dismissed' })
     expect(out.pending.length).toBe(1)
     expect(out.pending[0].shares).toBe(78)
     expect(out.pending[0].filledOn).toBe('2026-11-13')
@@ -874,6 +880,133 @@ describe('capture re-upload', () => {
     expect(objs[0].pending.length).toBe(1)
     expect(out.filter((o) => o === 'duplicate').length).toBe(1)
     expect(f._stores.pending.filter((p: any) => p.status === 'pending').length).toBe(1)
+    expect(f._stores.captures.length).toBe(1)
+  })
+})
+
+describe('capture corrections', () => {
+  const setup = async (name: string) => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-15' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'SOXL', name, poolCents: 1_000_000, costPpm: 100 })
+    return { f, deps, runId }
+  }
+  const img = (b64: string) => ({ base64: b64, mime: 'image/png' })
+  const ext = (...fills: RawFill[]): ExtractResult => ({ ok: true, fills })
+  const seedFill = async (f: any, runId: number, side: 'buy' | 'sell', shares: number, price: string, filledOn: string) => {
+    await f.repos.fillRepo.insert({ runId, bucketIdx: 0, side, ticker: 'SOXL', shares, price: parseUsd(price), fee: 0, filledOn, source: 'capture' })
+  }
+  const seedPending = async (f: any, runId: number, side: 'buy' | 'sell', shares: number, price: string, filledOn: string) => {
+    await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side, ticker: 'SOXL', shares, price: parseUsd(price), fee: null, filledOn, status: 'pending' })
+  }
+  const sell44 = (price: string, fee?: string): RawFill =>
+    fee === undefined
+      ? { side: 'sell', ticker: 'SOXL', shares: 44, price, date: '2026-11-11' }
+      : { side: 'sell', ticker: 'SOXL', shares: 44, price, fee, date: '2026-11-11' }
+
+  test('booked-fill conflict creates one open correction with a full snapshot', async () => {
+    const { f, deps, runId } = await setup('corr1')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    const out = await ingestCapture(runId, img('CORR-1'), ext(sell44('64.07', '2.03')), deps) as { conflicts: CaptureConflict[] }
+    expect(f._stores.corrections.length).toBe(1)
+    const row = f._stores.corrections[0]!
+    expect(row).toMatchObject({
+      runId, fillId: f._stores.fills[0]!.id, side: 'sell', ticker: 'SOXL', bookedShares: 44, bookedFilledOn: '2026-11-11',
+      bookedPrice: parseUsd('66.03'), bookedFee: 0, proposedPrice: parseUsd('64.07'), proposedFee: 203,
+      captureId: f._stores.captures[0]!.id, status: 'open',
+    })
+    expect(out.conflicts[0]!.correction).toEqual({ id: row.id, status: 'open' })
+    expect(out.conflicts[0]!.extractedFee).toBe('2.03')
+  })
+
+  test('a second screenshot with the same conflict reuses the open correction', async () => {
+    const { f, deps, runId } = await setup('corr2')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    const a = await ingestCapture(runId, img('CORR-2A'), ext(sell44('64.07')), deps) as { conflicts: CaptureConflict[] }
+    const b = await ingestCapture(runId, img('CORR-2B'), ext(sell44('64.07')), deps) as { conflicts: CaptureConflict[] }
+    expect(f._stores.corrections.length).toBe(1)
+    expect(b.conflicts[0]!.correction).toEqual({ id: a.conflicts[0]!.correction!.id, status: 'open' })
+  })
+
+  test('dismissed correction is never re-proposed for the same price', async () => {
+    const { f, deps, runId } = await setup('corr3')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    const a = await ingestCapture(runId, img('CORR-3A'), ext(sell44('64.07')), deps) as { conflicts: CaptureConflict[] }
+    const id = a.conflicts[0]!.correction!.id
+    expect(await f.repos.correctionRepo.decide(id, 'dismissed')).toBe(true)
+    const b = await ingestCapture(runId, img('CORR-3B'), ext(sell44('64.07')), deps) as { conflicts: CaptureConflict[] }
+    expect(f._stores.corrections.length).toBe(1)
+    expect(b.conflicts[0]!.correction).toEqual({ id, status: 'dismissed' })
+  })
+
+  test('a different price after dismiss creates a new correction', async () => {
+    const { f, deps, runId } = await setup('corr4')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    const a = await ingestCapture(runId, img('CORR-4A'), ext(sell44('64.07')), deps) as { conflicts: CaptureConflict[] }
+    const firstId = a.conflicts[0]!.correction!.id
+    await f.repos.correctionRepo.decide(firstId, 'dismissed')
+    const b = await ingestCapture(runId, img('CORR-4B'), ext(sell44('64.70')), deps) as { conflicts: CaptureConflict[] }
+    expect(f._stores.corrections.length).toBe(2)
+    const created = b.conflicts[0]!.correction!
+    expect(created.id).not.toBe(firstId)
+    expect(created.status).toBe('open')
+    expect(f._stores.corrections.find((c) => c.id === created.id)!.proposedPrice).toBe(parseUsd('64.70'))
+  })
+
+  test('an applied correction does not suppress a new one', async () => {
+    const { f, deps, runId } = await setup('corr5')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    const a = await ingestCapture(runId, img('CORR-5A'), ext(sell44('64.07')), deps) as { conflicts: CaptureConflict[] }
+    const firstId = a.conflicts[0]!.correction!.id
+    await f.repos.correctionRepo.decide(firstId, 'applied')
+    const b = await ingestCapture(runId, img('CORR-5B'), ext(sell44('64.07')), deps) as { conflicts: CaptureConflict[] }
+    expect(f._stores.corrections.length).toBe(2)
+    expect(b.conflicts[0]!.correction!.id).not.toBe(firstId)
+    expect(b.conflicts[0]!.correction!.status).toBe('open')
+  })
+
+  test('pending-row conflict creates no correction', async () => {
+    const { f, deps, runId } = await setup('corr6')
+    await seedPending(f, runId, 'buy', 78, '58.32', '2026-11-13')
+    const out = await ingestCapture(runId, img('CORR-6'),
+      ext({ side: 'buy', ticker: 'SOXL', shares: 78, price: '58.99', date: '2026-11-13' }), deps) as { conflicts: CaptureConflict[] }
+    expect(f._stores.corrections.length).toBe(0)
+    expect(out.conflicts[0]!.correction).toBeNull()
+  })
+
+  test('fee-only difference creates no correction', async () => {
+    const { f, deps, runId } = await setup('corr7')
+    await seedFill(f, runId, 'sell', 44, '64.07', '2026-11-11')
+    const out = await ingestCapture(runId, img('CORR-7'), ext(sell44('64.07', '2.03')), deps)
+    expect(out).toBe('duplicate')
+    expect(f._stores.corrections.length).toBe(0)
+  })
+
+  test('two conflicts create two corrections', async () => {
+    const { f, deps, runId } = await setup('corr8')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    await seedFill(f, runId, 'buy', 88, '56.60', '2026-11-10')
+    const out = await ingestCapture(runId, img('CORR-8'), ext(
+      sell44('64.07'),
+      { side: 'buy', ticker: 'SOXL', shares: 88, price: '56.06', date: '2026-11-10' },
+    ), deps) as { conflicts: CaptureConflict[] }
+    expect(out.conflicts.length).toBe(2)
+    expect(f._stores.corrections.length).toBe(2)
+    const [sellFill, buyFill] = f._stores.fills
+    expect(f._stores.corrections.map((c) => [c.fillId, c.status])).toEqual([[sellFill!.id, 'open'], [buyFill!.id, 'open']])
+    expect(out.conflicts.map((c) => c.correction!.status)).toEqual(['open', 'open'])
+  })
+
+  test('same image re-sent while its correction is open is a duplicate; after dismiss it is re-read', async () => {
+    const { f, deps, runId } = await setup('corr9')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    const a = await ingestCapture(runId, img('CORR-9'), ext(sell44('64.07')), deps) as { conflicts: CaptureConflict[] }
+    const id = a.conflicts[0]!.correction!.id
+    expect(await ingestCapture(runId, img('CORR-9'), ext(sell44('64.07')), deps)).toBe('duplicate')
+    await f.repos.correctionRepo.decide(id, 'dismissed')
+    const again = await ingestCapture(runId, img('CORR-9'), ext(sell44('64.07')), deps) as { conflicts: CaptureConflict[] }
+    expect(again.conflicts[0]!.correction).toEqual({ id, status: 'dismissed' })
+    expect(f._stores.corrections.length).toBe(1)
     expect(f._stores.captures.length).toBe(1)
   })
 })

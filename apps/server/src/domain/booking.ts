@@ -4,6 +4,7 @@ import { ageBuckets } from '@st/strategies'
 import type { ExtractResult, RawFill } from '@st/ingest'
 import { matchCapturedFills, type CaptureConflict } from './capture-dedup'
 import { claimCapture } from './capture-claim'
+import { recordCorrections } from './capture-corrections'
 import { withRunLock } from './run-lock'
 import type { CorrectionRepo } from './correction-types'
 
@@ -150,8 +151,10 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
     if (captureId === null) return 'duplicate'
     if (!extract.ok) return 'rejected'
 
-    const { fresh, conflicts } = await matchCapturedFills(repos, runId, extract.fills, deps.today)
-    if (fresh.length === 0 && conflicts.length === 0) return 'duplicate'
+    const match = await matchCapturedFills(repos, runId, extract.fills, deps.today)
+    const { fresh } = match
+    if (fresh.length === 0 && match.conflicts.length === 0) return 'duplicate'
+    const conflicts = await recordCorrections(repos, runId, captureId, match.conflicts)
 
     const pendingRows: PendingFillRow[] = []
     for (const f of fresh) {

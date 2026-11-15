@@ -8,11 +8,12 @@ export interface CaptureClaimRepos {
     insert(c: any): Promise<{ inserted: boolean; id?: number }>
   }
   pendingRepo: { listPending(): Promise<Array<{ captureId: number | null }>> }
+  correctionRepo: { hasOpenForCapture(captureId: number): Promise<boolean> }
 }
 
 // Resolves which `captures` row a read of this image attaches to. A seen image
 // is re-read onto its existing row unless one of that row's fills still awaits
-// a decision. Returns the capture id, or null when the upload is a duplicate.
+// a decision or an open correction proposed from it is still undecided. Returns the capture id, or null when the upload is a duplicate.
 // Must run inside the run lock: the lookup, the status write and the caller's
 // pending inserts are one decide→write span.
 export async function claimCapture(
@@ -23,7 +24,9 @@ export async function claimCapture(
 ): Promise<number | null> {
   const existing = await repos.captureRepo.findByHash(runId, hash)
   if (existing) {
-    const live = (await repos.pendingRepo.listPending()).some((p) => p.captureId === existing.id)
+    const live =
+      (await repos.pendingRepo.listPending()).some((p) => p.captureId === existing.id) ||
+      (await repos.correctionRepo.hasOpenForCapture(existing.id))
     if (live) return null
     await repos.captureRepo.setStatus(existing.id, status)
     return existing.id
