@@ -116,6 +116,14 @@ async function runBooking(input: BookInput, deps: BookingDeps): Promise<void> {
   if (matchedOrderId !== null) await repos.orderRepo.setStatus(matchedOrderId, 'filled')
 }
 
+// Exact-signature dedup key. Prices arrive as bigint myriadths from the DB and
+// as strings from extraction; formatUsd(parseUsd(x)) canonicalizes both
+// spellings ("58.32" === "58.3200").
+function dedupKey(side: string, ticker: string, shares: number, price: bigint | string, filledOn: string): string {
+  const canon = formatUsd(typeof price === 'string' ? parseUsd(price) : price)
+  return `${side}|${ticker}|${shares}|${canon}|${filledOn}`
+}
+
 export async function ingestCapture(runId: number, image: { base64: string; mime: string }, extract: ExtractResult, deps: BookingDeps): Promise<CaptureOutcome> {
   const buf = new TextEncoder().encode(image.base64)
   const hash = await sha256(buf)
@@ -135,8 +143,25 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
   if (!res.inserted) return 'duplicate'
   const captureId = res.id!
 
-  const pendingRows: PendingFillRow[] = []
+  const remaining = new Map<string, number>()
+  const bump = (k: string) => remaining.set(k, (remaining.get(k) ?? 0) + 1)
+  if (repos.fillRepo.listForRun) {
+    for (const b of await repos.fillRepo.listForRun(runId)) bump(dedupKey(b.side, b.ticker, b.shares, b.price, b.filledOn))
+  }
+  for (const p of await repos.pendingRepo.listPending()) {
+    if (p.runId === runId) bump(dedupKey(p.side, p.ticker, p.shares, p.price, p.filledOn))
+  }
+  const fresh: RawFill[] = []
   for (const f of extract.fills) {
+    const k = dedupKey(f.side, f.ticker, f.shares, f.price, f.date ?? deps.today)
+    const n = remaining.get(k) ?? 0
+    if (n > 0) { remaining.set(k, n - 1); continue }
+    fresh.push(f)
+  }
+  if (fresh.length === 0) return 'duplicate'
+
+  const pendingRows: PendingFillRow[] = []
+  for (const f of fresh) {
     const feeCentsVal = f.fee != null ? centsFromUsd(parseUsd(f.fee)) : null
     const filledOn = f.date ?? deps.today
     const pendingId = await repos.pendingRepo.insert({
