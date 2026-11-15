@@ -132,7 +132,7 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
       fills.push({ ...(row as FillRow), id: fillId++ });
       return fillId - 1;
     },
-    listForRun: async () => fills,
+    listForRun: async (runId: number) => fills.filter((x) => x.runId === runId),
   };
   const pendingRepo = {
     insert: async (row: FakeRow) => {

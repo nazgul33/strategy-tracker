@@ -543,3 +543,100 @@ describe('buy bucket selection', () => {
     expect(idxs).toEqual([0, 1])
   })
 })
+
+describe('capture dedup against booked fills and pending rows', () => {
+  const setup = async (name: string) => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-15' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'SOXL', name, poolCents: 1_000_000, costPpm: 100 })
+    return { f, deps, runId }
+  }
+  const img = (b64: string) => ({ base64: b64, mime: 'image/png' })
+  const ext = (...fills: RawFill[]): ExtractResult => ({ ok: true, fills })
+  const seedFill = async (f: any, runId: number, side: 'buy' | 'sell', shares: number, price: string, filledOn: string) => {
+    await f.repos.fillRepo.insert({ runId, bucketIdx: 0, side, ticker: 'SOXL', shares, price: parseUsd(price), fee: 0, filledOn, source: 'capture' })
+  }
+  const seedPending = async (f: any, runId: number, side: 'buy' | 'sell', shares: number, price: string, filledOn: string) => {
+    await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side, ticker: 'SOXL', shares, price: parseUsd(price), fee: null, filledOn, status: 'pending' })
+  }
+  const trade = (side: 'buy' | 'sell', shares: number, price: string, date?: string): RawFill =>
+    date === undefined ? { side, ticker: 'SOXL', shares, price } : { side, ticker: 'SOXL', shares, price, date }
+
+  test('fully overlapping range -> duplicate', async () => {
+    const { f, deps, runId } = await setup('dedup1')
+    await seedFill(f, runId, 'buy', 88, '56.0600', '2026-11-10')
+    await seedFill(f, runId, 'sell', 44, '64.0700', '2026-11-11')
+    const out = await ingestCapture(runId, img('DEDUP1'), ext(
+      trade('buy', 88, '56.06', '2026-11-10'),
+      trade('sell', 44, '64.07', '2026-11-11'),
+    ), deps)
+    expect(out).toBe('duplicate')
+    expect(f._stores.pending.length).toBe(0)
+    expect(f._stores.captures.some((c: any) => c.status === 'parsed')).toBe(true)
+  })
+
+  test('partial overlap keeps only the new trade', async () => {
+    const { f, deps, runId } = await setup('dedup2')
+    await seedFill(f, runId, 'buy', 88, '56.0600', '2026-11-10')
+    const out = await ingestCapture(runId, img('DEDUP2'), ext(
+      trade('buy', 88, '56.06', '2026-11-10'),
+      trade('buy', 78, '58.32', '2026-11-13'),
+    ), deps) as any
+    expect(out.pending.length).toBe(1)
+    expect(out.pending[0].shares).toBe(78)
+    expect(out.pending[0].filledOn).toBe('2026-11-13')
+  })
+
+  test('still-pending rows suppress a repeat capture', async () => {
+    const { f, deps, runId } = await setup('dedup3')
+    const first = await ingestCapture(runId, img('DEDUP3A'), ext(trade('buy', 88, '56.06', '2026-11-10')), deps) as any
+    expect(first.pending.length).toBe(1)
+    const second = await ingestCapture(runId, img('DEDUP3B'), ext(trade('buy', 88, '56.06', '2026-11-10')), deps)
+    expect(second).toBe('duplicate')
+    expect(f._stores.pending.length).toBe(1)
+  })
+
+  test('price spelling: extracted 58.32 matches booked 58.3200', async () => {
+    const { f, deps, runId } = await setup('dedup4')
+    await seedFill(f, runId, 'buy', 78, '58.3200', '2026-11-13')
+    const out = await ingestCapture(runId, img('DEDUP4'), ext(trade('buy', 78, '58.32', '2026-11-13')), deps)
+    expect(out).toBe('duplicate')
+    expect(f._stores.pending.length).toBe(0)
+  })
+
+  test('multiset: booked trade repeated twice in one image leaves one pending', async () => {
+    const { f, deps, runId } = await setup('dedup5')
+    await seedFill(f, runId, 'buy', 88, '56.0600', '2026-11-10')
+    const out = await ingestCapture(runId, img('DEDUP5'), ext(
+      trade('buy', 88, '56.06', '2026-11-10'),
+      trade('buy', 88, '56.06', '2026-11-10'),
+    ), deps) as any
+    expect(out.pending.length).toBe(1)
+    expect(f._stores.pending.length).toBe(1)
+  })
+
+  test('near-misses are not deduped', async () => {
+    const { f, deps, runId } = await setup('dedup6')
+    await seedFill(f, runId, 'buy', 88, '56.0600', '2026-11-10')
+    const out = await ingestCapture(runId, img('DEDUP6'), ext(
+      trade('buy', 88, '56.06', '2026-11-10'),
+      trade('sell', 88, '56.06', '2026-11-10'),
+      trade('buy', 89, '56.06', '2026-11-10'),
+      trade('buy', 88, '56.07', '2026-11-10'),
+      trade('buy', 88, '56.06', '2026-11-11'),
+      trade('buy', 88, '56.06'),
+    ), deps) as any
+    expect(out.pending.length).toBe(5)
+  })
+
+  test('dedup tolerates a fillRepo without listForRun', async () => {
+    const { f, deps, runId } = await setup('dedup7')
+    await seedFill(f, runId, 'buy', 88, '56.0600', '2026-11-10')
+    delete (f.repos.fillRepo as any).listForRun
+    const out = await ingestCapture(runId, img('DEDUP7A'), ext(trade('buy', 88, '56.06', '2026-11-10')), deps) as any
+    expect(out.pending.length).toBe(1)
+    await seedPending(f, runId, 'buy', 88, '56.06', '2026-11-10')
+    const second = await ingestCapture(runId, img('DEDUP7B'), ext(trade('buy', 88, '56.06', '2026-11-10')), deps)
+    expect(second).toBe('duplicate')
+  })
+})
