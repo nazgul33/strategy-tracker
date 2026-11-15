@@ -31,7 +31,27 @@ export interface RepoSurface {
 
 export interface BookingDeps { repos: RepoSurface; today: ISODate }
 
-export type CaptureOutcome = 'duplicate' | 'rejected' | { pending: PendingFillRow[] }
+export type CaptureOutcome =
+  | 'duplicate'
+  | 'rejected'
+  | { pending: PendingFillRow[] }
+  | { pending: PendingFillRow[]; conflicts: CaptureConflict[] }
+  | { conflicts: CaptureConflict[] }
+  | CaptureConflict[]
+
+/** A re-extracted fill that matches an existing booked/pending fill on everything
+ * but price: the same trade with a price discrepancy — never a new row. */
+export interface CaptureConflict {
+  side: 'buy' | 'sell'
+  ticker: string
+  shares: number
+  extractedPrice: string
+  filledOn: ISODate
+  bookedId: number | null
+  bookedPrice: string | null
+  pendingId: number | null
+  pendingPrice: string | null
+}
 
 export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; status: string }
 
@@ -123,12 +143,21 @@ async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<void> 
   if (matchedOrderId !== null) await repos.orderRepo.setStatus(matchedOrderId, 'filled')
 }
 
-// Exact-signature dedup key. Prices arrive as bigint myriadths from the DB and
-// as strings from extraction; formatUsd(parseUsd(x)) canonicalizes both
-// spellings ("58.32" === "58.3200").
+// Prices arrive as bigint myriadths from the DB and as strings from extraction;
+// formatUsd(parseUsd(x)) canonicalizes both spellings ("58.32" === "58.3200").
+function canon(price: bigint | string): string {
+  return formatUsd(typeof price === 'string' ? parseUsd(price) : price)
+}
+
+// Exact-signature dedup key.
 function dedupKey(side: string, ticker: string, shares: number, price: bigint | string, filledOn: string): string {
-  const canon = formatUsd(typeof price === 'string' ? parseUsd(price) : price)
-  return `${side}|${ticker}|${shares}|${canon}|${filledOn}`
+  return `${side}|${ticker}|${shares}|${canon(price)}|${filledOn}`
+}
+
+// Same trade ignoring price: a price typo in a manual fill must not fork a
+// second row — the discrepancy is reported as a conflict instead.
+function looseKey(side: string, ticker: string, shares: number, filledOn: string): string {
+  return `${side}|${ticker}|${shares}|${filledOn}`
 }
 
 export async function ingestCapture(runId: number, image: { base64: string; mime: string }, extract: ExtractResult, deps: BookingDeps): Promise<CaptureOutcome> {
@@ -157,18 +186,62 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
   return withRunLock(runId, async () => {
     const remaining = new Map<string, number>()
     const bump = (k: string) => remaining.set(k, (remaining.get(k) ?? 0) + 1)
-    for (const b of await repos.fillRepo.listForRun(runId)) bump(dedupKey(b.side, b.ticker, b.shares, b.price, b.filledOn))
-    for (const p of await repos.pendingRepo.listPending()) {
-      if (p.runId === runId) bump(dedupKey(p.side, p.ticker, p.shares, p.price, p.filledOn))
+    // Same-trade-ignoring-price multiset; booked rows first so a conflict
+    // prefers to cite a booked fill over a still-pending row.
+    type LooseHit = { kind: 'fill' | 'pending'; id: number; price: string }
+    const loose = new Map<string, LooseHit[]>()
+    const putLoose = (lk: string, hit: LooseHit) => {
+      const list = loose.get(lk)
+      if (list) list.push(hit)
+      else loose.set(lk, [hit])
     }
-    const fresh: RawFill[] = []
+    for (const b of await repos.fillRepo.listForRun(runId)) {
+      bump(dedupKey(b.side, b.ticker, b.shares, b.price, b.filledOn))
+      putLoose(looseKey(b.side, b.ticker, b.shares, b.filledOn), { kind: 'fill', id: b.id, price: canon(b.price) })
+    }
+    for (const p of await repos.pendingRepo.listPending()) {
+      if (p.runId !== runId) continue
+      bump(dedupKey(p.side, p.ticker, p.shares, p.price, p.filledOn))
+      putLoose(looseKey(p.side, p.ticker, p.shares, p.filledOn), { kind: 'pending', id: p.id, price: canon(p.price) })
+    }
+    // Phase 1: exact signatures are true duplicates and are consumed first —
+    // and they consume their loose twin too, so a loose match can never steal
+    // a re-send of the same trade. Result is independent of row order.
+    const survivors: RawFill[] = []
     for (const f of extract.fills) {
-      const k = dedupKey(f.side, f.ticker, f.shares, f.price, f.date ?? deps.today)
+      const filledOn = f.date ?? deps.today
+      const k = dedupKey(f.side, f.ticker, f.shares, f.price, filledOn)
       const n = remaining.get(k) ?? 0
-      if (n > 0) { remaining.set(k, n - 1); continue }
+      if (n > 0) {
+        remaining.set(k, n - 1)
+        const list = loose.get(looseKey(f.side, f.ticker, f.shares, filledOn))
+        if (list) {
+          const same = list.findIndex((h) => h.price === canon(f.price))
+          list.splice(same >= 0 ? same : 0, 1)
+          if (list.length === 0) loose.delete(looseKey(f.side, f.ticker, f.shares, filledOn))
+        }
+        continue
+      }
+      survivors.push(f)
+    }
+    // Phase 2: what remains and still matches an existing trade on everything
+    // but price is a conflict, not a new row; anything else is fresh.
+    const fresh: RawFill[] = []
+    const conflicts: CaptureConflict[] = []
+    for (const f of survivors) {
+      const filledOn = f.date ?? deps.today
+      const lk = looseKey(f.side, f.ticker, f.shares, filledOn)
+      const hit = loose.get(lk)?.shift()
+      if (hit) {
+        if (loose.get(lk)?.length === 0) loose.delete(lk)
+        const base = { side: f.side, ticker: f.ticker, shares: f.shares, extractedPrice: canon(f.price), filledOn }
+        if (hit.kind === 'fill') conflicts.push({ ...base, bookedId: hit.id, bookedPrice: hit.price, pendingId: null, pendingPrice: null })
+        else conflicts.push({ ...base, bookedId: null, bookedPrice: null, pendingId: hit.id, pendingPrice: hit.price })
+        continue
+      }
       fresh.push(f)
     }
-    if (fresh.length === 0) return 'duplicate'
+    if (fresh.length === 0 && conflicts.length === 0) return 'duplicate'
 
     const pendingRows: PendingFillRow[] = []
     for (const f of fresh) {
@@ -185,6 +258,8 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
         filledOn, status: 'pending',
       })
     }
+    if (fresh.length === 0) return { conflicts }
+    if (conflicts.length > 0) return { pending: pendingRows, conflicts }
     return { pending: pendingRows }
   })
 }

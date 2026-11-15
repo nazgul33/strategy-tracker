@@ -5,7 +5,7 @@ import { t } from '@st/telegram/i18n';
 import type { Lang } from '@st/telegram/i18n';
 
 import { confirmPendingFill, ingestCapture } from '../domain/booking';
-import type { RepoSurface } from '../domain/booking';
+import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/booking';
 
 type PendingRow = { id: number; side: string; ticker: string; shares: number; price: bigint | string; bucketIdx: number | null; status: string };
 
@@ -117,10 +117,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     }
   }
 
-  async function sendOutcome(
-    chatId: string,
-    outcome: Awaited<ReturnType<typeof ingestCapture>>,
-  ): Promise<void> {
+  async function sendOutcome(chatId: string, outcome: CaptureOutcome): Promise<void> {
     if (outcome === 'duplicate') {
       await deps.send(chatId, t('duplicate-capture', lang));
       return;
@@ -129,15 +126,29 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       await deps.send(chatId, t('capture-bad-extract', lang, { detail: 'no fills recognized' }));
       return;
     }
-    for (const pending of outcome.pending) {
-      const text = t('capture-booked', lang, {
-        ticker: pending.ticker,
-        side: pending.side,
-        shares: pending.shares,
-        price: pending.price,
-      });
-      await deps.send(chatId, text, { reply_markup: buildPendingKeyboard(String(pending.id)) });
+    const pending = 'pending' in outcome ? outcome.pending : [];
+    const conflicts = Array.isArray(outcome) ? outcome : 'conflicts' in outcome ? outcome.conflicts : [];
+    if (pending.length > 0 && conflicts.length > 0) {
+      await deps.send(chatId, t('capture-conflicts-head', lang));
     }
+    for (const c of conflicts) await deps.send(chatId, conflictLine(c));
+    for (const row of pending) {
+      const text = t('capture-booked', lang, {
+        ticker: row.ticker,
+        side: row.side,
+        shares: row.shares,
+        price: row.price,
+      });
+      await deps.send(chatId, text, { reply_markup: buildPendingKeyboard(String(row.id)) });
+    }
+  }
+
+  function conflictLine(c: CaptureConflict): string {
+    const base = { ticker: c.ticker, side: c.side, shares: c.shares, date: c.filledOn, extracted: c.extractedPrice };
+    if (c.pendingId != null) {
+      return t('capture-conflict-pending', lang, { ...base, id: c.pendingId, dupPrice: c.pendingPrice ?? '' });
+    }
+    return t('capture-conflict', lang, { ...base, id: c.bookedId ?? 0, dupPrice: c.bookedPrice ?? '' });
   }
 
   async function onConfirm(cbData: string, approved: boolean): Promise<void> {

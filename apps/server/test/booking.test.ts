@@ -5,7 +5,7 @@ import { ageBuckets } from '@st/strategies'
 import type { ExtractResult, RawFill } from '@st/ingest'
 import {
   ingestCapture, confirmPendingFill, manualFill, rollStale, seedRun, sha256, cancelOrder,
-  type BookingDeps, type PendingFillRow,
+  type BookingDeps, type PendingFillRow, type CaptureConflict,
 } from '../src/domain/booking'
 import { withRunLock } from '../src/domain/run-lock'
 
@@ -138,9 +138,8 @@ describe('booking', () => {
       { side: 'buy', ticker: 'AAPL', shares: 5, price: '10.00', date: '2026-11-04' },
       { side: 'buy', ticker: 'AAPL', shares: 2, price: '9.00' },
     ] }
-    const out = await ingestCapture(runId, { base64: 'AAAA', mime: 'image/png' }, ext, deps)
+    const out = await ingestCapture(runId, { base64: 'AAAA', mime: 'image/png' }, ext, deps) as { pending: PendingFillRow[] }
     expect(out).not.toBe('duplicate')
-    if (out === 'duplicate' || out === 'rejected') throw new Error('unreachable')
     expect(out.pending.map((p) => p.filledOn)).toEqual(['2026-11-04', '2026-11-06'])
     expect(f._stores.pending.map((p: any) => p.filledOn)).toEqual(['2026-11-04', '2026-11-06'])
     // and confirmation carries the pending date through to the booked fill
@@ -667,6 +666,82 @@ describe('capture dedup against booked fills and pending rows', () => {
     expect(out[0]).not.toBe('duplicate')   // distinct hashes: both pass the hash check
     expect(out[1]).toBe('duplicate')       // second sees the first's pending row
     expect(f._stores.pending.length).toBe(1)
+  })
+
+  test('conflict: price-only diff vs a booked fill books nothing and cites the booked fill', async () => {
+    const { f, deps, runId } = await setup('cap-c1')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    const out = await ingestCapture(runId, img('CONF-1'),
+      ext({ side: 'sell', ticker: 'SOXL', shares: 44, price: '64.07', date: '2026-11-11' }), deps)
+    const conflicts = (out as { conflicts: CaptureConflict[] }).conflicts
+    expect(conflicts.length).toBe(1)
+    expect(conflicts[0]).toEqual({
+      side: 'sell', ticker: 'SOXL', shares: 44, extractedPrice: '64.07', filledOn: '2026-11-11',
+      bookedId: f._stores.fills[0]!.id, bookedPrice: '66.03', pendingId: null, pendingPrice: null,
+    })
+    expect(f._stores.pending.length).toBe(0)
+  })
+
+  test('conflict: price-only diff vs a pending row cites the pending row', async () => {
+    const { f, deps, runId } = await setup('cap-c2')
+    await seedPending(f, runId, 'buy', 78, '58.32', '2026-11-13')
+    const out = await ingestCapture(runId, img('CONF-2'),
+      ext({ side: 'buy', ticker: 'SOXL', shares: 78, price: '58.99', date: '2026-11-13' }), deps)
+    const conflicts = (out as { conflicts: CaptureConflict[] }).conflicts
+    expect(conflicts[0]).toEqual({
+      side: 'buy', ticker: 'SOXL', shares: 78, extractedPrice: '58.99', filledOn: '2026-11-13',
+      bookedId: null, bookedPrice: null,
+      pendingId: f._stores.pending[0]!.id, pendingPrice: '58.32',
+    })
+    expect(f._stores.pending.length).toBe(1)
+  })
+
+  test('all-conflict capture is NOT reported as duplicate and stores no pending rows', async () => {
+    const { f, deps, runId } = await setup('cap-c3')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    const out = await ingestCapture(runId, img('CONF-3'),
+      ext({ side: 'sell', ticker: 'SOXL', shares: 44, price: '64.07', date: '2026-11-11' }), deps)
+    expect(typeof out).toBe('object')
+    expect((out as { pending?: unknown }).pending).toBeUndefined()
+    expect((out as { conflicts: unknown[] }).conflicts.length).toBe(1)
+    expect(f._stores.pending.length).toBe(0)
+    expect(f._stores.captures.some((c: { status: string }) => c.status === 'parsed')).toBe(true)
+  })
+
+  test('different trade date is a different trade: fresh pending row, no conflict', async () => {
+    const { f, deps, runId } = await setup('cap-c4')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    const out = await ingestCapture(runId, img('CONF-4'),
+      ext({ side: 'sell', ticker: 'SOXL', shares: 44, price: '66.03', date: '2026-11-12' }), deps)
+    expect((out as { pending: unknown[] }).pending.length).toBe(1)
+    expect((out as { conflicts?: unknown[] }).conflicts).toBeUndefined()
+  })
+
+  test('order independence: an exact pending match is consumed before a loose booked match steals it (silent duplicate)', async () => {
+    const { f, deps, runId } = await setup('cap-c5')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11') // loose twin, wrong price
+    await seedPending(f, runId, 'sell', 44, '64.07', '2026-11-11') // exact twin
+    const out = await ingestCapture(runId, img('CONF-5'),
+      ext({ side: 'sell', ticker: 'SOXL', shares: 44, price: '64.07', date: '2026-11-11' }), deps)
+    expect(out).toBe('duplicate')
+    expect(f._stores.pending.length).toBe(1)
+  })
+
+  test('mixed capture: exact-duplicate + conflict + fresh returns pending rows and conflicts together', async () => {
+    const { f, deps, runId } = await setup('cap-c6')
+    await seedPending(f, runId, 'buy', 10, '50.00', '2026-11-11') // exact dup below
+    await seedFill(f, runId, 'sell', 20, '70.00', '2026-11-12') // loose twin below
+    const out = await ingestCapture(runId, img('CONF-6'), ext(
+      { side: 'buy', ticker: 'SOXL', shares: 10, price: '50.00', date: '2026-11-11' },
+      { side: 'sell', ticker: 'SOXL', shares: 20, price: '69.10', date: '2026-11-12' },
+      { side: 'buy', ticker: 'SOXL', shares: 30, price: '40.00', date: '2026-11-13' },
+    ), deps)
+    const o = out as { pending: { shares: number }[]; conflicts: CaptureConflict[] }
+    expect(o.pending.length).toBe(1)
+    expect(o.pending[0]!.shares).toBe(30)
+    expect(o.conflicts.length).toBe(1)
+    expect(o.conflicts[0]!.bookedPrice).toBe('70.00')
+    expect(f._stores.pending.length).toBe(2) // original + the fresh row only
   })
 })
 
