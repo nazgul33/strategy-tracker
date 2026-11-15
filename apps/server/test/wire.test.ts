@@ -193,7 +193,7 @@ function activeRun(id: number, ticker: string): FakeRow {
   return { id, ticker, status: 'active', poolCents: 10_000_000, costPpm: 10 };
 }
 
-function makeCapture(opts: FakeOpts & { today?: string; fetchImpl?: typeof fetch } = {}) {
+function makeCapture(opts: FakeOpts & { today?: string; fetchImpl?: typeof fetch; lang?: 'en' | 'ko' } = {}) {
   const fakes = makeCaptureFakes(opts);
   const sent: { chatId: string; text: string; extra?: Record<string, unknown> }[] = [];
   const handlers = makeCaptureHandlers({
@@ -201,6 +201,7 @@ function makeCapture(opts: FakeOpts & { today?: string; fetchImpl?: typeof fetch
     vision: { baseUrl: 'https://vision.example/v1', model: 'vision-model' },
     getVisionApiKey: async () => 'test-vision-key',
     today: () => opts.today ?? '2026-11-10',
+    lang: opts.lang,
     fetchImpl: opts.fetchImpl ?? visionFetch,
     send: async (chatId, text, extra) => {
       sent.push({ chatId, text, extra });
@@ -380,6 +381,69 @@ describe('capture onPhoto — dedup and failures', () => {
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     expect(h.captures.length).toBe(0);
     expect(h.sent[0]!.text).toBe('Multiple active runs for NVDA — use /capture <runId>.');
+  });
+});
+
+describe('capture onConfirm — human-readable errors (#7)', () => {
+  async function capturedPending(lang: 'en' | 'ko') {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')], lang });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    return { h, p: h.pending[0]! };
+  }
+
+  test('ticker-mismatch (Error code) is rendered from the en catalog', async () => {
+    const { h, p } = await capturedPending('en');
+    p.ticker = 'AAPL';
+    await h.handlers.onConfirm(`yes:${p.id}`, true);
+    expect(h.sent.at(-1)!.text).toBe('Ticker does not match the run — reject this row and re-capture.');
+    expect(h.fills.length).toBe(0);
+  });
+
+  test('ticker-mismatch is rendered from the ko catalog', async () => {
+    const { h, p } = await capturedPending('ko');
+    p.ticker = 'AAPL';
+    await h.handlers.onConfirm(`yes:${p.id}`, true);
+    expect(h.sent.at(-1)!.text).toBe('티커가 런과 일치하지 않습니다 — 이 행을 반려하고 다시 캡처하세요.');
+  });
+
+  test('confirming an already-handled row says so in en and ko', async () => {
+    for (const [lang, text] of [
+      ['en', 'Already handled — this pending fill was already confirmed or rejected.'],
+      ['ko', '이미 처리되었습니다 — 이 대기 체결은 이미 확정되었거나 반려되었습니다.'],
+    ] as const) {
+      const { h, p } = await capturedPending(lang);
+      await h.handlers.onConfirm(`yes:${p.id}`, true);
+      await h.handlers.onConfirm(`yes:${p.id}`, true);
+      expect(h.sent.at(-1)!.text).toBe(text);
+    }
+  });
+
+  test('DomainError kind (empty message) is mapped, not sent blank', async () => {
+    const { h, p } = await capturedPending('en');
+    p.side = 'sell';
+    await h.handlers.onConfirm(`yes:${p.id}`, true);
+    expect(h.sent.at(-1)!.text).toBe('No held bucket can cover this sell — check the share count.');
+  });
+
+  test('DomainError kind is rendered in ko', async () => {
+    const { h, p } = await capturedPending('ko');
+    p.side = 'sell';
+    await h.handlers.onConfirm(`yes:${p.id}`, true);
+    expect(h.sent.at(-1)!.text).toBe('이 매도를 처리할 수 있는 보유 버킷이 없습니다 — 수량을 확인하세요.');
+  });
+
+  test('unknown error falls back to a catalog line carrying the raw code', async () => {
+    for (const [lang, text] of [
+      ['en', 'Could not confirm this fill (boom).'],
+      ['ko', '이 체결을 확정할 수 없습니다 (boom).'],
+    ] as const) {
+      const { h, p } = await capturedPending(lang);
+      h.repos.runRepo.get = async () => {
+        throw new Error('boom');
+      };
+      await h.handlers.onConfirm(`yes:${p.id}`, true);
+      expect(h.sent.at(-1)!.text).toBe(text);
+    }
   });
 });
 
