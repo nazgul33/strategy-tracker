@@ -316,4 +316,30 @@ describeIf('db integration', () => {
     const left = (await repos.pendingRepo.listPending()).filter((p: any) => p.runId === runId)
     expect(left.length).toBe(0)
   })
+
+  test('ingestCapture re-reads a seen image after its fill was rejected', async () => {
+    const ticker = 'RU' + Date.now()
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'reupload-' + Date.now(), poolCents: 1_000_000, costPpm: 10 })
+    const deps: BookingDeps = { repos, today: '2026-11-15' }
+    const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker, shares: 11, price: '218.55', date: '2026-11-12' }] }
+    const image = { base64: 'REUP-REAL-' + Date.now(), mime: 'image/png' }
+
+    const first: any = await ingestCapture(runId, image, ext, deps)
+    expect(first.pending.length).toBe(1)
+    expect(await repos.pendingRepo.decide(first.pending[0].id, 'rejected')).toBe(true)
+
+    const second: any = await ingestCapture(runId, image, ext, deps)
+    expect(second.pending.length).toBe(1)
+
+    const [capRows] = await db.execute(sql`SELECT id, status FROM captures WHERE run_id = ${runId}`)
+    expect(capRows.length).toBe(1)
+    expect(capRows[0].status).toBe('parsed')
+    const captureId = capRows[0].id
+
+    const [pendRows] = await db.execute(sql`SELECT capture_id, status FROM pending_fills WHERE run_id = ${runId} ORDER BY id`)
+    expect(pendRows.map((r: any) => ({ capture_id: r.capture_id, status: r.status }))).toEqual([
+      { capture_id: captureId, status: 'rejected' },
+      { capture_id: captureId, status: 'pending' },
+    ])
+  })
 })
