@@ -754,6 +754,48 @@ describe('capture dedup against booked fills and pending rows', () => {
     expect(o.conflicts[0]).toMatchObject({ matchedKind: 'booked', bookedPrice: '70.00' })
     expect(f._stores.pending.length).toBe(2) // original + the fresh row only
   })
+
+  test('two loose twins of ONE booked fill: the first conflicts, the second is fresh (one loose entry, consumed once)', async () => {
+    const { f, deps, runId } = await setup('cap-c7')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    const out = await ingestCapture(runId, img('CONF-7'), ext(
+      { side: 'sell', ticker: 'SOXL', shares: 44, price: '64.07', date: '2026-11-11' },
+      { side: 'sell', ticker: 'SOXL', shares: 44, price: '63.00', date: '2026-11-11' },
+    ), deps) as { pending: { shares: number; price: string }[]; conflicts: CaptureConflict[] }
+    expect(out.conflicts.length).toBe(1)
+    expect(out.conflicts[0]).toMatchObject({ matchedKind: 'booked', extractedPrice: '64.07', bookedPrice: '66.03' })
+    expect(out.pending.length).toBe(1)
+    expect(out.pending[0]).toMatchObject({ shares: 44, price: '63.00' })
+    expect(f._stores.pending.length).toBe(1)
+  })
+
+  test('two loose entries under one key are consumed in order, each by one extracted fill; the surplus is fresh', async () => {
+    const { f, deps, runId } = await setup('cap-c8')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    await seedFill(f, runId, 'sell', 44, '65.00', '2026-11-11')
+    const out = await ingestCapture(runId, img('CONF-8'), ext(
+      { side: 'sell', ticker: 'SOXL', shares: 44, price: '64.07', date: '2026-11-11' },
+      { side: 'sell', ticker: 'SOXL', shares: 44, price: '63.00', date: '2026-11-11' },
+      { side: 'sell', ticker: 'SOXL', shares: 44, price: '62.00', date: '2026-11-11' },
+    ), deps) as { pending: { price: string }[]; conflicts: BookedConflict[] }
+    expect(out.conflicts.map((c) => [c.bookedId, c.bookedPrice, c.extractedPrice])).toEqual([
+      [f._stores.fills[0]!.id, '66.03', '64.07'],
+      [f._stores.fills[1]!.id, '65.00', '63.00'],
+    ])
+    expect(out.pending.map((p) => p.price)).toEqual(['62.00'])
+  })
+
+  test('booked and pending loose twins under one key: booked is cited first, pending second', async () => {
+    const { f, deps, runId } = await setup('cap-c9')
+    await seedPending(f, runId, 'sell', 44, '65.00', '2026-11-11')
+    await seedFill(f, runId, 'sell', 44, '66.03', '2026-11-11')
+    const out = await ingestCapture(runId, img('CONF-9'), ext(
+      { side: 'sell', ticker: 'SOXL', shares: 44, price: '64.07', date: '2026-11-11' },
+      { side: 'sell', ticker: 'SOXL', shares: 44, price: '63.00', date: '2026-11-11' },
+    ), deps) as { conflicts: CaptureConflict[] }
+    expect(out.conflicts.map((c) => c.matchedKind)).toEqual(['booked', 'pending'])
+    expect(out.conflicts[1]).toMatchObject({ pendingId: f._stores.pending[0]!.id, pendingPrice: '65.00', extractedPrice: '63.00' })
+  })
 })
 
 describe('capture re-upload', () => {
