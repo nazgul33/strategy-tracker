@@ -98,9 +98,10 @@ export function PendingTable({ runId }: { runId?: number }) {
               return (
                 <tr key={r.id}>
                   <Td className="whitespace-nowrap tabular-nums">
+                    <div>{isoDate(r.filledOn)}</div>
                     <Input
                       type="date"
-                      className={`w-36 ${bad('filledOn')}`}
+                      className={`mt-1 w-36 ${bad('filledOn')}`}
                       value={o.filledOn}
                       aria-label={t('pendingColDate')}
                       onChange={(e) => setOverride(r.id, 'filledOn', e.target.value)}
