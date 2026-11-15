@@ -11,6 +11,7 @@ import { PriceChart } from '../components/PriceChart';
 import { RecalcResultModal, type RecalcResult } from '../components/RecalcSummary';
 import { EditRunModal } from '../components/forms/EditRunModal';
 import { FillDialog } from '../components/forms/FillDialog';
+import { CorrectionList } from '../components/forms/CorrectionList';
 import { PendingTable } from '../components/forms/PendingTable';
 import { FillsPanel, NotificationsPanel, OrdersPanel } from '../components/RunPanels';
 import { RunHistory } from '../components/RunHistory';
@@ -188,7 +189,19 @@ export function RunDetailPage({ id }: { id: number }) {
 
       <Card>
         {tab === 'orders' && <OrdersPanel runId={id} />}
-        {tab === 'pending' && <PendingTable key={`p${panelKey}`} runId={id} />}
+        {tab === 'pending' && (
+          <div className="space-y-6">
+            <CorrectionList
+              key={`c${panelKey}`}
+              runId={id}
+              onChanged={() => {
+                setPanelKey((k) => k + 1);
+                void reload();
+              }}
+            />
+            <PendingTable key={`p${panelKey}`} runId={id} />
+          </div>
+        )}
         {tab === 'fills' && (
           <FillsPanel
             key={`f${panelKey}`}

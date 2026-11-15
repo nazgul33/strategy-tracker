@@ -109,6 +109,25 @@ export interface PendingFillDto {
   createdAt: string;
 }
 
+/** An open fill correction proposed from a later screenshot. */
+export interface CorrectionDto {
+  id: number;
+  runId: number;
+  fillId: number;
+  captureId: number | null;
+  side: string;
+  ticker: string;
+  bookedShares: number;
+  bookedFilledOn: string;
+  bookedPrice: string; // myriadths as string
+  bookedFee: number; // cents
+  proposedPrice: string; // myriadths as string
+  proposedFee: number | null; // cents
+  status: string;
+  stale: boolean;
+  createdAt: string;
+}
+
 export interface PriceHistoryBar {
   readonly tradeDate: string;
   /** settled daily close, myriadths as decimal string (jsonBig) */
