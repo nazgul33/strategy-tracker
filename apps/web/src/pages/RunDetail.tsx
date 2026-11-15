@@ -11,6 +11,7 @@ import { PriceChart } from '../components/PriceChart';
 import { RecalcResultModal, type RecalcResult } from '../components/RecalcSummary';
 import { EditRunModal } from '../components/forms/EditRunModal';
 import { FillDialog } from '../components/forms/FillDialog';
+import { CorrectionList } from '../components/forms/CorrectionList';
 import { PendingTable } from '../components/forms/PendingTable';
 import { FillsPanel, NotificationsPanel, OrdersPanel } from '../components/RunPanels';
 import { RunHistory } from '../components/RunHistory';
@@ -44,6 +45,7 @@ export function RunDetailPage({ id }: { id: number }) {
 
   const [tab, setTab] = useState<Tab>('orders');
   const [panelKey, setPanelKey] = useState(0);
+  const [tabKey, setTabKey] = useState(0);
   const [busyStatus, setBusyStatus] = useState<RunStatus | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showClose, setShowClose] = useState(false);
@@ -54,6 +56,7 @@ export function RunDetailPage({ id }: { id: number }) {
   const selectTab = (next: Tab) => {
     setTab(next);
     setPanelKey((k) => k + 1); // remount self-fetching panels so they re-read
+    setTabKey((k) => k + 1);
     void reload();
   };
 
@@ -188,7 +191,20 @@ export function RunDetailPage({ id }: { id: number }) {
 
       <Card>
         {tab === 'orders' && <OrdersPanel runId={id} />}
-        {tab === 'pending' && <PendingTable key={`p${panelKey}`} runId={id} />}
+        {tab === 'pending' && (
+          <div className="space-y-6">
+            {/* Keyed on tabKey (refresh on tab click) but not on panelKey: it reloads itself after an action. */}
+            <CorrectionList
+              key={`c${tabKey}`}
+              runId={id}
+              onChanged={() => {
+                setPanelKey((k) => k + 1); // re-read the panelKey-keyed panels and the run
+                void reload();
+              }}
+            />
+            <PendingTable key={`p${panelKey}`} runId={id} />
+          </div>
+        )}
         {tab === 'fills' && (
           <FillsPanel
             key={`f${panelKey}`}

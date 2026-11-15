@@ -33,6 +33,7 @@ export interface HttpDeps {
 import { runsRouter } from './routes/runs'
 import { fillsRouter } from './routes/fills'
 import { pendingRouter } from './routes/pending'
+import { correctionsRouter } from './routes/corrections'
 import { settingsRouter } from './routes/settings'
 import { simRouter } from './routes/sim'
 
@@ -57,6 +58,7 @@ export function createApp(deps: HttpDeps): Hono {
   app.route('/api', runsRouter(deps))
   app.route('/api', fillsRouter(deps))
   app.route('/api', pendingRouter(deps))
+  app.route('/api', correctionsRouter(deps))
   app.route('/api', settingsRouter(deps))
   app.route('/api/sim', simRouter(deps))
   app.post('/api/trigger/morning', async (c) => {

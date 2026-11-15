@@ -246,7 +246,7 @@ describe('routes', () => {
       orderRepo: { insertMany: async () => {}, listForDate: async () => [], markStale: async () => 0, setStatus: async () => {}, listOpenBefore: async () => [], listForRun: async () => [] },
       fillRepo: { insert: async () => {}, listForRun: async () => [] },
       pendingRepo: { insert: async () => 1, listPending: async () => [], decide: async () => {}, get: async () => null },
-      captureRepo: { hasHash: async () => false, insert: async () => ({ inserted: true, id: 1 }) },
+      captureRepo: { findByHash: async () => null, setStatus: async () => {}, insert: async () => ({ inserted: true, id: 1 }) },
       ledgerRepo: { insert: async () => {}, listForRun: async () => [] },
       notificationRepo: { insert: async () => {}, listForRun: async () => [] },
       settingsRepo: { getAll: async () => ({}), set: async () => {} },

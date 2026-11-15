@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { emptyState, parseUsd } from '@st/core';
 import { buildPendingKeyboard } from '@st/telegram';
+import { t } from '@st/telegram/i18n';
 import type { FillRow, LedgerRow } from '../src/db/schema';
 import { makeCaptureHandlers } from '../src/wire/capture';
 import { parseEnv, todayEt } from '../src/wire/deps';
+import { fakeCorrectionRepo } from './fake-corrections';
 
 // ---------- parseEnv ----------
 
@@ -150,7 +152,14 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
     },
   };
   const captureRepo = {
-    hasHash: async (runId: number, imageHash: string) => captures.some((c) => c.runId === runId && c.imageHash === imageHash),
+    findByHash: async (runId: number, imageHash: string) => {
+      const c = captures.find((x) => x.runId === runId && x.imageHash === imageHash);
+      return c ? { id: c.id, status: c.status } : null;
+    },
+    setStatus: async (id: number, status: string) => {
+      const c = captures.find((x) => x.id === id);
+      if (c) c.status = status;
+    },
     insert: async (c: { runId: number; chatId: string | null; imageHash: string; status: string }) => {
       if (captures.some((x) => x.runId === c.runId && x.imageHash === c.imageHash)) return { inserted: false as const };
       captures.push({ id: captures.length + 1, runId: c.runId, imageHash: c.imageHash, status: c.status });
@@ -170,8 +179,9 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
       return notifications.length;
     },
   };
-  const repos = { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, captureRepo, ledgerRepo, notificationRepo };
-  return { repos, pending, fills, ledger, notifications, captures, stateFor };
+  const correctionFake = fakeCorrectionRepo();
+  const repos = { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, ledgerRepo, notificationRepo };
+  return { repos, pending, fills, ledger, notifications, captures, corrections: correctionFake.store, stateFor };
 }
 
 const visionFetch = (async (url: string) => {
@@ -267,8 +277,50 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     expect(h.pending.length).toBe(0);
     expect(h.sent.length).toBe(1);
     expect(h.sent[0]!.text).toBe(
-      '⚠️ Conflict: buy 10 NVDA on 2026-11-10 — extracted $180.50, but booked fill #1 has $999.99. Fix the booked fill or reject the row.',
+      '⚠️ Conflict: buy 10 NVDA on 2026-11-10 — extracted $180.50, booked fill #1 has $999.99. Correction listed in Pending.',
     );
+    expect(h.corrections.length).toBe(1);
+    expect(h.corrections[0]).toMatchObject({ fillId: 1, proposedPrice: parseUsd('180.50'), status: 'open' });
+  });
+
+  test('dismissed correction conflict uses the dismissed line', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    await h.repos.fillRepo.insert({
+      runId: 1, bucketIdx: 0, side: 'buy', ticker: 'NVDA', shares: 10,
+      price: parseUsd('999.99'), fee: 0, filledOn: '2026-11-10', source: 'manual',
+    } as never);
+    const id = await h.repos.correctionRepo.insert({
+      runId: 1, fillId: 1, captureId: null, side: 'buy', ticker: 'NVDA', bookedShares: 10, bookedFilledOn: '2026-11-10',
+      bookedPrice: parseUsd('999.99'), bookedFee: 0, proposedPrice: parseUsd('180.50'), proposedFee: null,
+    });
+    await h.repos.correctionRepo.decide(id, 'dismissed');
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(h.sent.length).toBe(1);
+    expect(h.sent[0]!.text).toBe(
+      'ℹ️ buy 10 NVDA on 2026-11-10 — extracted $180.50, booked fill #1 has $999.99. You dismissed this correction before; not listed again.',
+    );
+    expect(h.corrections.length).toBe(1);
+  });
+
+  test('gone fill uses the gone line', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    await h.repos.fillRepo.insert({
+      runId: 1, bucketIdx: 0, side: 'buy', ticker: 'NVDA', shares: 10,
+      price: parseUsd('999.99'), fee: 0, filledOn: '2026-11-10', source: 'manual',
+    } as never);
+    // The matcher reads the list first; the recorder's later read sees the fill gone.
+    const real = h.repos.fillRepo.listForRun.bind(h.repos.fillRepo);
+    let calls = 0;
+    h.repos.fillRepo.listForRun = async (runId: number) => (calls++ === 0 ? real(runId) : []);
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(h.sent.length).toBe(1);
+    expect(h.sent[0]!.text).toBe(
+      '⚠️ buy 10 NVDA on 2026-11-10 — extracted $180.50, but booked fill #1 no longer exists. Nothing to correct.',
+    );
+    expect(h.corrections.length).toBe(0);
+    expect(
+      t('capture-conflict-gone', 'ko', { date: '2026-11-10', ticker: 'NVDA', side: 'buy', shares: 10, extracted: '180.50', id: 1 }),
+    ).toBe('⚠️ 2026-11-10 NVDA buy 10주 — 추출 가격 $180.50, 예약된 체결 #1이(가) 더 이상 없습니다. 수정할 항목이 없습니다.');
   });
 });
 
@@ -280,7 +332,17 @@ describe('capture onPhoto — dedup and failures', () => {
     expect(h.captures.map((c) => c.status)).toEqual(['parsed']);
     expect(h.pending.length).toBe(1);
     expect(h.sent.length).toBe(2);
-    expect(h.sent[1]!.text).toBe('Duplicate capture — all fills already booked or pending.');
+    expect(h.sent[1]!.text).toBe('Duplicate capture — all fills already booked or pending, or a correction is waiting in Pending.');
+  });
+
+  test('same image after rejecting its fill is read again', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    await h.handlers.onConfirm(`no:${h.pending[0]!.id}`, false);
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(h.captures.length).toBe(1);
+    expect(h.pending.map((p) => p.status)).toEqual(['rejected', 'pending']);
+    expect(h.sent.at(-1)!.text).not.toBe('Duplicate capture — all fills already booked or pending, or a correction is waiting in Pending.');
   });
 
   test('extract failure: no pending row, user sees the reason, admin notified', async () => {

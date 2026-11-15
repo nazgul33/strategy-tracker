@@ -149,7 +149,11 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     if (c.pendingId != null) {
       return t('capture-conflict-pending', lang, { ...base, id: c.pendingId, dupPrice: c.pendingPrice ?? '' });
     }
-    return t('capture-conflict', lang, { ...base, id: c.bookedId ?? 0, dupPrice: c.bookedPrice ?? '' });
+    if (c.correction?.status === 'fill-gone') {
+      return t('capture-conflict-gone', lang, { ...base, id: c.bookedId ?? 0 });
+    }
+    const key = c.correction?.status === 'dismissed' ? 'capture-conflict-dismissed' : 'capture-conflict';
+    return t(key, lang, { ...base, id: c.bookedId ?? 0, dupPrice: c.bookedPrice ?? '' });
   }
 
   async function onConfirm(cbData: string, approved: boolean): Promise<void> {

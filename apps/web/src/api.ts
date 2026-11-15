@@ -4,6 +4,7 @@
 import { parseUsd } from '@st/core/money';
 
 import type {
+  CorrectionDto,
   CreateRunInput,
   FillDto,
   ManualFillInput,
@@ -47,6 +48,9 @@ export type ApiErrorCode =
   | 'bucket-not-held'
   | 'invalid-shares'
   | 'too-many-shares'
+  | 'correction-not-found'
+  | 'correction-not-open'
+  | 'correction-stale'
   | `http-${number}`;
 
 export class ApiError extends Error {
@@ -152,6 +156,10 @@ export interface Api {
   listPending(): Promise<PendingFillDto[]>;
   confirmPending(id: number, overrides?: { shares?: number; price?: string; filledOn?: string }): Promise<void>;
   rejectPending(id: number): Promise<void>;
+  listCorrections(): Promise<CorrectionDto[]>;
+  /** 200 `{ok:true,deltaCents}`; 404 `correction-not-found`, 409 `correction-not-open` | `correction-stale`. */
+  applyCorrection(id: number): Promise<void>;
+  dismissCorrection(id: number): Promise<void>;
   getSettings(): Promise<SettingsDto>;
   saveSettings(values: Partial<Pick<SettingsDto, 'visionBaseUrl' | 'visionModel' | 'digestLang'>> & {
     visionApiKey?: string;
@@ -229,6 +237,9 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
     confirmPending: (id, overrides) =>
       send<{ ok: true }>('POST', `/api/pending/${id}/confirm`, overrides ? { overrides } : {}).then(() => undefined),
     rejectPending: (id) => send<{ ok: true }>('POST', `/api/pending/${id}/reject`).then(() => undefined),
+    listCorrections: () => get<CorrectionDto[]>('/api/corrections'),
+    applyCorrection: (id) => send<{ ok: true }>('POST', `/api/corrections/${id}/apply`).then(() => undefined),
+    dismissCorrection: (id) => send<{ ok: true }>('POST', `/api/corrections/${id}/dismiss`).then(() => undefined),
     getSettings: () => get<SettingsDto>('/api/settings'),
     saveSettings: (values) => {
       const body: Record<string, string> = {};

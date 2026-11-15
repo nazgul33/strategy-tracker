@@ -32,22 +32,23 @@ export function rebuildState(fills: readonly FillRow[], poolCents: number, today
 
 export interface RebookEdit { fillId: number; shares: number; priceStr: string; feeCents: number | null; filledOn?: ISODate }
 
-// Fix the shares/price/fee of a buy fill, then re-derive the whole run state
+// Fix the shares/price/fee of a fill (buy or sell), then re-derive the whole run state
 // from history. The cash difference vs the stored state is booked as one
 // 'adjust' ledger row so the books keep matching the (possibly negative) cash.
 // Returns the patched row plus deltaCents: the signed cash effect of the edit
 // (rebuilt cash minus previously stored cash), same amount as the adjust row.
+// `audit` labels the adjust row's ref; the correction id is omitted when absent.
 export async function rebookFill(
   runId: number,
   edit: RebookEdit,
   deps: BookingDeps,
+  audit: { reason: string; correctionId?: number } = { reason: 'fill-edit' },
 ): Promise<{ fill: FillRow; deltaCents: number }> {
   const repos = deps.repos
   if (!repos.fillRepo.update) throw new Error('fill-history-unavailable')
   const history = byIdAsc(await repos.fillRepo.listForRun(runId))
   const match = history.find((f) => f.id === edit.fillId)
   if (!match) throw new DomainError('no-fill')
-  if (match.side === 'sell') throw new DomainError('immutable-field')
 
   let price: bigint
   try {
@@ -73,7 +74,13 @@ export async function rebookFill(
   await repos.bucketRepo.saveState(runId, rebuilt)
   await repos.fillRepo.update(runId, edit.fillId, patch)
   if (delta !== 0) {
-    await repos.ledgerRepo.insert({ runId, kind: 'adjust', amountCents: delta, ref: JSON.stringify({ fillId: edit.fillId, bookedOn: deps.today, reason: 'fill-edit' }) })
+    const ref = {
+      fillId: edit.fillId,
+      bookedOn: deps.today,
+      reason: audit.reason,
+      ...(audit.correctionId !== undefined ? { correctionId: audit.correctionId } : {}),
+    }
+    await repos.ledgerRepo.insert({ runId, kind: 'adjust', amountCents: delta, ref: JSON.stringify(ref) })
   }
   return { fill: { ...match, ...patch }, deltaCents: delta }
 }

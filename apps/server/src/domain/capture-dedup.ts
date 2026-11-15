@@ -9,11 +9,16 @@ export interface CaptureConflict {
   ticker: string
   shares: number
   extractedPrice: string
+  /** Canonical fee from the raw fill; null when the screenshot showed none. */
+  extractedFee: string | null
   filledOn: ISODate
   bookedId: number | null
   bookedPrice: string | null
   pendingId: number | null
   pendingPrice: string | null
+  /** Set by recordCorrections for booked-fill conflicts; the matcher leaves null.
+   * 'fill-gone': the cited booked fill vanished before a correction could be recorded. */
+  correction: { id: number; status: 'open' | 'dismissed' } | { id: null; status: 'fill-gone' } | null
 }
 
 /** What the dedup pass hands back to ingestCapture: the fills that are genuinely
@@ -140,7 +145,10 @@ export async function matchCapturedFills(
     const hit = loose.get(lk)?.shift()
     if (hit) {
       if (loose.get(lk)?.length === 0) loose.delete(lk)
-      const base = { side: f.side, ticker: f.ticker, shares: f.shares, extractedPrice: canon(f.price), filledOn }
+      const base = {
+        side: f.side, ticker: f.ticker, shares: f.shares, extractedPrice: canon(f.price),
+        extractedFee: f.fee != null ? canon(f.fee) : null, filledOn, correction: null,
+      }
       if (hit.kind === 'fill') conflicts.push({ ...base, bookedId: hit.id, bookedPrice: hit.price, pendingId: null, pendingPrice: null })
       else conflicts.push({ ...base, bookedId: null, bookedPrice: null, pendingId: hit.id, pendingPrice: hit.price })
       continue

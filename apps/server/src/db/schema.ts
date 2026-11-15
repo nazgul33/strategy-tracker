@@ -1,4 +1,4 @@
-import { mysqlTable, bigint, int, varchar, text, date, timestamp, json, mysqlEnum, primaryKey } from 'drizzle-orm/mysql-core'
+import { mysqlTable, bigint, int, varchar, text, date, timestamp, json, mysqlEnum, primaryKey, index } from 'drizzle-orm/mysql-core'
 
 export const strategyRuns = mysqlTable('strategy_runs', {
   id: int('id').primaryKey().autoincrement(),
@@ -70,6 +70,25 @@ export const pendingFills = mysqlTable('pending_fills', {
   status: mysqlEnum('status', ['pending', 'confirmed', 'rejected']).notNull().default('pending'),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 })
+
+export const fillCorrections = mysqlTable('fill_corrections', {
+  id: int('id').primaryKey().autoincrement(),
+  runId: int('run_id').notNull(),
+  fillId: int('fill_id').notNull(),
+  captureId: int('capture_id'),
+  side: varchar('side', { length: 8 }).notNull(),
+  ticker: varchar('ticker', { length: 16 }).notNull(),
+  bookedShares: int('booked_shares').notNull(),
+  bookedFilledOn: date('booked_filled_on', { mode: 'string' }).notNull(),
+  bookedPrice: bigint('booked_price', { mode: 'bigint' }).notNull(),
+  bookedFee: int('booked_fee').notNull(),
+  proposedPrice: bigint('proposed_price', { mode: 'bigint' }).notNull(),
+  proposedFee: int('proposed_fee'),
+  status: mysqlEnum('status', ['open', 'applied', 'dismissed']).notNull().default('open'),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
+}, (t) => ({
+  fillIdx: index('fill_corrections_fill_idx').on(t.fillId),
+}))
 
 export const fills = mysqlTable('fills', {
   id: int('id').primaryKey().autoincrement(),
