@@ -31,7 +31,7 @@ apps/server/       drizzle.config.ts
     pipeline/day.ts pipeline/wire.ts
     sim/sim.ts
     http/app.ts http/auth.ts http/routes/{runs,fills,pending,corrections,sim,settings}.ts
-  db/migrations/   0000_fantastic_thunderbolts.sql 0001_workable_spot.sql (+ meta/)
+  db/migrations/   0000_fantastic_thunderbolts.sql … 0006_flippant_gladiator.sql (+ meta/)
   test/            booking.test.ts corrections.test.ts day.test.ts sim.test.ts http.test.ts db.test.ts wire.test.ts fake-corrections.ts
 apps/web/src/      main.tsx App.tsx api.ts api.types.ts format.ts viewmodels.ts (+ colocated *.test.ts)
   components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,RunPanels,RunHistory,hooks,ui,forms/*}

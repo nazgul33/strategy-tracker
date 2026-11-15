@@ -105,13 +105,16 @@ nothing. The operator then has to fix the fill by hand. Two problems:
 
 Repo `correctionRepo`: `insert`, `listOpen()`, `get(id)`, `decide(id, status)` with
 the same "only from `open`" guard `pendingRepo.decide` uses (returns `false` when not
-open), `findBlocking(fillId, proposedPrice)` → the `open` or `dismissed` correction
-for that fill + proposed price, if any (`applied` ones never block), and
-`hasOpenForCapture(captureId)`.
+open), `listBlocking(fillId, proposedPrice)` → the `open` or `dismissed` corrections
+for that fill + proposed price, ordered by id (`applied` ones never block; the
+recorder drops snapshot-stale rows), and `hasOpenForCapture(captureId)`.
 
 **Dismiss sticks (operator decision).** A dismissed correction means "I checked, the
-booked price is right": the same fill + same proposed price is never proposed again,
-whatever screenshot it comes from. A *different* proposed price for the same fill is
+booked price is right": while the fill still matches the correction's snapshot, the
+same fill + same proposed price is never proposed again, whatever screenshot it comes
+from. The same holds for an open correction (it is reused, not duplicated). Once the
+fill is hand-edited the old row is stale (the same predicate that sets `stale` on the
+Pending page), so it no longer blocks and a new correction may be proposed. A *different* proposed price for the same fill is
 a new correction. An `applied` correction never suppresses anything (if the fill is
 later hand-edited back and a screenshot disagrees again, a new correction appears).
 
@@ -121,9 +124,11 @@ later hand-edited back and a screenshot disagrees again, a new correction appear
   correction can carry the screenshot fee. The matcher's consumption rules are
   otherwise unchanged.
 - Inside the existing `withRunLock` span of `ingestCapture`, after matching: for each
-  conflict with `bookedId !== null`, look up `findBlocking(bookedId, proposedPrice)`:
-  none → insert an open correction (snapshot columns from the booked fill row the
-  matcher cited); `open` → reuse it; `dismissed` → insert nothing. The conflict
+  conflict with `bookedId !== null`, look up `listBlocking(bookedId, proposedPrice)`
+  and keep only rows whose snapshot still matches the booked fill: none →
+  insert an open correction (snapshot columns from the booked fill row the matcher
+  cited); `open` → reuse it; `dismissed` → insert nothing. A stale open/dismissed
+  row is ignored, and a non-stale open row wins over a non-stale dismissed one. The conflict
   object gains `correction: { id: number; status: 'open' | 'dismissed' } | null`
   (`null` for pending-row conflicts) so Telegram can say which.
 - Re-upload live rule (`claimCapture`): a capture with an **open correction** counts
@@ -172,8 +177,8 @@ applying the resulting correction.
 ### HTTP (`apps/server/src/http/routes/corrections.ts`, new; mounted under `/api`)
 
 - `GET /corrections` → open corrections from the snapshot columns plus a computed
-  `stale: boolean` (fill missing or differing from the snapshot) — prices/fees as
-  strings via `jsonBig`. Stale rows render with the stale note and only Dismiss.
+  `stale: boolean` (fill missing or differing from the snapshot) — prices are
+  decimal strings (myriadths via `jsonBig`), fees are integer-cent numbers. Stale rows render with the stale note and only Dismiss.
 - `POST /corrections/:id/apply` → 200 `{ ok, deltaCents }`; 409
   `correction-not-open` / `correction-stale`; 422 for other `DomainError`s (e.g.
   replay rejects).
