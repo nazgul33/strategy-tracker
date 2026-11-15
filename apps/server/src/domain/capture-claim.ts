@@ -7,14 +7,23 @@ export interface CaptureClaimRepos {
     setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void>
     insert(c: any): Promise<{ inserted: boolean; id?: number }>
   }
-  pendingRepo: { listPending(): Promise<Array<{ captureId: number | null }>> }
+  pendingRepo: {
+    // status 'pending' only: a row still awaiting the operator's decision
+    hasLiveForCapture(captureId: number): Promise<boolean>
+    // status 'confirmed' only: a row that was booked as a fill
+    hasConfirmedForCapture(captureId: number): Promise<boolean>
+  }
   correctionRepo: { hasOpenForCapture(captureId: number): Promise<boolean> }
 }
+
+// `bookedEarlier`: the reused capture already has a confirmed pending row, so
+// fresh rows from this read may duplicate fills that were booked from it.
+export interface CaptureClaim { id: number; bookedEarlier: boolean }
 
 // Resolves which `captures` row a read of this image attaches to. A seen image
 // is re-read onto its existing row unless one of that row's fills still awaits
 // a decision or an open correction proposed from it is still undecided.
-// Returns the capture id, or null when the upload is a duplicate.
+// Returns the claim, or null when the upload is a duplicate.
 // Must run inside the run lock: the lookup, the status write and the caller's
 // pending inserts are one decide→write span.
 export async function claimCapture(
@@ -22,16 +31,16 @@ export async function claimCapture(
   runId: number,
   hash: string,
   status: 'parsed' | 'unparseable',
-): Promise<number | null> {
+): Promise<CaptureClaim | null> {
   const existing = await repos.captureRepo.findByHash(runId, hash)
   if (existing) {
     const live =
-      (await repos.pendingRepo.listPending()).some((p) => p.captureId === existing.id) ||
+      (await repos.pendingRepo.hasLiveForCapture(existing.id)) ||
       (await repos.correctionRepo.hasOpenForCapture(existing.id))
     if (live) return null
     await repos.captureRepo.setStatus(existing.id, status)
-    return existing.id
+    return { id: existing.id, bookedEarlier: await repos.pendingRepo.hasConfirmedForCapture(existing.id) }
   }
   const res = await repos.captureRepo.insert({ runId, chatId: null, imageHash: hash, status })
-  return res.inserted ? res.id! : null
+  return res.inserted ? { id: res.id!, bookedEarlier: false } : null
 }

@@ -89,6 +89,8 @@ export function fakeRepos() {
   const pendingRepo = {
     async insert(p: any) { const id = pendingSeq++; pending.push({ id, ...p }); return id },
     async listPending() { return pending.filter((p) => p.status === 'pending') },
+    async hasLiveForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'pending') },
+    async hasConfirmedForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'confirmed') },
     async decide(id: number, status: string, edited?: any): Promise<boolean> {
       const p = pending.find((x) => x.id === id)
       if (!p) throw new Error('not found')
@@ -803,6 +805,26 @@ describe('capture re-upload', () => {
     expect(f._stores.fills.length).toBe(1)
   })
 
+  test('reupload after confirm with the date lost: fresh row carries bookedEarlier', async () => {
+    const { f, deps, runId } = await setup('re3b')
+    await f.repos.bucketRepo.saveState(runId, { ...emptyState(2), cashCents: 1_000_000 })
+    const first: any = await ingestCapture(runId, img('RE3B'), ext(trade('buy', 78, '58.32', '2026-11-13')), deps)
+    expect(first.bookedEarlier).toBeUndefined()
+    await confirmPendingFill(first.pending[0].id, null, deps)
+    const again: any = await ingestCapture(runId, img('RE3B'), ext(trade('buy', 78, '58.32')), deps)
+    expect(again.pending.length).toBe(1)
+    expect(again.bookedEarlier).toBe(true)
+  })
+
+  test('reupload after reject only: no bookedEarlier', async () => {
+    const { f, deps, runId } = await setup('re3c')
+    const first: any = await ingestCapture(runId, img('RE3C'), ext(trade('buy', 78, '58.32', '2026-11-13')), deps)
+    await f.repos.pendingRepo.decide(first.pending[0].id, 'rejected')
+    const again: any = await ingestCapture(runId, img('RE3C'), ext(trade('buy', 78, '58.32', '2026-11-13')), deps)
+    expect(again.pending.length).toBe(1)
+    expect('bookedEarlier' in again).toBe(false)
+  })
+
   test('reupload: failed re-read', async () => {
     const { f, deps, runId } = await setup('re4')
     const first: any = await ingestCapture(runId, img('RE4'), ext(trade('buy', 78, '58.32', '2026-11-13')), deps)
@@ -868,7 +890,7 @@ describe('capture re-upload', () => {
     const first: any = await ingestCapture(runId, img('RE8'), one, deps)
     await f.repos.pendingRepo.decide(first.pending[0].id, 'rejected')
     const slow = (obj: any, keys: string[]) => { for (const k of keys) { const orig = obj[k]; obj[k] = (...a: any[]) => new Promise((res) => setTimeout(() => res(orig(...a)), 1)) } }
-    slow(f.repos.pendingRepo, ['insert', 'listPending'])
+    slow(f.repos.pendingRepo, ['insert', 'listPending', 'hasLiveForCapture', 'hasConfirmedForCapture'])
     slow(f.repos.fillRepo, ['listForRun', 'insert'])
     slow(f.repos.captureRepo, ['findByHash', 'setStatus'])
     const out = await Promise.all([

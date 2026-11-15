@@ -146,9 +146,17 @@ export function getRepos(db: any) {
     },
   }
 
+  async function hasPendingWithStatus(captureId: number, status: 'pending' | 'confirmed'): Promise<boolean> {
+    const rows = await db.select({ id: s.pendingFills.id }).from(s.pendingFills)
+      .where(and(eq(s.pendingFills.captureId, captureId), eq(s.pendingFills.status, status))).limit(1)
+    return rows.length > 0
+  }
+
   const pendingRepo = {
     async insert(p: any) { const [r] = await db.insert(s.pendingFills).values(p); return (r as any).insertId },
     async listPending() { return db.select().from(s.pendingFills).where(eq(s.pendingFills.status, 'pending')) },
+    async hasLiveForCapture(captureId: number): Promise<boolean> { return hasPendingWithStatus(captureId, 'pending') },
+    async hasConfirmedForCapture(captureId: number): Promise<boolean> { return hasPendingWithStatus(captureId, 'confirmed') },
     async get(id: number) { const rows = await db.select().from(s.pendingFills).where(eq(s.pendingFills.id, id)); return rows[0] ?? null },
     async decide(id: number, status: string, edited?: any): Promise<boolean> {
       const patch: any = { status }
