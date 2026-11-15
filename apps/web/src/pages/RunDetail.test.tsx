@@ -220,14 +220,14 @@ describe('RunDetailPage add-fill button', () => {
     expect(document.querySelector('[data-testid="manualSideSelect"]')).toBeNull();
   });
 
-  it('opens the shared fill dialog with the side locked to buy', async () => {
+  it('opens the shared fill dialog with side selectable, defaulting to buy', async () => {
     await act(async () => {
       (document.querySelector('[data-testid="tabManual"]') as HTMLElement).click();
     });
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     const side = document.querySelector('[data-testid="manualSideSelect"]') as HTMLSelectElement | null;
     expect(side).not.toBeNull();
-    expect(side!.disabled).toBe(true);
+    expect(side!.disabled).toBe(false);
     expect(side!.value).toBe('buy');
   });
 });

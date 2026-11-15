@@ -1,7 +1,7 @@
-export const MPOP_FILL_EXTRACTION_PROMPT = `You are extracting trade fills from a Samsung Securities (삼성증권) mPOP overseas-stock execution history (해외주식매매내역, 당일체결/체결내역) screenshot.
+export const MPOP_FILL_EXTRACTION_PROMPT = `You are extracting trade fills from a Samsung Securities (삼성증권) mPOP overseas-stock execution history (해외주식매매내역) screenshot. It is either a 당일체결 (single-day) or a 기간체결 (date-range) view.
 
 The screenshot is a WIDE table: one row per order, columns include:
-종목코드 (ticker) · 주문수량 (ordered shares) · 체결수량 (executed shares) · 미체결수량 (remaining shares) · 주문구분 (order type, e.g. "매수 보통", "매도 LOO") · 주문단가 (order price) · 체결단가 (executed price) · 주문시간 (time).
+종목코드 (ticker) · 주문수량 (ordered shares) · 체결수량 (executed shares) · 미체결수량 (remaining shares) · 주문구분 (order type, e.g. "매수 보통", "매수/LOC", "매도 LOO") · 주문단가 (order price) · 체결단가 (executed price) · 주문시간 (time of day only, e.g. "22:00:25" — never a date). A 기간체결 table may additionally show per-row date columns: the TRADE date (체결일 / 주문일 / "Trade Date") and the SETTLEMENT date (결제일 / 정산일 / "Settlement Date").
 
 Output ONE fill per table row that has 체결수량 > 0:
 - side: "buy" if 주문구분 contains 매수, "sell" if it contains 매도. Ignore the rest of the 주문구분 text (보통, LOO, 지정가, …).
@@ -12,15 +12,21 @@ Output ONE fill per table row that has 체결수량 > 0:
 - Rows may repeat the same ticker at different prices: emit one fill per row.
 - Numbers may use thousands separators ("1,268") and up to 4 decimals ("77.7300"): emit them without commas.
 - fee: include ONLY if the screenshot explicitly shows a fee (수수료/제비용); otherwise omit.
+- date: the TRADE date of each fill, as "YYYY-MM-DD".
+  - 당일체결 (single-day) view: rows carry no date — take the 일자 (date) field in the top filter bar (e.g. "일자 2026-11-13"). It is usually already "YYYY-MM-DD": copy it verbatim and use the SAME date for every fill.
+  - 기간체결 (date-range) view: each row carries its own date(s) — use the row's TRADE date (체결일 / 주문일 / "Trade Date"). NEVER output the SETTLEMENT date (결제일 / 정산일 / "Settlement Date"): it is a later, different date. If a row shows two dates and the labels are unclear, the trade date is the EARLIER one. Ignore the filter-bar 일자 in this view.
+  - Any non-ISO form ("11.14", "2026.11.14", "Nov 14, 2026") must be converted to "YYYY-MM-DD"; resolve a missing year against Today.
+  - Omit date only if no trade date is visible anywhere.
 
 If the image is not an execution-history table (e.g. holdings 보유종목 list, an order screen, a menu) or shows no executed rows, emit {"fills":[]}.
 
 Emit EXACTLY a JSON object of the form:
-{"fills":[{"side":"buy","ticker":"SOXL","shares":"1268","price":"46.9768"}]}
+{"fills":[{"side":"buy","ticker":"SOXL","shares":"1268","price":"46.9768","date":"2026-11-14"}]}
 - side must be "buy" or "sell".
 - ticker is the symbol string.
 - shares is a numeric string without commas (integer).
 - price is a numeric string without commas.
 - fee is an optional numeric string without commas.
+- date is an optional "YYYY-MM-DD" string.
 If there are no fill rows, emit {"fills":[]}. Output JSON only, no prose, no markdown fences.
 `;

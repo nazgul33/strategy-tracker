@@ -287,6 +287,20 @@ describe('rebookFill', () => {
     expect(f._stores.fills[0].shares).toBe(10)
     expect(adjustRows(f)).toHaveLength(0)
   })
+
+  test('rebooking the trade date recomputes bucket age and persists the date', async () => {
+    const f = fakeRepos()
+    const runId = await createRun(f, 100_000, 2)
+    await bookBuy(f, runId, { idx: 0, shares: 10, price: '10.00', feeCents: 500, filledOn: '2026-01-14' })
+    expect((await getState(f, runId)).ages[0]).toBe(ageOf('2026-01-14'))
+    const res = await rebookFill(runId, { fillId: 1, shares: 10, priceStr: '10.00', feeCents: 500, filledOn: '2026-01-08' }, deps(f))
+    expect(res.fill.filledOn).toBe('2026-01-08')
+    expect(res.deltaCents).toBe(0) // same shares/price/fee: cash effect is only the age shift
+    expect(f._stores.fills.find((x: any) => x.id === 1)).toMatchObject({ filledOn: '2026-01-08', shares: 10 })
+    const st = await getState(f, runId)
+    expect(st.ages[0]).toBe(ageOf('2026-01-08'))
+    expect(ageOf('2026-01-08')).toBeGreaterThan(ageOf('2026-01-14')) // the age really moved
+  })
 })
 
 describe('deleteFill', () => {

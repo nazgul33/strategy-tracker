@@ -119,11 +119,13 @@ export function usdToCents(value: string): number | null {
 // --------------------------------------------------------------------- api
 /** PUT body for editing a booked fill (buy-only server-side). The route requires
  * `feeCents` on the wire: an integer >= 0, or null = recompute the fee from the
- * run's cost ppm; the client normalizes an omitted value to null (auto-fee). */
+ * run's cost ppm; the client normalizes an omitted value to null (auto-fee).
+ * `filledOn` is an optional new trade date (ISO YYYY-MM-DD). */
 export interface FillUpdatePayload {
   qty: number;
   priceCents: number;
   feeCents?: number | null;
+  filledOn?: string;
 }
 
 export interface Api {

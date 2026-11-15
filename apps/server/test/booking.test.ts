@@ -129,6 +129,24 @@ describe('booking', () => {
     expect(f._stores.pending.length).toBe(1)
   })
 
+  test('capture with extracted dates books pendings on the screenshot date', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'rd', poolCents: 100000, costPpm: 100, initialRunState: emptyState(2) })
+    const ext: ExtractResult = { ok: true, fills: [
+      { side: 'buy', ticker: 'AAPL', shares: 5, price: '10.00', date: '2026-11-04' },
+      { side: 'buy', ticker: 'AAPL', shares: 2, price: '9.00' },
+    ] }
+    const out = await ingestCapture(runId, { base64: 'AAAA', mime: 'image/png' }, ext, deps)
+    expect(out).not.toBe('duplicate')
+    if (out === 'duplicate' || out === 'rejected') throw new Error('unreachable')
+    expect(out.pending.map((p) => p.filledOn)).toEqual(['2026-11-04', '2026-11-06'])
+    expect(f._stores.pending.map((p: any) => p.filledOn)).toEqual(['2026-11-04', '2026-11-06'])
+    // and confirmation carries the pending date through to the booked fill
+    await confirmPendingFill(out.pending[0]!.id, null, deps)
+    expect(f._stores.fills[0]!.filledOn).toBe('2026-11-04')
+  })
+
   test('(b) rejected', async () => {
     const f = fakeRepos()
     const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }

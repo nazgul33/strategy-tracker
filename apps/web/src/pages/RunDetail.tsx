@@ -235,7 +235,7 @@ export function RunDetailPage({ id }: { id: number }) {
         />
       )}
       {manualOpen && (
-        <FillDialog runId={run.id} costPpm={run.costPpm} initialSide="buy" lockSide
+        <FillDialog runId={run.id} costPpm={run.costPpm} initialSide="buy"
           onClose={() => setManualOpen(false)}
           onSaved={() => { setManualOpen(false); setPanelKey((k) => k + 1); void reload(); }} />
       )}

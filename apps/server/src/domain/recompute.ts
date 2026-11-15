@@ -30,7 +30,7 @@ export function rebuildState(fills: readonly FillRow[], poolCents: number, today
   return state
 }
 
-export interface RebookEdit { fillId: number; shares: number; priceStr: string; feeCents: number | null }
+export interface RebookEdit { fillId: number; shares: number; priceStr: string; feeCents: number | null; filledOn?: ISODate }
 
 // Fix the shares/price/fee of a buy fill, then re-derive the whole run state
 // from history. The cash difference vs the stored state is booked as one
@@ -61,18 +61,21 @@ export async function rebookFill(
   if (!Number.isInteger(fee) || fee < 0) throw new DomainError('invalid-fill')
 
   // Replay the patched history first: an invalid result (e.g. bucket conflicts)
-  // surfaces as a DomainError before anything is written.
+  // surfaces as a DomainError before anything is written. One patch object is
+  // reused for the replayed row, the stored row and the returned fill, so an
+  // edited filledOn flows into the age recomputation and the database alike.
   const state = await repos.bucketRepo.loadState(runId)
-  const patched = history.map((f) => (f.id === edit.fillId ? { ...f, shares: edit.shares, price, fee } : f))
+  const patch = { shares: edit.shares, price, fee, ...(edit.filledOn ? { filledOn: edit.filledOn } : {}) }
+  const patched = history.map((f) => (f.id === edit.fillId ? { ...f, ...patch } : f))
   const rebuilt = rebuildState(patched, run.poolCents, deps.today, state.buckets.length)
 
   const delta = rebuilt.cashCents - state.cashCents
   await repos.bucketRepo.saveState(runId, rebuilt)
-  await repos.fillRepo.update(runId, edit.fillId, { shares: edit.shares, price, fee })
+  await repos.fillRepo.update(runId, edit.fillId, patch)
   if (delta !== 0) {
     await repos.ledgerRepo.insert({ runId, kind: 'adjust', amountCents: delta, ref: JSON.stringify({ fillId: edit.fillId, bookedOn: deps.today, reason: 'fill-edit' }) })
   }
-  return { fill: { ...match, shares: edit.shares, price, fee }, deltaCents: delta }
+  return { fill: { ...match, ...patch }, deltaCents: delta }
 }
 
 // Delete any fill that is the newest in its bucket (MAX(id) within bucketIdx).

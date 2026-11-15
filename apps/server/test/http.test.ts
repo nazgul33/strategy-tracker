@@ -1223,3 +1223,30 @@ describe('POST /runs/:id/recalc endpoint', () => {
     expect(adjustRows(f).length).toBe(0)
   })
 })
+
+describe('http fill edit date', () => {
+  test('PUT fill with filledOn updates the stored date; invalid filledOn is 400', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const auth = { Authorization: `Bearer ${(await (await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })).json()).token}` }
+    const id = (await (await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'A', costPpm: 100, poolCents: 100000 }), headers: { 'content-type': 'application/json', ...auth } })).json()).id
+    await app.request(`/api/runs/${id}/fills`, { method: 'POST', body: JSON.stringify({ side: 'buy', shares: 10, price: '10.00', filledOn: '2026-11-09' }), headers: { 'content-type': 'application/json', ...auth } })
+    const fillId = f.fills[0]!.id
+
+    const ok = await app.request(`/api/runs/${id}/fills/${fillId}`, { method: 'PUT', body: JSON.stringify({ qty: 10, priceCents: 1000, feeCents: 500, filledOn: '2026-11-03' }), headers: { 'content-type': 'application/json', ...auth } })
+    expect(ok.status).toBe(200)
+    expect(f.fills[0]!.filledOn).toBe('2026-11-03')
+
+    for (const bad of ['11/03', '2026-11-3', 'yesterday', '']) {
+      const res = await app.request(`/api/runs/${id}/fills/${fillId}`, { method: 'PUT', body: JSON.stringify({ qty: 10, priceCents: 1000, feeCents: 500, filledOn: bad }), headers: { 'content-type': 'application/json', ...auth } })
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toBe('invalid-body')
+    }
+    expect(f.fills[0]!.filledOn).toBe('2026-11-03') // rejected bodies never touched the row
+
+    // omitted filledOn keeps the stored date (regression guard for Task 1's optional patch)
+    const keep = await app.request(`/api/runs/${id}/fills/${fillId}`, { method: 'PUT', body: JSON.stringify({ qty: 12, priceCents: 1000, feeCents: 500 }), headers: { 'content-type': 'application/json', ...auth } })
+    expect(keep.status).toBe(200)
+    expect(f.fills[0]!.filledOn).toBe('2026-11-03')
+  })
+})

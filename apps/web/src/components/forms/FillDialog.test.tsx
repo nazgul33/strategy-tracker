@@ -79,6 +79,20 @@ async function clickButton(text: string) {
   calls = stub.map((c) => ({ method: c.method, url: c.url, body: c.body as Record<string, unknown> }));
 }
 
+// Fire the form's submit event directly (no constraint validation), like a
+// browser without a native date control would. Needed to exercise the dialog's
+// own guards with values the DOM would otherwise reject on click.
+async function submitForm() {
+  const form = button('Save').closest('form')!;
+  await act(async () => {
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  calls = stub.map((c) => ({ method: c.method, url: c.url, body: c.body as Record<string, unknown> }));
+}
+
 // FillDto fixture (api.types.ts wire shape: price = myriadths string, fee = cents).
 function fillDto() {
   return {
@@ -168,6 +182,7 @@ describe('FillDialog', () => {
     for (const id of ['manualSideSelect', 'manualSharesInput', 'manualPriceInput', 'manualFeeInput', 'manualDateInput']) {
       expect(elementByTestId(id)).toBeTruthy();
     }
+    expect((elementByTestId('manualSideSelect') as HTMLSelectElement).disabled).toBe(false);
     expect(document.querySelector('[role="dialog"]')).toBeTruthy();
 
     await type('manualSharesInput', '3');
@@ -201,10 +216,10 @@ describe('FillDialog', () => {
     expect(inputByTestId('manualFeeInput').value).toBe('1.02');
   });
 
-  it('modify mode: side and date locked, fields prefilled, PUTs recomputed auto-fee', async () => {
+  it('modify mode: side locked, date editable, fields prefilled, PUTs recomputed auto-fee', async () => {
     await render({ costPpm: 30, fill: fillDto(), deletable: true });
     expect((elementByTestId('manualSideSelect') as HTMLSelectElement).disabled).toBe(true);
-    expect(inputByTestId('manualDateInput').disabled).toBe(true);
+    expect(inputByTestId('manualDateInput').disabled).toBe(false);
     expect(inputByTestId('manualSharesInput').value).toBe('10');
     expect(inputByTestId('manualPriceInput').value).toBe('340.2300');
     expect(inputByTestId('manualFeeInput').value).toBe('1.02');
@@ -220,14 +235,57 @@ describe('FillDialog', () => {
     const put = calls.find((c) => c.method === 'PUT');
     expect(put).toBeDefined();
     expect(put!.url.endsWith('/api/runs/7/fills/3')).toBe(true);
-    expect(Object.keys(put!.body).sort()).toEqual(['feeCents', 'priceCents', 'qty']);
+    expect(Object.keys(put!.body).sort()).toEqual(['feeCents', 'filledOn', 'priceCents', 'qty']);
     expect(put!.body.qty).toBe(20);
     expect(put!.body.priceCents).toBe(68046);
     expect(put!.body.feeCents).toBe(41);
+    // The prefilled trade date passes through untouched when not edited.
+    expect(put!.body.filledOn).toBe('2026-11-06');
     expect(calls.filter((c) => c.method === 'POST').length).toBe(0);
     expect(saved).toBe(1);
     expect(closed).toBe(1);
   });
+
+  it('modify mode: the trade date input is editable and prefilled with the fill date', async () => {
+    await render({ fill: fillDto() });
+    const dateInput = inputByTestId('manualDateInput');
+    expect(dateInput.disabled).toBe(false);
+    expect(dateInput.value).toBe('2026-11-06');
+  });
+
+  it('modify mode: changing the trade date PUTs the new filledOn', async () => {
+    await render({ fill: fillDto() });
+    await type('manualDateInput', '2026-12-25');
+    await clickButton('Save');
+
+    const put = calls.find((c) => c.method === 'PUT');
+    expect(put).toBeDefined();
+    expect(Object.keys(put!.body).sort()).toEqual(['feeCents', 'filledOn', 'priceCents', 'qty']);
+    expect(put!.body.filledOn).toBe('2026-12-25');
+    expect(put!.body.qty).toBe(10);
+    expect(put!.body.priceCents).toBe(34023);
+    expect(put!.body.feeCents).toBe(102);
+    expect(saved).toBe(1);
+    expect(closed).toBe(1);
+  });
+
+  it.each([[''], ['2026-11-6']])(
+    'modify mode: an emptied or non-padded date value %p shows the date error and sends no PUT',
+    async (value) => {
+      await render({ fill: fillDto() });
+      // setInputValue (via type) is the only way to get a type=date input empty.
+      await type('manualDateInput', value);
+      // The DOM blocks a submit-button click while the required date input is
+      // invalid, so fire the submit event directly — what a browser without a
+      // native date control does — and let the dialog's own guard run.
+      await submitForm();
+      expect(errorText()).toBe('Enter a date as YYYY-MM-DD.');
+      expect(calls.filter((c) => c.method === 'PUT').length).toBe(0);
+      expect(saved).toBe(0);
+      expect(closed).toBe(0);
+      expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+    },
+  );
 
   it('modify mode: a typed fee survives a shares edit and is sent as feeCents', async () => {
     await render({ costPpm: 30, fill: fillDto(), deletable: true });

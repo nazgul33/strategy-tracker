@@ -119,7 +119,7 @@ export function getRepos(db: any) {
     async listForRun(runId: number) { return db.select().from(s.fills).where(eq(s.fills.runId, runId)).orderBy(s.fills.id) },
     // Run-scoped guard: a foreign fillId can never be touched. Field names
     // match the fills schema; price is bigint myriadths.
-    async update(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number }): Promise<void> {
+    async update(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number; filledOn?: string }): Promise<void> {
       await db.update(s.fills).set(patch).where(and(eq(s.fills.id, fillId), eq(s.fills.runId, runId)))
     },
     // Run-scoped guard: a foreign fillId can never be touched. No-op when absent.

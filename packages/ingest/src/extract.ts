@@ -1,10 +1,12 @@
-export interface VisionConfig { baseUrl: string; apiKey: string; model: string; maxTokens: number }
-export interface RawFill { side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee?: string }
+export interface VisionConfig { baseUrl: string; apiKey: string; model: string; maxTokens: number; today?: string }
+export interface RawFill { side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee?: string; date?: string }
 export type ExtractResult = { ok: true; fills: RawFill[] } | { ok: false; reason: 'http' | 'unparseable' | 'empty'; detail: string }
 
 import { MPOP_FILL_EXTRACTION_PROMPT } from './prompt';
 
 const PRICE_RE = /^\d+(\.\d{1,4})?$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_MS = 86_400_000;
 
 export { MPOP_FILL_EXTRACTION_PROMPT } from './prompt';
 
@@ -37,6 +39,12 @@ function normalizeFill(raw: any): RawFill | null {
   if (fee !== undefined && fee !== null) f.fee = String(fee);
   if (typeof price !== 'string') f.price = String(price);
   if (typeof ticker !== 'string') return null;
+  const date = typeof raw?.date === 'string' ? raw.date.trim() : undefined;
+  if (date !== undefined && DATE_RE.test(date)) {
+    const ts = Date.parse(date);
+    // round-trip check: Date.parse silently rolls over calendar-invalid days (2026-02-30 -> 2026-03-02)
+    if (!Number.isNaN(ts) && new Date(ts).toISOString().slice(0, 10) === date) f.date = date;
+  }
   return f;
 }
 
@@ -48,7 +56,8 @@ export async function extractFills(
   if (!images || images.length === 0) {
     return { ok: false, reason: 'unparseable', detail: 'no images' };
   }
-  const content: any[] = [{ type: 'text', text: MPOP_FILL_EXTRACTION_PROMPT }];
+  const promptText = cfg.today ? `${MPOP_FILL_EXTRACTION_PROMPT}\nToday is ${cfg.today}. Resolve dates that omit the year against it.` : MPOP_FILL_EXTRACTION_PROMPT;
+  const content: any[] = [{ type: 'text', text: promptText }];
   for (const img of images) {
     content.push({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.base64}` } });
   }
@@ -103,7 +112,10 @@ export async function extractFills(
   const normalized: RawFill[] = [];
   for (const r of arr) {
     const nf = normalizeFill(r);
-    if (nf && validateFill(nf)) normalized.push(nf);
+    if (nf && validateFill(nf)) {
+      if (nf.date && cfg.today && Math.abs(Date.parse(nf.date) - Date.parse(cfg.today)) > 45 * DAY_MS) delete nf.date;
+      normalized.push(nf);
+    }
   }
   if (normalized.length === 0) {
     return { ok: false, reason: 'empty', detail: 'no valid fills' };

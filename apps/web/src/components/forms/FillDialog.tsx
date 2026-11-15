@@ -19,8 +19,8 @@ export function autoFeeUsd(shares: string, price: string, costPpm: number | unde
 }
 
 // Shared fill dialog (Modal): add mode posts a manual fill, modify mode (a
-// `fill` prop) PUTs qty/price/fee — side and trade date are locked because the
-// server treats them as immutable. With `deletable`, the footer gains Delete →
+// `fill` prop) PUTs qty/price/fee/date — side stays locked because the server
+// treats it as immutable. With `deletable`, the footer gains Delete →
 // an in-dialog confirm step (the server only allows deleting a bucket's last
 // fill; that error maps through fillErr.*).
 export interface FillDialogProps {
@@ -33,8 +33,6 @@ export interface FillDialogProps {
   /** Fill lives in a closed bucket: edits re-book cash on a settled bucket. */
   bucketClosed?: boolean;
   initialSide?: 'buy' | 'sell';
-  /** Lock the side select even in add mode. */
-  lockSide?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -46,7 +44,6 @@ export function FillDialog({
   deletable = false,
   bucketClosed = false,
   initialSide = 'buy',
-  lockSide = false,
   onClose,
   onSaved,
 }: FillDialogProps) {
@@ -101,7 +98,11 @@ export function FillDialog({
         setError(t('manualInvalidFee'));
         return;
       }
-      payload = { qty: Number(shares), priceCents, feeCents: feeCentsVal };
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(filledOn)) {
+        setError(t('manualInvalidDate'));
+        return;
+      }
+      payload = { qty: Number(shares), priceCents, feeCents: feeCentsVal, filledOn };
     } else {
       // Client-side guards mirroring the server's checks (same messages as the API docs).
       const priceUsd = usdOrNull(price);
@@ -211,7 +212,7 @@ export function FillDialog({
           <Select
             data-testid="manualSideSelect"
             value={side}
-            disabled={modify || lockSide}
+            disabled={modify}
             onChange={(e) => setSide(e.target.value as 'buy' | 'sell')}
           >
             <option value="buy">{t('orderSideBuy')}</option>
@@ -264,7 +265,6 @@ export function FillDialog({
             type="date"
             data-testid="manualDateInput"
             value={filledOn}
-            disabled={modify}
             onChange={(e) => setFilledOn(e.target.value)}
             required
           />

@@ -138,15 +138,16 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
   const pendingRows: PendingFillRow[] = []
   for (const f of extract.fills) {
     const feeCentsVal = f.fee != null ? centsFromUsd(parseUsd(f.fee)) : null
+    const filledOn = f.date ?? deps.today
     const pendingId = await repos.pendingRepo.insert({
       runId, captureId, bucketIdx: null, side: f.side, ticker: f.ticker, shares: f.shares,
-      price: parseUsd(f.price), fee: feeCentsVal, filledOn: deps.today, status: 'pending',
+      price: parseUsd(f.price), fee: feeCentsVal, filledOn, status: 'pending',
     })
     pendingRows.push({
       id: pendingId, runId, captureId, side: f.side, ticker: f.ticker, shares: f.shares,
       price: formatUsd(parseUsd(f.price)),
       fee: feeCentsVal === null ? null : formatUsd(BigInt(feeCentsVal) * 100n),
-      filledOn: deps.today, status: 'pending',
+      filledOn, status: 'pending',
     })
   }
   return { pending: pendingRows }
@@ -176,7 +177,7 @@ export async function confirmPendingFill(pendingId: number, overrides: { shares?
   }, deps)
 }
 
-export async function manualFill(runId: number, fill: Omit<RawFill, 'ticker'> & { filledOn: ISODate }, deps: BookingDeps): Promise<void> {
+export async function manualFill(runId: number, fill: Omit<RawFill, 'ticker' | 'date'> & { filledOn: ISODate }, deps: BookingDeps): Promise<void> {
   await runBooking({
     runId,
     side: fill.side,

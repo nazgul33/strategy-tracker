@@ -33,6 +33,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       apiKey: await deps.getVisionApiKey(),
       model: deps.vision.model,
       maxTokens: 1024,
+      today: deps.today(),
     };
     const extract = await extractFills([image], cfg, deps.fetchImpl);
     if (!extract.ok) {

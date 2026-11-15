@@ -129,6 +129,68 @@ describe('extract', () => {
     }
   });
 
+  test('i) keeps an ISO date inside the window and injects today into the prompt', async () => {
+    const content = '{"fills":[{"side":"buy","ticker":"SOXL","shares":"10","price":"4.20","date":"2026-11-14"}]}';
+    const f = fakeFetch([okJson(content)]);
+    const r = await extractFills([{ base64: 'AAAA', mime: 'image/png' }], { ...CFG, today: '2026-11-15' }, f);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.fills[0]!.date).toBe('2026-11-14');
+    const body = JSON.parse(f.calls[0].init.body);
+    const text = body.messages[0].content[0].text as string;
+    expect(text).toContain('Today is 2026-11-15');
+  });
+
+  test('j) drops malformed or far-out dates but keeps the fill', async () => {
+    const content = JSON.stringify({ fills: [
+      { side: 'buy', ticker: 'A', shares: '1', price: '1.00', date: '11.14' },
+      { side: 'buy', ticker: 'B', shares: '1', price: '1.00', date: '2025-06-01' },
+      { side: 'buy', ticker: 'C', shares: '1', price: '1.00', date: '2026-11-14T00:00:00' },
+      { side: 'buy', ticker: 'D', shares: '1', price: '1.00', date: '2026-10-01' },
+    ]});
+    const f = fakeFetch([okJson(content)]);
+    const r = await extractFills([{ base64: 'AAAA', mime: 'image/png' }], { ...CFG, today: '2026-11-15' }, f);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.fills.map((x) => x.ticker)).toEqual(['A', 'B', 'C', 'D']); // all fills survive
+      expect(r.fills.map((x) => x.date)).toEqual([undefined, undefined, undefined, '2026-10-01']);
+    }
+  });
+
+  test('k) calendar-invalid dates (2026-13-45, rollover 2026-02-30) are dropped, fills survive (with and without today)', async () => {
+    const content = JSON.stringify({ fills: [
+      { side: 'buy', ticker: 'A', shares: '1', price: '1.00', date: '2026-13-45' },
+      { side: 'buy', ticker: 'B', shares: '1', price: '1.00', date: '2026-02-30' },
+    ]});
+    const f1 = fakeFetch([okJson(content)]);
+    const r1 = await extractFills([{ base64: 'AAAA', mime: 'image/png' }], { ...CFG, today: '2026-11-15' }, f1);
+    expect(r1.ok).toBe(true);
+    if (r1.ok) {
+      expect(r1.fills.map((x) => x.ticker)).toEqual(['A', 'B']);
+      expect(r1.fills.map((x) => x.date)).toEqual([undefined, undefined]);
+    }
+    const f2 = fakeFetch([okJson(content)]);
+    const r2 = await extractFills([{ base64: 'AAAA', mime: 'image/png' }], CFG, f2);
+    expect(r2.ok).toBe(true);
+    if (r2.ok) {
+      expect(r2.fills.map((x) => x.ticker)).toEqual(['A', 'B']);
+      expect(r2.fills.map((x) => x.date)).toEqual([undefined, undefined]);
+    }
+  });
+
+  test('l) future-side window: +45 days kept, +46 days dropped', async () => {
+    const content = JSON.stringify({ fills: [
+      { side: 'buy', ticker: 'A', shares: '1', price: '1.00', date: '2026-12-30' },
+      { side: 'buy', ticker: 'B', shares: '1', price: '1.00', date: '2026-12-31' },
+    ]});
+    const f = fakeFetch([okJson(content)]);
+    const r = await extractFills([{ base64: 'AAAA', mime: 'image/png' }], { ...CFG, today: '2026-11-15' }, f);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.fills.map((x) => x.ticker)).toEqual(['A', 'B']); // all fills survive
+      expect(r.fills.map((x) => x.date)).toEqual(['2026-12-30', undefined]);
+    }
+  });
+
   test('200 with non-JSON body -> unparseable, not a crash', async () => {
     const f = fakeFetch([{ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } }]);
     const r = await extractFills([{ base64: 'AAA', mime: 'image/png' }], CFG, f);

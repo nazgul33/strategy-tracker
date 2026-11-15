@@ -1,7 +1,9 @@
 import { Hono } from 'hono'
-import { DomainError } from '@st/core'
+import { DomainError, type ISODate } from '@st/core'
 import { rebookFill, deleteFill, recalcRunState } from '../../domain/recompute'
 import type { HttpDeps } from '../app'
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 // Editing captured fills and recalculating state. Auth is already handled by the
 // app-level middleware. All routes only call domain functions; the domain persists state itself.
@@ -14,10 +16,12 @@ export function fillsRouter(deps: HttpDeps): Hono {
   r.put('/runs/:id/fills/:fillId', async (c) => {
     const runId = Number(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
-    const { qty, priceCents, feeCents } = body ?? {}
+    const { qty, priceCents, feeCents, filledOn } = body ?? {}
     // feeCents must be sent: integer >= 0, or null = recompute the fee from run costPpm
+    // filledOn is optional; when present it must be an ISO YYYY-MM-DD string
     if (!Number.isInteger(qty) || qty <= 0 || !Number.isInteger(priceCents) || priceCents <= 0
-      || (feeCents !== null && (!Number.isInteger(feeCents) || feeCents < 0))) return c.json({ error: 'invalid-body' }, 400)
+      || (feeCents !== null && (!Number.isInteger(feeCents) || feeCents < 0))
+      || (filledOn !== undefined && (typeof filledOn !== 'string' || !ISO_DATE_RE.test(filledOn)))) return c.json({ error: 'invalid-body' }, 400)
     const run = await deps.repos.runRepo.get(runId)
     if (!run) return c.json({ error: 'no-run' }, 404)
     let edited: { deltaCents: number }
@@ -25,6 +29,7 @@ export function fillsRouter(deps: HttpDeps): Hono {
       // no cash guard: an oversized qty is the operator's call, books go negative
       edited = await rebookFill(runId, {
         fillId: Number(c.req.param('fillId')), shares: qty, priceStr: centsToStr(priceCents), feeCents: feeCents as number | null,
+        filledOn: filledOn as ISODate | undefined,
       }, bookingDeps())
     } catch (e) {
       if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
