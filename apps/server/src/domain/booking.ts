@@ -20,7 +20,6 @@ export interface RepoSurface {
     insert(fill: any): Promise<any>
     listForRun(runId: number): Promise<FillRow[]>
     // Rebook/delete history surface (Cash Model A rebuild).
-    // Optional until the db repos implement them.
     update?(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number }): Promise<void>
     deleteById?(runId: number, fillId: number): Promise<void>
   }
