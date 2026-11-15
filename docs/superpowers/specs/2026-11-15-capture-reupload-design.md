@@ -109,9 +109,14 @@ outcome carries `bookedEarlier` and the Telegram reply sends a short notice
 fills booked earlier. Booking and dedup rules are unchanged. The live check is now
 `pendingRepo.hasLiveForCapture` instead of filtering `listPending()`.
 
+The notice is per capture, not per fill. If a multi-fill screenshot had one fill
+confirmed and another rejected, re-sending it shows the "may be duplicates" notice even
+though the fresh row is the rejected one. Accepted: the "may be" wording keeps this
+false alarm harmless.
+
 ## Constraints
 
-Money bigint myriadths; files ≤ ~300 lines (`booking.ts` is 278 — keep the guard logic
+Money bigint myriadths; files ≤ ~300 lines (`booking.ts` is close to the limit — keep the guard logic
 compact or put the lookup helper next to it); English comments; commit style
 `fix:` / `test:`; prod DB never written — tests use `127.0.0.1:3307/st_test` and the e2e
 scratch DB only.

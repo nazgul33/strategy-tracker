@@ -349,8 +349,10 @@ describeIf('db integration', () => {
     const ticker = 'HL' + uniq
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'haslive-' + uniq, poolCents: 1_000_000, costPpm: 10 })
     const row = (captureId: number | null) => ({ runId, captureId, bucketIdx: null, side: 'buy', ticker, shares: 1, price: 100n, fee: null, filledOn: '2026-11-12', status: 'pending' })
-    const capA = 900_000 + (uniq % 100_000)
-    const capB = capA + 1_000_000
+    // real capture rows: auto-increment ids are fresh on every run, so a confirmed row left behind in st_test can never collide
+    const newCapture = async (tag: string) => (await repos.captureRepo.insert({ runId, chatId: null, imageHash: `HL-${tag}-${uniq}`, status: 'parsed' })).id as number
+    const capA = await newCapture('a')
+    const capB = await newCapture('b')
     expect(await repos.pendingRepo.hasLiveForCapture(capA)).toBe(false)
     expect(await repos.pendingRepo.hasConfirmedForCapture(capA)).toBe(false)
 
