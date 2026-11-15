@@ -100,8 +100,14 @@ the trade date (`f.date ?? today`). If the re-read date is missing (the model om
 `packages/ingest/src/extract.ts` drops a date more than 45 days from today) or read
 differently, the trade comes back as a fresh pending row. Nothing is booked without
 operator confirmation, and the same exposure already applies to any non-identical
-screenshot of the same trades. Possible follow-up: a notice when a reused capture already
-has a `confirmed` row.
+screenshot of the same trades.
+
+Mitigation (issue #24): when a reused capture already has a `confirmed` pending row
+(`pendingRepo.hasConfirmedForCapture`) and the re-read yields fresh pending rows, the
+outcome carries `bookedEarlier` and the Telegram reply sends a short notice
+(`capture-booked-earlier`, en/ko) before those rows, warning that they may duplicate
+fills booked earlier. Booking and dedup rules are unchanged. The live check is now
+`pendingRepo.hasLiveForCapture` instead of filtering `listPending()`.
 
 ## Constraints
 
