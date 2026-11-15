@@ -43,7 +43,7 @@ export async function rebookFill(
   deps: BookingDeps,
 ): Promise<{ fill: FillRow; deltaCents: number }> {
   const repos = deps.repos
-  if (!repos.fillRepo.listForRun || !repos.fillRepo.update) throw new Error('fill-history-unavailable')
+  if (!repos.fillRepo.update) throw new Error('fill-history-unavailable')
   const history = byIdAsc(await repos.fillRepo.listForRun(runId))
   const match = history.find((f) => f.id === edit.fillId)
   if (!match) throw new DomainError('no-fill')
@@ -89,7 +89,7 @@ export async function deleteFill(
   deps: BookingDeps,
 ): Promise<{ fill: FillRow; deltaCents: number }> {
   const repos = deps.repos
-  if (!repos.fillRepo.listForRun || !repos.fillRepo.deleteById) throw new Error('fill-history-unavailable')
+  if (!repos.fillRepo.deleteById) throw new Error('fill-history-unavailable')
   const history = byIdAsc(await repos.fillRepo.listForRun(runId))
   const fill = history.find((f) => f.id === fillId)
   if (!fill) throw new DomainError('no-fill')
@@ -123,7 +123,6 @@ export async function recalcRunState(
   deps: BookingDeps,
 ): Promise<{ state: RunState; deltaCents: number; fillCount: number }> {
   const repos = deps.repos
-  if (!repos.fillRepo.listForRun) throw new Error('fill-history-unavailable')
   const history = byIdAsc(await repos.fillRepo.listForRun(runId))
   const run = await repos.runRepo.get(runId)
   const state = await repos.bucketRepo.loadState(runId)

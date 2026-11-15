@@ -628,15 +628,4 @@ describe('capture dedup against booked fills and pending rows', () => {
     ), deps) as any
     expect(out.pending.length).toBe(5)
   })
-
-  test('dedup tolerates a fillRepo without listForRun', async () => {
-    const { f, deps, runId } = await setup('dedup7')
-    await seedFill(f, runId, 'buy', 88, '56.0600', '2026-11-10')
-    delete (f.repos.fillRepo as any).listForRun
-    const out = await ingestCapture(runId, img('DEDUP7A'), ext(trade('buy', 88, '56.06', '2026-11-10')), deps) as any
-    expect(out.pending.length).toBe(1)
-    await seedPending(f, runId, 'buy', 88, '56.06', '2026-11-10')
-    const second = await ingestCapture(runId, img('DEDUP7B'), ext(trade('buy', 88, '56.06', '2026-11-10')), deps)
-    expect(second).toBe('duplicate')
-  })
 })

@@ -17,9 +17,9 @@ export interface RepoSurface {
   orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; markStale(date: string): Promise<any>; get(id: number): Promise<any | null>; setStatus(id: number, status: string, cancelReason?: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
   fillRepo: {
     insert(fill: any): Promise<any>
-    // Fill-history surface used by rebook/delete (Cash Model A rebuild).
+    listForRun(runId: number): Promise<FillRow[]>
+    // Rebook/delete history surface (Cash Model A rebuild).
     // Optional until the db repos implement them.
-    listForRun?(runId: number): Promise<FillRow[]>
     update?(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number }): Promise<void>
     deleteById?(runId: number, fillId: number): Promise<void>
   }
@@ -145,9 +145,7 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
 
   const remaining = new Map<string, number>()
   const bump = (k: string) => remaining.set(k, (remaining.get(k) ?? 0) + 1)
-  if (repos.fillRepo.listForRun) {
-    for (const b of await repos.fillRepo.listForRun(runId)) bump(dedupKey(b.side, b.ticker, b.shares, b.price, b.filledOn))
-  }
+  for (const b of await repos.fillRepo.listForRun(runId)) bump(dedupKey(b.side, b.ticker, b.shares, b.price, b.filledOn))
   for (const p of await repos.pendingRepo.listPending()) {
     if (p.runId === runId) bump(dedupKey(p.side, p.ticker, p.shares, p.price, p.filledOn))
   }
