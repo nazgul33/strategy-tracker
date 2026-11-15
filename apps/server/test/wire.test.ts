@@ -230,7 +230,7 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     expect(p.price).toBe(parseUsd('180.50'));
     expect(h.sent.length).toBe(1);
     expect(h.sent[0]!.chatId).toBe('777');
-    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 — confirm?');
+    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?');
     expect(h.sent[0]!.extra).toEqual({ reply_markup: buildPendingKeyboard(String(p.id)) });
 
     // confirm through the real confirmPendingFill: bucket 0, fill row, ledger row
@@ -244,7 +244,7 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     expect(h.ledger[0]!.kind).toBe('buy');
     expect(h.stateFor(1).buckets[0]!.state).toBe('held');
     expect(h.stateFor(1).buckets[0]!.shares).toBe(10);
-    expect(h.sent.at(-1)!.text).toBe('Booked NVDA buy 10 sh @ $180.50 into bucket 0');
+    expect(h.sent.at(-1)!.text).toBe('Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 into bucket 0');
   });
 
   test('rejecting pending leaves no fill', async () => {
@@ -255,6 +255,20 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     expect(p.status).toBe('rejected');
     expect(h.fills.length).toBe(0);
     expect(h.sent.at(-1)!.text).toBe('Rejected — fill discarded.');
+  });
+
+  test('re-detected fill matching a booked fill except price sends a conflict line and books nothing', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    await h.repos.fillRepo.insert({
+      runId: 1, bucketIdx: 0, side: 'buy', ticker: 'NVDA', shares: 10,
+      price: parseUsd('999.99'), fee: 0, filledOn: '2026-11-10', source: 'manual',
+    } as never);
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(h.pending.length).toBe(0);
+    expect(h.sent.length).toBe(1);
+    expect(h.sent[0]!.text).toBe(
+      '⚠️ Conflict: buy 10 NVDA on 2026-11-10 — extracted $180.50, but booked fill #1 has $999.99. Fix the booked fill or reject the row.',
+    );
   });
 });
 
@@ -314,7 +328,7 @@ describe('capture onPhoto — caption routing', () => {
     expect(h.captures.length).toBe(1);
     expect(h.captures[0]!.runId).toBe(7);
     expect(h.pending.length).toBe(1);
-    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 — confirm?');
+    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?');
   });
 
   test('unknown run id in caption is reported', async () => {
@@ -328,7 +342,7 @@ describe('capture onPhoto — caption routing', () => {
     const h = makeCapture({ runs: [activeRun(1, 'NVDA'), activeRun(2, 'NVDA')] });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' }, '/capture 2');
     expect(h.captures[0]!.runId).toBe(2);
-    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 — confirm?');
+    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?');
   });
 
   test('I1: "/capture 3" with a foreign-ticker extract books nothing and says so', async () => {
@@ -361,7 +375,7 @@ describe('capture onPhoto — caption routing', () => {
     expect(h.pending.length).toBe(1);
     expect(h.pending[0]!.runId).toBe(1);
     expect(h.sent.length).toBe(1);
-    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 — confirm?');
+    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?');
   });
 });
 
@@ -380,8 +394,8 @@ describe('capture onPhoto — multi-ticker auto-route (I3)', () => {
     expect(nvda.shares).toBe(10);
     expect(aapl.shares).toBe(5);
     expect(h.sent.length).toBe(2);
-    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 — confirm?');
-    expect(h.sent[1]!.text).toBe('Booked AAPL buy 5 sh @ $210.25 — confirm?');
+    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?');
+    expect(h.sent[1]!.text).toBe('Booked AAPL buy 5 sh @ $210.25 on 2026-11-10 — confirm?');
   });
 
   test('a ticker with no active run is skipped with a notice; matched tickers still book', async () => {
@@ -392,7 +406,7 @@ describe('capture onPhoto — multi-ticker auto-route (I3)', () => {
     expect(h.pending.length).toBe(1);
     expect(h.pending[0]!.ticker).toBe('NVDA');
     expect(h.sent.map((s) => s.text)).toEqual([
-      'Booked NVDA buy 10 sh @ $180.50 — confirm?',
+      'Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?',
       'No active run for AAPL — use /capture <runId> to pick one.',
     ]);
   });
@@ -407,7 +421,7 @@ describe('capture onPhoto — multi-ticker auto-route (I3)', () => {
     expect(h.captures[0]!.runId).toBe(1);
     expect(h.pending.length).toBe(1);
     expect(h.pending[0]!.ticker).toBe('NVDA');
-    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 — confirm?');
+    expect(h.sent[0]!.text).toBe('Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?');
     expect(h.sent[1]!.text).toBe('Multiple active runs for AAPL — use /capture <runId>.');
   });
 
@@ -429,7 +443,7 @@ describe('capture onPhoto — multi-ticker auto-route (I3)', () => {
     expect(h.pending[0]!.ticker).toBe('NVDA');
     expect(h.sent.map((s) => s.text)).toEqual([
       'Ignored AAPL — not the ticker of run #1.',
-      'Booked NVDA buy 10 sh @ $180.50 — confirm?',
+      'Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?',
     ]);
   });
 });

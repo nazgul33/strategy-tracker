@@ -293,4 +293,24 @@ describeIf('db integration', () => {
     expect(Number(mine[0].shares)).toBe(270)
     expect(mine[0].filledOn).toBe('2026-11-12')
   })
+
+  test('ingestCapture reports a conflict when a re-detected fill matches a booked fill except for price', async () => {
+    const ticker = 'CF' + Date.now()
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'conflict-' + Date.now(), poolCents: 1_000_000, costPpm: 10 })
+    // booked sell carrying a price typo, stored as bigint myriadths like every real fill
+    await repos.fillRepo.insert({ runId, bucketIdx: 0, side: 'sell', ticker, shares: 44, price: parseUsd('66.03'), fee: 0, filledOn: '2026-11-11', source: 'manual' })
+
+    const deps: BookingDeps = { repos, today: '2026-11-15' }
+    const ext: ExtractResult = { ok: true, fills: [{ side: 'sell', ticker, shares: 44, price: '64.07', date: '2026-11-11' }] }
+    const out: any = await ingestCapture(runId, { base64: 'CONFLICT-REAL-' + Date.now(), mime: 'image/png' }, ext, deps)
+
+    const conflicts: Array<Record<string, unknown>> = out.conflicts
+    expect(conflicts.length).toBe(1)
+    expect(conflicts[0]!.extractedPrice).toBe('64.07')
+    expect(conflicts[0]!.bookedPrice).toBe('66.03')
+    expect(typeof conflicts[0]!.bookedId).toBe('number')
+    expect(conflicts[0]!.pendingId).toBeNull()
+    const left = (await repos.pendingRepo.listPending()).filter((p: any) => p.runId === runId)
+    expect(left.length).toBe(0)
+  })
 })
