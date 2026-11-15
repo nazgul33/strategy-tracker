@@ -18,7 +18,10 @@ does not. Two side findings:
   `captures_run_hash_unique` and is swallowed by `captureRepo.insert` — re-uploads leave
   no trace.
 - A capture whose vision read failed once (`unparseable`, no fills) blocks that image
-  for the run forever.
+  for the run forever. Correction: from Telegram this cannot happen, because
+  `extractOrTell` (`apps/server/src/wire/capture.ts`) returns before `ingestCapture`
+  whenever extraction fails. The `unparseable` reuse path is reachable only by direct
+  callers of `ingestCapture`.
 
 ## Goal
 
@@ -88,6 +91,17 @@ pending rows.
   pending row's `capture_id` = original id.
 - Existing re-send assertions (incl. e2e "same photo again -> duplicate-capture") must
   stay green.
+
+## Known limitations
+
+Re-sending the exact image of an upload whose fills were **confirmed** is re-read (the
+Loose rule). Only the fill matcher then prevents a second booking, and its key includes
+the trade date (`f.date ?? today`). If the re-read date is missing (the model omits it, or
+`packages/ingest/src/extract.ts` drops a date more than 45 days from today) or read
+differently, the trade comes back as a fresh pending row. Nothing is booked without
+operator confirmation, and the same exposure already applies to any non-identical
+screenshot of the same trades. Possible follow-up: a notice when a reused capture already
+has a `confirmed` row.
 
 ## Constraints
 

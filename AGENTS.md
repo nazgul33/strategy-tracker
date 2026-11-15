@@ -26,7 +26,7 @@ apps/server/       drizzle.config.ts
   src/
     main.ts
     db/schema.ts db/client.ts db/repos.ts
-    domain/booking.ts
+    domain/booking.ts domain/capture-claim.ts domain/capture-dedup.ts domain/ppm.ts domain/recompute.ts domain/run-lock.ts
     wire/deps.ts wire/capture.ts
     pipeline/day.ts pipeline/wire.ts
     sim/sim.ts
@@ -54,7 +54,7 @@ scripts/           e2e.ts tsconfig.json — operator smoke on a scratch DB (see 
 
 | What | Needs DB | Command |
 | --- | --- | --- |
-| Unit suites (`packages/*/test`, `apps/server/test/*` except `db.test.ts`, `apps/web`) | no | `bun test` — `apps/server/test/db.test.ts` self-skips without `TEST_DATABASE_URL` (skips 6) |
+| Unit suites (`packages/*/test`, `apps/server/test/*` except `db.test.ts`, `apps/web`) | no | `bun test` — `apps/server/test/db.test.ts` self-skips without `TEST_DATABASE_URL` (all of its tests skip) |
 | DB integration | yes | `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun test` |
 | Operator E2E smoke | yes | `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun scripts/e2e.ts` (run from repo root) |
 
