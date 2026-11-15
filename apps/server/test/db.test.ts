@@ -1,8 +1,11 @@
 import { describe, test, expect, beforeAll } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { sql } from 'drizzle-orm'
+import { parseUsd } from '@st/core'
+import type { ExtractResult } from '@st/ingest'
 import { getDb, applyMigrations } from '../src/db/client'
 import { getRepos } from '../src/db/repos'
+import { ingestCapture, type BookingDeps } from '../src/domain/booking'
 
 const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 
@@ -233,5 +236,61 @@ describeIf('db integration', () => {
     expect(await repos.fillRepo.listForRun(runId)).toEqual([])
     await repos.fillRepo.deleteById(runId, hi + 10)
     expect(await repos.fillRepo.listForRun(runId)).toEqual([])
+  })
+
+  test('ingestCapture dedups against real booked fills and pending rows', async () => {
+    const ticker = 'DD' + Date.now()
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'dedup-' + Date.now(), poolCents: 1_000_000, costPpm: 10 })
+    // one booked buy (bigint myriadths price) + one pending sell, as the real repos store them
+    await repos.fillRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker, shares: 11, price: parseUsd('218.55'), fee: 0, filledOn: '2026-11-12', source: 'capture' })
+    await repos.pendingRepo.insert({ runId, bucketIdx: null, side: 'sell', ticker, shares: 270, price: parseUsd('65.53'), fee: 345, filledOn: '2026-11-12', status: 'pending' })
+
+    const deps: BookingDeps = { repos, today: '2026-11-15' }
+    // extraction spells the same two trades with string prices — the dedup key
+    // must canonicalize across the DB bigint and the extract string
+    const ext: ExtractResult = {
+      ok: true,
+      fills: [
+        { side: 'buy', ticker, shares: 11, price: '218.55', date: '2026-11-12' },
+        { side: 'sell', ticker, shares: 270, price: '65.53', date: '2026-11-12' },
+      ],
+    }
+    const out = await ingestCapture(runId, { base64: 'DEDUP-REAL-' + Date.now(), mime: 'image/png' }, ext, deps)
+    expect(out).toBe('duplicate')
+
+    const rows = await repos.pendingRepo.listPending()
+    expect(rows.filter((r: any) => r.runId === runId).length).toBe(1) // the seeded row only
+
+    const [capRows] = await db.execute(sql`SELECT status FROM captures WHERE run_id = ${runId}`)
+    expect(capRows.length).toBe(1)
+    expect(capRows[0].status).toBe('parsed')
+  })
+
+  test('mixed capture stores only the fresh fill as pending', async () => {
+    const ticker = 'MX' + Date.now()
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'dedup-mixed-' + Date.now(), poolCents: 1_000_000, costPpm: 10 })
+    await repos.fillRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker, shares: 11, price: parseUsd('218.55'), fee: 0, filledOn: '2026-11-12', source: 'capture' })
+
+    const deps: BookingDeps = { repos, today: '2026-11-15' }
+    const ext: ExtractResult = {
+      ok: true,
+      fills: [
+        { side: 'buy', ticker, shares: 11, price: '218.55', date: '2026-11-12' }, // already booked → dropped
+        { side: 'sell', ticker, shares: 270, price: '65.53', date: '2026-11-12' }, // fresh → stored
+      ],
+    }
+    const out: any = await ingestCapture(runId, { base64: 'DEDUP-MIXED-' + Date.now(), mime: 'image/png' }, ext, deps)
+    expect(Array.isArray(out.pending)).toBe(true)
+    expect(out.pending.length).toBe(1)
+    expect(out.pending[0].side).toBe('sell')
+    expect(out.pending[0].shares).toBe(270)
+    expect(out.pending[0].price).toBe('65.53')
+
+    const rows = await repos.pendingRepo.listPending()
+    const mine = rows.filter((r: any) => r.runId === runId)
+    expect(mine.length).toBe(1)
+    expect(mine[0].side).toBe('sell')
+    expect(Number(mine[0].shares)).toBe(270)
+    expect(mine[0].filledOn).toBe('2026-11-12')
   })
 })

@@ -25,7 +25,7 @@ export const CATALOG: Record<string, MsgEntry> = {
   'capture-booked': { en: 'Booked {ticker} {side} {shares} sh @ ${price} — confirm?', ko: '{ticker} {side} {shares}주 @ ${price} 예약 — 확인하시겠습니까?' },
   'booked': { en: 'Booked {ticker} {side} {shares} sh @ ${price} into bucket {bucket}', ko: '{ticker} {side} {shares}주 @ ${price}을(를) 버킷 {bucket}에 예약했습니다' },
   'rejected-line': { en: 'Rejected — fill discarded.', ko: '거부됨 — 체결이 폐기되었습니다.' },
-  'duplicate-capture': { en: 'Duplicate capture — already booked.', ko: '중복 스냅샷 — 이미 예약되었습니다.' },
+  'duplicate-capture': { en: 'Duplicate capture — all fills already booked or pending.', ko: '중복 스냅샷 — 모든 체결이 이미 예약되거나 대기 중입니다.' },
   'capture-bad-extract': { en: 'Could not read fills from this image — {detail}. Book the fill manually in the web UI.', ko: '이미지에서 체결을 읽을 수 없습니다 — {detail}. 웹 UI에서 직접 예약해 주세요.' },
   'capture-no-run': { en: 'No active run for {ticker} — use /capture <runId> to pick one.', ko: '{ticker}에 대한 활성 런이 없습니다 — /capture <runId>로 선택하세요.' },
   'capture-ambiguous': { en: 'Multiple active runs for {ticker} — use /capture <runId>.', ko: '{ticker}에 여러 활성 런이 있습니다 — /capture <runId>를 사용하세요.' },

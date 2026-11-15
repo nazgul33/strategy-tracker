@@ -2,6 +2,7 @@ import { applyBuyFill, applySellFill, nextBuyBucketIndex, parseUsd, DomainError,
 import { feeCents, centsFromUsd, formatUsd } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { ExtractResult, RawFill } from '@st/ingest'
+import { withRunLock } from './run-lock'
 
 export async function sha256(buf: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', buf as any)
@@ -17,9 +18,8 @@ export interface RepoSurface {
   orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; markStale(date: string): Promise<any>; get(id: number): Promise<any | null>; setStatus(id: number, status: string, cancelReason?: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
   fillRepo: {
     insert(fill: any): Promise<any>
-    // Fill-history surface used by rebook/delete (Cash Model A rebuild).
-    // Optional until the db repos implement them.
-    listForRun?(runId: number): Promise<FillRow[]>
+    listForRun(runId: number): Promise<FillRow[]>
+    // Rebook/delete history surface (Cash Model A rebuild).
     update?(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number }): Promise<void>
     deleteById?(runId: number, fillId: number): Promise<void>
   }
@@ -50,7 +50,14 @@ interface BookInput {
   source: 'capture' | 'manual' | 'seed'
 }
 
-async function runBooking(input: BookInput, deps: BookingDeps): Promise<void> {
+// The whole decide→write span (read state → pick bucket → flip pending → saveState
+// → fill → ledger → order flip) must not interleave with another writer on the
+// same run. Not reentrant: never call this from inside a withRunLock on the same run.
+function runBooking(input: BookInput, deps: BookingDeps): Promise<void> {
+  return withRunLock(input.runId, () => bookUnlocked(input, deps))
+}
+
+async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<void> {
   const repos = deps.repos
   const run = await repos.runRepo.get(input.runId)
   const state: RunState = await repos.bucketRepo.loadState(input.runId)
@@ -143,63 +150,75 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
   if (!res.inserted) return 'duplicate'
   const captureId = res.id!
 
-  const remaining = new Map<string, number>()
-  const bump = (k: string) => remaining.set(k, (remaining.get(k) ?? 0) + 1)
-  if (repos.fillRepo.listForRun) {
+  // Dedup reads and the pending inserts are one decide→write span: a concurrent
+  // capture of the same trades must see the first one's rows, not re-book them.
+  // Runs under the per-run lock, so this must never nest with another
+  // withRunLock on this runId.
+  return withRunLock(runId, async () => {
+    const remaining = new Map<string, number>()
+    const bump = (k: string) => remaining.set(k, (remaining.get(k) ?? 0) + 1)
     for (const b of await repos.fillRepo.listForRun(runId)) bump(dedupKey(b.side, b.ticker, b.shares, b.price, b.filledOn))
-  }
-  for (const p of await repos.pendingRepo.listPending()) {
-    if (p.runId === runId) bump(dedupKey(p.side, p.ticker, p.shares, p.price, p.filledOn))
-  }
-  const fresh: RawFill[] = []
-  for (const f of extract.fills) {
-    const k = dedupKey(f.side, f.ticker, f.shares, f.price, f.date ?? deps.today)
-    const n = remaining.get(k) ?? 0
-    if (n > 0) { remaining.set(k, n - 1); continue }
-    fresh.push(f)
-  }
-  if (fresh.length === 0) return 'duplicate'
+    for (const p of await repos.pendingRepo.listPending()) {
+      if (p.runId === runId) bump(dedupKey(p.side, p.ticker, p.shares, p.price, p.filledOn))
+    }
+    const fresh: RawFill[] = []
+    for (const f of extract.fills) {
+      const k = dedupKey(f.side, f.ticker, f.shares, f.price, f.date ?? deps.today)
+      const n = remaining.get(k) ?? 0
+      if (n > 0) { remaining.set(k, n - 1); continue }
+      fresh.push(f)
+    }
+    if (fresh.length === 0) return 'duplicate'
 
-  const pendingRows: PendingFillRow[] = []
-  for (const f of fresh) {
-    const feeCentsVal = f.fee != null ? centsFromUsd(parseUsd(f.fee)) : null
-    const filledOn = f.date ?? deps.today
-    const pendingId = await repos.pendingRepo.insert({
-      runId, captureId, bucketIdx: null, side: f.side, ticker: f.ticker, shares: f.shares,
-      price: parseUsd(f.price), fee: feeCentsVal, filledOn, status: 'pending',
-    })
-    pendingRows.push({
-      id: pendingId, runId, captureId, side: f.side, ticker: f.ticker, shares: f.shares,
-      price: formatUsd(parseUsd(f.price)),
-      fee: feeCentsVal === null ? null : formatUsd(BigInt(feeCentsVal) * 100n),
-      filledOn, status: 'pending',
-    })
-  }
-  return { pending: pendingRows }
+    const pendingRows: PendingFillRow[] = []
+    for (const f of fresh) {
+      const feeCentsVal = f.fee != null ? centsFromUsd(parseUsd(f.fee)) : null
+      const filledOn = f.date ?? deps.today
+      const pendingId = await repos.pendingRepo.insert({
+        runId, captureId, bucketIdx: null, side: f.side, ticker: f.ticker, shares: f.shares,
+        price: parseUsd(f.price), fee: feeCentsVal, filledOn, status: 'pending',
+      })
+      pendingRows.push({
+        id: pendingId, runId, captureId, side: f.side, ticker: f.ticker, shares: f.shares,
+        price: formatUsd(parseUsd(f.price)),
+        fee: feeCentsVal === null ? null : formatUsd(BigInt(feeCentsVal) * 100n),
+        filledOn, status: 'pending',
+      })
+    }
+    return { pending: pendingRows }
+  })
 }
 
 export async function confirmPendingFill(pendingId: number, overrides: { shares?: number; price?: string; filledOn?: ISODate } | null, deps: BookingDeps): Promise<void> {
   const repos = deps.repos
-  const pendingList = await repos.pendingRepo.listPending()
-  const pending = pendingList.find((p: any) => p.id === pendingId)
-  if (!pending) throw new Error('pending-not-found-or-not-pending')
+  // Only a peek to learn which run this pending belongs to; everything that
+  // reads and writes state happens inside the lock, where the row is re-read.
+  const known = (await repos.pendingRepo.listPending()).find((p: any) => p.id === pendingId)
+  if (!known) throw new Error('pending-not-found-or-not-pending')
 
-  const run = await repos.runRepo.get(pending.runId)
-  if (pending.ticker !== run.ticker) throw new Error('ticker-mismatch')
-  const priceStr = overrides?.price ?? formatUsd(pending.price)
-  const shares = overrides?.shares ?? pending.shares
-  const filledOn = overrides?.filledOn ?? pending.filledOn
+  // bookUnlocked, not runBooking: the lock is not reentrant.
+  await withRunLock(known.runId, async () => {
+    const pendingList = await repos.pendingRepo.listPending()
+    const pending = pendingList.find((p: any) => p.id === pendingId)
+    if (!pending) throw new Error('pending-not-found-or-not-pending')
 
-  await runBooking({
-    runId: pending.runId,
-    side: pending.side,
-    shares,
-    priceStr,
-    feeCents: pending.fee,
-    filledOn,
-    pendingId,
-    source: 'capture',
-  }, deps)
+    const run = await repos.runRepo.get(pending.runId)
+    if (pending.ticker !== run.ticker) throw new Error('ticker-mismatch')
+    const priceStr = overrides?.price ?? formatUsd(pending.price)
+    const shares = overrides?.shares ?? pending.shares
+    const filledOn = overrides?.filledOn ?? pending.filledOn
+
+    await bookUnlocked({
+      runId: pending.runId,
+      side: pending.side,
+      shares,
+      priceStr,
+      feeCents: pending.fee,
+      filledOn,
+      pendingId,
+      source: 'capture',
+    }, deps)
+  })
 }
 
 export async function manualFill(runId: number, fill: Omit<RawFill, 'ticker' | 'date'> & { filledOn: ISODate }, deps: BookingDeps): Promise<void> {
