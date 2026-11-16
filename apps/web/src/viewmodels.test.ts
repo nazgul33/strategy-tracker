@@ -233,6 +233,10 @@ describe('seedCashErrorKey', () => {
   });
 });
 
+// Cancel-reason display: `cancelReason` wins the shared reason cell; a legacy
+// `cancelled` row that carries only a `skipReason` keeps rendering its skip
+// label byte-for-byte, and a row with neither renders '' (the table supplies
+// the em dash). Status is deliberately not consulted.
 describe('orderReasonText', () => {
   test('cancel reason wins, skip reason otherwise, empty when neither', () => {
     const t = (k: string) => `«${k}»`;

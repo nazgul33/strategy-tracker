@@ -3,11 +3,11 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import type { SimRunDto } from '../api';
 import { SimConfigFields } from '../components/forms/SimConfigFields';
 import { useAsync, useDefaultCostText } from '../components/hooks';
-import { Button, Card, EmptyNote, ErrorNote, Field, Input, SectionTitle, Spinner, TableWrap, Td, Th } from '../components/ui';
+import { Button, Card, EmptyNote, ErrorNote, Field, Input, Modal, SectionTitle, Spinner, TableWrap, Td, Th } from '../components/ui';
 import { centsUsd, costPercentText, isoDate, isoDateTime, todayIso } from '../format';
 import { useT } from '../i18n';
 import { parseSimTicker, simFieldFlags, validateSimConfig } from '../simconfig';
@@ -80,6 +80,8 @@ export function SimPage() {
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [discarding, setDiscarding] = useState<number | null>(null);
+  const [discardBusy, setDiscardBusy] = useState(false);
 
   const form: SimConfigForm = { ...rest, cost };
   const percentsValid = !Object.values(simFieldFlags(form)).some(Boolean);
@@ -108,12 +110,20 @@ export function SimPage() {
   };
 
   const discardDraft = async (id: number) => {
+    setDiscardBusy(true);
     try {
       await api.deleteSimRun(id);
       setSubmitError(null);
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : String(err));
+      // Same wording as the config panel: a draft saved elsewhere reads as "already saved".
+      if (err instanceof ApiError) {
+        setSubmitError(err.code === 'sim-finalized' ? t('simErr.sim-finalized') : t('simActionFailed', { code: err.code }));
+      } else {
+        setSubmitError(err instanceof Error ? err.message : String(err));
+      }
     }
+    setDiscardBusy(false);
+    setDiscarding(null);
     await reload();
   };
 
@@ -166,17 +176,31 @@ export function SimPage() {
             <div data-testid="simDrafts">
               <Card>
                 <SectionTitle>{t('simDrafts')}</SectionTitle>
-                <SimTable rows={drafts} onDiscard={(id) => void discardDraft(id)} />
+                <SimTable rows={drafts} onDiscard={setDiscarding} />
               </Card>
             </div>
           )}
           <div data-testid="simSaved">
             <Card>
               <SectionTitle>{t('simSavedTitle')}</SectionTitle>
-              {saved.length === 0 ? <EmptyNote>{t('simEmpty')}</EmptyNote> : <SimTable rows={saved} />}
+              {saved.length === 0 ? <EmptyNote>{t('simSavedEmpty')}</EmptyNote> : <SimTable rows={saved} />}
             </Card>
           </div>
         </>
+      )}
+
+      {discarding !== null && (
+        <Modal title={t('simDiscard')} onClose={() => setDiscarding(null)}>
+          <p className="text-sm">{t('simDiscardWarning', { id: discarding })}</p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button data-testid="simDiscardCancelBtn" onClick={() => setDiscarding(null)}>
+              {t('cancel')}
+            </Button>
+            <Button variant="danger" busy={discardBusy} data-testid="simDiscardConfirmBtn" onClick={() => void discardDraft(discarding)}>
+              {t('simDiscardConfirm')}
+            </Button>
+          </div>
+        </Modal>
       )}
     </div>
   );

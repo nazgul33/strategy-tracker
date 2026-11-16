@@ -166,7 +166,9 @@ export interface SimRunDto {
 }
 
 export type SimEvent =
-  | { type: 'fill'; side: 'buy' | 'sell'; bucketIndex: number; shares: number; price: string; feeCents: number }
+  // `kind` is the order kind that filled. Optional on read: sim_days rows stored before the
+  // field existed have none, and the replay falls back to grouping by side and day.
+  | { type: 'fill'; side: 'buy' | 'sell'; kind?: 'buy_loc' | 'sell_loc' | 'market_sell' | 'stop_sell'; bucketIndex: number; shares: number; price: string; feeCents: number }
   | { type: 'skipped'; bucketIndex: number; reason: string };
 
 export interface SimOrderDto {

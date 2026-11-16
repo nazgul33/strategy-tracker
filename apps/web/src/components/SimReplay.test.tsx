@@ -100,4 +100,85 @@ describe('SimReplay', () => {
     expect(text).toContain('No free bucket');
     expect(text).not.toContain('simSkipStopPreempted');
   });
+
+  describe('fill labels', () => {
+    const fill = { type: 'fill', side: 'sell', bucketIndex: 0, shares: 3, price: '970000', feeCents: 1 } as const;
+    const lastDay: SimDayDto = { ...day, id: 2, tradeDate: '2026-01-03' };
+
+    function badgeLabels(): string[] {
+      return Array.from(container.querySelectorAll('tbody tr'))
+        .map((tr) => tr.querySelector('td')?.textContent ?? '')
+        .filter((label) => ['sell target', 'cut-loss stop', 'force close', 'buy'].includes(label));
+    }
+
+    it('labels a stop-out as a cut-loss stop and a target exit as a sell target', async () => {
+      const exits: SimDayDto = {
+        ...day,
+        eventsJson: [
+          { ...fill, kind: 'stop_sell' },
+          { ...fill, bucketIndex: 1, kind: 'sell_loc' },
+        ],
+      };
+      await act(async () => {
+        root.render(d(SimReplay, { run, days: [exits, lastDay] }));
+      });
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+      });
+      expect(badgeLabels()).toEqual(['cut-loss stop', 'sell target']);
+    });
+
+    it('keeps a stop-out labelled as a stop on the last day, apart from the forced exit', async () => {
+      const finalDay: SimDayDto = {
+        ...day,
+        eventsJson: [
+          { ...fill, kind: 'stop_sell' },
+          { ...fill, bucketIndex: 1, kind: 'market_sell' },
+        ],
+      };
+      await act(async () => {
+        root.render(d(SimReplay, { run, days: [finalDay] }));
+      });
+      expect(badgeLabels()).toEqual(['cut-loss stop', 'force close']);
+    });
+
+    it('labels an aged-out market_sell on a normal day as a force close, not a sell target', async () => {
+      const aged: SimDayDto = { ...day, eventsJson: [{ ...fill, kind: 'market_sell' }] };
+      await act(async () => {
+        root.render(d(SimReplay, { run, days: [aged, lastDay] }));
+      });
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+      });
+      expect(badgeLabels()).toEqual(['force close']);
+    });
+
+    it('labels a target fill on the last day as a sell target, apart from the forced exit', async () => {
+      const finalDay: SimDayDto = {
+        ...day,
+        eventsJson: [
+          { ...fill, kind: 'sell_loc' },
+          { ...fill, bucketIndex: 1, kind: 'market_sell' },
+        ],
+      };
+      await act(async () => {
+        root.render(d(SimReplay, { run, days: [finalDay] }));
+      });
+      expect(badgeLabels()).toEqual(['sell target', 'force close']);
+    });
+
+    it('still renders a simulation stored before fills carried a kind', async () => {
+      const stored = JSON.parse(
+        '{"type":"fill","side":"sell","bucketIndex":0,"shares":3,"price":"970000","feeCents":1}',
+      ) as SimDayDto['eventsJson'][number];
+      await act(async () => {
+        root.render(d(SimReplay, { run, days: [{ ...day, eventsJson: [stored] }, lastDay] }));
+      });
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+      });
+      expect(badgeLabels()).toEqual(['sell target']);
+      expect(container.textContent).toContain('$97.00');
+    });
+  });
 });

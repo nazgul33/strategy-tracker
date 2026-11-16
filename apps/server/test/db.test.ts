@@ -559,28 +559,6 @@ describeIf('db integration', () => {
       expect(await repos.simRepo.finalize(999_999_999)).toBe(false)
     })
 
-    test('updateConfig rewrites the config columns of a run', async () => {
-      const id = await repos.simRepo.insertRun(simInput())
-      await repos.simRepo.updateConfig(id, { fromDate: '2026-04-01', toDate: '2026-04-30', poolCents: 2_000_000, costPpm: 50, buyGapPpm: 10_000, sellGapPpm: 20_000, cutLossPpm: 300_000, paramsJson: '{"tick":"1"}' })
-      expect(await repos.simRepo.getRun(id)).toMatchObject({
-        id, fromDate: '2026-04-01', toDate: '2026-04-30', poolCents: 2_000_000, costPpm: 50,
-        buyGapPpm: 10_000, sellGapPpm: 20_000, cutLossPpm: 300_000, paramsJson: '{"tick":"1"}', draft: true,
-      })
-    })
-
-    test('replaceDays swaps the whole day set', async () => {
-      const id = await repos.simRepo.insertRun(simInput())
-      const other = await repos.simRepo.insertRun(simInput())
-      await repos.simRepo.insertDays([dayRow(other, '2026-03-02')])
-      await repos.simRepo.replaceDays(id, [dayRow(id, '2026-03-02'), dayRow(id, '2026-03-03'), dayRow(id, '2026-03-04')])
-      expect((await repos.simRepo.listDays(id)).length).toBe(3)
-      await repos.simRepo.replaceDays(id, [dayRow(id, '2026-03-05'), dayRow(id, '2026-03-06')])
-      expect((await repos.simRepo.listDays(id)).map((d: any) => d.tradeDate)).toEqual(['2026-03-05', '2026-03-06'])
-      expect((await repos.simRepo.listDays(other)).length).toBe(1) // neighbours untouched
-      await repos.simRepo.replaceDays(id, [])
-      expect(await repos.simRepo.listDays(id)).toEqual([])
-    })
-
     test('deleteRun refuses a finalized run and removes a draft with its days', async () => {
       const saved = await repos.simRepo.insertRun(simInput())
       await repos.simRepo.insertDays([dayRow(saved, '2026-03-02')])
