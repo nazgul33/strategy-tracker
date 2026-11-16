@@ -2,6 +2,7 @@ import { dayInfo, prevTradingDay, type ISODate } from '@st/calendar'
 import { advanceDay, type RunState, type Run } from '@st/core'
 import { computeOrders, type MrParams } from '@st/strategies'
 import { rollStale, type RepoSurface, type BookingDeps } from '../domain/booking'
+import { withRunLock } from '../domain/run-lock'
 import { renderDigest, renderClosed, renderReminder } from '@st/telegram/digest'
 import { t } from '@st/telegram/i18n'
 import type { DayPlan } from '@st/core'
@@ -98,32 +99,9 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
       continue
     }
 
-    const state0 = await deps.repos.bucketRepo.loadState(run.id)
-    const mrParams = deps.params(run)
-    const state = advanceDay(state0, mrParams.maxAgeDays)
-    const plan: DayPlan = computeOrders(run as Run, state, { lastClose: close }, mrParams)
-
-    // unconfirmed stale linkage: date = oldest stale entry's tradeDate
-    const staleEntries = stale[run.id]
-    if (staleEntries && staleEntries.length > 0) {
-      const oldest = staleEntries.reduce((min: string, e: any) => (e.tradeDate < min ? e.tradeDate : min), staleEntries[0].tradeDate)
-      plan.notices.push({ code: 'unconfirmed', params: { count: staleEntries.length, date: oldest } })
-    }
-
-    // persist orders
-    const rows = plan.orders.map((o) => ({
-      runId: run.id,
-      tradeDate: today,
-      kind: o.kind,
-      bucketIdx: o.bucketIndex,
-      limitPrice: o.limitPrice,
-      shares: o.shares,
-      status: 'open',
-    }))
-    await deps.repos.orderRepo.insertMany(rows)
-
     // collect history once the close passed the sanity check above; a failed
-    // backfill must not break the digest (fire-and-warn)
+    // backfill must not break the digest (fire-and-warn). Independent of run
+    // state, so it stays outside the run lock.
     if (deps.persistClose) {
       try {
         await deps.persistClose(run.ticker, closeDate, close)
@@ -132,7 +110,38 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
       }
     }
 
-    await deps.repos.bucketRepo.saveState(run.id, state)
+    // The load → advance → persist orders → save span must not interleave with
+    // a booking or recalc on this run, or its write would be overwritten by the
+    // stale aged state. Nothing inside calls another locked function (the lock
+    // is not reentrant).
+    const { state, plan } = await withRunLock(run.id, async () => {
+      const state0 = await deps.repos.bucketRepo.loadState(run.id)
+      const mrParams = deps.params(run)
+      const state = advanceDay(state0, mrParams.maxAgeDays)
+      const plan: DayPlan = computeOrders(run as Run, state, { lastClose: close }, mrParams)
+
+      // unconfirmed stale linkage: date = oldest stale entry's tradeDate
+      const staleEntries = stale[run.id]
+      if (staleEntries && staleEntries.length > 0) {
+        const oldest = staleEntries.reduce((min: string, e: any) => (e.tradeDate < min ? e.tradeDate : min), staleEntries[0].tradeDate)
+        plan.notices.push({ code: 'unconfirmed', params: { count: staleEntries.length, date: oldest } })
+      }
+
+      // persist orders
+      const rows = plan.orders.map((o) => ({
+        runId: run.id,
+        tradeDate: today,
+        kind: o.kind,
+        bucketIdx: o.bucketIndex,
+        limitPrice: o.limitPrice,
+        shares: o.shares,
+        status: 'open',
+      }))
+      await deps.repos.orderRepo.insertMany(rows)
+
+      await deps.repos.bucketRepo.saveState(run.id, state)
+      return { state, plan }
+    })
 
     const ctx = { tradeDate: today, lastClose: close, lastCloseDate: closeDate }
     const chunks = renderDigest(run as Run, plan, ctx, lang, state.ages)

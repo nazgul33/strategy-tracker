@@ -2,6 +2,7 @@ import { applyBuyFill, applySellFill, emptyState, DomainError, parseUsd, type IS
 import { feeCents } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { BookingDeps, FillRow } from './booking'
+import { withRunLock } from './run-lock'
 
 // SQL listings carry no ORDER BY, so never trust row-return order: id-ascending
 // is the canonical history order (matches the per-bucket MAX(id) guard in deleteFill).
@@ -31,7 +32,18 @@ export interface RebookEdit { fillId: number; shares: number; priceStr: string; 
 // Returns the patched row plus deltaCents: the signed cash effect of the edit
 // (rebuilt cash minus previously stored cash), same amount as the adjust row.
 // `audit` labels the adjust row's ref; the correction id is omitted when absent.
-export async function rebookFill(
+// Runs under the per-run lock. Callers already inside withRunLock(runId) must
+// use rebookFillUnlocked instead: the lock is not reentrant.
+export function rebookFill(
+  runId: number,
+  edit: RebookEdit,
+  deps: BookingDeps,
+  audit: { reason: string; correctionId?: number } = { reason: 'fill-edit' },
+): Promise<{ fill: FillRow; deltaCents: number }> {
+  return withRunLock(runId, () => rebookFillUnlocked(runId, edit, deps, audit))
+}
+
+export async function rebookFillUnlocked(
   runId: number,
   edit: RebookEdit,
   deps: BookingDeps,
@@ -82,8 +94,16 @@ export async function rebookFill(
 // Deletes by id and rebuilds state from the remaining history; orders are never
 // reopened. Returns the deleted row plus deltaCents: the signed cash effect of
 // the removal (rebuilt cash minus previously stored cash), same amount as the
-// compensating 'adjust' that gets booked.
-export async function deleteFill(
+// compensating 'adjust' that gets booked. Runs under the per-run lock.
+export function deleteFill(
+  runId: number,
+  fillId: number,
+  deps: BookingDeps,
+): Promise<{ fill: FillRow; deltaCents: number }> {
+  return withRunLock(runId, () => deleteFillUnlocked(runId, fillId, deps))
+}
+
+async function deleteFillUnlocked(
   runId: number,
   fillId: number,
   deps: BookingDeps,
@@ -118,7 +138,15 @@ export async function deleteFill(
 // and fillCount, the size of the history the state was derived from.
 // Drift is expected on seeded or pool-edited runs, where one Update books a
 // single large adjust: see "Recalc and drift" in the partial-sell-history spec.
-export async function recalcRunState(
+// Runs under the per-run lock.
+export function recalcRunState(
+  runId: number,
+  deps: BookingDeps,
+): Promise<{ state: RunState; deltaCents: number; fillCount: number }> {
+  return withRunLock(runId, () => recalcUnlocked(runId, deps))
+}
+
+async function recalcUnlocked(
   runId: number,
   deps: BookingDeps,
 ): Promise<{ state: RunState; deltaCents: number; fillCount: number }> {

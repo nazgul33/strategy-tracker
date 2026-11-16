@@ -2,7 +2,7 @@ import { DomainError } from '@st/core'
 import { formatUsd } from '@st/core/money'
 import type { BookingDeps, FillRow } from './booking'
 import { isCorrectionStale, type CorrectionRow } from './correction-types'
-import { rebookFill } from './recompute'
+import { rebookFillUnlocked } from './recompute'
 import { withRunLock } from './run-lock'
 
 export interface CorrectionView extends CorrectionRow { stale: boolean }
@@ -32,7 +32,8 @@ export async function applyCorrection(id: number, deps: BookingDeps): Promise<{ 
     if (row.status !== 'open') throw new DomainError('correction-not-open')
     const fill = (await deps.repos.fillRepo.listForRun(row.runId)).find((f) => f.id === row.fillId)
     if (!fill || isCorrectionStale(row, fill)) throw new DomainError('correction-stale')
-    const { deltaCents } = await rebookFill(row.runId, {
+    // rebookFillUnlocked, not rebookFill: the lock is not reentrant.
+    const { deltaCents } = await rebookFillUnlocked(row.runId, {
       fillId: fill.id,
       shares: fill.shares,
       priceStr: formatUsd(row.proposedPrice),
