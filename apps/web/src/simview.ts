@@ -5,15 +5,18 @@ import type { SimEvent, SimPlanDto } from './api';
 export type SimGroup = 'buy' | 'target' | 'stop' | 'force' | 'skipped';
 
 /**
- * A cut-loss fill is a stop wherever it lands, even on the last day. Otherwise
- * sell fills on the *last* sim day are the forced liquidation and every other
- * sell is the take-profit target — which is also how fills stored without a
- * `kind` are grouped. Skips keep their own group.
+ * A sell fill's order kind decides its group on any day: `stop_sell` is a
+ * stop, `market_sell` (an aged-out or forced exit at the open) is a force
+ * close, `sell_loc` is the take-profit target. Only fills stored without a
+ * `kind` fall back to the old heuristic: a sell on the *last* sim day is the
+ * forced liquidation, any other sell the target. Skips keep their own group.
  */
 export function simEventGroup(event: SimEvent, isLastDay: boolean): SimGroup {
   if (event.type === 'skipped') return 'skipped';
   if (event.side === 'buy') return 'buy';
   if (event.kind === 'stop_sell') return 'stop';
+  if (event.kind === 'market_sell') return 'force';
+  if (event.kind === 'sell_loc') return 'target';
   return isLastDay ? 'force' : 'target';
 }
 

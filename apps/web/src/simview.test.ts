@@ -33,10 +33,18 @@ describe('simEventGroup', () => {
     expect(simEventGroup(stop, true)).toBe('stop');
   });
 
-  test('other kinds keep their side-and-day grouping', () => {
+  test('kind and day agreeing: target on a normal day, force on the last', () => {
     expect(simEventGroup({ ...sell, kind: 'sell_loc' }, false)).toBe('target');
     expect(simEventGroup({ ...sell, kind: 'market_sell' }, true)).toBe('force');
     expect(simEventGroup({ ...buy, kind: 'buy_loc' }, false)).toBe('buy');
+  });
+
+  test('a market_sell on a non-last day is a forced exit, not a target', () => {
+    expect(simEventGroup({ ...sell, kind: 'market_sell' }, false)).toBe('force');
+  });
+
+  test('a sell_loc target on the last day is a target, not the forced exit', () => {
+    expect(simEventGroup({ ...sell, kind: 'sell_loc' }, true)).toBe('target');
   });
 
   test('a fill with no kind still groups as before (stored plans predate the field)', () => {
