@@ -1,5 +1,6 @@
+import { expect } from 'bun:test'
 import type { RunState } from '@st/core'
-import type { HttpDeps, HttpRepoSurface } from '../src/http/app'
+import type { HttpDeps, HttpRepoSurface, createApp } from '../src/http/app'
 import { fakeCorrectionRepo } from './fake-corrections'
 
 export function makeFakes() {
@@ -148,4 +149,24 @@ export function makeDeps(fakes: ReturnType<typeof makeFakes>): HttpDeps {
     allowedChatIds: ['42'],
     send: async (chatId: string, text: string) => { fakes.sent.push({ chatId, text }) },
   }
+}
+
+type App = ReturnType<typeof createApp>
+
+export const json = { 'content-type': 'application/json' }
+
+export async function loginAs(app: App) {
+  const res = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: json })
+  return { Authorization: `Bearer ${(await res.json()).token}` }
+}
+
+export async function createRun(app: App, auth: Record<string, string>, body: Record<string, unknown>) {
+  const res = await app.request('/api/runs', { method: 'POST', body: JSON.stringify(body), headers: { ...json, ...auth } })
+  expect(res.status).toBe(201)
+  return (await res.json()).id as number
+}
+
+export async function postFill(app: App, auth: Record<string, string>, id: number, body: Record<string, unknown>) {
+  const res = await app.request(`/api/runs/${id}/fills`, { method: 'POST', body: JSON.stringify(body), headers: { ...json, ...auth } })
+  expect(res.status).toBe(200)
 }
