@@ -252,6 +252,57 @@ describe('CreateRunForm gap fields', () => {
 
     expect(calls.length).toBe(0);
     const alert = document.querySelector('[role="alert"]');
-    expect(alert?.textContent).toContain('Cost');
+    expect(alert?.textContent).toBe('Cost must be a percent with at most 3 decimals (0 to 100)');
+  });
+
+  it('posts cutLossPpm from a one-decimal percent', async () => {
+    await act(async () => {
+      root.render(d(CreateRunForm));
+    });
+    await act(async () => {
+      setInputValue(inputByLabel('Ticker'), 'QQQ');
+      setInputValue(inputByLabel('Pool'), '10000');
+    });
+    await type('cutLossInput', '3.5');
+    expect(inputByTestId('cutLossInput').getAttribute('aria-invalid')).toBeNull();
+    await submitForm();
+
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.body.cutLossPpm).toBe(35_000);
+  });
+
+  it('sends cutLossPpm 0 when the field is blank', async () => {
+    await act(async () => {
+      root.render(d(CreateRunForm));
+    });
+    await act(async () => {
+      setInputValue(inputByLabel('Ticker'), 'QQQ');
+      setInputValue(inputByLabel('Pool'), '10000');
+    });
+    await submitForm();
+
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.body.cutLossPpm).toBe(0);
+  });
+
+  it('marks 3.55 and 60 invalid, disables create and posts nothing', async () => {
+    await act(async () => {
+      root.render(d(CreateRunForm));
+    });
+    await act(async () => {
+      setInputValue(inputByLabel('Ticker'), 'QQQ');
+      setInputValue(inputByLabel('Pool'), '10000');
+    });
+    for (const bad of ['3.55', '60', 'abc', '-1']) {
+      await type('cutLossInput', bad);
+      expect(inputByTestId('cutLossInput').getAttribute('aria-invalid')).toBe('true');
+      expect(createButton().disabled).toBe(true);
+    }
+    await submitForm();
+    expect(calls.length).toBe(0);
+
+    await type('cutLossInput', '50');
+    expect(inputByTestId('cutLossInput').getAttribute('aria-invalid')).toBeNull();
+    expect(createButton().disabled).toBe(false);
   });
 });

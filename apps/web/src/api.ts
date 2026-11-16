@@ -140,7 +140,7 @@ export interface Api {
   setRunStatus(id: number, status: RunStatus): Promise<void>;
   bulkSetRunStatus(ids: number[], status: RunStatus): Promise<number>;
   setPool(id: number, amountCents: number): Promise<void>;
-  setGaps(id: number, input: { buyGapPpm: number; sellGapPpm: number }): Promise<void>;
+  setGaps(id: number, input: { buyGapPpm: number; sellGapPpm: number; cutLossPpm: number }): Promise<void>;
   priceHistory(id: number, start?: string): Promise<PriceHistoryDto>;
   listOrders(id: number, date?: string): Promise<OrderDto[]>;
   cancelOrder(runId: number, orderId: number, reason: string): Promise<void>;
@@ -197,6 +197,7 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
       };
       if (input.buyGapPpm !== undefined) body.buyGapPpm = input.buyGapPpm;
       if (input.sellGapPpm !== undefined) body.sellGapPpm = input.sellGapPpm;
+      if (input.cutLossPpm !== undefined) body.cutLossPpm = input.cutLossPpm;
       if (input.bucketCount !== undefined) body.params = { bucketCount: input.bucketCount };
       if (input.seed !== undefined) body.seed = input.seed;
       return send<{ id: number }>('POST', '/api/runs', body);

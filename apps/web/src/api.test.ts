@@ -33,10 +33,11 @@ describe('createRun gaps', () => {
       return Response.json({ id: 1 });
     };
     const api = createApi(http, { getToken: () => null });
-    await api.createRun({ ...base, buyGapPpm: 100, sellGapPpm: 200 });
+    await api.createRun({ ...base, buyGapPpm: 100, sellGapPpm: 200, cutLossPpm: 35_000 });
     const body = JSON.parse(String(calls[0]!.init?.body)) as Record<string, unknown>;
     expect(body.buyGapPpm).toBe(100);
     expect(body.sellGapPpm).toBe(200);
+    expect(body.cutLossPpm).toBe(35_000);
   });
 
   test('omits gap keys entirely when not provided', async () => {
@@ -50,6 +51,7 @@ describe('createRun gaps', () => {
     const body = JSON.parse(String(calls[0]!.init?.body)) as Record<string, unknown>;
     expect('buyGapPpm' in body).toBe(false);
     expect('sellGapPpm' in body).toBe(false);
+    expect('cutLossPpm' in body).toBe(false);
   });
 });
 
@@ -72,20 +74,20 @@ describe('runSim gaps', () => {
   });
 });
 
-// Gap edit: POST /api/runs/:id/gaps, both values required, 204 no-content.
+// Gap edit: POST /api/runs/:id/gaps, all three values sent, 204 no-content.
 describe('setGaps', () => {
-  test('posts both ppm values and resolves on 204', async () => {
+  test('posts the three ppm values and resolves on 204', async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     const http: Http = async (url, init) => {
       calls.push({ url, init });
       return new Response(null, { status: 204 });
     };
     const api = createApi(http, { getToken: () => 't' });
-    await expect(api.setGaps(7, { buyGapPpm: 100, sellGapPpm: 200 })).resolves.toBeUndefined();
+    await expect(api.setGaps(7, { buyGapPpm: 100, sellGapPpm: 200, cutLossPpm: 30_000 })).resolves.toBeUndefined();
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe('/api/runs/7/gaps');
     expect(calls[0]!.init?.method).toBe('POST');
-    expect(calls[0]!.init?.body).toBe(JSON.stringify({ buyGapPpm: 100, sellGapPpm: 200 }));
+    expect(calls[0]!.init?.body).toBe(JSON.stringify({ buyGapPpm: 100, sellGapPpm: 200, cutLossPpm: 30_000 }));
     expect(calls[0]!.init?.headers).toMatchObject({ Authorization: 'Bearer t' });
   });
 });

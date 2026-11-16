@@ -2,7 +2,7 @@
 import { useState } from 'react';
 
 import { api, usdOrNull, usdToCents } from '../../api';
-import { gapToPpm, isGapText, isPercentText, percentTextToPpm } from '../../gaps';
+import { cutLossToPpm, gapToPpm, isCutLossText, isGapText, isPercentText, percentTextToPpm } from '../../gaps';
 import { useT } from '../../i18n';
 import { seedCashErrorKey } from '../../viewmodels';
 import { useDefaultCostText } from '../hooks';
@@ -33,6 +33,7 @@ export function CreateRunForm({
   const [bucketCount, setBucketCount] = useState('');
   const [buyGap, setBuyGap] = useState('');
   const [sellGap, setSellGap] = useState('');
+  const [cutLoss, setCutLoss] = useState('');
   const [seedCash, setSeedCash] = useState('');
   const [seedRows, setSeedRows] = useState<SeedRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +43,10 @@ export function CreateRunForm({
   const setRow = (i: number, patch: Partial<SeedRow>) =>
     setSeedRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
-  const gapsValid = (buyGap === '' || isGapText(buyGap)) && (sellGap === '' || isGapText(sellGap));
+  const gapsValid =
+    (buyGap === '' || isGapText(buyGap)) &&
+    (sellGap === '' || isGapText(sellGap)) &&
+    (cutLoss === '' || isCutLossText(cutLoss));
 
   const submit = async () => {
     if (busy) return;
@@ -115,6 +119,7 @@ export function CreateRunForm({
         bucketCount: bucketsN,
         buyGapPpm: gapToPpm(buyGap),
         sellGapPpm: gapToPpm(sellGap),
+        cutLossPpm: cutLossToPpm(cutLoss),
         seed,
       });
       setCreatedId(res.id);
@@ -189,6 +194,16 @@ export function CreateRunForm({
             inputMode="decimal"
             placeholder="0"
             invalid={sellGap !== '' && !isGapText(sellGap)}
+          />
+        </Field>
+        <Field label={t('runForm.cutLossLabel')} hint={t('runForm.cutLossHint')}>
+          <Input
+            data-testid="cutLossInput"
+            value={cutLoss}
+            onChange={(e) => setCutLoss(e.target.value)}
+            inputMode="decimal"
+            placeholder="0"
+            invalid={cutLoss !== '' && !isCutLossText(cutLoss)}
           />
         </Field>
       </div>

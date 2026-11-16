@@ -1,6 +1,7 @@
 // Percent text helpers shared by the forms: percent at the UI boundary,
 // integer ppm (1% = 10_000, 0 = "not set") on the wire. Conversion is pure
-// integer math so no float ever enters a ppm value.
+// integer math so no float ever enters a ppm value. `maxDecimals` is
+// supported for 1–4 only (0 breaks the regex, 5+ mis-scales the padding).
 
 /** Percent text like `0.5` / `2` is well-formed, within 0–100 and has at most `maxDecimals` decimals. */
 export function isPercentText(s: string, maxDecimals: number): boolean {
@@ -34,4 +35,14 @@ export function isGapText(s: string): boolean {
 /** Gap percent text → integer ppm (1% = 10_000). Blank means "not set" → 0. */
 export function gapToPpm(s: string): number {
   return percentTextToPpm(s, 4);
+}
+
+/** Cut-loss percent text: one decimal, 0–50 % (the server caps `cutLossPpm` at 500_000). */
+export function isCutLossText(s: string): boolean {
+  return isPercentText(s, 1) && Number(s) <= 50;
+}
+
+/** Cut-loss percent text → integer ppm (3.5 % = 35_000). Blank means off → 0. */
+export function cutLossToPpm(s: string): number {
+  return percentTextToPpm(s, 1);
 }

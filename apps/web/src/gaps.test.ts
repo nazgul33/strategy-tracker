@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { gapToPpm, isGapText, isPercentText, percentTextToPpm, ppmToPercentText } from './gaps';
+import { cutLossToPpm, gapToPpm, isCutLossText, isGapText, isPercentText, percentTextToPpm, ppmToPercentText } from './gaps';
 
 describe('isPercentText', () => {
   test('honours the decimal limit', () => {
@@ -74,5 +74,22 @@ describe('4-decimal gap wrappers', () => {
     expect(gapToPpm('2')).toBe(20_000);
     expect(gapToPpm('0.0001')).toBe(1);
     expect(gapToPpm('')).toBe(0);
+  });
+});
+
+describe('cut-loss text (one decimal, 0–50 %)', () => {
+  test('accepts one-decimal percents up to the 50 % server cap', () => {
+    for (const ok of ['0', '3', '3.5', '50', '50.0']) expect(isCutLossText(ok)).toBe(true);
+  });
+
+  test('rejects a second decimal, over-cap and malformed text', () => {
+    for (const bad of ['3.55', '50.1', '60', '100', '-1', 'abc', '']) expect(isCutLossText(bad)).toBe(false);
+  });
+
+  test('cutLossToPpm is exact and blank means off', () => {
+    expect(cutLossToPpm('3.5')).toBe(35_000);
+    expect(cutLossToPpm('3')).toBe(30_000);
+    expect(cutLossToPpm('50')).toBe(500_000);
+    expect(cutLossToPpm('')).toBe(0);
   });
 });

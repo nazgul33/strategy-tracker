@@ -38,6 +38,7 @@ const RUN = {
   costPpm: 3_000,
   buyGapPpm: 25_000, // 2.5%
   sellGapPpm: 10_000, // 1%
+  cutLossPpm: 35_000, // 3.5%
   status: 'active',
   stateJson: '{}',
   createdAt: '2026-11-01T00:00:00Z',
@@ -56,6 +57,7 @@ const BARS = {
 let calls: FetchCalls;
 let posts: Post[] = [];
 let runGetCount = 0;
+let runBody: Record<string, unknown> = RUN;
 
 // Sub-resource GETs must come before the bare /api/runs/1 route: the helper
 // matches by substring, so the run route would otherwise swallow them.
@@ -71,8 +73,14 @@ function stubFetch() {
   const routes: Route[] = [
     { method: 'POST', url: '', json: { ok: true } },
     ...SUB_ROUTES,
-    { url: '/api/runs/1', json: RUN },
+    {
+      url: '/api/runs/1',
+      get json() {
+        return runBody;
+      },
+    },
   ];
+  runBody = RUN;
   calls = installFetchStub(routes);
 }
 
@@ -146,6 +154,7 @@ describe('RunDetailPage edit-run modal', () => {
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(inputByTestId('gapBuyInput').value).toBe('2.5');
     expect(inputByTestId('gapSellInput').value).toBe('1');
+    expect(inputByTestId('cutLossInput').value).toBe('3.5');
   });
 
   it('sends pool top-up (absolute) and gap ppm together on Save', async () => {
@@ -160,7 +169,7 @@ describe('RunDetailPage edit-run modal', () => {
     const pool = posts.find((p) => p.url.includes('/pool'));
     const gaps = posts.find((p) => p.url.includes('/gaps'));
     expect(pool!.body.amountCents).toBe(150_000); // 1000 + 500 USD
-    expect(gaps!.body).toEqual({ buyGapPpm: 30_000, sellGapPpm: 10_000 });
+    expect(gaps!.body).toEqual({ buyGapPpm: 30_000, sellGapPpm: 10_000, cutLossPpm: 35_000 });
   });
 
   it('saves gaps alone when the top-up field is blank', async () => {
@@ -173,13 +182,76 @@ describe('RunDetailPage edit-run modal', () => {
 
     expect(posts.some((p) => p.url.includes('/pool'))).toBe(false);
     const gaps = posts.find((p) => p.url.includes('/gaps'));
-    expect(gaps!.body).toEqual({ buyGapPpm: 25_000, sellGapPpm: 5_000 });
+    expect(gaps!.body).toEqual({ buyGapPpm: 25_000, sellGapPpm: 5_000, cutLossPpm: 35_000 });
+  });
+
+  it('disables Save on malformed cut-loss text', async () => {
+    await openEditModal();
+    await type('cutLossInput', '60');
+    expect(buttonByText('Save').disabled).toBe(true);
   });
 
   it('disables Save on malformed gap text', async () => {
     await openEditModal();
     await type('gapBuyInput', 'abc');
     expect(buttonByText('Save').disabled).toBe(true);
+  });
+});
+
+describe('RunDetailPage cut-loss', () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+
+  const mount = async (run: Record<string, unknown>) => {
+    stubFetch();
+    runBody = run;
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root.render(d(RunDetailPage, { id: 1 })));
+    await flush();
+  };
+
+  const statValue = (label: string): string | null => {
+    const el = Array.from(document.querySelectorAll('*')).find((e) => e.children.length === 0 && e.textContent === label);
+    return el?.parentElement?.textContent?.replace(label, '') ?? null;
+  };
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    restoreFetch();
+  });
+
+  it('shows the cut-loss percent beside the gaps', async () => {
+    await mount(RUN);
+    expect(statValue('Cut loss')).toBe('3.5%');
+  });
+
+  it('shows the default marker when cut-loss is 0', async () => {
+    await mount({ ...RUN, cutLossPpm: 0 });
+    expect(statValue('Cut loss')).toBe('default');
+  });
+
+  it('feeds the chart close and held buckets into the modal underwater warning', async () => {
+    // Latest chart close is 48.25. Held at 50.00, 3.0% => trigger 48.50 >= 48.25.
+    await mount({
+      ...RUN,
+      cutLossPpm: 0,
+      state: {
+        ...RUN.state,
+        buckets: [
+          { index: 0, state: 'held', shares: 10, buyPrice: '500000', buyFeeCents: 0, filledOn: '2026-11-02' },
+          { index: 1, state: 'held', shares: 10, buyPrice: '400000', buyFeeCents: 0, filledOn: '2026-11-03' },
+        ],
+      },
+    });
+    await openEditModal();
+    await type('cutLossInput', '3');
+    const w = document.querySelector('[data-testid="cutLossWarning"]');
+    expect(w).not.toBeNull();
+    expect(w!.textContent).toContain('1 held bucket');
+    expect(w!.textContent).toContain('$48.25');
   });
 });
 
