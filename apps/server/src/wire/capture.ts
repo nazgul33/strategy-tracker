@@ -1,4 +1,4 @@
-import { formatUsd } from '@st/core';
+import { DomainError, formatUsd } from '@st/core';
 import { extractFills } from '@st/ingest';
 import { buildPendingKeyboard } from '@st/telegram';
 import { t } from '@st/telegram/i18n';
@@ -8,6 +8,16 @@ import { confirmPendingFill, ingestCapture } from '../domain/booking';
 import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/booking';
 
 type PendingRow = { id: number; side: string; ticker: string; shares: number; price: bigint | string; bucketIdx: number | null; filledOn: string; status: string };
+
+const CONFIRM_ERROR_KEYS: Record<string, string> = {
+  'ticker-mismatch': 'confirm-err-ticker-mismatch',
+  'pending-not-pending': 'confirm-err-already-handled',
+  'pending-not-found-or-not-pending': 'confirm-err-already-handled',
+  'no-empty-bucket': 'confirm-err-no-empty-bucket',
+  'no-bucket-for-sell': 'confirm-err-no-bucket-for-sell',
+  'too-many-shares': 'confirm-err-too-many-shares',
+  'invalid-shares': 'confirm-err-invalid-shares',
+};
 
 export interface CaptureRepos extends RepoSurface {
   pendingRepo: RepoSurface['pendingRepo'] & { get(id: number): Promise<PendingRow | null> };
@@ -156,6 +166,13 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     return t(key, lang, { ...base, id: c.bookedId ?? 0, dupPrice: c.bookedPrice ?? '' });
   }
 
+  // confirmPendingFill throws plain Errors (code in message) and DomainErrors (code in kind, message empty).
+  function confirmErrorText(e: unknown): string {
+    const code = e instanceof DomainError ? e.kind : e instanceof Error ? e.message : String(e);
+    if (Object.hasOwn(CONFIRM_ERROR_KEYS, code)) return t(CONFIRM_ERROR_KEYS[code]!, lang);
+    return t('confirm-err-unknown', lang, { code: code || 'error' });
+  }
+
   async function onConfirm(cbData: string, approved: boolean): Promise<void> {
     const chatId = lastChatId;
     const m = /^(yes|no):(\d+)$/.exec(cbData);
@@ -165,7 +182,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       try {
         await confirmPendingFill(id, null, { repos: deps.repos, today: deps.today() });
       } catch (e) {
-        await deps.send(chatId, (e as Error).message);
+        await deps.send(chatId, confirmErrorText(e));
         return;
       }
       const row = await deps.repos.pendingRepo.get(id);
