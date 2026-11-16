@@ -310,12 +310,18 @@ describeIf('db integration', () => {
 
     const conflicts: Array<Record<string, unknown>> = out.conflicts
     expect(conflicts.length).toBe(1)
-    expect(conflicts[0]!.extractedPrice).toBe('64.07')
-    expect(conflicts[0]!.bookedPrice).toBe('66.03')
-    expect(typeof conflicts[0]!.bookedId).toBe('number')
-    expect(conflicts[0]!.pendingId).toBeNull()
+    const [bookedRow] = await repos.fillRepo.listForRun(runId)
+    expect(conflicts[0]).toMatchObject({
+      matchedKind: 'booked', side: 'sell', ticker, shares: 44, filledOn: '2026-11-11',
+      extractedPrice: '64.07', bookedPrice: '66.03', bookedId: bookedRow!.id,
+    })
+    expect('pendingId' in conflicts[0]!).toBe(false)
     const left = (await repos.pendingRepo.listPending()).filter((p: any) => p.runId === runId)
     expect(left.length).toBe(0)
+
+    const [capRows] = await db.execute(sql`SELECT status FROM captures WHERE run_id = ${runId}`)
+    expect(capRows.length).toBe(1)
+    expect(capRows[0].status).toBe('parsed')
   })
 
   test('ingestCapture re-reads a seen image after its fill was rejected', async () => {

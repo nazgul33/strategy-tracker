@@ -159,14 +159,14 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
 
   function conflictLine(c: CaptureConflict): string {
     const base = { ticker: c.ticker, side: c.side, shares: c.shares, date: c.filledOn, extracted: c.extractedPrice };
-    if (c.pendingId != null) {
-      return t('capture-conflict-pending', lang, { ...base, id: c.pendingId, dupPrice: c.pendingPrice ?? '' });
+    if (c.matchedKind === 'pending') {
+      return t('capture-conflict-pending', lang, { ...base, id: c.pendingId, dupPrice: c.pendingPrice });
     }
     if (c.correction?.status === 'fill-gone') {
-      return t('capture-conflict-gone', lang, { ...base, id: c.bookedId ?? 0 });
+      return t('capture-conflict-gone', lang, { ...base, id: c.bookedId });
     }
     const key = c.correction?.status === 'dismissed' ? 'capture-conflict-dismissed' : 'capture-conflict';
-    return t(key, lang, { ...base, id: c.bookedId ?? 0, dupPrice: c.bookedPrice ?? '' });
+    return t(key, lang, { ...base, id: c.bookedId, dupPrice: c.bookedPrice });
   }
 
   // confirmPendingFill throws plain Errors (code in message) and DomainErrors (code in kind, message empty).

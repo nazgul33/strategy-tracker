@@ -39,15 +39,15 @@ export async function recordCorrections(
   captureId: number,
   conflicts: CaptureConflict[],
 ): Promise<CaptureConflict[]> {
-  if (!conflicts.some((c) => c.bookedId !== null)) return conflicts
+  if (!conflicts.some((c) => c.matchedKind === 'booked')) return conflicts
   const fills = new Map((await repos.fillRepo.listForRun(runId)).map((f) => [f.id, f]))
   const out: CaptureConflict[] = []
   for (const c of conflicts) {
-    const fill = c.bookedId === null ? undefined : fills.get(c.bookedId)
-    if (c.bookedId === null) {
+    if (c.matchedKind === 'pending') {
       out.push(c)
       continue
     }
+    const fill = fills.get(c.bookedId)
     if (!fill) {
       out.push({ ...c, correction: { id: null, status: 'fill-gone' } })
       continue

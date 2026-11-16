@@ -64,6 +64,14 @@ function confirmButton(): HTMLButtonElement {
   return btn as HTMLButtonElement;
 }
 
+function setInputValue(el: HTMLInputElement, value: string) {
+  // Bypass React's value tracker so onChange fires (same as user typing).
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+  setter.call(el, value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 async function flush() {
   for (let i = 0; i < 5; i += 1) {
     await act(async () => {
@@ -141,6 +149,64 @@ describe('PendingTable', () => {
     const input = cell.querySelector('input[type=date]') as HTMLInputElement | null;
     expect(input).toBeTruthy();
     expect(input!.value).toBe('');
+    // DOM order: detected date block first, override picker right below it.
+    expect(cell.firstElementChild?.tagName).toBe('DIV');
+    expect(cell.firstElementChild?.textContent).toBe('2026-11-10');
+    expect(cell.firstElementChild?.nextElementSibling).toBe(input);
+  });
+
+  it('quantity and price cells stack the detected value in a div above the override input, like the date cell', async () => {
+    stubFetch('conflict');
+    await renderTable(root);
+    const cells = container.querySelectorAll('tbody tr td');
+    for (const [idx, text] of [[3, '10'], [4, '$12,345.00']] as const) {
+      const cell = cells[idx]!;
+      const input = cell.querySelector('input');
+      expect(input).toBeTruthy();
+      expect(cell.firstElementChild?.tagName).toBe('DIV');
+      expect(cell.firstElementChild?.textContent).toBe(text);
+      expect(cell.firstElementChild?.nextElementSibling).toBe(input);
+    }
+  });
+
+  it('typing an override date keeps the detected date above it and confirm posts overrides.filledOn', async () => {
+    const calls = installFetchStub([
+      { method: 'POST', url: '/api/pending', json: { ok: true } },
+      { url: '/api/pending', json: [ROW] },
+    ]);
+    await renderTable(root);
+
+    const cell = () => container.querySelectorAll('tbody tr td')[0]!;
+    const input = cell().querySelector('input[type=date]') as HTMLInputElement;
+    await act(async () => {
+      setInputValue(input, '2026-11-12');
+    });
+
+    const input2 = cell().querySelector('input[type=date]') as HTMLInputElement;
+    expect(input2.value).toBe('2026-11-12');
+    expect(cell().firstElementChild?.tagName).toBe('DIV');
+    expect(cell().firstElementChild?.textContent).toBe('2026-11-10');
+    expect(cell().firstElementChild?.nextElementSibling).toBe(input2);
+
+    await clickConfirm();
+
+    expect(calls.length).toBe(1);
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      url: '/api/pending/9/confirm',
+      body: { overrides: { filledOn: '2026-11-12' } },
+    });
+  });
+
+  it('confirm without any override posts an empty body', async () => {
+    const calls = installFetchStub([
+      { method: 'POST', url: '/api/pending', json: { ok: true } },
+      { url: '/api/pending', json: [ROW] },
+    ]);
+    await renderTable(root);
+    await clickConfirm();
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.body).toEqual({});
   });
 
   it('empty detected trade date renders an em dash and keeps the flagged override input', async () => {
