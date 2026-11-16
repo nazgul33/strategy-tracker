@@ -123,7 +123,7 @@ describe('PendingTable', () => {
   });
 
   it('still shows "Already handled" and reloads on a generic 409', async () => {
-    stubFetch('pending-not-pending');
+    stubFetch('not-pending');
     await renderTable(root);
     expect(container.textContent).toContain('AAPL');
 

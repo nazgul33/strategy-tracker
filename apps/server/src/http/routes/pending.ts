@@ -15,6 +15,7 @@ export function pendingRouter(deps: HttpDeps): Hono {
       await confirmPendingFill(id, overrides, { repos: deps.repos as any, today: deps.today() as any })
     } catch (e: any) {
       if (e?.message === 'ticker-mismatch') return c.json({ error: 'ticker-mismatch' }, 409)
+      if (e?.message === 'pending-not-pending') return c.json({ error: 'not-pending' }, 409)
       return c.json({ error: e?.message ?? 'error' }, 422)
     }
     return c.json({ ok: true })
@@ -24,7 +25,7 @@ export function pendingRouter(deps: HttpDeps): Hono {
     const row = await deps.repos.pendingRepo.get(id)
     if (!row || row.status !== 'pending') return c.json({ error: 'not-pending' }, 409)
     const ok = await deps.repos.pendingRepo.decide(id, 'rejected')
-    if (ok === false) return c.json({ error: 'pending-not-pending' }, 409)
+    if (ok === false) return c.json({ error: 'not-pending' }, 409)
     return c.json({ ok: true })
   })
   return r

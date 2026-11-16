@@ -420,6 +420,37 @@ describe('http pending', () => {
     // reject non-pending
     const rej = await app.request(`/api/pending/${pid}/reject`, { method: 'POST', headers: auth })
     expect(rej.status).toBe(409)
+    expect((await rej.json()).error).toBe('not-pending')
+  })
+
+  describe('lost decide race -> 409 not-pending', () => {
+    async function setup() {
+      const f = makeFakes()
+      const app = createApp(makeDeps(f))
+      const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+      const auth = { Authorization: `Bearer ${(await lr.json()).token}` }
+      const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 }), headers: { 'content-type': 'application/json', ...auth } })
+      const { id } = await cr.json()
+      const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+      // The row still reads as pending, but another decider wins the atomic flip.
+      f.repos.pendingRepo.decide = async () => false
+      return { f, app, auth, pid }
+    }
+
+    test('reject', async () => {
+      const { app, auth, pid } = await setup()
+      const res = await app.request(`/api/pending/${pid}/reject`, { method: 'POST', headers: auth })
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toBe('not-pending')
+    })
+
+    test('confirm', async () => {
+      const { f, app, auth, pid } = await setup()
+      const res = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { 'content-type': 'application/json', ...auth } })
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toBe('not-pending')
+      expect(f.fills.length).toBe(0)
+    })
   })
 
   test('double confirm books exactly one fill', async () => {
