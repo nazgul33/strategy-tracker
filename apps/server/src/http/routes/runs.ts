@@ -135,7 +135,7 @@ export function runsRouter(deps: HttpDeps): Hono {
     if (!isValidPpm(body?.buyGapPpm) || !isValidPpm(body?.sellGapPpm)) return c.json({ error: 'invalid gaps' }, 400)
     const run = await deps.repos.runRepo.get(id)
     if (!run) return c.json({ error: 'not found' }, 404)
-    await deps.repos.runRepo.updateGaps(id, body.buyGapPpm, body.sellGapPpm)
+    await deps.repos.runRepo.updateOrderShaping(id, { buyGapPpm: body.buyGapPpm, sellGapPpm: body.sellGapPpm, cutLossPpm: run.cutLossPpm })
     return c.body(null, 204)
   })
   // daily closes for the run's ticker, for the price-history chart.

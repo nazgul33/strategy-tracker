@@ -1,4 +1,4 @@
-import { mysqlTable, bigint, int, varchar, text, date, timestamp, json, mysqlEnum, primaryKey, index } from 'drizzle-orm/mysql-core'
+import { mysqlTable, bigint, boolean, int, varchar, text, date, timestamp, json, mysqlEnum, primaryKey, index } from 'drizzle-orm/mysql-core'
 
 export const strategyRuns = mysqlTable('strategy_runs', {
   id: int('id').primaryKey().autoincrement(),
@@ -9,6 +9,7 @@ export const strategyRuns = mysqlTable('strategy_runs', {
   costPpm: int('cost_ppm').notNull(),
   buyGapPpm: int('buy_gap_ppm').notNull().default(0),
   sellGapPpm: int('sell_gap_ppm').notNull().default(0),
+  cutLossPpm: int('cut_loss_ppm').notNull().default(0),
   status: mysqlEnum('status', ['active', 'paused', 'closed']).notNull().default('active'),
   stateJson: text('state_json').notNull(),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
@@ -36,7 +37,7 @@ export const orders = mysqlTable('orders', {
   id: int('id').primaryKey().autoincrement(),
   runId: int('run_id').notNull(),
   tradeDate: date('trade_date', { mode: 'string' }).notNull(),
-  kind: mysqlEnum('kind', ['buy_loc', 'sell_loc', 'market_sell']).notNull(),
+  kind: mysqlEnum('kind', ['buy_loc', 'sell_loc', 'market_sell', 'stop_sell']).notNull(),
   bucketIdx: int('bucket_idx').notNull(),
   limitPrice: bigint('limit_price', { mode: 'bigint' }).notNull(),
   shares: int('shares').notNull(),
@@ -130,7 +131,9 @@ export const simRuns = mysqlTable('sim_runs', {
   costPpm: int('cost_ppm').notNull(),
   buyGapPpm: int('buy_gap_ppm').notNull().default(0),
   sellGapPpm: int('sell_gap_ppm').notNull().default(0),
+  cutLossPpm: int('cut_loss_ppm').notNull().default(0),
   paramsJson: text('params_json').notNull(),
+  draft: boolean('draft').notNull().default(true),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 })
 
@@ -148,14 +151,29 @@ export const settings = mysqlTable('settings', {
   value: text('value').notNull(),
 })
 
-// Yahoo daily closes keyed by (ticker, trade_date): same-day refetch overwrites
-// the close instead of duplicating; the morning pipeline backfills it.
+// Yahoo daily bars keyed by (ticker, trade_date): same-day refetch overwrites
+// the row instead of duplicating; the morning pipeline backfills the close.
+// open/high/low are null on legacy close-only rows.
 export const priceHistory = mysqlTable('price_history', {
   ticker: varchar('ticker', { length: 16 }).notNull(),
   tradeDate: date('trade_date', { mode: 'string' }).notNull(),
+  open: bigint('open', { mode: 'bigint' }),
+  high: bigint('high', { mode: 'bigint' }),
+  low: bigint('low', { mode: 'bigint' }),
   close: bigint('close', { mode: 'bigint' }).notNull(),
 }, (t) => ({
   pk: primaryKey({ columns: [t.ticker, t.tradeDate] }),
+}))
+
+// Calendar-date ranges already fetched in full for a ticker; kept merged so a
+// covered range never triggers a refetch.
+export const barCoverage = mysqlTable('bar_coverage', {
+  id: int('id').primaryKey().autoincrement(),
+  ticker: varchar('ticker', { length: 16 }).notNull(),
+  fromDate: date('from_date', { mode: 'string' }).notNull(),
+  toDate: date('to_date', { mode: 'string' }).notNull(),
+}, (t) => ({
+  tickerIdx: index('bar_coverage_ticker_idx').on(t.ticker),
 }))
 
 import { uniqueIndex } from 'drizzle-orm/mysql-core'

@@ -26,7 +26,7 @@ export function makeFakes() {
       const id = runIdSeq++
       const state = input.initialRunState
       if (state) states.set(id, state)
-      runs.push({ id, strategyKey: input.strategyKey, ticker: input.ticker, name: input.name, poolCents: input.poolCents, costPpm: input.costPpm, buyGapPpm: input.buyGapPpm ?? 0, sellGapPpm: input.sellGapPpm ?? 0, status: 'active', stateJson: JSON.stringify(state, (_k, v) => typeof v === 'bigint' ? v.toString() : v), createdAt: new Date() })
+      runs.push({ id, strategyKey: input.strategyKey, ticker: input.ticker, name: input.name, poolCents: input.poolCents, costPpm: input.costPpm, buyGapPpm: input.buyGapPpm ?? 0, sellGapPpm: input.sellGapPpm ?? 0, cutLossPpm: input.cutLossPpm ?? 0, status: 'active', stateJson: JSON.stringify(state, (_k, v) => typeof v === 'bigint' ? v.toString() : v), createdAt: new Date() })
       return id
     },
     async updateStatus(id: number, status: string) {
@@ -40,8 +40,8 @@ export function makeFakes() {
     async updatePool(id: number, poolCents: number) {
       const r = runs.find((x) => x.id === id); if (r) r.poolCents = poolCents
     },
-    async updateGaps(id: number, buyGapPpm: number, sellGapPpm: number) {
-      const r = runs.find((x) => x.id === id); if (r) { r.buyGapPpm = buyGapPpm; r.sellGapPpm = sellGapPpm }
+    async updateOrderShaping(id: number, v: { buyGapPpm: number; sellGapPpm: number; cutLossPpm: number }) {
+      const r = runs.find((x) => x.id === id); if (r) { r.buyGapPpm = v.buyGapPpm; r.sellGapPpm = v.sellGapPpm; r.cutLossPpm = v.cutLossPpm }
     },
   }
   const orderRepo = {
@@ -104,14 +104,47 @@ export function makeFakes() {
     async insert(input: { runId: number; poolCents: number }) { poolEdits.push({ id: poolEdits.length + 1, ...input }) },
   }
   const simRuns: any[] = []
+  const simDays: any[] = []
   const simRepo = {
-    async insertRun(i: any) { simRuns.push({ id: simRuns.length + 1, createdAt: '2026-11-10T00:00:00Z', ...i }); return simRuns.length },
-    async insertDays() {},
+    async insertRun(i: any) { simRuns.push({ id: simRuns.length + 1, createdAt: '2026-11-10T00:00:00Z', ...i, draft: true }); return simRuns.length },
+    async updateConfig(id: number, v: any) {
+      const r = simRuns.find((x) => x.id === id); if (r) Object.assign(r, v)
+    },
+    async insertDays(rows: any[]) { for (const r of rows) simDays.push({ id: simDays.length + 1, ...r }) },
+    async replaceDays(simRunId: number, rows: any[]) {
+      for (let i = simDays.length - 1; i >= 0; i--) if (simDays[i].simRunId === simRunId) simDays.splice(i, 1)
+      for (const r of rows) simDays.push({ id: simDays.length + 1, ...r })
+    },
+    async finalize(id: number) {
+      const r = simRuns.find((x) => x.id === id)
+      if (!r || !r.draft) return false
+      r.draft = false
+      return true
+    },
+    async deleteRun(id: number) {
+      const i = simRuns.findIndex((x) => x.id === id)
+      if (i < 0 || !simRuns[i].draft) return false
+      simRuns.splice(i, 1)
+      for (let j = simDays.length - 1; j >= 0; j--) if (simDays[j].simRunId === id) simDays.splice(j, 1)
+      return true
+    },
+    async sweepDrafts(createdBefore: Date) {
+      let n = 0
+      for (let i = simRuns.length - 1; i >= 0; i--) {
+        const r = simRuns[i]
+        if (!r.draft || new Date(r.createdAt).getTime() >= createdBefore.getTime()) continue
+        simRuns.splice(i, 1)
+        for (let j = simDays.length - 1; j >= 0; j--) if (simDays[j].simRunId === r.id) simDays.splice(j, 1)
+        n += 1
+      }
+      return n
+    },
     async listRuns() { return simRuns },
-    async getRun() { return null },
-    async listDays() { return [] },
+    async getRun(id: number) { return simRuns.find((x) => x.id === id) ?? null },
+    async listDays(id: number) { return simDays.filter((d) => d.simRunId === id).sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1)) },
   }
-  const priceHistory: { ticker: string; tradeDate: string; close: bigint }[] = []
+  type FakeBar = { ticker: string; tradeDate: string; open?: bigint; high?: bigint; low?: bigint; close: bigint }
+  const priceHistory: FakeBar[] = []
   const priceHistoryRepo = {
     async upsertMany(rows: { ticker: string; tradeDate: string; close: bigint }[]) {
       for (const r of rows) {
@@ -121,17 +154,50 @@ export function makeFakes() {
       }
       return rows.length
     },
+    async upsertBars(rows: Required<FakeBar>[]) {
+      for (const r of rows) {
+        const hit = priceHistory.find((x) => x.ticker === r.ticker && x.tradeDate === r.tradeDate)
+        if (hit) Object.assign(hit, r)
+        else priceHistory.push({ ...r })
+      }
+      return rows.length
+    },
     async listForTicker(ticker: string, from?: string) {
       return priceHistory
         .filter((r) => r.ticker === ticker && (!from || r.tradeDate >= from))
         .sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1))
     },
+    async listBars(ticker: string, from: string, to: string) {
+      return priceHistory
+        .filter((r) => r.ticker === ticker && r.tradeDate >= from && r.tradeDate <= to && r.open !== undefined && r.high !== undefined && r.low !== undefined)
+        .sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1))
+        .map((r) => ({ tradeDate: r.tradeDate, open: r.open!, high: r.high!, low: r.low!, close: r.close }))
+    },
+  }
+  const coverage: { ticker: string; fromDate: string; toDate: string }[] = []
+  const dayNum = (iso: string) => Math.floor(Date.parse(`${iso}T00:00:00Z`) / 86_400_000)
+  const barCoverageRepo = {
+    async list(ticker: string) {
+      return coverage.filter((c) => c.ticker === ticker).sort((a, b) => (a.fromDate < b.fromDate ? -1 : 1)).map((c) => ({ fromDate: c.fromDate, toDate: c.toDate }))
+    },
+    async add(ticker: string, fromDate: string, toDate: string) {
+      let from = fromDate
+      let to = toDate
+      for (let i = coverage.length - 1; i >= 0; i--) {
+        const c = coverage[i]
+        if (c.ticker !== ticker || dayNum(c.fromDate) > dayNum(toDate) + 1 || dayNum(c.toDate) < dayNum(fromDate) - 1) continue
+        if (c.fromDate < from) from = c.fromDate
+        if (c.toDate > to) to = c.toDate
+        coverage.splice(i, 1)
+      }
+      coverage.push({ ticker, fromDate: from, toDate: to })
+    },
   }
   const repos: HttpRepoSurface = {
     runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, ledgerRepo, notificationRepo,
-    settingsRepo, poolEditRepo, simRepo, priceHistoryRepo,
+    settingsRepo, poolEditRepo, simRepo, priceHistoryRepo, barCoverageRepo,
   } as any
-  return { repos, corrections: correctionFake.store, runs, poolEdits, fills, ledger, orders, pending, notifications, sent, settings, states, simRuns, priceHistory }
+  return { repos, corrections: correctionFake.store, runs, poolEdits, fills, ledger, orders, pending, notifications, sent, settings, states, simRuns, simDays, priceHistory, coverage }
 }
 
 export const PASSWORD = 'secret'

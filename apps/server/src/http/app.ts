@@ -10,7 +10,7 @@ export interface HttpRepoSurface extends RepoSurface {
   }
   settingsRepo: { getAll(): Promise<Record<string, string>>; set(key: string, value: string): Promise<void> }
   poolEditRepo: { insert(input: { runId: number; poolCents: number }): Promise<void> }
-  runRepo: RepoSurface['runRepo'] & { updatePool(id: number, poolCents: number): Promise<void>; updateStatusMany(ids: number[], from: string[], to: string): Promise<number>; updateGaps(id: number, buyGapPpm: number, sellGapPpm: number): Promise<void> }
+  runRepo: RepoSurface['runRepo'] & { updatePool(id: number, poolCents: number): Promise<void>; updateStatusMany(ids: number[], from: string[], to: string): Promise<number>; updateOrderShaping(id: number, v: { buyGapPpm: number; sellGapPpm: number; cutLossPpm: number }): Promise<void> }
   orderRepo: RepoSurface['orderRepo'] & { listForRun(runId: number, date?: string): Promise<any[]> }
   fillRepo: RepoSurface['fillRepo']
   notificationRepo: RepoSurface['notificationRepo'] & { listForRun(runId: number): Promise<any[]> }

@@ -1,16 +1,12 @@
 import type { RunState } from '@st/core'
-import { eq, and, lt, sql, inArray, gte } from 'drizzle-orm'
+import { eq, and, sql, inArray } from 'drizzle-orm'
 import * as s from './schema'
+import { getSimRepo } from './repos-sim'
+import { getBarRepos } from './repos-bars'
 import type { CorrectionRepo } from '../domain/correction-types'
 
 function serializeState(state: RunState): string {
   return JSON.stringify(state, (_, v) => typeof v === 'bigint' ? v.toString() : v)
-}
-
-// Tickers arrive from many places (DB rows, client query params, Yahoo bars);
-// price_history keys must be canonical or the cache would fragment.
-function normTicker(t: unknown): string {
-  return String(t).trim().toUpperCase().slice(0, 16)
 }
 
 export function getRepos(db: any) {
@@ -32,13 +28,14 @@ export function getRepos(db: any) {
       const rows = await db.select().from(s.strategyRuns).where(eq(s.strategyRuns.id, id))
       return rows[0] ?? null
     },
-    async create(input: { strategyKey: string; ticker: string; name: string; poolCents: number; costPpm: number; buyGapPpm?: number; sellGapPpm?: number; initialRunState?: RunState }) {
+    async create(input: { strategyKey: string; ticker: string; name: string; poolCents: number; costPpm: number; buyGapPpm?: number; sellGapPpm?: number; cutLossPpm?: number; initialRunState?: RunState }) {
       const state = input.initialRunState ?? { buckets: [], cashCents: input.poolCents, closed: [], ages: {} }
       return db.transaction(async (tx: any) => {
         const [res] = await tx.insert(s.strategyRuns).values({
           strategyKey: input.strategyKey, ticker: input.ticker, name: input.name,
           poolCents: input.poolCents, costPpm: input.costPpm, stateJson: serializeState(state),
           buyGapPpm: input.buyGapPpm ?? 0, sellGapPpm: input.sellGapPpm ?? 0,
+          cutLossPpm: input.cutLossPpm ?? 0,
         })
         const runId = (res as any).insertId
         if (input.initialRunState) {
@@ -59,8 +56,8 @@ export function getRepos(db: any) {
     async updatePool(id: number, poolCents: number) {
       await db.update(s.strategyRuns).set({ poolCents }).where(eq(s.strategyRuns.id, id))
     },
-    async updateGaps(id: number, buyGapPpm: number, sellGapPpm: number) {
-      await db.update(s.strategyRuns).set({ buyGapPpm, sellGapPpm }).where(eq(s.strategyRuns.id, id))
+    async updateOrderShaping(id: number, v: { buyGapPpm: number; sellGapPpm: number; cutLossPpm: number }): Promise<void> {
+      await db.update(s.strategyRuns).set({ buyGapPpm: v.buyGapPpm, sellGapPpm: v.sellGapPpm, cutLossPpm: v.cutLossPpm }).where(eq(s.strategyRuns.id, id))
     },
   }
 
@@ -126,23 +123,6 @@ export function getRepos(db: any) {
     // Run-scoped guard: a foreign fillId can never be touched. No-op when absent.
     async deleteById(runId: number, fillId: number): Promise<void> {
       await db.delete(s.fills).where(and(eq(s.fills.id, fillId), eq(s.fills.runId, runId)))
-    },
-  }
-
-  const priceHistoryRepo = {
-    // Idempotent by (ticker, tradeDate): refetching a day overwrites its close.
-    async upsertMany(rows: { ticker: string; tradeDate: string; close: bigint }[]): Promise<number> {
-      if (!rows.length) return 0
-      await db.insert(s.priceHistory).values(
-        rows.map((r) => ({ ticker: normTicker(r.ticker), tradeDate: r.tradeDate, close: r.close })),
-      ).onDuplicateKeyUpdate({ set: { close: sql`values(${s.priceHistory.close})` } })
-      return rows.length
-    },
-    async listForTicker(ticker: string, from?: string) {
-      const where = from
-        ? and(eq(s.priceHistory.ticker, normTicker(ticker)), gte(s.priceHistory.tradeDate, from))
-        : eq(s.priceHistory.ticker, normTicker(ticker))
-      return db.select().from(s.priceHistory).where(where).orderBy(s.priceHistory.tradeDate)
     },
   }
 
@@ -242,28 +222,7 @@ export function getRepos(db: any) {
       await db.insert(s.poolEdits).values({ runId: input.runId, poolCents: input.poolCents })
     },
   }
-  const simRepo = {
-    async insertRun(input: { ticker: string; fromDate: string; toDate: string; poolCents: number; costPpm: number; buyGapPpm: number; sellGapPpm: number; paramsJson: string }): Promise<number> {
-      const [res] = await db.insert(s.simRuns).values({
-        ticker: input.ticker, fromDate: input.fromDate, toDate: input.toDate,
-        poolCents: input.poolCents, costPpm: input.costPpm, buyGapPpm: input.buyGapPpm, sellGapPpm: input.sellGapPpm, paramsJson: input.paramsJson,
-      })
-      return (res as any).insertId
-    },
-    async insertDays(rows: { simRunId: number; tradeDate: string; planJson: string; stateJson: string; eventsJson: string }[]) {
-      if (!rows.length) return
-      await db.insert(s.simDays).values(rows.map((r) => ({
-        simRunId: r.simRunId, tradeDate: r.tradeDate, planJson: r.planJson, stateJson: r.stateJson, eventsJson: r.eventsJson,
-      })))
-    },
-    async listRuns() { return db.select().from(s.simRuns) },
-    async getRun(id: number) {
-      const rows = await db.select().from(s.simRuns).where(eq(s.simRuns.id, id))
-      return rows[0] ?? null
-    },
-    async listDays(id: number) {
-      return db.select().from(s.simDays).where(eq(s.simDays.simRunId, id)).orderBy(s.simDays.tradeDate)
-    },
-  }
-  return { runRepo, orderRepo, fillRepo, priceHistoryRepo, pendingRepo, correctionRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo, settingsRepo, poolEditRepo, simRepo }
+  const simRepo = getSimRepo(db)
+  const { priceHistoryRepo, barCoverageRepo } = getBarRepos(db)
+  return { runRepo, orderRepo, fillRepo, priceHistoryRepo, barCoverageRepo, pendingRepo, correctionRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo, settingsRepo, poolEditRepo, simRepo }
 }
