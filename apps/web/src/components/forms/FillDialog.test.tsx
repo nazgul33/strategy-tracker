@@ -29,6 +29,7 @@ interface FetchCall {
 let stub: FetchCalls;
 let calls: FetchCall[] = [];
 let putFailure: { status: number; error: string } | null = null;
+let deleteFailure: { status: number; error: string } | null = null;
 let deltaCents = 0; // booked cash adjustment returned by the PUT/DELETE stubs
 
 function setInputValue(el: HTMLInputElement, value: string) {
@@ -130,6 +131,7 @@ describe('FillDialog', () => {
   beforeEach(() => {
     calls = [];
     putFailure = null;
+    deleteFailure = null;
     saved = 0;
     closed = 0;
     deltaCents = 0;
@@ -139,8 +141,11 @@ describe('FillDialog', () => {
       {
         method: 'DELETE',
         url: '/api/runs/',
+        get status() {
+          return deleteFailure ? deleteFailure.status : 200;
+        },
         get json() {
-          return { ok: true, deletedFillId: 3, deltaCents };
+          return deleteFailure ? { error: deleteFailure.error } : { ok: true, deletedFillId: 3, deltaCents };
         },
       },
       {
@@ -345,6 +350,31 @@ describe('FillDialog', () => {
     expect(closed).toBe(0);
     expect(document.querySelector('[role="dialog"]')).toBeTruthy();
   });
+
+  const replayErrors: Array<[string, string]> = [
+    ['too-many-shares', 'More shares than the position holds.'],
+    ['bucket-not-held', 'This bucket is not currently held.'],
+    ['bucket-not-empty', 'This bucket still has open shares.'],
+  ];
+
+  for (const [code, text] of replayErrors) {
+    it(`save failing with ${code} shows the localized text, not the raw code`, async () => {
+      putFailure = { status: 422, error: code };
+      await render({ costPpm: 30, fill: fillDto(), deletable: true });
+      await clickButton('Save');
+      expect(errorText()).toBe(text);
+      expect(closed).toBe(0);
+    });
+
+    it(`delete failing with ${code} shows the localized text, not the raw code`, async () => {
+      deleteFailure = { status: 422, error: code };
+      await render({ costPpm: 30, fill: fillDto(), deletable: true });
+      await clickButton('Delete');
+      await clickButton('Delete for real');
+      expect(errorText()).toBe(text);
+      expect(closed).toBe(0);
+    });
+  }
 
   it('falls back to the raw message for an unknown error code', async () => {
     putFailure = { status: 422, error: 'weird-code' };
