@@ -64,7 +64,10 @@ export function getBarRepos(db: any) {
     },
     // Keeps the ticker's ranges merged: every stored range that overlaps or
     // touches [fromDate, toDate] (adjacent calendar days) is replaced by the union.
+    // An inverted range is a caller bug and would persist a bogus coverage claim
+    // that silently suppresses future fetches, so it throws instead.
     async add(ticker: string, fromDate: string, toDate: string): Promise<void> {
+      if (fromDate > toDate) throw new Error(`bar coverage: inverted range ${fromDate}..${toDate} (from is after to)`)
       const t = normTicker(ticker)
       await db.transaction(async (tx: any) => {
         const rows: { id: number; fromDate: string; toDate: string }[] =
@@ -73,6 +76,12 @@ export function getBarRepos(db: any) {
         let to = toDate
         const absorbed: number[] = []
         for (const r of rows) {
+          // Test against the ORIGINAL [fromDate, toDate], not the widening from/to.
+          // This is only correct because stored ranges are kept pairwise
+          // non-overlapping and non-adjacent (every add merges its neighbours): a
+          // stored range that touches the widened union must already touch the
+          // original bounds, or it would have been merged into a range we absorb.
+          // Testing against the widened bounds would be order-dependent.
           if (dayNumber(r.fromDate) <= dayNumber(toDate) + 1 && dayNumber(r.toDate) >= dayNumber(fromDate) - 1) {
             absorbed.push(r.id)
             if (r.fromDate < from) from = r.fromDate

@@ -647,6 +647,19 @@ describeIf('db integration', () => {
       expect(await repos.barCoverageRepo.list(ticker)).toEqual([{ fromDate: '2026-01-01', toDate: '2026-02-28' }])
     })
 
+    test('barCoverage rejects an inverted range and stores nothing', async () => {
+      const ticker = 'BI' + Date.now()
+      await expect(repos.barCoverageRepo.add(ticker, '2026-02-01', '2026-01-01')).rejects.toThrow(/inverted|from/i)
+      expect(await repos.barCoverageRepo.list(ticker)).toEqual([])
+      // a rejected add leaves existing coverage untouched
+      await repos.barCoverageRepo.add(ticker, '2026-01-01', '2026-01-10')
+      await expect(repos.barCoverageRepo.add(ticker, '2026-01-20', '2026-01-05')).rejects.toThrow()
+      expect(await repos.barCoverageRepo.list(ticker)).toEqual([{ fromDate: '2026-01-01', toDate: '2026-01-10' }])
+      // a single-day range (from === to) is valid
+      await repos.barCoverageRepo.add(ticker, '2026-03-01', '2026-03-01')
+      expect((await repos.barCoverageRepo.list(ticker)).length).toBe(2)
+    })
+
     test('barCoverage merges overlaps, bridges several ranges, keeps disjoint ones apart', async () => {
       const ticker = 'BD' + Date.now()
       expect(await repos.barCoverageRepo.list(ticker)).toEqual([])

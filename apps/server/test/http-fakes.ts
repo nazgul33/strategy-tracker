@@ -2,6 +2,7 @@ import { expect } from 'bun:test'
 import type { RunState } from '@st/core'
 import type { HttpDeps, HttpRepoSurface, createApp } from '../src/http/app'
 import { fakeCorrectionRepo } from './fake-corrections'
+import { normTicker } from '../src/db/repos-bars'
 
 export function makeFakes() {
   let runIdSeq = 1
@@ -103,17 +104,24 @@ export function makeFakes() {
   const poolEditRepo = {
     async insert(input: { runId: number; poolCents: number }) { poolEdits.push({ id: poolEdits.length + 1, ...input }) },
   }
+  // monotonic like AUTO_INCREMENT: ids are never reused after a delete
+  let simRunIdSeq = 1
+  let simDayIdSeq = 1
   const simRuns: any[] = []
   const simDays: any[] = []
   const simRepo = {
-    async insertRun(i: any) { simRuns.push({ id: simRuns.length + 1, createdAt: '2026-11-10T00:00:00Z', ...i, draft: true }); return simRuns.length },
+    async insertRun(i: any) {
+      const id = simRunIdSeq++
+      simRuns.push({ id, createdAt: '2026-11-10T00:00:00Z', ...i, draft: true })
+      return id
+    },
     async updateConfig(id: number, v: any) {
       const r = simRuns.find((x) => x.id === id); if (r) Object.assign(r, v)
     },
-    async insertDays(rows: any[]) { for (const r of rows) simDays.push({ id: simDays.length + 1, ...r }) },
+    async insertDays(rows: any[]) { for (const r of rows) simDays.push({ id: simDayIdSeq++, ...r }) },
     async replaceDays(simRunId: number, rows: any[]) {
       for (let i = simDays.length - 1; i >= 0; i--) if (simDays[i].simRunId === simRunId) simDays.splice(i, 1)
-      for (const r of rows) simDays.push({ id: simDays.length + 1, ...r })
+      for (const r of rows) simDays.push({ id: simDayIdSeq++, ...r })
     },
     async finalize(id: number) {
       const r = simRuns.find((x) => x.id === id)
@@ -148,28 +156,32 @@ export function makeFakes() {
   const priceHistoryRepo = {
     async upsertMany(rows: { ticker: string; tradeDate: string; close: bigint }[]) {
       for (const r of rows) {
-        const hit = priceHistory.find((x) => x.ticker === r.ticker && x.tradeDate === r.tradeDate)
+        const ticker = normTicker(r.ticker)
+        const hit = priceHistory.find((x) => x.ticker === ticker && x.tradeDate === r.tradeDate)
         if (hit) hit.close = r.close
-        else priceHistory.push({ ...r })
+        else priceHistory.push({ ...r, ticker })
       }
       return rows.length
     },
     async upsertBars(rows: Required<FakeBar>[]) {
       for (const r of rows) {
-        const hit = priceHistory.find((x) => x.ticker === r.ticker && x.tradeDate === r.tradeDate)
-        if (hit) Object.assign(hit, r)
-        else priceHistory.push({ ...r })
+        const row = { ...r, ticker: normTicker(r.ticker) }
+        const hit = priceHistory.find((x) => x.ticker === row.ticker && x.tradeDate === row.tradeDate)
+        if (hit) Object.assign(hit, row)
+        else priceHistory.push(row)
       }
       return rows.length
     },
     async listForTicker(ticker: string, from?: string) {
+      const t = normTicker(ticker)
       return priceHistory
-        .filter((r) => r.ticker === ticker && (!from || r.tradeDate >= from))
+        .filter((r) => r.ticker === t && (!from || r.tradeDate >= from))
         .sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1))
     },
     async listBars(ticker: string, from: string, to: string) {
+      const t = normTicker(ticker)
       return priceHistory
-        .filter((r) => r.ticker === ticker && r.tradeDate >= from && r.tradeDate <= to && r.open !== undefined && r.high !== undefined && r.low !== undefined)
+        .filter((r) => r.ticker === t && r.tradeDate >= from && r.tradeDate <= to && r.open !== undefined && r.high !== undefined && r.low !== undefined)
         .sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1))
         .map((r) => ({ tradeDate: r.tradeDate, open: r.open!, high: r.high!, low: r.low!, close: r.close }))
     },
@@ -178,9 +190,12 @@ export function makeFakes() {
   const dayNum = (iso: string) => Math.floor(Date.parse(`${iso}T00:00:00Z`) / 86_400_000)
   const barCoverageRepo = {
     async list(ticker: string) {
-      return coverage.filter((c) => c.ticker === ticker).sort((a, b) => (a.fromDate < b.fromDate ? -1 : 1)).map((c) => ({ fromDate: c.fromDate, toDate: c.toDate }))
+      const t = normTicker(ticker)
+      return coverage.filter((c) => c.ticker === t).sort((a, b) => (a.fromDate < b.fromDate ? -1 : 1)).map((c) => ({ fromDate: c.fromDate, toDate: c.toDate }))
     },
-    async add(ticker: string, fromDate: string, toDate: string) {
+    async add(rawTicker: string, fromDate: string, toDate: string) {
+      if (fromDate > toDate) throw new Error(`bar coverage: inverted range ${fromDate}..${toDate} (from is after to)`)
+      const ticker = normTicker(rawTicker)
       let from = fromDate
       let to = toDate
       for (let i = coverage.length - 1; i >= 0; i--) {
