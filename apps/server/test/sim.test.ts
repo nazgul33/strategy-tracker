@@ -264,7 +264,7 @@ describe('routes', () => {
       password: PASSWORD,
       sessionSecret: SECRET,
       today: () => '2026-11-10',
-      defaultSettings: { visionBaseUrl: 'http://x', visionModel: 'm', digestLang: 'en' },
+      defaultSettings: { visionBaseUrl: 'http://x', visionModel: 'm', digestLang: 'en', defaultCostPpm: 700 },
       triggerMorning: async () => 'morning-ok',
       fetchDailyBars: async () => bars,
       allowedChatIds: [],

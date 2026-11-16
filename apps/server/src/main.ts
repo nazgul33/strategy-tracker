@@ -81,7 +81,7 @@ async function main(): Promise<void> {
     password: env.appPassword,
     sessionSecret: env.sessionSecret,
     today: todayEt,
-    defaultSettings: { visionBaseUrl, visionModel, digestLang },
+    defaultSettings: { visionBaseUrl, visionModel, digestLang, defaultCostPpm: env.defaultCostPpm },
     triggerMorning: async () => JSON.stringify(await runMorningPipeline(dayDeps)),
     fetchDailyBars,
     allowedChatIds: tg?.allowedChatIds ?? [],

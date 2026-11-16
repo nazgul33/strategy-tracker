@@ -169,4 +169,19 @@ describe('http settings', () => {
     expect(gb2.visionModel).toBe('newmodel')
     expect(gb2.digestLang).toBe('ko')
   })
+
+  test('GET exposes the env-owned defaultCostPpm; PUT cannot change it', async () => {
+    const f = makeFakes()
+    const deps = makeDeps(f)
+    deps.defaultSettings.defaultCostPpm = 1250
+    const app = createApp(deps)
+    const auth = await loginAs(app)
+    expect((await (await app.request('/api/settings', { headers: auth })).json()).defaultCostPpm).toBe(1250)
+    const put = await app.request('/api/settings', { method: 'PUT', body: JSON.stringify({ defaultCostPpm: 50, digestLang: 'ko' }), headers: { ...json, ...auth } })
+    expect(put.status).toBe(200)
+    expect(Object.keys(f.settings)).not.toContain('defaultCostPpm')
+    const after = await (await app.request('/api/settings', { headers: auth })).json()
+    expect(after.defaultCostPpm).toBe(1250)
+    expect(after.digestLang).toBe('ko')
+  })
 })

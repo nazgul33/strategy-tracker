@@ -23,7 +23,7 @@ export interface HttpDeps {
   password: string
   sessionSecret: string
   today: () => string
-  defaultSettings: { visionBaseUrl: string; visionModel: string; digestLang: 'en' | 'ko' }
+  defaultSettings: { visionBaseUrl: string; visionModel: string; digestLang: 'en' | 'ko'; defaultCostPpm: number }
   triggerMorning: () => Promise<string>
   fetchDailyBars: (ticker: string, from: string, to: string) => Promise<any[]>
   allowedChatIds: string[]

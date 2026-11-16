@@ -2,25 +2,25 @@ import { Hono } from 'hono'
 import { DomainError } from '@st/core'
 import { MarketDataError } from '@st/market-data'
 import { runSim } from '../../sim/sim'
-import { isValidPpm } from '../../domain/ppm'
+import { isValidPpm, isValidCostPpm } from '../../domain/ppm'
 import { jsonBig, type HttpDeps } from '../app'
 
 const ISO_RE = /^\d{4}-\d{2}-\d{2}$/
 
-function validateBody(body: any): { ok: true; input: any } | { ok: false; error: string } {
+function validateBody(body: any, defaultCostPpm: number): { ok: true; input: any } | { ok: false; error: string } {
   const name = body?.name
   const ticker = body?.ticker
   const from = body?.from
   const to = body?.to
   const poolCents = body?.poolCents
-  const costPpm = body?.costPpm
+  const costPpm = body?.costPpm === undefined ? defaultCostPpm : body.costPpm
   if (typeof name !== 'string' || name.trim() === '') return { ok: false, error: 'invalid name' }
   if (typeof ticker !== 'string' || ticker.trim() === '') return { ok: false, error: 'invalid ticker' }
   if (typeof from !== 'string' || !ISO_RE.test(from)) return { ok: false, error: 'invalid from' }
   if (typeof to !== 'string' || !ISO_RE.test(to)) return { ok: false, error: 'invalid to' }
   if (from > to) return { ok: false, error: 'invalid range' }
   if (!Number.isInteger(poolCents) || poolCents <= 0) return { ok: false, error: 'invalid poolCents' }
-  if (!Number.isInteger(costPpm) || costPpm < 0) return { ok: false, error: 'invalid costPpm' }
+  if (!isValidCostPpm(costPpm)) return { ok: false, error: 'invalid costPpm' }
   const buyGapPpm = body?.buyGapPpm ?? 0
   const sellGapPpm = body?.sellGapPpm ?? 0
   if (!isValidPpm(buyGapPpm)) return { ok: false, error: 'invalid buyGapPpm' }
@@ -39,7 +39,7 @@ export function simRouter(deps: HttpDeps): Hono {
   const r = new Hono()
   r.post('/', async (c) => {
     const body = await c.req.json().catch(() => ({}))
-    const v = validateBody(body)
+    const v = validateBody(body, deps.defaultSettings.defaultCostPpm)
     if (!v.ok) return c.json({ error: v.error }, 400)
     try {
       const res = await runSim(v.input, { fetchDailyBars: deps.fetchDailyBars, repos: deps.repos.simRepo as any })

@@ -432,4 +432,44 @@ describe('http runs', () => {
       expect(listed.find((x: any) => x.id === id).cutLossPpm).toBe(35_000)
     })
   })
+
+  describe('costPpm default', () => {
+    const base = { name: 'c', ticker: 'A', poolCents: 100 }
+    const setup = (defaultCostPpm: number) => {
+      const f = makeFakes()
+      const deps = makeDeps(f)
+      deps.defaultSettings.defaultCostPpm = defaultCostPpm
+      return { f, app: createApp(deps) }
+    }
+
+    test('POST /runs without costPpm uses the env default', async () => {
+      const { f, app } = setup(1250)
+      const auth = await loginAs(app)
+      const id = await createRun(app, auth, base)
+      expect(f.runs.find((x) => x.id === id)!.costPpm).toBe(1250)
+    })
+
+    test('an explicit costPpm of 0 is kept, not replaced by the default', async () => {
+      const { f, app } = setup(1250)
+      const auth = await loginAs(app)
+      const id = await createRun(app, auth, { ...base, costPpm: 0 })
+      expect(f.runs.find((x) => x.id === id)!.costPpm).toBe(0)
+    })
+
+    test('a supplied costPpm wins over the default', async () => {
+      const { f, app } = setup(1250)
+      const auth = await loginAs(app)
+      const id = await createRun(app, auth, { ...base, costPpm: 200 })
+      expect(f.runs.find((x) => x.id === id)!.costPpm).toBe(200)
+    })
+
+    test.each([5, 15, 701, -10, 1.5, '200', null])('POST /runs rejects costPpm %p', async (v) => {
+      const { f, app } = setup(1250)
+      const auth = await loginAs(app)
+      const res = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ ...base, costPpm: v }), headers: { ...json, ...auth } })
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toBe('invalid costPpm')
+      expect(f.runs.length).toBe(0)
+    })
+  })
 })

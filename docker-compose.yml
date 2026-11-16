@@ -26,6 +26,7 @@ services:
       APP_PASSWORD: ${APP_PASSWORD}
       SESSION_SECRET: ${SESSION_SECRET}
       DIGEST_LANG: ${DIGEST_LANG:-en}
+      DEFAULT_COST_PERCENT: ${DEFAULT_COST_PERCENT:-0.07}
       # leaving TELEGRAM_* unset disables the bot (sends fall back to logs);
       # set them in .env to turn Telegram capture on
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}

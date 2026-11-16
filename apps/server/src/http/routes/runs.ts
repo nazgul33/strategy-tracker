@@ -6,7 +6,7 @@ import { t as tgT } from '@st/telegram/i18n'
 import { seedRun, manualFill, cancelOrder } from '../../domain/booking'
 import type { RawFill } from '@st/ingest'
 import { jsonBig, type HttpDeps } from '../app'
-import { MAX_PPM, isValidPpm, isValidCutLossPpm } from '../../domain/ppm'
+import { MAX_PPM, isValidPpm, isValidCutLossPpm, isValidCostPpm } from '../../domain/ppm'
 import { prevTradingDay, type ISODate } from '@st/calendar'
 
 const SEED_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -50,11 +50,11 @@ export function runsRouter(deps: HttpDeps): Hono {
     const body = await c.req.json().catch(() => ({}))
     const name = body?.name
     const ticker = body?.ticker
-    const costPpm = body?.costPpm
+    const costPpm = body?.costPpm === undefined ? deps.defaultSettings.defaultCostPpm : body.costPpm
     const poolCents = body?.poolCents
     if (typeof name !== 'string' || name.trim() === '') return c.json({ error: 'invalid name' }, 400)
     if (typeof ticker !== 'string' || ticker.trim() === '') return c.json({ error: 'invalid ticker' }, 400)
-    if (!Number.isInteger(costPpm) || costPpm < 0) return c.json({ error: 'invalid costPpm' }, 400)
+    if (!isValidCostPpm(costPpm)) return c.json({ error: 'invalid costPpm' }, 400)
     if (!Number.isInteger(poolCents) || poolCents <= 0) return c.json({ error: 'invalid poolCents' }, 400)
     const buyGapPpm = body?.buyGapPpm ?? 0
     const sellGapPpm = body?.sellGapPpm ?? 0
