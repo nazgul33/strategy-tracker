@@ -4,10 +4,11 @@ import { parseUsd, feeCents } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { ExtractResult, RawFill } from '@st/ingest'
 import {
-  ingestCapture, confirmPendingFill, manualFill, rollStale, seedRun, sha256, cancelOrder, runBooking, matchSellOrder,
+  ingestCapture, confirmPendingFill, manualFill, rollStale, seedRun, sha256, cancelOrder, runBooking,
   type BookingDeps, type PendingFillRow, type CaptureConflict, type OrderRow,
 } from '../src/domain/booking'
 import { withRunLock } from '../src/domain/run-lock'
+import { matchSellOrder } from '../src/domain/sell-match'
 import { fakeCorrectionRepo } from './fake-corrections'
 
 type BookedConflict = Extract<CaptureConflict, { matchedKind: 'booked' }>
@@ -1345,11 +1346,11 @@ describe('sell matching with target and stop legs', () => {
       [{ idx: 0, shares: 10, buy: '100.00' }],
       [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }],
     )
-    const cancelledId = await runBooking(bookInput(runId, 10, '96.50'), deps)
+    const cancelledIds = await runBooking(bookInput(runId, 10, '96.50'), deps)
     const sibling = order(f, 0, 'sell_loc')
     expect(sibling.status).toBe('cancelled')
     expect(sibling.cancelReason).toBe('broker-filled')
-    expect(cancelledId).toBe(sibling.id)
+    expect(cancelledIds).toEqual([sibling.id])
     expect(order(f, 0, 'stop_sell').status).toBe('filled')
     expect(order(f, 0, 'stop_sell').cancelReason).toBeUndefined()
   })
@@ -1359,21 +1360,21 @@ describe('sell matching with target and stop legs', () => {
       [{ idx: 0, shares: 10, buy: '100.00' }],
       [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }],
     )
-    const cancelledId = await runBooking(bookInput(runId, 10, '103.00'), deps)
+    const cancelledIds = await runBooking(bookInput(runId, 10, '103.00'), deps)
     const sibling = order(f, 0, 'stop_sell')
     expect(sibling.status).toBe('cancelled')
     expect(sibling.cancelReason).toBe('broker-filled')
-    expect(cancelledId).toBe(sibling.id)
+    expect(cancelledIds).toEqual([sibling.id])
     expect(order(f, 0, 'sell_loc').status).toBe('filled')
   })
 
-  test('a bucket-emptying market_sell fill cancels nothing when no sibling is open', async () => {
+  test('a bucket-emptying market_sell fill cancels nothing when no other leg is open', async () => {
     const { f, deps, runId } = await setup(
       [{ idx: 0, shares: 10, buy: '100.00' }],
       [{ idx: 0, kind: 'market_sell', price: '0' }],
     )
-    const cancelledId = await runBooking(bookInput(runId, 10, '99.00'), deps)
-    expect(cancelledId).toBeNull()
+    const cancelledIds = await runBooking(bookInput(runId, 10, '99.00'), deps)
+    expect(cancelledIds).toEqual([])
     expect(order(f, 0, 'market_sell').status).toBe('filled')
   })
 
@@ -1387,7 +1388,7 @@ describe('sell matching with target and stop legs', () => {
         { idx: 1, kind: 'stop_sell', price: '97.00' },
       ],
     )
-    expect(await runBooking(bookInput(runId, 10, '96.00'), deps)).toBeNull()
+    expect(await runBooking(bookInput(runId, 10, '96.00'), deps)).toEqual([])
     expect(f._stores.orders.filter((o: any) => o.status === 'cancelled')).toEqual([])
     expect(order(f, 1, 'sell_loc').status).toBe('open')
     expect(order(f, 1, 'stop_sell').status).toBe('open')
@@ -1398,8 +1399,8 @@ describe('sell matching with target and stop legs', () => {
       [{ idx: 0, shares: 10, buy: '100.00' }],
       [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }],
     )
-    const cancelledId = await runBooking(bookInput(runId, 4, '96.50'), deps)
-    expect(cancelledId).toBeNull()
+    const cancelledIds = await runBooking(bookInput(runId, 4, '96.50'), deps)
+    expect(cancelledIds).toEqual([])
     const sibling = order(f, 0, 'sell_loc')
     expect(sibling.status).toBe('open')
     expect(sibling.cancelReason).toBeUndefined()
@@ -1418,10 +1419,51 @@ describe('sell matching with target and stop legs', () => {
         { idx: 6, kind: 'sell_loc', price: '103.00' }, { idx: 6, kind: 'stop_sell', price: '97.00' },
       ],
     )
-    const cancelledId = await runBooking(bookInput(runId, 10, '100.00'), deps)
+    const cancelledIds = await runBooking(bookInput(runId, 10, '100.00'), deps)
     expect(lastFill(f).bucketIdx).toBe(0)
-    expect(cancelledId).toBeNull()
+    expect(cancelledIds).toEqual([])
     expect(f._stores.orders.every((o: any) => o.status === 'open')).toBe(true)
+  })
+
+  test('a fallback fill that empties its bucket cancels every open sell leg of that bucket', async () => {
+    // 100.00 sits in the gap (97 < 100 < 103): nothing matches, the guess lands on bucket 0 and empties it.
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 4, shares: 10, buy: '100.00' }],
+      [
+        { idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' },
+        { idx: 4, kind: 'sell_loc', price: '103.00' }, { idx: 4, kind: 'stop_sell', price: '97.00' },
+      ],
+    )
+    const cancelledIds = await runBooking(bookInput(runId, 10, '100.00'), deps)
+    expect(lastFill(f).bucketIdx).toBe(0)
+    const legs = [order(f, 0, 'sell_loc'), order(f, 0, 'stop_sell')]
+    expect(cancelledIds).toEqual(legs.map((o: any) => o.id))
+    for (const o of legs) { expect(o.status).toBe('cancelled'); expect(o.cancelReason).toBe('broker-filled') }
+    expect(order(f, 4, 'sell_loc').status).toBe('open')
+    expect(order(f, 4, 'stop_sell').status).toBe('open')
+  })
+
+  test('a partial fallback fill cancels nothing', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }],
+      [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }],
+    )
+    expect(await runBooking(bookInput(runId, 4, '100.00'), deps)).toEqual([])
+    expect(f._stores.orders.map((o: any) => o.status)).toEqual(['open', 'open'])
+  })
+
+  test('a matched fill that empties its bucket also cancels every other open leg, not just one', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }],
+      [
+        { idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' },
+        { idx: 0, kind: 'market_sell', price: '0' },
+      ],
+    )
+    const cancelledIds = await runBooking(bookInput(runId, 10, '103.00'), deps)
+    expect(order(f, 0, 'sell_loc').status).toBe('filled')
+    expect(cancelledIds).toEqual([order(f, 0, 'stop_sell').id, order(f, 0, 'market_sell').id])
+    expect(f._stores.orders.filter((o: any) => o.status === 'cancelled').length).toBe(2)
   })
 
   test('a failed fill insert cancels nothing and leaves the matched order open', async () => {

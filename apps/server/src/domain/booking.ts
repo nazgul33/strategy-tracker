@@ -6,6 +6,7 @@ import { matchCapturedFills, type CaptureConflict } from './capture-dedup'
 import { claimCapture } from './capture-claim'
 import { recordCorrections } from './capture-corrections'
 import { withRunLock } from './run-lock'
+import { matchSellOrder } from './sell-match'
 import type { CorrectionRepo } from './correction-types'
 
 // The conflict shape belongs to the dedup matcher; re-exported so the booking
@@ -73,48 +74,15 @@ export interface BookInput {
 // The whole decide→write span (read state → pick bucket → flip pending → saveState
 // → fill → ledger → sibling cancel → order flip) must not interleave with another
 // writer on the same run. Not reentrant: never call this from inside a withRunLock
-// on the same run. Resolves to the id of the sibling sell order cancelled because
-// this fill emptied its bucket, or null when nothing was cancelled.
-export function runBooking(input: BookInput, deps: BookingDeps): Promise<number | null> {
+// on the same run. Resolves to the ids of the sell orders cancelled because this
+// fill emptied its bucket (empty when nothing was cancelled).
+export function runBooking(input: BookInput, deps: BookingDeps): Promise<number[]> {
   return withRunLock(input.runId, () => bookUnlocked(input, deps))
-}
-
-interface SellFillKey { runId: number; filledOn: ISODate; shares: number; price: bigint }
-
-const cmp = (a: bigint, b: bigint): number => (a < b ? -1 : a > b ? 1 : 0)
-
-// Which open sell order does a sell fill belong to? Every candidate must be open,
-// of this run and trade date, and sit on a held bucket with at least `shares`.
-// Each held bucket carries two live legs: a limit-on-close target (sell_loc) and
-// a stop-market (stop_sell, limitPrice = trigger), with trigger < buyPrice < sellLimit.
-//   target fill: prints at the close, at or ABOVE its limit  => price >= limit
-//   stop fill:   triggers on the way down, at or BELOW trigger => price <= trigger
-// For one bucket the two tests are disjoint. Across buckets they are not: a loose
-// trigger on one bucket can sit above another bucket's target, so an ordinary
-// target fill would also satisfy price <= that trigger. A fill at or above SOME
-// bucket's target must therefore be read as a target before it is read as anyone's
-// stop. Order: exact target, target at/under the price (highest limit = tightest
-// fit), stop at/over the price (lowest trigger = tightest fit), market_sell.
-// Every tie breaks on the lowest bucketIdx. null leaves the caller's fallback.
-export function matchSellOrder(orders: OrderRow[], state: RunState, input: SellFillKey): OrderRow | null {
-  const live = orders.filter((o) => {
-    if (o.status !== 'open' || o.runId !== input.runId || o.tradeDate !== input.filledOn) return false
-    const b = state.buckets.find((x: Bucket) => x.index === o.bucketIdx)
-    return !!b && b.state !== 'empty' && b.shares >= input.shares
-  })
-  const pick = (kind: string, test: (o: OrderRow) => boolean, rank: (a: OrderRow, b: OrderRow) => number): OrderRow | null =>
-    live.filter((o) => o.kind === kind && test(o)).sort((a, b) => rank(a, b) || a.bucketIdx - b.bucketIdx)[0] ?? null
-  return (
-    pick('sell_loc', (o) => o.limitPrice === input.price, () => 0) ??
-    pick('sell_loc', (o) => input.price >= o.limitPrice, (a, b) => cmp(b.limitPrice, a.limitPrice)) ??
-    pick('stop_sell', (o) => input.price <= o.limitPrice, (a, b) => cmp(a.limitPrice, b.limitPrice)) ??
-    pick('market_sell', () => true, () => 0)
-  )
 }
 
 const SELL_SIDE_KINDS = ['sell_loc', 'stop_sell', 'market_sell']
 
-async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number | null> {
+async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number[]> {
   const repos = deps.repos
   const run = await repos.runRepo.get(input.runId)
   const state: RunState = await repos.bucketRepo.loadState(input.runId)
@@ -124,7 +92,6 @@ async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number
   let next: RunState
   let bucketIdx: number
   let matchedOrderId: number | null = null
-  let matchedKind: string | null = null
   let sellDayOrders: OrderRow[] = []
 
   if (input.side === 'buy') {
@@ -144,7 +111,6 @@ async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number
     if (matchedOrder) {
       idx = matchedOrder.bucketIdx
       matchedOrderId = matchedOrder.id
-      matchedKind = matchedOrder.kind
     } else {
       const candidates = state.buckets
         .filter((b: Bucket) => b.state !== 'empty' && b.shares >= input.shares)
@@ -168,21 +134,23 @@ async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number
   await repos.bucketRepo.saveState(input.runId, next)
   await repos.fillRepo.insert({ runId: input.runId, bucketIdx, side: input.side, ticker: run.ticker, shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, source: input.source })
   await repos.ledgerRepo.insert({ runId: input.runId, kind: input.side === 'buy' ? 'buy' : 'sell', amountCents: delta, ref: JSON.stringify({ bookedOn: deps.today, filledOn: input.filledOn }) })
-  // A fill that empties its bucket leaves the other leg with nothing to sell. A
-  // partial fill leaves shares that still need both legs, so nothing is cancelled.
-  // Written with the plain status writer, not cancelOrder (its lookups would re-enter the lock).
-  let cancelledId: number | null = null
-  if (matchedOrderId !== null && matchedKind !== null && SELL_SIDE_KINDS.includes(matchedKind) && next.buckets[bucketIdx]!.state === 'empty') {
-    const sibling = sellDayOrders
+  // A sell that empties its bucket leaves every open sell-side order of that bucket
+  // and trade date with nothing to sell, however the bucket was chosen (matched order
+  // or fallback guess). A partial fill leaves shares that still need both legs, so
+  // nothing is cancelled. Plain status writer, not cancelOrder (its lookups would
+  // re-enter the lock). The matched order is excluded: it flips to filled below.
+  const cancelledIds: number[] = []
+  if (input.side === 'sell' && next.buckets[bucketIdx]!.state === 'empty') {
+    const open = sellDayOrders
       .filter((o) => o.runId === input.runId && o.bucketIdx === bucketIdx && o.tradeDate === input.filledOn && o.status === 'open' && o.id !== matchedOrderId && SELL_SIDE_KINDS.includes(o.kind))
-      .sort((a, b) => a.id - b.id)[0]
-    if (sibling) {
-      await repos.orderRepo.setStatus(sibling.id, 'cancelled', 'broker-filled')
-      cancelledId = sibling.id
+      .sort((a, b) => a.id - b.id)
+    for (const o of open) {
+      await repos.orderRepo.setStatus(o.id, 'cancelled', 'broker-filled')
+      cancelledIds.push(o.id)
     }
   }
   if (matchedOrderId !== null) await repos.orderRepo.setStatus(matchedOrderId, 'filled')
-  return cancelledId
+  return cancelledIds
 }
 
 export async function ingestCapture(runId: number, image: { base64: string; mime: string }, extract: ExtractResult, deps: BookingDeps): Promise<CaptureOutcome> {
