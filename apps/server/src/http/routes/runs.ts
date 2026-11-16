@@ -6,7 +6,7 @@ import { t as tgT } from '@st/telegram/i18n'
 import { seedRun, manualFill, cancelOrder } from '../../domain/booking'
 import type { RawFill } from '@st/ingest'
 import { jsonBig, type HttpDeps } from '../app'
-import { MAX_PPM, isValidPpm } from '../../domain/ppm'
+import { MAX_PPM, isValidPpm, isValidCutLossPpm } from '../../domain/ppm'
 import { prevTradingDay, type ISODate } from '@st/calendar'
 
 const SEED_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -60,6 +60,8 @@ export function runsRouter(deps: HttpDeps): Hono {
     const sellGapPpm = body?.sellGapPpm ?? 0
     if (!isValidPpm(buyGapPpm)) return c.json({ error: 'invalid buyGapPpm' }, 400)
     if (!isValidPpm(sellGapPpm)) return c.json({ error: 'invalid sellGapPpm' }, 400)
+    const cutLossPpm = body?.cutLossPpm ?? 0
+    if (!isValidCutLossPpm(cutLossPpm)) return c.json({ error: 'invalid cutLossPpm' }, 400)
     const params = body?.params
     let bucketCount = 10
     if (params != null) {
@@ -78,7 +80,7 @@ export function runsRouter(deps: HttpDeps): Hono {
     const state = emptyState(bucketCount)
     state.cashCents = poolCents
     const id = await deps.repos.runRepo.create({
-      strategyKey: 'mean-reversion', ticker, name, poolCents, costPpm, buyGapPpm, sellGapPpm, initialRunState: state,
+      strategyKey: 'mean-reversion', ticker, name, poolCents, costPpm, buyGapPpm, sellGapPpm, cutLossPpm, initialRunState: state,
     })
     if (seed) {
       await seedRun(id, seed, { repos: deps.repos as any, today: deps.today() as any })
@@ -128,14 +130,16 @@ export function runsRouter(deps: HttpDeps): Hono {
     await deps.repos.poolEditRepo.insert({ runId: id, poolCents: amountCents })
     return c.json({ ok: true })
   })
-  // gaps are editable in any run status (operator ruling): pure price-config edit
+  // order shaping (gaps + cut-loss) is editable in any run status (operator ruling): pure price-config edit.
+  // cutLossPpm is optional here: absent keeps the stored value, present (even 0 = off) must validate.
   r.post('/runs/:id/gaps', async (c) => {
     const id = Number(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
     if (!isValidPpm(body?.buyGapPpm) || !isValidPpm(body?.sellGapPpm)) return c.json({ error: 'invalid gaps' }, 400)
+    if (body.cutLossPpm !== undefined && !isValidCutLossPpm(body.cutLossPpm)) return c.json({ error: 'invalid cutLossPpm' }, 400)
     const run = await deps.repos.runRepo.get(id)
     if (!run) return c.json({ error: 'not found' }, 404)
-    await deps.repos.runRepo.updateOrderShaping(id, { buyGapPpm: body.buyGapPpm, sellGapPpm: body.sellGapPpm, cutLossPpm: run.cutLossPpm })
+    await deps.repos.runRepo.updateOrderShaping(id, { buyGapPpm: body.buyGapPpm, sellGapPpm: body.sellGapPpm, cutLossPpm: body.cutLossPpm ?? run.cutLossPpm })
     return c.body(null, 204)
   })
   // daily closes for the run's ticker, for the price-history chart.
