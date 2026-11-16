@@ -13,7 +13,8 @@
  * Flow: scratch DB st_e2e_<ts> (created + always dropped) → migrations → login
  * through the real Hono app → seeded run create → photo capture through
  * wire/capture against a fake vision model → duplicate guard → HTTP pending
- * confirm → state asserts → morning digest → web viewmodels → deterministic sim.
+ * confirm → state asserts → morning digest (+ cut-loss stops) → web viewmodels →
+ * stop-fill booking → sim drafts (cached bars) → deterministic sim. Steps live in e2e-*.ts.
  * Exit 0 = every pinned assertion below held.
  */
 import { getDb, closeDb, applyMigrations } from '../apps/server/src/db/client'
@@ -28,6 +29,10 @@ import { DEFAULT_MR_PARAMS } from '../packages/strategies/src/mean-reversion'
 import type { OHLCBar } from '../packages/market-data/src/yahoo'
 import { formatUsd, parseUsd } from '../packages/core/src/money'
 import { CATALOG } from '../packages/telegram/src/i18n'
+import { makeCachedBarReader } from '../apps/server/src/market/bars'
+import { jsonOf } from './e2e-ctx'
+import { CUT_LOSS_PPM, checkPlannedStops, checkStopBooking } from './e2e-cutloss'
+import { countingUpstream, checkSimDrafts } from './e2e-sim-drafts'
 
 let checks = 0
 function ok(cond: unknown, label: string): void {
@@ -35,7 +40,6 @@ function ok(cond: unknown, label: string): void {
   checks++
   console.log(`  ok  ${label}`)
 }
-const jsonOf = async (r: Response): Promise<any> => r.json()
 
 // ---- fixtures ------------------------------------------------------------
 const PASSWORD = 'e2e-password'
@@ -90,6 +94,7 @@ async function main(): Promise<void> {
 
     // ---- HTTP app (real Hono wiring, injected fakes) -------------------------
     const httpSends: { chat: string; text: string }[] = []
+    const barSource = countingUpstream()
     const httpDeps: HttpDeps = {
       repos,
       password: PASSWORD,
@@ -97,7 +102,7 @@ async function main(): Promise<void> {
       today: () => TODAY,
       defaultSettings: { visionBaseUrl: `http://127.0.0.1:${vision.port}/v1`, visionModel: 'e2e-vision', digestLang: 'en', defaultCostPpm: 700 },
       triggerMorning: async () => 'sent',
-      fetchDailyBars: async () => [],
+      fetchDailyBars: makeCachedBarReader({ upstream: barSource.upstream, repos, today: () => TODAY }),
       allowedChatIds: ['chat-1'],
       send: async (chatId: string, text: string) => { httpSends.push({ chat: chatId, text }) },
     }
@@ -116,6 +121,7 @@ async function main(): Promise<void> {
     const login = await req('POST', '/login', { password: PASSWORD })
     ok(login.status === 200, 'login -> 200')
     const { token } = (await jsonOf(login)) as { token: string }
+    const ctx = { ok, req, token }
     ok((login.headers.get('set-cookie') ?? '').includes('st_session='), 'login also sets st_session cookie')
 
     // ---- run create via HTTP (seeded first bucket) ----------------------------
@@ -126,6 +132,7 @@ async function main(): Promise<void> {
       ticker: 'NVDA',
       poolCents: 1_000_000,
       costPpm: 1_000,
+      cutLossPpm: CUT_LOSS_PPM,
       seed: { cashCents: 700_000, buckets: [{ shares: 32, buyPrice: '178.50', filledOn: PREV }] },
     }, token)
     ok(created.status === 201, 'POST /api/runs (seeded) -> 201')
@@ -164,7 +171,7 @@ async function main(): Promise<void> {
     const confirm = await req('POST', `/pending/${pendingWire[0].id}/confirm`, {}, token)
     ok(confirm.status === 200, 'POST /api/pending/:id/confirm -> 200')
     const reConfirm = await req('POST', `/pending/${pendingWire[0].id}/confirm`, {}, token)
-    ok(reConfirm.status === 422 && (await jsonOf(reConfirm)).error === 'pending-not-found-or-not-pending', 'second confirm -> 422')
+    ok(reConfirm.status === 409 && (await jsonOf(reConfirm)).error === 'not-pending', 'second confirm -> 409 not-pending')
     const cookieResp = await app.request(`/api/runs/${runId}`, { headers: { cookie: `st_session=${encodeURIComponent(token)}` } })
     ok(cookieResp.status === 200, 'st_session cookie also authenticates')
     const after = await jsonOf(await req('GET', `/runs/${runId}`, undefined, token))
@@ -195,8 +202,11 @@ async function main(): Promise<void> {
     ok(digest.includes('Buy  LOC  5 sh  @ 179.99  → bucket 2'), 'digest buy_loc line: 5 sh @ 179.99 (close−tick) into lowest empty bucket 2')
     ok(digest.includes('Sell  LOC  32 sh  @ 178.867  → bucket 0'), 'digest sell_loc line for seeded bucket 0')
     ok(digest.includes('Sell  LOC  30 sh  @ 179.869  → bucket 1'), 'digest sell_loc line for captured bucket 1')
+    ok(digest.includes('Sell  STOP  32 sh  trigger 172.25  → bucket 0') && digest.includes('Sell  STOP  30 sh  trigger 173.21  → bucket 1'), 'digest stop lines: trigger 172.25 (bucket 0) and 173.21 (bucket 1)')
     const aged = await jsonOf(await req('GET', `/runs/${runId}`, undefined, token))
     ok(aged.state.buckets[0].state === 'held' && aged.state.ages['0'] === 2, 'morning advanceDay aged seeded bucket 0 to 2')
+
+    await checkPlannedStops(ctx, runId, TODAY)
 
     // ---- web viewmodels on the live wire payload -----------------------------
     const cells = bucketCells(aged.state.buckets, aged.state.ages, 10, DEFAULT_MR_PARAMS.maxAgeDays)
@@ -238,6 +248,12 @@ async function main(): Promise<void> {
     const cancelNotifs = notifs.filter((n) => n.text === expectedCancelMsg)
     ok(cancelNotifs.length === 1 && cancelNotifs[0].chatId === 'chat-1',
       `exactly one durable cancel-notification row for the chat, beside the morning digest row: ${JSON.stringify(notifs.map((n) => n.text.slice(0, 20)))}`)
+
+    // ---- cut-loss: sell booked at a trigger lands in its bucket, sibling sell_loc cancelled
+    await checkStopBooking(ctx, runId, TODAY, httpSends)
+
+    // ---- sim drafts: create -> apply (cache hit) -> save / discard
+    await checkSimDrafts(ctx, barSource.calls)
 
     // ---- deterministic sim (fixture bars, pure + persisted) ------------------
     const simRun = { id: 0, name: 'E2E Sim', ticker: 'NVDA', strategyKey: 'mean-reversion' as const, costPpm: 1_000, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }
