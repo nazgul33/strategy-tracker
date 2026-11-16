@@ -1,7 +1,7 @@
 import { DomainError, emptyState, advanceDay, applyBuyFill, applySellFill, type ISODate, type Run, type RunState, type DayPlan } from '@st/core'
 import { feeCents, roundDiv } from '@st/core/money'
 import { computeOrders, DEFAULT_MR_PARAMS, type MrParams } from '@st/strategies'
-import { isValidPpm } from '../domain/ppm'
+import { isValidPpm, isValidCutLossPpm } from '../domain/ppm'
 import type { OHLCBar } from '@st/market-data'
 
 export interface SimFill {
@@ -34,6 +34,7 @@ export interface SimInput {
   costPpm: number
   buyGapPpm?: number
   sellGapPpm?: number
+  cutLossPpm?: number
   params?: Partial<MrParams>
 }
 
@@ -81,6 +82,7 @@ export function resolveDay(state: RunState, plan: DayPlan, bar: OHLCBar, costPpm
   const fill = (e: Omit<Extract<SimEvent, { type: 'fill' }>, 'type'>) => events.push({ type: 'fill', ...e })
 
   const marketSells = plan.orders.filter((o) => o.kind === 'market_sell').sort((a, b) => a.bucketIndex - b.bucketIndex)
+  const stops = plan.orders.filter((o) => o.kind === 'stop_sell').sort((a, b) => a.bucketIndex - b.bucketIndex)
   const sellLocs = plan.orders.filter((o) => o.kind === 'sell_loc').sort((a, b) => a.bucketIndex - b.bucketIndex)
   const buyLocs = plan.orders.filter((o) => o.kind === 'buy_loc').sort((a, b) => a.bucketIndex - b.bucketIndex)
 
@@ -94,8 +96,32 @@ export function resolveDay(state: RunState, plan: DayPlan, bar: OHLCBar, costPpm
       // not filled
     }
   }
+  // Stops are morning events and resolve before the limit-on-close target. A daily bar has no
+  // intraday path, so when the target and the stop are both reachable on the same bar we cannot
+  // know which came first; the stop wins, deliberately pessimistic, so the loss is never hidden.
+  // A stop triggers on the way down: a bar opening at or below the trigger gapped through it and
+  // fills at the open (worse than the trigger, as in reality); otherwise an intraday touch of the
+  // low fills exactly at the trigger, ignoring slippage.
+  const stoppedOut = new Set<number>()
+  for (const o of stops) {
+    const trigger = o.limitPrice
+    const price = bar.open <= trigger ? bar.open : bar.low <= trigger ? trigger : null
+    if (price === null) continue
+    const fee = feeCents(price, o.shares, costPpm)
+    try {
+      cur = applySellFill(cur, o.bucketIndex, o.shares, price, fee, bar.date)
+      fill({ side: 'sell', bucketIndex: o.bucketIndex, shares: o.shares, price, feeCents: fee })
+      stoppedOut.add(o.bucketIndex)
+    } catch {
+      // not filled
+    }
+  }
   for (const o of sellLocs) {
     if (bar.high < o.limitPrice) continue
+    if (stoppedOut.has(o.bucketIndex)) {
+      events.push({ type: 'skipped', bucketIndex: o.bucketIndex, reason: 'stop-preempted' })
+      continue
+    }
     const price = o.limitPrice > bar.open ? o.limitPrice : bar.open
     const fee = feeCents(price, o.shares, costPpm)
     try {
@@ -187,7 +213,10 @@ export async function runSim(input: SimInput, deps: { fetchDailyBars: (ticker: s
   const sellGapPpm = input.sellGapPpm ?? 0
   if (!isValidPpm(buyGapPpm) || !isValidPpm(sellGapPpm)) throw new DomainError('invalid-params')
 
-  const run: Run = { id: 0, name: input.name, ticker: input.ticker, strategyKey: 'mean-reversion', costPpm: input.costPpm, buyGapPpm, sellGapPpm, cutLossPpm: 0, poolCents: input.poolCents, status: 'active' }
+  const cutLossPpm = input.cutLossPpm ?? 0
+  if (!isValidCutLossPpm(cutLossPpm)) throw new DomainError('invalid-params')
+
+  const run: Run = { id: 0, name: input.name, ticker: input.ticker, strategyKey: 'mean-reversion', costPpm: input.costPpm, buyGapPpm, sellGapPpm, cutLossPpm, poolCents: input.poolCents, status: 'active' }
 
   const bars = await deps.fetchDailyBars(input.ticker, input.from, input.to)
   const { days, states } = simulate(run, params, bars)
@@ -200,7 +229,7 @@ export async function runSim(input: SimInput, deps: { fetchDailyBars: (ticker: s
     costPpm: input.costPpm,
     buyGapPpm,
     sellGapPpm,
-    cutLossPpm: 0,
+    cutLossPpm,
     paramsJson: JSON.stringify(params, bigintReplacer),
   })
 
