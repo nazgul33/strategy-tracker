@@ -179,39 +179,30 @@ export function runsRouter(deps: HttpDeps): Hono {
     return c.json(jsonBig({ start, bars: out }))
   })
 
-  // walk trading days backwards from prevTradingDay(today) until the daily
-  // bars cover `start`; Yahoo data is finite, so stop after `maxDays` tries
+  // one ranged read through the injected (cached) bar reader over
+  // [start, prevTradingDay(today)]; the reader fetches only what it has never
+  // fetched before. Bars may carry `date` (OHLCBar) or `tradeDate` (legacy shape).
   async function backfillPriceHistory(
     deps: HttpDeps,
     ticker: string,
     start: string,
     today: ISODate,
-    maxDays = 400,
   ): Promise<{ tradeDate: ISODate; close: bigint }[]> {
     if (!deps.fetchDailyBars) return []
-    const out: { tradeDate: ISODate; close: bigint }[] = []
-    let from = start
-    let guard = 0
-    while (guard++ < maxDays) {
-      const to = prevTradingDay(today)
-      let bars
-      try {
-        bars = await deps.fetchDailyBars(ticker, from, to)
-      } catch (e) {
-        console.error('daily bars fetch failed:', ticker, String(e))
-        break
-      }
-      const known = new Set(out.map((b) => b.tradeDate))
-      const fresh = bars.filter((b) => b.tradeDate <= to && !known.has(b.tradeDate))
-      if (fresh.length === 0) break
-      out.push(...fresh)
-      const earliest = out.reduce((m, b) => (b.tradeDate < m ? b.tradeDate : m), out[0].tradeDate)
-      if (earliest <= start) break
-      const prev = prevTradingDay(earliest)
-      if (prev === earliest) break
-      from = prev
+    const to = prevTradingDay(today)
+    let bars: any[]
+    try {
+      bars = await deps.fetchDailyBars(ticker, start, to)
+    } catch (e) {
+      console.error('daily bars fetch failed:', ticker, String(e))
+      return []
     }
-    return out.sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1))
+    const byDate = new Map<string, bigint>()
+    for (const b of bars) {
+      const tradeDate: string = b.tradeDate ?? b.date
+      if (tradeDate >= start && tradeDate <= to && !byDate.has(tradeDate)) byDate.set(tradeDate, b.close)
+    }
+    return [...byDate].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([tradeDate, close]) => ({ tradeDate, close }))
   }
 
   r.get('/runs/:id/orders', async (c) => {

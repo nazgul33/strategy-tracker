@@ -7,6 +7,7 @@ import { fetchDailyBars, fetchLastClose } from '@st/market-data'
 import { applyMigrations, closeDb, getDb } from './db/client'
 import { getRepos } from './db/repos'
 import { createApp } from './http/app'
+import { makeCachedBarReader } from './market/bars'
 import { runMorningPipeline, type DayDeps } from './pipeline/day'
 import { startJobs } from './pipeline/wire'
 import { makeCaptureHandlers } from './wire/capture'
@@ -83,7 +84,8 @@ async function main(): Promise<void> {
     today: todayEt,
     defaultSettings: { visionBaseUrl, visionModel, digestLang, defaultCostPpm: env.defaultCostPpm },
     triggerMorning: async () => JSON.stringify(await runMorningPipeline(dayDeps)),
-    fetchDailyBars,
+    // one cache for the simulator and the price chart
+    fetchDailyBars: makeCachedBarReader({ upstream: fetchDailyBars, repos, today: todayEt }),
     allowedChatIds: tg?.allowedChatIds ?? [],
     send,
   })
