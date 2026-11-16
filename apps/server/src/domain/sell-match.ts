@@ -1,5 +1,18 @@
 import type { RunState, ISODate, Bucket } from '@st/core'
-import type { OrderRow } from './booking'
+
+export interface OrderRow { id: number; runId: number; tradeDate: string; kind: string; bucketIdx: number; limitPrice: bigint; shares: number; status: string }
+
+// Every order kind that sells a held bucket.
+const SELL_SIDE_KINDS: readonly string[] = ['sell_loc', 'stop_sell', 'market_sell']
+
+// The open sell-side orders of one bucket, run and trade date, lowest id first,
+// minus `exceptId` (the order a fill matched). Open is load-bearing: a leg an
+// earlier partial fill already flipped to filled must not be reported again.
+export function openSellLegs(orders: OrderRow[], key: { runId: number; bucketIdx: number; tradeDate: string }, exceptId: number | null): OrderRow[] {
+  return orders
+    .filter((o) => o.runId === key.runId && o.bucketIdx === key.bucketIdx && o.tradeDate === key.tradeDate && o.status === 'open' && o.id !== exceptId && SELL_SIDE_KINDS.includes(o.kind))
+    .sort((a, b) => a.id - b.id)
+}
 
 interface SellFillKey { runId: number; filledOn: ISODate; shares: number; price: bigint }
 

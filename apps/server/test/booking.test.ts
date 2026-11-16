@@ -1239,7 +1239,7 @@ describe('sell matching with target and stop legs', () => {
   })
 
   test('a fill that no bucket target reaches matches no target', async () => {
-    // 91.50 is below bucket 1's 92.00 limit, so it is not a target fill; bucket 1 stop (95.00) takes it.
+    // 94.00 is below bucket 1's 103.00 target limit, so it is not a target fill; it is at or under the 95.00 stop trigger, so the stop takes it.
     const { f, deps, runId } = await setup(
       [{ idx: 1, shares: 10, buy: '100.00' }],
       [{ idx: 1, kind: 'sell_loc', price: '103.00' }, { idx: 1, kind: 'stop_sell', price: '95.00' }],
@@ -1384,12 +1384,17 @@ describe('sell matching with target and stop legs', () => {
       [
         { idx: 0, kind: 'stop_sell', price: '97.00' },
         { idx: 0, kind: 'sell_loc', price: '103.00', status: 'stale', tradeDate: '2026-11-11' },
+        // Same bucket, same trade date, but already filled by an earlier partial fill: not open, so left alone.
+        { idx: 0, kind: 'sell_loc', price: '103.00', status: 'filled' },
         { idx: 1, kind: 'sell_loc', price: '103.00' },
         { idx: 1, kind: 'stop_sell', price: '97.00' },
       ],
     )
     expect(await runBooking(bookInput(runId, 10, '96.00'), deps)).toEqual([])
     expect(f._stores.orders.filter((o: any) => o.status === 'cancelled')).toEqual([])
+    const filledLeg = f._stores.orders.find((o: any) => o.bucketIdx === 0 && o.kind === 'sell_loc' && o.tradeDate === D)
+    expect(filledLeg.status).toBe('filled')
+    expect(filledLeg.cancelReason).toBeUndefined()
     expect(order(f, 1, 'sell_loc').status).toBe('open')
     expect(order(f, 1, 'stop_sell').status).toBe('open')
   })

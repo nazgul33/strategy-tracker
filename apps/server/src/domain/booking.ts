@@ -6,12 +6,13 @@ import { matchCapturedFills, type CaptureConflict } from './capture-dedup'
 import { claimCapture } from './capture-claim'
 import { recordCorrections } from './capture-corrections'
 import { withRunLock } from './run-lock'
-import { matchSellOrder } from './sell-match'
+import { matchSellOrder, openSellLegs, type OrderRow } from './sell-match'
 import type { CorrectionRepo } from './correction-types'
 
-// The conflict shape belongs to the dedup matcher; re-exported so the booking
-// surface keeps being the single place its consumers import from.
-export type { CaptureConflict }
+// The conflict shape belongs to the dedup matcher and the order row to the sell
+// matcher; re-exported so the booking surface keeps being the single place its
+// consumers import from.
+export type { CaptureConflict, OrderRow }
 
 export async function sha256(buf: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', buf as any)
@@ -56,8 +57,6 @@ export type CaptureOutcome =
 
 export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; status: string }
 
-export interface OrderRow { id: number; runId: number; tradeDate: string; kind: string; bucketIdx: number; limitPrice: bigint; shares: number; status: string }
-
 export interface FillRow { id: number; runId: number; bucketIdx: number; side: 'buy' | 'sell'; ticker: string; shares: number; price: bigint; fee: number; filledOn: ISODate; source: string }
 
 export interface BookInput {
@@ -79,8 +78,6 @@ export interface BookInput {
 export function runBooking(input: BookInput, deps: BookingDeps): Promise<number[]> {
   return withRunLock(input.runId, () => bookUnlocked(input, deps))
 }
-
-const SELL_SIDE_KINDS = ['sell_loc', 'stop_sell', 'market_sell']
 
 async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number[]> {
   const repos = deps.repos
@@ -141,10 +138,7 @@ async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number
   // re-enter the lock). The matched order is excluded: it flips to filled below.
   const cancelledIds: number[] = []
   if (input.side === 'sell' && next.buckets[bucketIdx]!.state === 'empty') {
-    const open = sellDayOrders
-      .filter((o) => o.runId === input.runId && o.bucketIdx === bucketIdx && o.tradeDate === input.filledOn && o.status === 'open' && o.id !== matchedOrderId && SELL_SIDE_KINDS.includes(o.kind))
-      .sort((a, b) => a.id - b.id)
-    for (const o of open) {
+    for (const o of openSellLegs(sellDayOrders, { runId: input.runId, bucketIdx, tradeDate: input.filledOn }, matchedOrderId)) {
       await repos.orderRepo.setStatus(o.id, 'cancelled', 'broker-filled')
       cancelledIds.push(o.id)
     }
