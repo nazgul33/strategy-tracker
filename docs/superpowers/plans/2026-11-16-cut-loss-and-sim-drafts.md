@@ -57,8 +57,8 @@ describe('stopPrice', () => {
     expect(stopPrice(1_000_000n, 0)).toBeNull()
   })
   test('floors to the cent', () => {
-    // 34.5678 USD = 345678n; 3.5% below = 333479.27 → floor to cent = 333400n
-    expect(stopPrice(345678n, 35_000)).toBe(333400n)
+    // 34.5678 USD = 345678n; 3.5% below = 333579.27 → floor to cent = 333500n
+    expect(stopPrice(345678n, 35_000)).toBe(333500n)
   })
   test('exact cent is a no-op', () => {
     expect(stopPrice(1_000_000n, 100_000)).toBe(900000n) // 100.00 − 10% = 90.00
@@ -1024,4 +1024,72 @@ Expected: PASS
 
 ```bash
 git commit -am "test: cover cut-loss orders and sim drafts in the operator e2e smoke"
+```
+
+---
+
+### Task 16: Tell a stop-out from a target exit, and close the lanes' loose ends
+
+> Added during execution. Task 14 found that the sim replay labels a cut-loss exit "sell target", because `SimEvent`'s fill variant carries `side` but no order kind — the design's "silent disagreement" anti-goal, in the operator-facing surface of the feature being added. It spans two lanes' files, so it could not be folded into either.
+
+**Files:**
+- Modify: `apps/server/src/sim/sim.ts` (`SimEvent`, `SimFill`, `resolveDay`)
+- Modify: `apps/web/src/api.types.ts` (`SimEvent`), `apps/web/src/simview.ts` (`simEventGroup`)
+- Modify: `apps/web/src/components/SimReplay.tsx`, `apps/web/src/pages/Sim.tsx`
+- Modify: `apps/web/src/i18n/en.json`, `apps/web/src/i18n/ko.json`
+- Modify: `apps/server/src/db/repos-sim.ts`, `apps/server/test/http-fakes.ts`, `apps/server/test/db.test.ts`, `apps/server/test/http-fakes.test.ts`
+- Modify: `apps/web/src/simview.test.ts`, `apps/web/src/viewmodels.test.ts`
+- Test: `apps/server/test/sim.test.ts`, `apps/web/src/simview.test.ts`, `apps/web/src/pages/SimDrafts.test.tsx`
+
+**Interfaces:**
+- Consumes: the `stop_sell` resolution pass (Task 9), the drafts UI (Task 14), `simRepo.rewriteDraft` (Task 11).
+- Produces: `SimEvent`'s fill variant gains `kind: 'buy_loc' | 'sell_loc' | 'market_sell' | 'stop_sell'`; `simEventGroup` returns a `'stop'` group for it.
+
+- [ ] **Step 1: Write the failing tests**
+
+```ts
+// apps/server/test/sim.test.ts
+test('a stop fill event carries kind stop_sell', async () => {
+  expect(day.events).toContainEqual(expect.objectContaining({ type: 'fill', side: 'sell', kind: 'stop_sell' }))
+})
+test('a target fill event carries kind sell_loc, a forced exit market_sell, a buy buy_loc', async () => { /* … */ })
+
+// apps/web/src/simview.test.ts
+test('a stop_sell fill groups as stop, not target', () => {
+  expect(simEventGroup({ type: 'fill', side: 'sell', kind: 'stop_sell', … })).toBe('stop')
+})
+test('a fill with no kind still groups as before', () => { /* stored plans predate the field */ })
+
+// apps/web/src/pages/SimDrafts.test.tsx
+test('row-level discard asks for confirmation before deleting', async () => { /* no DELETE until confirmed */ })
+test('a 409 on row-level discard shows the translated message', async () => { /* not the bare code */ })
+test('the saved card says "no saved simulations" when only drafts exist', async () => { /* … */ })
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `bun test apps/server/test/sim.test.ts apps/web/src/simview.test.ts apps/web/src/pages/SimDrafts.test.tsx`
+Expected: FAIL
+
+- [ ] **Step 3: Add `kind` to the sim fill event and render it**
+
+Stamp the planned order's `kind` onto every fill event in `resolveDay` and on the forced exit. Treat it as **optional on read** in the web types — `sim_days` rows written before this change have no `kind`, and the replay must keep rendering them. `simEventGroup` maps `stop_sell` to a new `'stop'` group with its own label and tone; add en/ko copy following the existing `simReason*` keys.
+
+- [ ] **Step 4: Close the four loose ends**
+
+Add a confirmation to the drafts list's row-level Discard (matching the panel's), translate its `sim-finalized` through the catalog instead of rendering `err.message`, add a `simSavedEmpty` string for the saved card, and move the `orderReasonText` block comment from `simview.test.ts` back beside the code it documents in `viewmodels.test.ts`.
+
+- [ ] **Step 5: Delete the superseded repo methods**
+
+Remove `simRepo.updateConfig` and `simRepo.replaceDays`, their fakes, and their now-orphaned tests; retarget the day-id-reuse test at `rewriteDraft`. `rewriteDraft` supersedes both, and `updateConfig` is actively hazardous — it has no `draft` guard, so a future caller could mutate saved history.
+
+- [ ] **Step 6: Run the full suite**
+
+Run: `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun test && bun run typecheck`
+Expected: PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+git commit -am "feat: distinguish cut-loss exits from target exits in the sim replay"
 ```
