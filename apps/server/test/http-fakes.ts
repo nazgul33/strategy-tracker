@@ -123,6 +123,15 @@ export function makeFakes() {
       for (let i = simDays.length - 1; i >= 0; i--) if (simDays[i].simRunId === simRunId) simDays.splice(i, 1)
       for (const r of rows) simDays.push({ id: simDayIdSeq++, ...r })
     },
+    // guarded like the real one: nothing is touched unless the run is still a draft
+    async rewriteDraft(id: number, v: any, rows: any[]): Promise<boolean> {
+      const r = simRuns.find((x) => x.id === id)
+      if (!r || !r.draft) return false
+      Object.assign(r, v)
+      for (let i = simDays.length - 1; i >= 0; i--) if (simDays[i].simRunId === id) simDays.splice(i, 1)
+      for (const d of rows) simDays.push({ id: simDayIdSeq++, ...d })
+      return true
+    },
     async finalize(id: number) {
       const r = simRuns.find((x) => x.id === id)
       if (!r || !r.draft) return false

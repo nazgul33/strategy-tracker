@@ -14,6 +14,15 @@ function affected(res: any): number {
   return header?.affectedRows ?? 0
 }
 
+type ConfigRow = { fromDate: string; toDate: string; poolCents: number; costPpm: number; buyGapPpm: number; sellGapPpm: number; cutLossPpm: number; paramsJson: string }
+
+function configValues(v: ConfigRow) {
+  return {
+    fromDate: v.fromDate, toDate: v.toDate, poolCents: v.poolCents, costPpm: v.costPpm,
+    buyGapPpm: v.buyGapPpm, sellGapPpm: v.sellGapPpm, cutLossPpm: v.cutLossPpm, paramsJson: v.paramsJson,
+  }
+}
+
 export function getSimRepo(db: any) {
   return {
     // New runs are drafts until finalize().
@@ -25,11 +34,8 @@ export function getSimRepo(db: any) {
       })
       return (res as any).insertId
     },
-    async updateConfig(id: number, v: { fromDate: string; toDate: string; poolCents: number; costPpm: number; buyGapPpm: number; sellGapPpm: number; cutLossPpm: number; paramsJson: string }): Promise<void> {
-      await db.update(s.simRuns).set({
-        fromDate: v.fromDate, toDate: v.toDate, poolCents: v.poolCents, costPpm: v.costPpm,
-        buyGapPpm: v.buyGapPpm, sellGapPpm: v.sellGapPpm, cutLossPpm: v.cutLossPpm, paramsJson: v.paramsJson,
-      }).where(eq(s.simRuns.id, id))
+    async updateConfig(id: number, v: ConfigRow): Promise<void> {
+      await db.update(s.simRuns).set(configValues(v)).where(eq(s.simRuns.id, id))
     },
     async insertDays(rows: DayRow[]) {
       if (!rows.length) return
@@ -39,6 +45,18 @@ export function getSimRepo(db: any) {
       await db.transaction(async (tx: any) => {
         await tx.delete(s.simDays).where(eq(s.simDays.simRunId, simRunId))
         if (rows.length) await tx.insert(s.simDays).values(dayValues(rows))
+      })
+    },
+    // Re-run of a draft: config and day set change together or not at all. The config UPDATE is
+    // conditional on draft = true and holds the row lock until commit, so a run saved or discarded
+    // after the caller's check is left alone (false) and a concurrent save waits for this write.
+    async rewriteDraft(id: number, v: ConfigRow, rows: DayRow[]): Promise<boolean> {
+      return db.transaction(async (tx: any) => {
+        const res = await tx.update(s.simRuns).set(configValues(v)).where(and(eq(s.simRuns.id, id), eq(s.simRuns.draft, true)))
+        if (affected(res) === 0) return false
+        await tx.delete(s.simDays).where(eq(s.simDays.simRunId, id))
+        if (rows.length) await tx.insert(s.simDays).values(dayValues(rows))
+        return true
       })
     },
     // Draft -> saved, once: false when the run is missing or already saved.

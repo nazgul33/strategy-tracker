@@ -22,9 +22,12 @@ describe('http sim drafts', () => {
   async function setup() {
     const f = makeFakes()
     const deps = makeDeps(f)
-    const upstream = { calls: 0, failNext: false }
+    const upstream = { calls: 0, failNext: false, between: null as null | (() => Promise<void>) }
     const raw = async (_t: string, from: string, to: string): Promise<OHLCBar[]> => {
       upstream.calls += 1
+      const hook = upstream.between
+      upstream.between = null // one interleaving per test, however many provider calls the read makes
+      await hook?.()
       if (upstream.failNext) { upstream.failNext = false; throw new MarketDataError('http') }
       const out: OHLCBar[] = []
       for (let d = from; d <= to; d = day(d, 1)) if (isTradingDay(d)) out.push(mkBar(d))
@@ -175,6 +178,30 @@ describe('http sim drafts', () => {
     expect((await del.json()).error).toBe('sim-finalized')
     expect(await detail(id)).toEqual(before)
     expect(f.simDays.filter((x) => x.simRunId === id)).toHaveLength(4)
+  })
+
+  test('a save landing between the draft check and the write is not overwritten', async () => {
+    const { f, upstream, call, create, detail, edit } = await setup()
+    const { id } = await create()
+    const before = await detail(id)
+    // a new range forces a provider call, which is the window between the check and the write
+    upstream.between = async () => { expect((await call('POST', `/${id}/save`)).status).toBe(204) }
+    const res = await call('PUT', `/${id}`, { ...edit, to: '2026-11-12', cutLossPpm: 35_000 })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toBe('sim-finalized')
+    expect(await detail(id)).toEqual({ ...before, run: { ...before.run, draft: false } })
+    expect(f.simDays.filter((x) => x.simRunId === id)).toHaveLength(4)
+  })
+
+  test('a discard landing between the draft check and the write is a 404, not a resurrected draft', async () => {
+    const { f, upstream, call, create, edit } = await setup()
+    const { id } = await create()
+    upstream.between = async () => { expect((await call('DELETE', `/${id}`)).status).toBe(204) }
+    const res = await call('PUT', `/${id}`, { ...edit, to: '2026-11-12' })
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toBe('not-found')
+    expect(f.simRuns).toHaveLength(0)
+    expect(f.simDays).toHaveLength(0)
   })
 
   test('PUT on a saved sim is rejected before any provider call', async () => {
