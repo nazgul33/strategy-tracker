@@ -60,7 +60,7 @@ export interface SimDayRow {
 }
 
 export interface SimRepoSurface {
-  insertRun(input: { ticker: string; fromDate: string; toDate: string; poolCents: number; costPpm: number; buyGapPpm: number; sellGapPpm: number; paramsJson: string }): Promise<number>
+  insertRun(input: { ticker: string; fromDate: string; toDate: string; poolCents: number; costPpm: number; buyGapPpm: number; sellGapPpm: number; cutLossPpm: number; paramsJson: string }): Promise<number>
   insertDays(rows: { simRunId: number; tradeDate: string; planJson: string; stateJson: string; eventsJson: string }[]): Promise<void>
   listRuns(): Promise<SimRunRow[]>
   getRun(id: number): Promise<SimRunRow | null>
@@ -200,6 +200,7 @@ export async function runSim(input: SimInput, deps: { fetchDailyBars: (ticker: s
     costPpm: input.costPpm,
     buyGapPpm,
     sellGapPpm,
+    cutLossPpm: 0,
     paramsJson: JSON.stringify(params, bigintReplacer),
   })
 
