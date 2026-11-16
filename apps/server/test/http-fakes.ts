@@ -75,6 +75,8 @@ export function makeFakes() {
   const pendingRepo = {
     async insert(p: any) { const id = pending.length + 1; pending.push({ id, ...p }); return id },
     async listPending() { return pending.filter((p) => p.status === 'pending') },
+    async hasLiveForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'pending') },
+    async hasConfirmedForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'confirmed') },
     async decide(id: number, status: string, edited?: any): Promise<boolean> {
       const p = pending.find((x) => x.id === id); if (!p || p.status !== 'pending') return false
       p.status = status

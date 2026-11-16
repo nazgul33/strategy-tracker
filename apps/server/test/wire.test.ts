@@ -143,6 +143,8 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
     },
     get: async (id: number) => pending.find((p) => p.id === id) ?? null,
     listPending: async () => pending.filter((p) => p.status === 'pending'),
+    hasLiveForCapture: async (captureId: number) => pending.some((p) => p.captureId === captureId && p.status === 'pending'),
+    hasConfirmedForCapture: async (captureId: number) => pending.some((p) => p.captureId === captureId && p.status === 'confirmed'),
     decide: async (id: number, status: string, edited?: FakeRow): Promise<boolean> => {
       const p = pending.find((x) => x.id === id);
       if (!p || p.status !== 'pending') return false;
@@ -220,6 +222,8 @@ const multiVisionFetch = (async () => {
   });
   return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as unknown as Response;
 }) as unknown as typeof fetch;
+
+const NOTICE_EN = 'ℹ️ Fills from this image were already confirmed earlier — the rows below may be duplicates. Check before confirming.';
 
 const PNG_B64 = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64');
 
@@ -343,7 +347,36 @@ describe('capture onPhoto — dedup and failures', () => {
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     expect(h.captures.length).toBe(1);
     expect(h.pending.map((p) => p.status)).toEqual(['rejected', 'pending']);
-    expect(h.sent.at(-1)!.text).not.toBe('Duplicate capture — all fills already booked or pending, or a correction is waiting in Pending.');
+    expect(h.sent.at(-1)!.text).toBe('Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?');
+    expect(h.sent.map((s) => s.text)).not.toContain(NOTICE_EN);
+  });
+
+  test('re-read of an image whose fill was confirmed warns before the fresh pending row', async () => {
+    // first read carries a date, the re-read loses it, so the date-keyed matcher misses the booked fill
+    let call = 0;
+    const fills = [
+      { side: 'buy', ticker: 'NVDA', shares: 10, price: '180.50', date: '2026-11-09' },
+      { side: 'buy', ticker: 'NVDA', shares: 10, price: '180.50' },
+    ];
+    const flaky = (async () => {
+      const content = JSON.stringify({ fills: [fills[call++]] });
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: flaky });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    await h.handlers.onConfirm(`yes:${h.pending[0]!.id}`, true);
+    h.sent.length = 0;
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(h.captures.length).toBe(1);
+    expect(h.sent.map((s) => s.text)).toEqual([NOTICE_EN, 'Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?']);
+    expect(h.sent[0]!.extra).toBeUndefined();
+    expect(h.sent[1]!.extra).toEqual({ reply_markup: buildPendingKeyboard(String(h.pending[1]!.id)) });
+  });
+
+  test('booked-earlier notice has a Korean line', () => {
+    expect(t('capture-booked-earlier', 'ko')).toBe(
+      'ℹ️ 이 이미지의 체결은 이전에 이미 확정되었습니다 — 아래 항목은 중복일 수 있으니 확인 후 확정하세요.',
+    );
   });
 
   test('extract failure: no pending row, user sees the reason, admin notified', async () => {

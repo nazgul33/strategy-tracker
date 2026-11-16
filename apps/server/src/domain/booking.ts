@@ -31,7 +31,13 @@ export interface RepoSurface {
     update?(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number }): Promise<void>
     deleteById?(runId: number, fillId: number): Promise<void>
   }
-  pendingRepo: { insert(p: any): Promise<number>; listPending(): Promise<any[]>; decide(id: number, status: string, edited?: any): Promise<boolean> }
+  pendingRepo: {
+    insert(p: any): Promise<number>
+    listPending(): Promise<any[]>
+    hasLiveForCapture(captureId: number): Promise<boolean>
+    hasConfirmedForCapture(captureId: number): Promise<boolean>
+    decide(id: number, status: string, edited?: any): Promise<boolean>
+  }
   correctionRepo: CorrectionRepo
   captureRepo: { findByHash(runId: number, hash: string): Promise<{ id: number; status: string } | null>; setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
   ledgerRepo: { insert(l: any): Promise<any>; listForRun(runId: number): Promise<any[]> }
@@ -43,8 +49,8 @@ export interface BookingDeps { repos: RepoSurface; today: ISODate }
 export type CaptureOutcome =
   | 'duplicate'
   | 'rejected'
-  | { pending: PendingFillRow[] }
-  | { pending: PendingFillRow[]; conflicts: CaptureConflict[] }
+  | { pending: PendingFillRow[]; bookedEarlier?: true }
+  | { pending: PendingFillRow[]; conflicts: CaptureConflict[]; bookedEarlier?: true }
   | { conflicts: CaptureConflict[] }
 
 export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; status: string }
@@ -147,8 +153,9 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
   // one's rows, not re-book them. Runs under the per-run lock, so this must
   // never nest with another withRunLock on this runId.
   return withRunLock(runId, async () => {
-    const captureId = await claimCapture(repos, runId, hash, extract.ok ? 'parsed' : 'unparseable')
-    if (captureId === null) return 'duplicate'
+    const claim = await claimCapture(repos, runId, hash, extract.ok ? 'parsed' : 'unparseable')
+    if (claim === null) return 'duplicate'
+    const captureId = claim.id
     if (!extract.ok) return 'rejected'
 
     const match = await matchCapturedFills(repos, runId, extract.fills, deps.today)
@@ -172,8 +179,9 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
       })
     }
     if (fresh.length === 0) return { conflicts }
-    if (conflicts.length > 0) return { pending: pendingRows, conflicts }
-    return { pending: pendingRows }
+    const earlier = claim.bookedEarlier ? { bookedEarlier: true as const } : {}
+    if (conflicts.length > 0) return { pending: pendingRows, conflicts, ...earlier }
+    return { pending: pendingRows, ...earlier }
   })
 }
 

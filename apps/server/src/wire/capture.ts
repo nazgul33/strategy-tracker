@@ -142,6 +142,9 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       await deps.send(chatId, t('capture-conflicts-head', lang));
     }
     for (const c of conflicts) await deps.send(chatId, conflictLine(c));
+    if (pending.length > 0 && 'bookedEarlier' in outcome && outcome.bookedEarlier) {
+      await deps.send(chatId, t('capture-booked-earlier', lang));
+    }
     for (const row of pending) {
       const text = t('capture-booked', lang, {
         ticker: row.ticker,

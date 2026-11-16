@@ -344,6 +344,52 @@ describeIf('db integration', () => {
     ])
   })
 
+  test('pending repo: hasLiveForCapture / hasConfirmedForCapture look at one capture and one status', async () => {
+    const uniq = Date.now()
+    const ticker = 'HL' + uniq
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'haslive-' + uniq, poolCents: 1_000_000, costPpm: 10 })
+    const row = (captureId: number | null) => ({ runId, captureId, bucketIdx: null, side: 'buy', ticker, shares: 1, price: 100n, fee: null, filledOn: '2026-11-12', status: 'pending' })
+    // real capture rows: auto-increment ids are fresh on every run, so a confirmed row left behind in st_test can never collide
+    const newCapture = async (tag: string) => (await repos.captureRepo.insert({ runId, chatId: null, imageHash: `HL-${tag}-${uniq}`, status: 'parsed' })).id as number
+    const capA = await newCapture('a')
+    const capB = await newCapture('b')
+    expect(await repos.pendingRepo.hasLiveForCapture(capA)).toBe(false)
+    expect(await repos.pendingRepo.hasConfirmedForCapture(capA)).toBe(false)
+
+    const idA = await repos.pendingRepo.insert(row(capA))
+    await repos.pendingRepo.insert(row(null))
+    expect(await repos.pendingRepo.hasLiveForCapture(capA)).toBe(true)
+    expect(await repos.pendingRepo.hasConfirmedForCapture(capA)).toBe(false)
+    expect(await repos.pendingRepo.hasLiveForCapture(capB)).toBe(false)
+
+    expect(await repos.pendingRepo.decide(idA, 'confirmed')).toBe(true)
+    expect(await repos.pendingRepo.hasLiveForCapture(capA)).toBe(false)
+    expect(await repos.pendingRepo.hasConfirmedForCapture(capA)).toBe(true)
+
+    const idB = await repos.pendingRepo.insert(row(capB))
+    expect(await repos.pendingRepo.decide(idB, 'rejected')).toBe(true)
+    expect(await repos.pendingRepo.hasLiveForCapture(capB)).toBe(false)
+    expect(await repos.pendingRepo.hasConfirmedForCapture(capB)).toBe(false)
+  })
+
+  test('ingestCapture flags a re-read of a capture that already has a confirmed row', async () => {
+    const ticker = 'BE' + Date.now()
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'booked-earlier-' + Date.now(), poolCents: 1_000_000, costPpm: 10 })
+    const deps: BookingDeps = { repos, today: '2026-11-15' }
+    const image = { base64: 'BOOKED-EARLIER-' + Date.now(), mime: 'image/png' }
+    const dated: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker, shares: 11, price: '218.55', date: '2026-11-12' }] }
+    const undated: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker, shares: 11, price: '218.55' }] }
+
+    const first: any = await ingestCapture(runId, image, dated, deps)
+    expect(first.bookedEarlier).toBeUndefined()
+    expect(await repos.pendingRepo.decide(first.pending[0].id, 'confirmed')).toBe(true)
+
+    // the date went missing on the re-read, so the matcher cannot recognise the trade
+    const second: any = await ingestCapture(runId, image, undated, deps)
+    expect(second.pending.length).toBe(1)
+    expect(second.bookedEarlier).toBe(true)
+  })
+
   test('correction repo: insert, listBlocking, decide, hasOpenForCapture', async () => {
     const uniq = Date.now()
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'CR' + uniq, name: 'corr-' + uniq, poolCents: 1_000_000, costPpm: 10 })
