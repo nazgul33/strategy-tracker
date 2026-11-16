@@ -90,6 +90,12 @@ export function bpPercent(basisPoints: number | null | undefined): string {
   return `${(basisPoints / 100).toFixed(2)}%`;
 }
 
+/** Integer cost ppm → percent text with exactly three decimals, e.g. 700 → `0.070`. */
+export function costPercentText(ppm: number | null | undefined): string {
+  if (ppm === null || ppm === undefined || !Number.isFinite(ppm)) return '—';
+  return (ppm / 10_000).toFixed(3);
+}
+
 /** Fraction (0..1) → `72.4%`; `null` when there is nothing to divide by. */
 export function percent(fraction: number | null | undefined): string {
   if (fraction === null || fraction === undefined || !Number.isFinite(fraction)) return '—';

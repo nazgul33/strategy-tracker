@@ -4,7 +4,7 @@ import type { FormEvent } from 'react';
 
 import { api, usdToCents } from '../api';
 import type { SimInput } from '../api';
-import { useAsync } from '../components/hooks';
+import { useAsync, useDefaultCostText } from '../components/hooks';
 import {
   Button,
   Card,
@@ -17,8 +17,8 @@ import {
   Td,
   Th,
 } from '../components/ui';
-import { bpPercent, centsUsd, isoDate, isoDateTime, todayIso } from '../format';
-import { gapToPpm, isGapText } from '../gaps';
+import { centsUsd, costPercentText, isoDate, isoDateTime, todayIso } from '../format';
+import { gapToPpm, isGapText, isPercentText, percentTextToPpm } from '../gaps';
 import { useT } from '../i18n';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -32,7 +32,7 @@ export function SimPage() {
   const [fromDate, setFromDate] = useState(() => todayIso());
   const [toDate, setToDate] = useState('');
   const [poolUsd, setPoolUsd] = useState('');
-  const [costPpm, setCostPpm] = useState('200');
+  const [cost, setCost] = useDefaultCostText();
   const [buyGap, setBuyGap] = useState('');
   const [sellGap, setSellGap] = useState('');
   const [bucketCount, setBucketCount] = useState('');
@@ -50,8 +50,8 @@ export function SimPage() {
     if (fromDate >= toDate) return fail(t('simInvalidRange'));
     const poolCents = usdToCents(poolUsd);
     if (poolCents === null || poolCents <= 0) return fail(t('simInvalidPool'));
-    const cost = costPpm.trim();
-    if (!/^\d{1,7}$/.test(cost)) return fail(t('runInvalidCostPpm'));
+    const costText = cost.trim();
+    if (!isPercentText(costText, 3)) return fail(t('runInvalidCostPpm'));
 
     const buckets = optInt(bucketCount, 2, 20, t('runInvalidBucketCount'));
     if (buckets === null) return null;
@@ -65,7 +65,7 @@ export function SimPage() {
       from: fromDate,
       to: toDate,
       poolCents,
-      costPpm: Number(cost),
+      costPpm: percentTextToPpm(costText, 3),
       // blank gap = "not set" → explicit 0 (the server's unset value).
       buyGapPpm: buyGap === '' ? 0 : gapToPpm(buyGap),
       sellGapPpm: sellGap === '' ? 0 : gapToPpm(sellGap),
@@ -136,8 +136,16 @@ export function SimPage() {
           <Field label={t('simPool')}>
             <Input value={poolUsd} onChange={(e) => setPoolUsd(e.target.value)} inputMode="decimal" placeholder="100000" required />
           </Field>
-          <Field label={t('simCostPpm')}>
-            <Input value={costPpm} onChange={(e) => setCostPpm(e.target.value)} inputMode="numeric" required />
+          <Field label={t('simCostPpm')} hint={t('runForm.costHint')}>
+            <Input
+              data-testid="costInput"
+              value={cost}
+              onChange={(e) => setCost(e.target.value)}
+              inputMode="decimal"
+              placeholder="0.070"
+              required
+              invalid={cost !== '' && !isPercentText(cost.trim(), 3)}
+            />
           </Field>
           <Field label={t('simForm.buyGapLabel')}>
             <Input
@@ -215,7 +223,7 @@ export function SimPage() {
                     {isoDate(sim.fromDate)} → {isoDate(sim.toDate)}
                   </Td>
                   <Td className="text-right tabular-nums">{centsUsd(sim.poolCents)}</Td>
-                  <Td className="text-right tabular-nums">{bpPercent(sim.costPpm / 100)}</Td>
+                  <Td className="text-right tabular-nums">{costPercentText(sim.costPpm)} %</Td>
                   <Td className="whitespace-nowrap tabular-nums text-muted-foreground">{isoDateTime(sim.createdAt)}</Td>
                 </tr>
               ))}

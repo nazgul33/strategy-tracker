@@ -25,7 +25,7 @@ import {
   Spinner,
   Stat,
 } from '../components/ui';
-import { bpPercent, centsUsd, gapText, isoDateTime, percent, signedCentsUsd } from '../format';
+import { centsUsd, costPercentText, gapText, isoDateTime, percent, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
 import { enumLabelKey, pnlBadgeTone, runActions, runStatusTone, toneFor } from '../viewmodels';
 
@@ -118,7 +118,7 @@ export function RunDetailPage({ id }: { id: number }) {
             <Badge tone={runStatusTone(run.status)}>{t(enumLabelKey('status', run.status))}</Badge>
           </h1>
           <p className="text-sm text-muted-foreground">
-            {run.strategyKey === 'mean-reversion' ? t('runStrategyMr') : run.strategyKey} · {bpPercent(run.costPpm / 100)}{' '}
+            {run.strategyKey === 'mean-reversion' ? t('runStrategyMr') : run.strategyKey} · {costPercentText(run.costPpm)} %{' '}
             · {centsUsd(run.poolCents)} · {isoDateTime(run.createdAt)}
           </p>
         </div>

@@ -144,6 +144,8 @@ export interface SettingsDto {
   visionModel: string;
   digestLang: string;
   hasVisionApiKey: boolean;
+  /** Default per-side trading cost, integer ppm (from DEFAULT_COST_PERCENT). */
+  defaultCostPpm: number;
 }
 
 export interface SimRunDto {

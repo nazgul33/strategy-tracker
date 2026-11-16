@@ -81,7 +81,10 @@ describe('CreateRunForm gap fields', () => {
 
   beforeEach(() => {
     calls = [];
-    stub = installFetchStub([{ method: 'POST', url: '/api/runs', status: 201, json: { id: 7 } }]);
+    stub = installFetchStub([
+      { url: '/api/settings', json: { visionBaseUrl: '', visionModel: '', digestLang: 'en', hasVisionApiKey: false, defaultCostPpm: 700 } },
+      { method: 'POST', url: '/api/runs', status: 201, json: { id: 7 } },
+    ]);
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -166,5 +169,89 @@ describe('CreateRunForm gap fields', () => {
     const el = inputByTestId('buyGapInput');
     expect(el.getAttribute('invalid')).toBeNull();
     expect(el.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('prefills cost from the settings default and posts ppm', async () => {
+    await act(async () => {
+      root.render(d(CreateRunForm));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const cost = inputByLabel('Cost (%)');
+    expect(cost.value).toBe('0.070');
+    await act(async () => {
+      setInputValue(inputByLabel('Ticker'), 'QQQ');
+      setInputValue(inputByLabel('Pool'), '10000');
+    });
+    await submitForm();
+
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.body.costPpm).toBe(700);
+  });
+
+  it('converts an edited percent cost to ppm', async () => {
+    await act(async () => {
+      root.render(d(CreateRunForm));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      setInputValue(inputByLabel('Ticker'), 'QQQ');
+      setInputValue(inputByLabel('Pool'), '10000');
+      setInputValue(inputByLabel('Cost (%)'), '0.125');
+    });
+    await submitForm();
+
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.body.costPpm).toBe(1250);
+  });
+
+  it('does not overwrite a cost typed before settings arrive', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const stubbed = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/api/settings')) await gate;
+      return stubbed(input, init);
+    }) as typeof fetch;
+
+    await act(async () => {
+      root.render(d(CreateRunForm));
+    });
+    expect(inputByLabel('Cost (%)').value).toBe('');
+    await act(async () => {
+      setInputValue(inputByLabel('Cost (%)'), '0.2');
+    });
+    await act(async () => {
+      release();
+      await gate;
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(inputByLabel('Cost (%)').value).toBe('0.2');
+  });
+
+  it('rejects a four-decimal cost', async () => {
+    await act(async () => {
+      root.render(d(CreateRunForm));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      setInputValue(inputByLabel('Ticker'), 'QQQ');
+      setInputValue(inputByLabel('Pool'), '10000');
+      setInputValue(inputByLabel('Cost (%)'), '0.0701');
+    });
+    await submitForm();
+
+    expect(calls.length).toBe(0);
+    const alert = document.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('Cost');
   });
 });

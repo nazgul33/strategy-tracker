@@ -90,7 +90,10 @@ describe('SimPage gap fields', () => {
 
   beforeEach(() => {
     calls = [];
-    stub = installFetchStub([{ method: 'POST', url: '/api/sim', status: 201, json: { id: 3, dayCount: 5 } }]);
+    stub = installFetchStub([
+      { url: '/api/settings', json: { visionBaseUrl: '', visionModel: '', digestLang: 'en', hasVisionApiKey: false, defaultCostPpm: 700 } },
+      { method: 'POST', url: '/api/sim', status: 201, json: { id: 3, dayCount: 5 } },
+    ]);
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -156,5 +159,35 @@ describe('SimPage gap fields', () => {
     await type('buyGapInput', '');
     expect(inputByTestId('buyGapInput').getAttribute('aria-invalid')).toBeNull();
     expect(runButton().disabled).toBe(false);
+  });
+
+  it('prefills cost from the settings default and posts ppm', async () => {
+    await act(async () => {
+      root.render(d(SimPage));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(inputByTestId('costInput').value).toBe('0.070');
+    await fillBaseFields();
+    await submitForm();
+
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.body.costPpm).toBe(700);
+  });
+
+  it('rejects a four-decimal cost without calling the API', async () => {
+    await act(async () => {
+      root.render(d(SimPage));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await fillBaseFields();
+    await type('costInput', '0.0701');
+    await submitForm();
+
+    expect(calls.length).toBe(0);
+    expect(document.body.textContent).toContain('at most 3 decimals');
   });
 });
