@@ -254,3 +254,83 @@ describe('stopPrice', () => {
     expect(stopPrice(1_000_000n, 500_000)).toBe(500000n)
   })
 })
+
+describe('computeOrders with cut-loss', () => {
+  const runWith = (over: Partial<Run>): Run => ({ ...makeRun(), ...over })
+  const heldBuyPrice0 = parseUsd('100')
+  const heldShares0 = 7
+  const stateWithHeld = () => {
+    const s = emptyState(10)
+    s.buckets[0] = mkBucket(0, 'held', heldShares0, heldBuyPrice0, '2026-11-02')
+    s.buckets[1] = mkBucket(1, 'held', 4, parseUsd('90'), '2026-11-03')
+    s.ages[0] = 3
+    s.ages[1] = 2
+    return s
+  }
+  const lastClose = parseUsd('100')
+
+  test('cutLossPpm 0 plans exactly as before — no stop_sell, no notice', () => {
+    const plan = computeOrders(runWith({ cutLossPpm: 0 }), stateWithHeld(), { lastClose })
+    expect(plan.orders.filter((o) => o.kind === 'stop_sell')).toEqual([])
+    expect(plan.notices.map((n) => n.code)).not.toContain('cut-loss-immediate')
+  })
+
+  test('one stop_sell per held bucket, trigger below buy price, shares match', () => {
+    const state = stateWithHeld()
+    const plan = computeOrders(runWith({ cutLossPpm: 35_000 }), state, { lastClose })
+    const stops = plan.orders.filter((o) => o.kind === 'stop_sell')
+    expect(stops.map((o) => o.bucketIndex)).toEqual([0, 1])
+    expect(stops[0]!.limitPrice).toBe(stopPrice(heldBuyPrice0, 35_000)!)
+    expect(stops[0]!.limitPrice).toBe(parseUsd('96.50'))
+    expect(stops[0]!.limitPrice < heldBuyPrice0).toBe(true)
+    expect(stops[0]!.shares).toBe(heldShares0)
+    expect(stops[0]!.ageDays).toBe(state.ages[0])
+    expect(stops[1]!.limitPrice).toBe(parseUsd('86.85')) // 90 × 0.965
+    expect(stops[1]!.shares).toBe(4)
+    expect(stops[1]!.ageDays).toBe(2)
+  })
+
+  test('each stop_sell follows its own bucket sell_loc', () => {
+    const kinds = computeOrders(runWith({ cutLossPpm: 35_000 }), stateWithHeld(), { lastClose })
+      .orders.map((o) => `${o.kind}:${o.bucketIndex}`)
+    expect(kinds).toEqual(['buy_loc:2', 'sell_loc:0', 'stop_sell:0', 'sell_loc:1', 'stop_sell:1'])
+  })
+
+  test('force_sell buckets get no stop', () => {
+    const state = stateWithHeld()
+    state.buckets[1]!.state = 'force_sell'
+    const plan = computeOrders(runWith({ cutLossPpm: 35_000 }), state, { lastClose })
+    expect(plan.orders.filter((o) => o.kind === 'stop_sell').map((o) => o.bucketIndex)).toEqual([0])
+    expect(plan.orders.filter((o) => o.bucketIndex === 1).map((o) => o.kind)).toEqual(['market_sell'])
+  })
+
+  test('notices cut-loss-immediate when a trigger is at or above lastClose', () => {
+    const plan = computeOrders(runWith({ cutLossPpm: 35_000 }), stateWithHeld(), { lastClose: 100n })
+    expect(plan.notices).toContainEqual({ code: 'cut-loss-immediate', params: { n: 2 } })
+  })
+
+  test('notice counts only triggers at or above lastClose; boundary is inclusive', () => {
+    // triggers: bucket 0 = 96.50, bucket 1 = 86.85
+    const atBoundary = computeOrders(runWith({ cutLossPpm: 35_000 }), stateWithHeld(), { lastClose: parseUsd('96.50') })
+    expect(atBoundary.notices).toContainEqual({ code: 'cut-loss-immediate', params: { n: 1 } })
+    const justBelow = computeOrders(runWith({ cutLossPpm: 35_000 }), stateWithHeld(), { lastClose: parseUsd('96.51') })
+    expect(justBelow.notices.map((n) => n.code)).not.toContain('cut-loss-immediate')
+  })
+
+  test('force_sell buckets are not counted in the immediate notice', () => {
+    const state = stateWithHeld()
+    state.buckets[1]!.state = 'force_sell'
+    const plan = computeOrders(runWith({ cutLossPpm: 35_000 }), state, { lastClose: 100n })
+    expect(plan.notices).toContainEqual({ code: 'cut-loss-immediate', params: { n: 1 } })
+  })
+
+  test('stops are re-planned from scratch every call and do not mutate state', () => {
+    const state = stateWithHeld()
+    const snapshot = structuredClone(state)
+    const run = runWith({ cutLossPpm: 35_000 })
+    const a = computeOrders(run, state, { lastClose })
+    const b = computeOrders(run, state, { lastClose })
+    expect(b).toEqual(a)
+    expect(state).toEqual(snapshot)
+  })
+})
