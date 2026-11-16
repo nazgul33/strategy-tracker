@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { emptyState } from '@st/core'
+import { DomainError, emptyState } from '@st/core'
 import { parseUsd, formatUsd } from '@st/core/money'
 import { progressView } from '@st/strategies'
 import { t as tgT } from '@st/telegram/i18n'
@@ -235,6 +235,7 @@ export function runsRouter(deps: HttpDeps): Hono {
     try {
       await manualFill(id, fill, { repos: deps.repos as any, today: deps.today() as any })
     } catch (e: any) {
+      if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
       return c.json({ error: e?.message ?? 'error' }, 422)
     }
     return c.json({ ok: true })

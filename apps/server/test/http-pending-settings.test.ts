@@ -73,9 +73,61 @@ describe('http pending', () => {
     const conf1 = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { 'content-type': 'application/json', ...auth } })
     expect(conf1.status).toBe(200)
     const conf2 = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { 'content-type': 'application/json', ...auth } })
-    expect(conf2.status).toBe(422)
+    expect(conf2.status).toBe(409)
+    expect(await conf2.json()).toEqual({ error: 'not-pending' })
     expect(f.fills.length).toBe(1)
     expect(f.ledger.length).toBe(1)
+  })
+
+  test('confirm of an unknown id -> 409 not-pending', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const auth = await loginAs(app)
+    const res = await app.request('/api/pending/99999/confirm', { method: 'POST', body: JSON.stringify({}), headers: { ...json, ...auth } })
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'not-pending' })
+    expect(f.fills.length).toBe(0)
+  })
+
+  test('confirm of a rejected row -> 409 not-pending', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const auth = await loginAs(app)
+    const id = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 })
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    expect((await app.request(`/api/pending/${pid}/reject`, { method: 'POST', headers: auth })).status).toBe(200)
+    const res = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { ...json, ...auth } })
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'not-pending' })
+    expect(f.fills.length).toBe(0)
+  })
+
+  test('confirm raising a DomainError -> 422 with its kind, nothing booked', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const auth = await loginAs(app)
+    const id = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 })
+    // a sell with no held bucket -> DomainError('no-bucket-for-sell') from booking
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    const res = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { ...json, ...auth } })
+    expect(res.status).toBe(422)
+    expect(await res.json()).toEqual({ error: 'no-bucket-for-sell' })
+    expect(f.fills.length).toBe(0)
+    expect(f.ledger.length).toBe(0)
+    expect((await f.repos.pendingRepo.get(pid))!.status).toBe('pending')
+  })
+
+  test('confirm with invalid override shares -> 422 invalid-shares', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const auth = await loginAs(app)
+    const id = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 })
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    const res = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({ overrides: { shares: 0 } }), headers: { ...json, ...auth } })
+    expect(res.status).toBe(422)
+    expect(await res.json()).toEqual({ error: 'invalid-shares' })
+    expect(f.fills.length).toBe(0)
+    expect((await f.repos.pendingRepo.get(pid))!.status).toBe('pending')
   })
 
   test('confirm with ticker mismatch returns 409', async () => {

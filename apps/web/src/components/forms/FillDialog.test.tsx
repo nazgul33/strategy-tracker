@@ -29,6 +29,7 @@ interface FetchCall {
 let stub: FetchCalls;
 let calls: FetchCall[] = [];
 let putFailure: { status: number; error: string } | null = null;
+let postFailure: { status: number; error: string } | null = null;
 let deleteFailure: { status: number; error: string } | null = null;
 let deltaCents = 0; // booked cash adjustment returned by the PUT/DELETE stubs
 
@@ -131,6 +132,7 @@ describe('FillDialog', () => {
   beforeEach(() => {
     calls = [];
     putFailure = null;
+    postFailure = null;
     deleteFailure = null;
     saved = 0;
     closed = 0;
@@ -161,8 +163,11 @@ describe('FillDialog', () => {
       {
         method: 'POST',
         url: '',
+        get status() {
+          return postFailure ? postFailure.status : 200;
+        },
         get json() {
-          return { ok: true, fill: { id: 3 }, deltaCents };
+          return postFailure ? { error: postFailure.error } : { ok: true, fill: { id: 3 }, deltaCents };
         },
       },
     ]);
@@ -373,6 +378,26 @@ describe('FillDialog', () => {
       await clickButton('Delete for real');
       expect(errorText()).toBe(text);
       expect(closed).toBe(0);
+    });
+  }
+
+  const addErrors: Array<[string, string]> = [
+    ['no-bucket-for-sell', 'No held bucket can cover this sell — check the share count.'],
+    ['no-empty-bucket', 'No empty bucket left in this run — free one up first.'],
+    ['invalid-shares', 'Invalid share count.'],
+  ];
+
+  for (const [code, text] of addErrors) {
+    it(`add fill failing with ${code} shows the localized text and keeps the dialog open`, async () => {
+      postFailure = { status: 422, error: code };
+      await render();
+      await type('manualSharesInput', '3');
+      await type('manualPriceInput', '5.00');
+      await type('manualDateInput', '2026-11-06');
+      await clickButton('Add fill');
+      expect(errorText()).toBe(text);
+      expect(closed).toBe(0);
+      expect(saved).toBe(0);
     });
   }
 

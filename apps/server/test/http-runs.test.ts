@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { createApp } from '../src/http/app'
-import { makeFakes, makeDeps, PASSWORD } from './http-fakes'
+import { makeFakes, makeDeps, PASSWORD, json, loginAs, createRun } from './http-fakes'
 
 describe('http runs', () => {
   test('create run appears in list, progressView cash===pool', async () => {
@@ -212,8 +212,17 @@ describe('http runs', () => {
     // sell with no held bucket -> DomainError from booking
     const fr = await app.request(`/api/runs/${id}/fills`, { method: 'POST', body: JSON.stringify({ side: 'sell', ticker: 'AAPL', shares: 1, price: '10.0000', filledOn: '2026-11-10' }), headers: { 'content-type': 'application/json', ...auth } })
     expect(fr.status).toBe(422)
-    const body = await fr.json()
-    expect(typeof body.error).toBe('string')
+    expect(await fr.json()).toEqual({ error: 'no-bucket-for-sell' })
+    expect(f.fills.length).toBe(0)
+  })
+  test('manual fill with zero shares -> 422 invalid-shares', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const auth = await loginAs(app)
+    const id = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 })
+    const fr = await app.request(`/api/runs/${id}/fills`, { method: 'POST', body: JSON.stringify({ side: 'buy', shares: 0, price: '10.0000', filledOn: '2026-11-10' }), headers: { ...json, ...auth } })
+    expect(fr.status).toBe(422)
+    expect(await fr.json()).toEqual({ error: 'invalid-shares' })
     expect(f.fills.length).toBe(0)
   })
   test('bulk-status updates eligible rows only', async () => {
