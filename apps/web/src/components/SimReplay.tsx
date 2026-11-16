@@ -4,17 +4,8 @@
 import { useEffect, useState } from 'react';
 
 import type { SimDayDto, SimEvent, SimRunDto } from '../api';
-import {
-  enumLabelKey,
-  morningAge,
-  pnlBadgeTone,
-  reasonKey,
-  simEventGroup,
-  skipReasons,
-  toneFor,
-  type BadgeTone,
-  type SimGroup,
-} from '../viewmodels';
+import { enumLabelKey, pnlBadgeTone, reasonKey, toneFor, type BadgeTone } from '../viewmodels';
+import { morningAge, simEventGroup, skipReasons, type SimGroup } from '../simview';
 import { centsUsd, priceUsd, isoDate, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
 import { parseSimParams } from '../simconfig';
