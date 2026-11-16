@@ -187,7 +187,7 @@ export async function runSim(input: SimInput, deps: { fetchDailyBars: (ticker: s
   const sellGapPpm = input.sellGapPpm ?? 0
   if (!isValidPpm(buyGapPpm) || !isValidPpm(sellGapPpm)) throw new DomainError('invalid-params')
 
-  const run: Run = { id: 0, name: input.name, ticker: input.ticker, strategyKey: 'mean-reversion', costPpm: input.costPpm, buyGapPpm, sellGapPpm, poolCents: input.poolCents, status: 'active' }
+  const run: Run = { id: 0, name: input.name, ticker: input.ticker, strategyKey: 'mean-reversion', costPpm: input.costPpm, buyGapPpm, sellGapPpm, cutLossPpm: 0, poolCents: input.poolCents, status: 'active' }
 
   const bars = await deps.fetchDailyBars(input.ticker, input.from, input.to)
   const { days, states } = simulate(run, params, bars)

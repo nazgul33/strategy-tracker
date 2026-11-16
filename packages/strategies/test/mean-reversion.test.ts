@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { bucketBudgetCents, buyShares, sellTarget, ageBuckets, computeOrders, progressView, DEFAULT_MR_PARAMS, buyLimit, sellLimit } from '@st/strategies'
+import { bucketBudgetCents, buyShares, sellTarget, ageBuckets, computeOrders, progressView, DEFAULT_MR_PARAMS, buyLimit, sellLimit, stopPrice } from '@st/strategies'
 import { emptyState, applyBuyFill, applySellFill } from '@st/core'
 import type { Bucket, Run } from '@st/core'
 import { parseUsd } from '@st/core/money'
@@ -31,7 +31,7 @@ describe('ageBuckets', () => {
 describe('computeOrders', () => {
   test('fresh 10 bucket', () => {
     const state = emptyState(10)
-    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }
     const plan = computeOrders(run, state, { lastClose: 3402300n })
     expect(plan.orders.length).toBe(1)
     expect(plan.orders[0]).toEqual({ kind: 'buy_loc', bucketIndex: 0, limitPrice: 3402200n, shares: 2 })
@@ -39,14 +39,14 @@ describe('computeOrders', () => {
   test('all held no bucket', () => {
     const state = emptyState(10)
     for (let i = 0; i < 10; i++) state.buckets[i]!.state = 'held'
-    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }
     const plan = computeOrders(run, state, { lastClose: 3402300n })
     expect(plan.orders.filter(o => o.kind === 'buy_loc').length).toBe(0)
     expect(plan.notices).toContainEqual({ code: 'no-bucket-available' })
   })
   test('shares zero', () => {
     const state = emptyState(10)
-    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 50_000, status: 'active' as const }
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 50_000, status: 'active' as const }
     const plan = computeOrders(run, state, { lastClose: 3402300n })
     expect(plan.orders.length).toBe(0)
     expect(plan.notices).toContainEqual({ code: 'shares-zero', params: { price: '340.22' } })
@@ -55,7 +55,7 @@ describe('computeOrders', () => {
     const state = emptyState(10)
     const b: Bucket = { index: 3, state: 'held', shares: 5, buyPrice: 3411300n, buyFeeCents: 0, filledOn: '2026-11-08' }
     state.buckets[3] = b
-    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }
     const plan = computeOrders(run, state, { lastClose: 3402300n })
     const so = plan.orders.find(o => o.kind === 'sell_loc' && o.bucketIndex === 3)
     expect(so?.limitPrice).toBe(3411605n)
@@ -64,7 +64,7 @@ describe('computeOrders', () => {
     const state = emptyState(10)
     const b: Bucket = { index: 4, state: 'held', shares: 5, buyPrice: 4500000n, buyFeeCents: 0, filledOn: '2026-11-08' }
     state.buckets[4] = b
-    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }
     const plan = computeOrders(run, state, { lastClose: 3402300n })
     const target = sellTarget(4500000n, 30, 5n)
     expect(plan.orders).toContainEqual({ kind: 'sell_loc', bucketIndex: 4, limitPrice: target, shares: 5, ageDays: 0 })
@@ -75,7 +75,7 @@ describe('computeOrders', () => {
     const state = emptyState(10)
     const b: Bucket = { index: 1, state: 'force_sell', shares: 120, buyPrice: 3402300n, buyFeeCents: 0, filledOn: '2026-11-08' }
     state.buckets[1] = b
-    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }
     const plan = computeOrders(run, state, { lastClose: 3402300n })
     expect(plan.orders).toContainEqual({ kind: 'market_sell', bucketIndex: 1, limitPrice: 0n, shares: 120, ageDays: 0 })
     expect(plan.orders.find(o => o.kind === 'sell_loc' && o.bucketIndex === 1)).toBeUndefined()
@@ -83,12 +83,12 @@ describe('computeOrders', () => {
   test('purity', () => {
     const state = emptyState(10)
     const before = state.buckets.map(b => b.shares)
-    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }
     computeOrders(run, state, { lastClose: 3402300n })
     expect(state.buckets.map(b => b.shares)).toEqual(before)
   })
   test('sell orders carry the bucket age stamped at plan time; buys do not', () => {
-    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }
     let state = emptyState(10)
     state = applyBuyFill(state, 0, 10, 3402200n, 34, '2026-11-02')
     state = applyBuyFill(state, 1, 5, 3402200n, 17, '2026-10-01')
@@ -107,7 +107,7 @@ describe('computeOrders', () => {
     expect(forced.ageDays).toBe(101)
   })
   test('buy plan skips a previously closed bucket', () => {
-    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }
     let state = emptyState(3)
     state = applyBuyFill(state, 0, 10, 3402200n, 34, '2026-11-02')
     state = applySellFill(state, 0, 10, 3402300n, 34, '2026-11-05')
@@ -118,7 +118,7 @@ describe('computeOrders', () => {
     expect(buys[0]!.bucketIndex).toBe(2)
   })
   test('buy plan reuses a closed bucket only when none is fresh', () => {
-    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }
     let state = emptyState(2)
     state = applyBuyFill(state, 0, 10, 3402200n, 34, '2026-11-02')
     state = applySellFill(state, 0, 10, 3402300n, 34, '2026-11-05')
@@ -129,7 +129,7 @@ describe('computeOrders', () => {
     expect(buy.bucketIndex).toBe(0)
   })
   test('buy plan still targets a fresh empty bucket when another is closed', () => {
-    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' as const }
+    const run = { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion' as const, costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }
     let state = emptyState(2)
     state = applyBuyFill(state, 1, 5, 3402200n, 17, '2026-11-02')
     state = applySellFill(state, 1, 5, 3402300n, 17, '2026-11-05')
@@ -175,7 +175,7 @@ describe('progressView', () => {
 })
 
 function makeRun(): Run {
-  return { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion', costPpm: 200, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1_000_000, status: 'active' }
+  return { id: 1, name: 'r', ticker: 'X', strategyKey: 'mean-reversion', costPpm: 200, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' }
 }
 
 function mkBucket(index: number, state: Bucket['state'], shares: number, buyPrice: bigint, filledOn: string): Bucket {
@@ -237,4 +237,20 @@ test('progressView aggregates repeated closed rows of one index', () => {
   const pv = progressView(s)
   expect(pv.realizedCents).toBe(11997 - 4003) // per-row roundDiv, then summed
   expect(pv.winRate).toBe(0.5)                // two tranches: one win, one loss
+})
+
+describe('stopPrice', () => {
+  test('0 ppm means off', () => {
+    expect(stopPrice(1_000_000n, 0)).toBeNull()
+  })
+  test('floors to the cent', () => {
+    // 34.5678 USD = 345678n; 3.5% below = 333578.27 → floor to cent = 333500n
+    expect(stopPrice(345678n, 35_000)).toBe(333500n)
+  })
+  test('exact cent is a no-op', () => {
+    expect(stopPrice(1_000_000n, 100_000)).toBe(900000n) // 100.00 − 10% = 90.00
+  })
+  test('50% cap edge', () => {
+    expect(stopPrice(1_000_000n, 500_000)).toBe(500000n)
+  })
 })

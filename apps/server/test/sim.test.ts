@@ -21,7 +21,7 @@ const gapBars: OHLCBar[] = [
 ]
 
 function makeRun(over?: Partial<{ poolCents: number }>): any {
-  return { id: 0, name: 'sim', ticker: 'TSLA', strategyKey: 'mean-reversion', costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, poolCents: 1000000, status: 'active', ...over }
+  return { id: 0, name: 'sim', ticker: 'TSLA', strategyKey: 'mean-reversion', costPpm: 30, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1000000, status: 'active', ...over }
 }
 
 describe('simulateDays', () => {

@@ -4,7 +4,7 @@ import { t } from '../src/i18n'
 import { dayInfo } from '@st/calendar'
 import type { Run, DayPlan, DayContext } from '@st/core'
 
-const run: Run = { id: 1, name: 'Alpha', ticker: 'AAPL', strategyKey: 'mean-reversion', costPpm: 0, buyGapPpm: 0, sellGapPpm: 0, poolCents: 100000, status: 'active' }
+const run: Run = { id: 1, name: 'Alpha', ticker: 'AAPL', strategyKey: 'mean-reversion', costPpm: 0, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 100000, status: 'active' }
 const ctx: DayContext = { tradeDate: '2026-11-06', lastClose: 1000000n, lastCloseDate: '2026-11-05' }
 
 describe('digest', () => {

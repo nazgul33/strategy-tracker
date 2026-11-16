@@ -44,6 +44,11 @@ export function sellLimit(buyPrice: bigint, costPpm: number, shares: number, sel
   return floorCents((buyPrice * (MILLION + BigInt(sellGapPpm))) / MILLION)
 }
 
+export function stopPrice(buyPrice: bigint, cutLossPpm: number): bigint | null {
+  if (cutLossPpm === 0) return null
+  return floorCents((buyPrice * (MILLION - BigInt(cutLossPpm))) / MILLION)
+}
+
 export function ageBuckets(
   ages: Record<number, number>,
   tradeDate: ISODate,
