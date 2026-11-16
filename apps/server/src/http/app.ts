@@ -2,12 +2,14 @@ import { Hono } from 'hono'
 import type { RepoSurface } from '../domain/booking'
 import type { SimRepoSurface } from '../sim/sim'
 import { authMiddleware, makeToken } from './auth'
+import type { BarCacheRepos } from '../market/bars'
 
 export interface HttpRepoSurface extends RepoSurface {
-  priceHistoryRepo: {
+  priceHistoryRepo: BarCacheRepos['priceHistoryRepo'] & {
     upsertMany(rows: { ticker: string; tradeDate: string; close: bigint }[]): Promise<number>
     listForTicker(ticker: string, from?: string): Promise<{ tradeDate: string; close: bigint }[]>
   }
+  barCoverageRepo: BarCacheRepos['barCoverageRepo']
   settingsRepo: { getAll(): Promise<Record<string, string>>; set(key: string, value: string): Promise<void> }
   poolEditRepo: { insert(input: { runId: number; poolCents: number }): Promise<void> }
   runRepo: RepoSurface['runRepo'] & { updatePool(id: number, poolCents: number): Promise<void>; updateStatusMany(ids: number[], from: string[], to: string): Promise<number>; updateOrderShaping(id: number, v: { buyGapPpm: number; sellGapPpm: number; cutLossPpm: number }): Promise<void> }
@@ -23,7 +25,7 @@ export interface HttpDeps {
   password: string
   sessionSecret: string
   today: () => string
-  defaultSettings: { visionBaseUrl: string; visionModel: string; digestLang: 'en' | 'ko' }
+  defaultSettings: { visionBaseUrl: string; visionModel: string; digestLang: 'en' | 'ko'; defaultCostPpm: number }
   triggerMorning: () => Promise<string>
   fetchDailyBars: (ticker: string, from: string, to: string) => Promise<any[]>
   allowedChatIds: string[]

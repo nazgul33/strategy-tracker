@@ -7,7 +7,7 @@ import { seedRun, manualFill, cancelOrder } from '../../domain/booking'
 import type { RawFill } from '@st/ingest'
 import { jsonBig, type HttpDeps } from '../app'
 import { fillBookingDeps } from '../booking-deps'
-import { MAX_PPM, isValidPpm } from '../../domain/ppm'
+import { MAX_PPM, isValidPpm, isValidCutLossPpm, isValidCostPpm } from '../../domain/ppm'
 import { prevTradingDay, type ISODate } from '@st/calendar'
 
 const SEED_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -51,16 +51,18 @@ export function runsRouter(deps: HttpDeps): Hono {
     const body = await c.req.json().catch(() => ({}))
     const name = body?.name
     const ticker = body?.ticker
-    const costPpm = body?.costPpm
+    const costPpm = body?.costPpm === undefined ? deps.defaultSettings.defaultCostPpm : body.costPpm
     const poolCents = body?.poolCents
     if (typeof name !== 'string' || name.trim() === '') return c.json({ error: 'invalid name' }, 400)
     if (typeof ticker !== 'string' || ticker.trim() === '') return c.json({ error: 'invalid ticker' }, 400)
-    if (!Number.isInteger(costPpm) || costPpm < 0) return c.json({ error: 'invalid costPpm' }, 400)
+    if (!isValidCostPpm(costPpm)) return c.json({ error: 'invalid costPpm' }, 400)
     if (!Number.isInteger(poolCents) || poolCents <= 0) return c.json({ error: 'invalid poolCents' }, 400)
     const buyGapPpm = body?.buyGapPpm ?? 0
     const sellGapPpm = body?.sellGapPpm ?? 0
     if (!isValidPpm(buyGapPpm)) return c.json({ error: 'invalid buyGapPpm' }, 400)
     if (!isValidPpm(sellGapPpm)) return c.json({ error: 'invalid sellGapPpm' }, 400)
+    const cutLossPpm = body?.cutLossPpm ?? 0
+    if (!isValidCutLossPpm(cutLossPpm)) return c.json({ error: 'invalid cutLossPpm' }, 400)
     const params = body?.params
     let bucketCount = 10
     if (params != null) {
@@ -79,7 +81,7 @@ export function runsRouter(deps: HttpDeps): Hono {
     const state = emptyState(bucketCount)
     state.cashCents = poolCents
     const id = await deps.repos.runRepo.create({
-      strategyKey: 'mean-reversion', ticker, name, poolCents, costPpm, buyGapPpm, sellGapPpm, initialRunState: state,
+      strategyKey: 'mean-reversion', ticker, name, poolCents, costPpm, buyGapPpm, sellGapPpm, cutLossPpm, initialRunState: state,
     })
     if (seed) {
       await seedRun(id, seed, { repos: deps.repos as any, today: deps.today() as any })
@@ -129,14 +131,16 @@ export function runsRouter(deps: HttpDeps): Hono {
     await deps.repos.poolEditRepo.insert({ runId: id, poolCents: amountCents })
     return c.json({ ok: true })
   })
-  // gaps are editable in any run status (operator ruling): pure price-config edit
+  // order shaping (gaps + cut-loss) is editable in any run status (operator ruling): pure price-config edit.
+  // cutLossPpm is optional here: absent keeps the stored value, present (even 0 = off) must validate.
   r.post('/runs/:id/gaps', async (c) => {
     const id = Number(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
     if (!isValidPpm(body?.buyGapPpm) || !isValidPpm(body?.sellGapPpm)) return c.json({ error: 'invalid gaps' }, 400)
+    if (body.cutLossPpm !== undefined && !isValidCutLossPpm(body.cutLossPpm)) return c.json({ error: 'invalid cutLossPpm' }, 400)
     const run = await deps.repos.runRepo.get(id)
     if (!run) return c.json({ error: 'not found' }, 404)
-    await deps.repos.runRepo.updateOrderShaping(id, { buyGapPpm: body.buyGapPpm, sellGapPpm: body.sellGapPpm, cutLossPpm: run.cutLossPpm })
+    await deps.repos.runRepo.updateOrderShaping(id, { buyGapPpm: body.buyGapPpm, sellGapPpm: body.sellGapPpm, cutLossPpm: body.cutLossPpm ?? run.cutLossPpm })
     return c.body(null, 204)
   })
   // daily closes for the run's ticker, for the price-history chart.
@@ -176,39 +180,31 @@ export function runsRouter(deps: HttpDeps): Hono {
     return c.json(jsonBig({ start, bars: out }))
   })
 
-  // walk trading days backwards from prevTradingDay(today) until the daily
-  // bars cover `start`; Yahoo data is finite, so stop after `maxDays` tries
+  // one ranged read through the injected (cached) bar reader over
+  // [start, prevTradingDay(today)]; the reader fetches only what it has never
+  // fetched before. Compatibility shim: the real fetchDailyBars/cached reader emit
+  // OHLCBar keyed `date`; older test fakes (and the old route code) used `tradeDate`.
   async function backfillPriceHistory(
     deps: HttpDeps,
     ticker: string,
     start: string,
     today: ISODate,
-    maxDays = 400,
   ): Promise<{ tradeDate: ISODate; close: bigint }[]> {
     if (!deps.fetchDailyBars) return []
-    const out: { tradeDate: ISODate; close: bigint }[] = []
-    let from = start
-    let guard = 0
-    while (guard++ < maxDays) {
-      const to = prevTradingDay(today)
-      let bars
-      try {
-        bars = await deps.fetchDailyBars(ticker, from, to)
-      } catch (e) {
-        console.error('daily bars fetch failed:', ticker, String(e))
-        break
-      }
-      const known = new Set(out.map((b) => b.tradeDate))
-      const fresh = bars.filter((b) => b.tradeDate <= to && !known.has(b.tradeDate))
-      if (fresh.length === 0) break
-      out.push(...fresh)
-      const earliest = out.reduce((m, b) => (b.tradeDate < m ? b.tradeDate : m), out[0].tradeDate)
-      if (earliest <= start) break
-      const prev = prevTradingDay(earliest)
-      if (prev === earliest) break
-      from = prev
+    const to = prevTradingDay(today)
+    let bars: any[]
+    try {
+      bars = await deps.fetchDailyBars(ticker, start, to)
+    } catch (e) {
+      console.error('daily bars fetch failed:', ticker, String(e))
+      return []
     }
-    return out.sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1))
+    const byDate = new Map<string, bigint>()
+    for (const b of bars) {
+      const tradeDate: string = b.tradeDate ?? b.date
+      if (tradeDate >= start && tradeDate <= to && !byDate.has(tradeDate)) byDate.set(tradeDate, b.close)
+    }
+    return [...byDate].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([tradeDate, close]) => ({ tradeDate, close }))
   }
 
   r.get('/runs/:id/orders', async (c) => {

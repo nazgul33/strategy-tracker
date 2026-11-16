@@ -11,9 +11,22 @@ export interface EnvConfig {
   appPassword: string;
   sessionSecret: string;
   digestLang: 'en' | 'ko';
+  /** per-side trading cost in ppm; from DEFAULT_COST_PERCENT, 700 (0.07 %) when unset */
+  defaultCostPpm: number;
   /** null when TELEGRAM_BOT_TOKEN is unset/empty — the bot is disabled */
   telegram: TelegramEnv | null;
   visionApiKey: string;
+}
+
+const DEFAULT_COST_PPM = 700;
+const PERCENT_RE = /^(\d{1,3})(?:\.(\d{1,3}))?$/;
+
+/** "0.125" -> 1250. Integer math only (1 % = 10_000 ppm); null when malformed or above 100 %. */
+function percentToPpm(raw: string): number | null {
+  const m = PERCENT_RE.exec(raw);
+  if (m === null) return null;
+  const ppm = Number(m[1]) * 10_000 + Number((m[2] ?? '').padEnd(3, '0')) * 10;
+  return ppm <= 1_000_000 ? ppm : null;
 }
 
 /**
@@ -69,6 +82,14 @@ export function parseEnv(raw: Record<string, string | undefined> = process.env):
     else missing.push('DIGEST_LANG');
   }
 
+  let defaultCostPpm = DEFAULT_COST_PPM;
+  const costRaw = get('DEFAULT_COST_PERCENT');
+  if (costRaw !== undefined) {
+    const ppm = percentToPpm(costRaw);
+    if (ppm === null) missing.push('DEFAULT_COST_PERCENT');
+    else defaultCostPpm = ppm;
+  }
+
   if (missing.length > 0) {
     throw new Error(`invalid environment: ${missing.join(', ')}`);
   }
@@ -79,6 +100,7 @@ export function parseEnv(raw: Record<string, string | undefined> = process.env):
     appPassword,
     sessionSecret,
     digestLang,
+    defaultCostPpm,
     telegram,
     visionApiKey: get('VISION_API_KEY') ?? '',
   };

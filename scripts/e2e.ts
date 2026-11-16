@@ -95,7 +95,7 @@ async function main(): Promise<void> {
       password: PASSWORD,
       sessionSecret: SECRET,
       today: () => TODAY,
-      defaultSettings: { visionBaseUrl: `http://127.0.0.1:${vision.port}/v1`, visionModel: 'e2e-vision', digestLang: 'en' },
+      defaultSettings: { visionBaseUrl: `http://127.0.0.1:${vision.port}/v1`, visionModel: 'e2e-vision', digestLang: 'en', defaultCostPpm: 700 },
       triggerMorning: async () => 'sent',
       fetchDailyBars: async () => [],
       allowedChatIds: ['chat-1'],

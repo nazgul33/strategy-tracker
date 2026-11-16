@@ -68,6 +68,43 @@ describe('parseEnv', () => {
     for (const name of ['DATABASE_URL', 'APP_PASSWORD', 'SESSION_SECRET', 'TELEGRAM_ALLOWED_CHAT_IDS', 'VISION_BASE_URL', 'VISION_MODEL', 'PORT', 'DIGEST_LANG'])
       expect(msg2).toContain(name);
   });
+
+  describe('DEFAULT_COST_PERCENT', () => {
+    test('unset defaults to 700 ppm', () => {
+      expect(parseEnv(FULL_ENV).defaultCostPpm).toBe(700);
+    });
+    test('blank counts as unset', () => {
+      expect(parseEnv({ ...FULL_ENV, DEFAULT_COST_PERCENT: '  ' }).defaultCostPpm).toBe(700);
+    });
+    test('0 means zero, not unset', () => {
+      expect(parseEnv({ ...FULL_ENV, DEFAULT_COST_PERCENT: '0' }).defaultCostPpm).toBe(0);
+      expect(parseEnv({ ...FULL_ENV, DEFAULT_COST_PERCENT: '0.000' }).defaultCostPpm).toBe(0);
+    });
+    test.each([
+      ['0.07', 700],
+      ['0.125', 1250],
+      ['0.1', 1000],
+      ['0.001', 10],
+      ['1', 10_000],
+      ['12.5', 125_000],
+      ['100', 1_000_000],
+      ['100.000', 1_000_000],
+    ])('%p converts exactly to %p ppm', (v, ppm) => {
+      expect(parseEnv({ ...FULL_ENV, DEFAULT_COST_PERCENT: v }).defaultCostPpm).toBe(ppm);
+    });
+    test.each(['abc', '0.0001', '-1', '101', '100.001', '1.', '.5', '1e1', '1,5'])('rejects %p by name', (v) => {
+      expect(() => parseEnv({ ...FULL_ENV, DEFAULT_COST_PERCENT: v })).toThrow(/DEFAULT_COST_PERCENT/);
+    });
+    test('a bad value joins the other offending variables in one error', () => {
+      let message = '';
+      try {
+        parseEnv({ DEFAULT_COST_PERCENT: 'abc', PORT: 'x' });
+      } catch (err) {
+        message = (err as Error).message;
+      }
+      for (const name of ['DATABASE_URL', 'PORT', 'DEFAULT_COST_PERCENT']) expect(message).toContain(name);
+    });
+  });
 });
 
 describe('todayEt', () => {

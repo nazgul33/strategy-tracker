@@ -7,6 +7,7 @@ import { fetchDailyBars, fetchLastClose } from '@st/market-data'
 import { applyMigrations, closeDb, getDb } from './db/client'
 import { getRepos } from './db/repos'
 import { createApp } from './http/app'
+import { makeCachedBarReader } from './market/bars'
 import { runMorningPipeline, type DayDeps } from './pipeline/day'
 import { startJobs } from './pipeline/wire'
 import { makeCaptureHandlers } from './wire/capture'
@@ -17,6 +18,10 @@ async function main(): Promise<void> {
   const db = await getDb(env.databaseUrl)
   await applyMigrations(db)
   const repos = getRepos(db)
+
+  const SIM_DRAFT_MAX_AGE_DAYS = 7
+  const sweptDrafts = await repos.simRepo.sweepDrafts(new Date(Date.now() - SIM_DRAFT_MAX_AGE_DAYS * 86_400_000))
+  console.log(`[main] swept ${sweptDrafts} stale sim draft(s) older than ${SIM_DRAFT_MAX_AGE_DAYS} days`)
 
   // vision/digest config: DB settings override env (api key re-read on every capture)
   const settings = await repos.settingsRepo.getAll()
@@ -82,9 +87,10 @@ async function main(): Promise<void> {
     password: env.appPassword,
     sessionSecret: env.sessionSecret,
     today: todayEt,
-    defaultSettings: { visionBaseUrl, visionModel, digestLang },
+    defaultSettings: { visionBaseUrl, visionModel, digestLang, defaultCostPpm: env.defaultCostPpm },
     triggerMorning: async () => JSON.stringify(await runMorningPipeline(dayDeps)),
-    fetchDailyBars,
+    // one cache for the simulator and the price chart
+    fetchDailyBars: makeCachedBarReader({ upstream: fetchDailyBars, repos, today: todayEt }),
     allowedChatIds: tg?.allowedChatIds ?? [],
     send,
   })
