@@ -39,6 +39,7 @@ export type ApiErrorCode =
   | 'invalid-body'
   | 'not-last'
   | 'no-bucket-for-sell'
+  | 'no-empty-bucket'
   | 'no-fill'
   | 'invalid-fill'
   | 'immutable-field'

@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { jsonBig, type HttpDeps } from '../app'
+import { DomainError } from '@st/core'
 import { confirmPendingFill } from '../../domain/booking'
 export function pendingRouter(deps: HttpDeps): Hono {
   const r = new Hono()
@@ -16,6 +17,7 @@ export function pendingRouter(deps: HttpDeps): Hono {
     } catch (e: any) {
       if (e?.message === 'ticker-mismatch') return c.json({ error: 'ticker-mismatch' }, 409)
       if (e?.message === 'pending-not-pending') return c.json({ error: 'not-pending' }, 409)
+      if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
       return c.json({ error: e?.message ?? 'error' }, 422)
     }
     return c.json({ ok: true })

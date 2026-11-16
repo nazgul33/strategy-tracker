@@ -37,13 +37,13 @@ const ROW: PendingFillDto = {
 };
 
 // GET /api/pending always returns [row] (default ROW); every POST (the
-// confirm) replies 409 with the given server error code.
+// confirm) replies with the given status (default 409) and server error code.
 let gets = 0;
 
-function stubFetch(confirmCode: string, row: PendingFillDto = ROW) {
+function stubFetch(confirmCode: string, row: PendingFillDto = ROW, status = 409) {
   gets = 0;
   installFetchStub([
-    { method: 'POST', url: '/api/pending', status: 409, json: { error: confirmCode } },
+    { method: 'POST', url: '/api/pending', status, json: { error: confirmCode } },
     {
       url: '/api/pending',
       // The getter fires on every matched GET, so it doubles as the
@@ -139,6 +139,34 @@ describe('PendingTable', () => {
 
     expect(container.textContent).toContain('Already handled');
     expect(pendingGets()).toBe(2);
+  });
+
+  const confirmErrors: Array<[string, string]> = [
+    ['no-bucket-for-sell', 'No held bucket can cover this sell — check the share count.'],
+    ['no-empty-bucket', 'No empty bucket left in this run — free one up first.'],
+    ['too-many-shares', 'More shares than the position holds.'],
+    ['invalid-shares', 'Invalid share count.'],
+  ];
+
+  for (const [code, text] of confirmErrors) {
+    it(`a 422 ${code} on confirm shows the localized text and keeps the row`, async () => {
+      stubFetch(code, ROW, 422);
+      await renderTable(root);
+      await clickConfirm();
+
+      expect(container.textContent).toContain(text);
+      expect(container.textContent).not.toContain(code);
+      // Nothing was booked: no reload, the row stays for another attempt or a reject.
+      expect(pendingGets()).toBe(1);
+      expect(container.textContent).toContain('AAPL');
+    });
+  }
+
+  it('falls back to the raw code for an unknown 422 confirm error', async () => {
+    stubFetch('weird-code', ROW, 422);
+    await renderTable(root);
+    await clickConfirm();
+    expect(container.textContent).toContain('weird-code');
   });
 
   it('trade date column shows the detected date above the override input', async () => {
