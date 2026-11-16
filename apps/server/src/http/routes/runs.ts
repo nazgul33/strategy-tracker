@@ -229,6 +229,8 @@ export function runsRouter(deps: HttpDeps): Hono {
   r.post('/runs/:id/fills', async (c) => {
     const id = Number(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
+    // Type-level cast only: a legacy client's `ticker` key survives at runtime on purpose so old web bundles keep working;
+    // manualFill ignores it and stamps the run's ticker (pinned by booking.test.ts and http.test.ts).
     const fill = body as Omit<RawFill, 'ticker'> & { filledOn: string }
     try {
       await manualFill(id, fill, { repos: deps.repos as any, today: deps.today() as any })
