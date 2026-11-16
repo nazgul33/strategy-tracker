@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { SimPlanDto } from './api';
+import type { SimEvent, SimPlanDto } from './api';
 import { morningAge, simEventGroup, skipReasons } from './simview';
 
 describe('morningAge', () => {
@@ -21,6 +21,29 @@ describe('simEventGroup', () => {
     expect(simEventGroup(buy, false)).toBe('buy');
     expect(simEventGroup(sell, true)).toBe('force');
     expect(simEventGroup(sell, false)).toBe('target');
+  });
+
+  test('a stop_sell fill groups as stop, not target', () => {
+    const stop = { ...sell, kind: 'stop_sell' } as const;
+    expect(simEventGroup(stop, false)).toBe('stop');
+  });
+
+  test('a stop-out on the last day is still a stop, not the forced liquidation', () => {
+    const stop = { ...sell, kind: 'stop_sell' } as const;
+    expect(simEventGroup(stop, true)).toBe('stop');
+  });
+
+  test('other kinds keep their side-and-day grouping', () => {
+    expect(simEventGroup({ ...sell, kind: 'sell_loc' }, false)).toBe('target');
+    expect(simEventGroup({ ...sell, kind: 'market_sell' }, true)).toBe('force');
+    expect(simEventGroup({ ...buy, kind: 'buy_loc' }, false)).toBe('buy');
+  });
+
+  test('a fill with no kind still groups as before (stored plans predate the field)', () => {
+    const stored = JSON.parse('{"type":"fill","side":"sell","bucketIndex":0,"shares":10,"price":"1","feeCents":0}') as SimEvent;
+    expect(Object.keys(stored)).not.toContain('kind');
+    expect(simEventGroup(stored, false)).toBe('target');
+    expect(simEventGroup(stored, true)).toBe('force');
   });
 });
 
@@ -111,8 +134,3 @@ describe('skipReasons', () => {
     ]);
   });
 });
-
-// Cancel-reason display: `cancelReason` wins the shared reason cell; a legacy
-// `cancelled` row that carries only a `skipReason` keeps rendering its skip
-// label byte-for-byte, and a row with neither renders '' (the table supplies
-// the em dash). Status is deliberately not consulted.

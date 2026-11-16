@@ -244,6 +244,46 @@ describe('cut-loss stops', () => {
     expect(r.fills.map((f) => [f.bucketIndex, f.price])).toEqual([[1, parseUsd('99')], [0, trigger]])
   })
 
+  test('a stop fill event carries kind stop_sell, and so does the fill record', () => {
+    const r = resolveDay(heldState(), planOf(stopOrder), barOf('90', '92', '88'), 30)
+    expect(r.events).toEqual([{ type: 'fill', side: 'sell', kind: 'stop_sell', bucketIndex: 0, shares: 3, price: parseUsd('90'), feeCents: feeCents(parseUsd('90'), 3, 30) }])
+    expect(r.fills[0]!.kind).toBe('stop_sell')
+  })
+
+  test('when the target is also reachable, the one sell fill is still the stop', () => {
+    const r = resolveDay(heldState(), planOf(targetOrder, stopOrder), barOf('99', '102', '96'), 30)
+    const sells = r.events.filter((e) => e.type === 'fill')
+    expect(sells.map((e) => (e as any).kind)).toEqual(['stop_sell'])
+  })
+
+  test('a target fill event carries kind sell_loc', () => {
+    const r = resolveDay(heldState(), planOf(targetOrder, stopOrder), barOf('99', '102', '98'), 30)
+    expect(r.events).toEqual([expect.objectContaining({ type: 'fill', side: 'sell', kind: 'sell_loc', price: target })])
+    expect(r.fills[0]!.kind).toBe('sell_loc')
+  })
+
+  test('a market sell fill carries kind market_sell', () => {
+    const market = { kind: 'market_sell', bucketIndex: 0, limitPrice: parseUsd('95'), shares: 3 }
+    const r = resolveDay(heldState(), planOf(market), barOf('99', '99.5', '98'), 30)
+    expect(r.events).toEqual([expect.objectContaining({ type: 'fill', side: 'sell', kind: 'market_sell', price: parseUsd('99') })])
+  })
+
+  test('a buy fill carries kind buy_loc', () => {
+    const buy = { kind: 'buy_loc', bucketIndex: 1, limitPrice: parseUsd('98'), shares: 2 }
+    const r = resolveDay(heldState((st) => { st.cashCents = 1_000_000 }), planOf(buy), barOf('99', '99.5', '97'), 30)
+    expect(r.events).toEqual([expect.objectContaining({ type: 'fill', side: 'buy', kind: 'buy_loc', bucketIndex: 1 })])
+    expect(r.fills[0]!.kind).toBe('buy_loc')
+  })
+
+  test('the forced exit at the end of a sim is a market_sell, not a stop', () => {
+    const b = (date: string, o: string, h: string, l: string, c: string): OHLCBar => ({ date, open: parseUsd(o), high: parseUsd(h), low: parseUsd(l), close: parseUsd(c) })
+    const path: OHLCBar[] = [b('2026-12-01', '100', '100', '100', '100'), b('2026-12-02', '99.5', '99.8', '99.2', '99.6')]
+    const days = simulateDays(makeRun({ cutLossPpm: 30_000 }), DEFAULT_MR_PARAMS, path)
+    const kinds = days[0]!.events.filter((e) => e.type === 'fill').map((e) => [(e as any).side, (e as any).kind])
+    expect(kinds).toEqual([['buy', 'buy_loc'], ['sell', 'market_sell']])
+    expect(days[0]!.fills.map((f) => f.kind)).toEqual(['buy_loc', 'market_sell'])
+  })
+
   test('end to end: cutLossPpm drives the planned stop and a same-day conflict is replayed as the stop', () => {
     const b = (date: string, o: string, h: string, l: string, c: string): OHLCBar => ({ date, open: parseUsd(o), high: parseUsd(h), low: parseUsd(l), close: parseUsd(c) })
     const path: OHLCBar[] = [

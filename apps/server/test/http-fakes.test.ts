@@ -22,12 +22,12 @@ describe('http fakes mirror the real repos', () => {
     expect(await sim.getRun(b)).toBeNull()
   })
 
-  test('simRepo never reuses a day id after replaceDays shrinks the set', async () => {
+  test('simRepo never reuses a day id after rewriteDraft shrinks the set', async () => {
     const { repos, simDays } = makeFakes()
     const sim = repos.simRepo as any
     const id = await sim.insertRun(input)
-    await sim.replaceDays(id, [day(id, '2026-03-02'), day(id, '2026-03-03'), day(id, '2026-03-04')])
-    await sim.replaceDays(id, [day(id, '2026-03-05')])
+    expect(await sim.rewriteDraft(id, input, [day(id, '2026-03-02'), day(id, '2026-03-03'), day(id, '2026-03-04')])).toBe(true)
+    expect(await sim.rewriteDraft(id, input, [day(id, '2026-03-05')])).toBe(true)
     await sim.insertDays([day(id, '2026-03-06')])
     const ids = simDays.map((d: any) => d.id)
     expect(new Set(ids).size).toBe(ids.length)

@@ -115,14 +115,7 @@ export function makeFakes() {
       simRuns.push({ id, createdAt: '2026-11-10T00:00:00Z', ...i, draft: true })
       return id
     },
-    async updateConfig(id: number, v: any) {
-      const r = simRuns.find((x) => x.id === id); if (r) Object.assign(r, v)
-    },
     async insertDays(rows: any[]) { for (const r of rows) simDays.push({ id: simDayIdSeq++, ...r }) },
-    async replaceDays(simRunId: number, rows: any[]) {
-      for (let i = simDays.length - 1; i >= 0; i--) if (simDays[i].simRunId === simRunId) simDays.splice(i, 1)
-      for (const r of rows) simDays.push({ id: simDayIdSeq++, ...r })
-    },
     // guarded like the real one: nothing is touched unless the run is still a draft
     async rewriteDraft(id: number, v: any, rows: any[]): Promise<boolean> {
       const r = simRuns.find((x) => x.id === id)

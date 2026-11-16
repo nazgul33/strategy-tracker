@@ -34,18 +34,9 @@ export function getSimRepo(db: any) {
       })
       return (res as any).insertId
     },
-    async updateConfig(id: number, v: ConfigRow): Promise<void> {
-      await db.update(s.simRuns).set(configValues(v)).where(eq(s.simRuns.id, id))
-    },
     async insertDays(rows: DayRow[]) {
       if (!rows.length) return
       await db.insert(s.simDays).values(dayValues(rows))
-    },
-    async replaceDays(simRunId: number, rows: DayRow[]): Promise<void> {
-      await db.transaction(async (tx: any) => {
-        await tx.delete(s.simDays).where(eq(s.simDays.simRunId, simRunId))
-        if (rows.length) await tx.insert(s.simDays).values(dayValues(rows))
-      })
     },
     // Re-run of a draft: config and day set change together or not at all. The config UPDATE is
     // conditional on draft = true and holds the row lock until commit, so a run saved or discarded

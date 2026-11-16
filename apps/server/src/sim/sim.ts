@@ -5,8 +5,11 @@ import { isValidPpm, isValidCutLossPpm } from '../domain/ppm'
 import type { OHLCBar } from '@st/market-data'
 import { bigintReplacer, serializeDays, type SimDayBody } from './serialize'
 
+export type SimFillKind = 'buy_loc' | 'sell_loc' | 'market_sell' | 'stop_sell'
+
 export interface SimFill {
   side: 'buy' | 'sell'
+  kind: SimFillKind
   bucketIndex: number
   shares: number
   price: bigint
@@ -14,7 +17,7 @@ export interface SimFill {
 }
 
 export type SimEvent =
-  | { type: 'fill'; side: 'buy' | 'sell'; bucketIndex: number; shares: number; price: bigint; feeCents: number }
+  | { type: 'fill'; side: 'buy' | 'sell'; kind: SimFillKind; bucketIndex: number; shares: number; price: bigint; feeCents: number }
   | { type: 'skipped'; bucketIndex: number; reason: string }
 
 export interface SimDay {
@@ -105,7 +108,7 @@ export function resolveDay(state: RunState, plan: DayPlan, bar: OHLCBar, costPpm
     const fee = feeCents(price, o.shares, costPpm)
     try {
       cur = applySellFill(cur, o.bucketIndex, o.shares, price, fee, bar.date)
-      fill({ side: 'sell', bucketIndex: o.bucketIndex, shares: o.shares, price, feeCents: fee })
+      fill({ side: 'sell', kind: 'market_sell', bucketIndex: o.bucketIndex, shares: o.shares, price, feeCents: fee })
     } catch {
       // not filled
     }
@@ -124,7 +127,7 @@ export function resolveDay(state: RunState, plan: DayPlan, bar: OHLCBar, costPpm
     const fee = feeCents(price, o.shares, costPpm)
     try {
       cur = applySellFill(cur, o.bucketIndex, o.shares, price, fee, bar.date)
-      fill({ side: 'sell', bucketIndex: o.bucketIndex, shares: o.shares, price, feeCents: fee })
+      fill({ side: 'sell', kind: 'stop_sell', bucketIndex: o.bucketIndex, shares: o.shares, price, feeCents: fee })
       stoppedOut.add(o.bucketIndex)
     } catch {
       // not filled
@@ -140,7 +143,7 @@ export function resolveDay(state: RunState, plan: DayPlan, bar: OHLCBar, costPpm
     const fee = feeCents(price, o.shares, costPpm)
     try {
       cur = applySellFill(cur, o.bucketIndex, o.shares, price, fee, bar.date)
-      fill({ side: 'sell', bucketIndex: o.bucketIndex, shares: o.shares, price, feeCents: fee })
+      fill({ side: 'sell', kind: 'sell_loc', bucketIndex: o.bucketIndex, shares: o.shares, price, feeCents: fee })
     } catch {
       // not filled
     }
@@ -156,7 +159,7 @@ export function resolveDay(state: RunState, plan: DayPlan, bar: OHLCBar, costPpm
     }
     try {
       cur = applyBuyFill(cur, o.bucketIndex, o.shares, price, fee, bar.date)
-      fill({ side: 'buy', bucketIndex: o.bucketIndex, shares: o.shares, price, feeCents: fee })
+      fill({ side: 'buy', kind: 'buy_loc', bucketIndex: o.bucketIndex, shares: o.shares, price, feeCents: fee })
     } catch {
       // not filled
     }
@@ -194,7 +197,7 @@ function simulate(run: Run, params: MrParams, bars: OHLCBar[]): SimResult {
     const price = lastBar.open
     const fee = feeCents(price, b.shares, run.costPpm)
     state = applySellFill(state, i, b.shares, price, fee, lastBar.date)
-    const f = { side: 'sell' as const, bucketIndex: i, shares: b.shares, price, feeCents: fee }
+    const f = { side: 'sell' as const, kind: 'market_sell' as const, bucketIndex: i, shares: b.shares, price, feeCents: fee }
     lastDay.fills.push(f)
     lastDay.events.push({ type: 'fill', ...f })
   }

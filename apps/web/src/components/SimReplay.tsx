@@ -16,12 +16,14 @@ import { closedPnlCents } from './RunHistory';
 const GROUP_TONE: Record<SimGroup, BadgeTone> = {
   buy: 'info',
   target: 'primary',
+  stop: 'warning',
   force: 'warning',
   skipped: 'neutral',
 };
 const GROUP_LABEL: Record<SimGroup, string> = {
   buy: 'simReasonBuy',
   target: 'simReasonTarget',
+  stop: 'simReasonStop',
   force: 'simReasonForceClose',
   skipped: 'simReasonSkip',
 };
