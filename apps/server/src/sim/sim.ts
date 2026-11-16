@@ -3,6 +3,7 @@ import { feeCents, roundDiv } from '@st/core/money'
 import { computeOrders, DEFAULT_MR_PARAMS, type MrParams } from '@st/strategies'
 import { isValidPpm, isValidCutLossPpm } from '../domain/ppm'
 import type { OHLCBar } from '@st/market-data'
+import { bigintReplacer, serializeDays, type SimDayBody } from './serialize'
 
 export interface SimFill {
   side: 'buy' | 'sell'
@@ -47,7 +48,9 @@ export interface SimRunRow {
   costPpm: number
   buyGapPpm: number
   sellGapPpm: number
+  cutLossPpm: number
   paramsJson: string
+  draft: boolean
   createdAt: any
 }
 
@@ -60,16 +63,28 @@ export interface SimDayRow {
   eventsJson: string
 }
 
+export interface SimConfig {
+  fromDate: string
+  toDate: string
+  poolCents: number
+  costPpm: number
+  buyGapPpm: number
+  sellGapPpm: number
+  cutLossPpm: number
+  paramsJson: string
+}
+
 export interface SimRepoSurface {
-  insertRun(input: { ticker: string; fromDate: string; toDate: string; poolCents: number; costPpm: number; buyGapPpm: number; sellGapPpm: number; cutLossPpm: number; paramsJson: string }): Promise<number>
-  insertDays(rows: { simRunId: number; tradeDate: string; planJson: string; stateJson: string; eventsJson: string }[]): Promise<void>
+  insertRun(input: SimConfig & { ticker: string }): Promise<number>
+  updateConfig(id: number, v: SimConfig): Promise<void>
+  insertDays(rows: (SimDayBody & { simRunId: number })[]): Promise<void>
+  replaceDays(simRunId: number, rows: (SimDayBody & { simRunId: number })[]): Promise<void>
+  finalize(id: number): Promise<boolean>
+  deleteRun(id: number): Promise<boolean>
+  sweepDrafts(createdBefore: Date): Promise<number>
   listRuns(): Promise<SimRunRow[]>
   getRun(id: number): Promise<SimRunRow | null>
   listDays(id: number): Promise<SimDayRow[]>
-}
-
-function bigintReplacer(_k: string, v: any): any {
-  return typeof v === 'bigint' ? v.toString() : v
 }
 
 function heldCount(state: RunState): number {
@@ -194,7 +209,11 @@ export function simulateDays(run: Run, params: MrParams, bars: OHLCBar[]): SimDa
   return simulate(run, params, bars).days
 }
 
-export async function runSim(input: SimInput, deps: { fetchDailyBars: (ticker: string, from: string, to: string) => Promise<OHLCBar[]>; repos: SimRepoSurface }): Promise<{ id: number; dayCount: number }> {
+type FetchBars = (ticker: string, from: string, to: string) => Promise<OHLCBar[]>
+
+// The one validate -> fetch bars -> simulate -> serialize path behind both runSim and
+// updateSimRun. It writes nothing, so a caller persists only a fully computed result.
+async function prepareSim(input: SimInput, fetchDailyBars: FetchBars): Promise<{ config: SimConfig; days: SimDayBody[] }> {
   if (input.params) {
     for (const k of Object.keys(input.params)) {
       if (!['bucketCount', 'maxAgeDays'].includes(k)) {
@@ -218,11 +237,9 @@ export async function runSim(input: SimInput, deps: { fetchDailyBars: (ticker: s
 
   const run: Run = { id: 0, name: input.name, ticker: input.ticker, strategyKey: 'mean-reversion', costPpm: input.costPpm, buyGapPpm, sellGapPpm, cutLossPpm, poolCents: input.poolCents, status: 'active' }
 
-  const bars = await deps.fetchDailyBars(input.ticker, input.from, input.to)
+  const bars = await fetchDailyBars(input.ticker, input.from, input.to)
   const { days, states } = simulate(run, params, bars)
-
-  const id = await deps.repos.insertRun({
-    ticker: input.ticker,
+  const config: SimConfig = {
     fromDate: input.from,
     toDate: input.to,
     poolCents: input.poolCents,
@@ -231,15 +248,25 @@ export async function runSim(input: SimInput, deps: { fetchDailyBars: (ticker: s
     sellGapPpm,
     cutLossPpm,
     paramsJson: JSON.stringify(params, bigintReplacer),
-  })
+  }
+  return { config, days: serializeDays(days, states) }
+}
 
-  const rows = days.map((d, idx) => ({
-    simRunId: id,
-    tradeDate: d.date,
-    planJson: JSON.stringify({ ...d.plan, orders: d.plan.orders.map((o) => ({ ...o, limitPrice: o.limitPrice.toString() })), skips: d.plan.skips.map((o) => ({ ...o, limitPrice: o.limitPrice.toString() })) }, bigintReplacer),
-    stateJson: JSON.stringify(states[idx], bigintReplacer),
-    eventsJson: JSON.stringify(d.events, bigintReplacer),
-  }))
-  await deps.repos.insertDays(rows)
+export async function runSim(input: SimInput, deps: { fetchDailyBars: FetchBars; repos: Pick<SimRepoSurface, 'insertRun' | 'insertDays'> }): Promise<{ id: number; dayCount: number }> {
+  const { config, days } = await prepareSim(input, deps.fetchDailyBars)
+  const id = await deps.repos.insertRun({ ticker: input.ticker, ...config })
+  await deps.repos.insertDays(days.map((d) => ({ simRunId: id, ...d })))
+  return { id, dayCount: days.length }
+}
+
+// Re-runs a draft in place. The ticker is the draft's identity, so it comes from the stored
+// row. Everything is simulated before anything is written: a failure leaves the draft as it was.
+export async function updateSimRun(id: number, input: Omit<SimInput, 'ticker'>, deps: { fetchDailyBars: FetchBars; repos: Pick<SimRepoSurface, 'getRun' | 'updateConfig' | 'replaceDays'> }): Promise<{ id: number; dayCount: number }> {
+  const run = await deps.repos.getRun(id)
+  if (!run) throw new DomainError('sim-not-found')
+  if (!run.draft) throw new DomainError('sim-finalized')
+  const { config, days } = await prepareSim({ ...input, ticker: run.ticker }, deps.fetchDailyBars)
+  await deps.repos.updateConfig(id, config)
+  await deps.repos.replaceDays(id, days.map((d) => ({ simRunId: id, ...d })))
   return { id, dayCount: days.length }
 }

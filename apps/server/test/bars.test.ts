@@ -136,7 +136,7 @@ describe('makeCachedBarReader', () => {
     const second = await read('AAPL', '2026-01-05', '2026-01-09')
     expect(up.state.ranges).toEqual([['2026-01-09', '2026-01-09']])
     expect(second.map((b) => b.date)).toContain('2026-01-09')
-    for (const c of await f.repos.barCoverageRepo.list('AAPL')) expect(c.toDate < '2026-01-09').toBe(true)
+    expect(await f.repos.barCoverageRepo.list('AAPL')).toEqual([{ fromDate: '2026-01-05', toDate: '2026-01-08' }])
     expect(f.priceHistory.some((r) => r.tradeDate === '2026-01-09')).toBe(false)
   })
 
@@ -157,6 +157,18 @@ describe('makeCachedBarReader', () => {
     const bars = await read('AAPL', '2026-01-05', '2026-01-09')
     expect(up.state.ranges).toEqual([['2026-01-09', '2026-01-09']]) // the tail was really attempted
     expect(bars.map((b) => b.date)).toEqual(['2026-01-05', '2026-01-06', '2026-01-07', '2026-01-08'])
+  })
+
+  test('a no-data tail with no cached portion at all propagates instead of returning nothing', async () => {
+    today = '2026-01-09'
+    up.state.missing = new Set(['2026-01-09', '2026-01-12'])
+    let err: unknown
+    await read('AAPL', '2026-01-09', '2026-01-12').catch((e) => { err = e })
+    expect(err).toBeInstanceOf(MarketDataError)
+    expect((err as MarketDataError).kind).toBe('no-data')
+    expect(up.state.ranges).toEqual([['2026-01-09', '2026-01-12']])
+    expect(f.priceHistory.length).toBe(0)
+    expect(f.coverage.length).toBe(0)
   })
 
   test('a tail failing with an http error still propagates', async () => {

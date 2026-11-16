@@ -19,6 +19,10 @@ async function main(): Promise<void> {
   await applyMigrations(db)
   const repos = getRepos(db)
 
+  const SIM_DRAFT_MAX_AGE_DAYS = 7
+  const sweptDrafts = await repos.simRepo.sweepDrafts(new Date(Date.now() - SIM_DRAFT_MAX_AGE_DAYS * 86_400_000))
+  console.log(`[main] swept ${sweptDrafts} stale sim draft(s) older than ${SIM_DRAFT_MAX_AGE_DAYS} days`)
+
   // vision/digest config: DB settings override env (api key re-read on every capture)
   const settings = await repos.settingsRepo.getAll()
   const visionBaseUrl = settings.visionBaseUrl || (env.telegram?.visionBaseUrl ?? '')

@@ -46,8 +46,8 @@ describe('http sim gaps', () => {
     expect(f2.simRuns[1].buyGapPpm).toBe(10000)
     expect(f2.simRuns[1].sellGapPpm).toBe(20000)
     const rows = await (await app2.request('/api/sim', { headers: auth2 })).json()
-    expect(rows[0].buyGapPpm).toBe(0)
-    expect(rows[1].sellGapPpm).toBe(20000)
+    expect(rows[0].sellGapPpm).toBe(20000) // newest first
+    expect(rows[1].buyGapPpm).toBe(0)
   })
 })
 

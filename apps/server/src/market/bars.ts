@@ -103,8 +103,9 @@ export function makeCachedBarReader(deps: {
         tail = inRange(await upstream(ticker, tailFrom, to), tailFrom, to)
       } catch (e) {
         // No data for an unfinished or not-yet-open session is normal (pre-open,
-        // holiday); only a transport/provider failure is a real error.
-        if (!(e instanceof MarketDataError && e.kind === 'no-data')) throw e
+        // holiday) when cached bars still answer the request; only a transport/provider
+        // failure, or no data anywhere in the range, is a real error.
+        if (!(e instanceof MarketDataError && e.kind === 'no-data' && cached.length > 0)) throw e
       }
     }
     return [...cached, ...tail].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
