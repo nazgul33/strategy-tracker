@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { gapText, isoDate, isoDateTime } from './format';
+import { costPercentText, gapText, isoDate, isoDateTime } from './format';
 
 // Date-only wire values must pass through untouched, and the space-separated
 // naive timestamps from MySQL DATESTRINGS must never be re-rendered through
@@ -65,5 +65,21 @@ describe('gapText', () => {
   test('null or undefined renders as an em dash', () => {
     expect(gapText(null, t)).toBe('—');
     expect(gapText(undefined, t)).toBe('—');
+  });
+});
+
+describe('costPercentText', () => {
+  test('always shows three decimals', () => {
+    expect(costPercentText(700)).toBe('0.070');
+    expect(costPercentText(0)).toBe('0.000');
+    expect(costPercentText(10)).toBe('0.001');
+    expect(costPercentText(1250)).toBe('0.125');
+    expect(costPercentText(1_000_000)).toBe('100.000');
+  });
+
+  test('missing or non-finite values render as an em dash', () => {
+    expect(costPercentText(null)).toBe('—');
+    expect(costPercentText(undefined)).toBe('—');
+    expect(costPercentText(Number.NaN)).toBe('—');
   });
 });

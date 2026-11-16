@@ -25,7 +25,7 @@ import {
   Spinner,
   Stat,
 } from '../components/ui';
-import { bpPercent, centsUsd, gapText, isoDateTime, percent, signedCentsUsd } from '../format';
+import { centsUsd, costPercentText, gapText, isoDateTime, percent, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
 import { enumLabelKey, pnlBadgeTone, runActions, runStatusTone, toneFor } from '../viewmodels';
 
@@ -52,6 +52,7 @@ export function RunDetailPage({ id }: { id: number }) {
   const [showPool, setShowPool] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [recalcResult, setRecalcResult] = useState<RecalcResult | null>(null);
+  const [latestClose, setLatestClose] = useState<string | null>(null);
 
   const selectTab = (next: Tab) => {
     setTab(next);
@@ -118,7 +119,7 @@ export function RunDetailPage({ id }: { id: number }) {
             <Badge tone={runStatusTone(run.status)}>{t(enumLabelKey('status', run.status))}</Badge>
           </h1>
           <p className="text-sm text-muted-foreground">
-            {run.strategyKey === 'mean-reversion' ? t('runStrategyMr') : run.strategyKey} · {bpPercent(run.costPpm / 100)}{' '}
+            {run.strategyKey === 'mean-reversion' ? t('runStrategyMr') : run.strategyKey} · {costPercentText(run.costPpm)} %{' '}
             · {centsUsd(run.poolCents)} · {isoDateTime(run.createdAt)}
           </p>
         </div>
@@ -161,12 +162,13 @@ export function RunDetailPage({ id }: { id: number }) {
           <Stat label={t('statWinRate')} value={percent(pv.winRate)} />
           <Stat label={t('runDetail.buyGap')} value={gapText(run.buyGapPpm / 10_000, t)} />
           <Stat label={t('runDetail.sellGap')} value={gapText(run.sellGapPpm / 10_000, t)} />
+          <Stat label={t('runDetail.cutLoss')} value={gapText(run.cutLossPpm / 10_000, t)} />
         </div>
       </Card>
 
       <Card>
         <SectionTitle>{t('runDetail.priceHistoryTitle')}</SectionTitle>
-        <PriceChart runId={run.id} />
+        <PriceChart runId={run.id} onLatestClose={setLatestClose} />
       </Card>
 
       <Card>
@@ -246,6 +248,9 @@ export function RunDetailPage({ id }: { id: number }) {
           poolCents={run.poolCents}
           initialBuyPpm={run.buyGapPpm}
           initialSellPpm={run.sellGapPpm}
+          initialCutLossPpm={run.cutLossPpm}
+          buckets={run.state.buckets}
+          latestClose={latestClose}
           onClose={() => setShowPool(false)}
           onSaved={() => void reload()}
         />

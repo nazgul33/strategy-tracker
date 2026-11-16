@@ -1,27 +1,64 @@
-// Sim: start a new backtest replay and list past simulation runs.
+// Sim: start a new backtest (it opens as an editable draft) and list drafts
+// and saved simulation runs.
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 
-import { api, usdToCents } from '../api';
-import type { SimInput } from '../api';
-import { useAsync } from '../components/hooks';
-import {
-  Button,
-  Card,
-  EmptyNote,
-  ErrorNote,
-  Field,
-  Input,
-  Spinner,
-  TableWrap,
-  Td,
-  Th,
-} from '../components/ui';
-import { bpPercent, centsUsd, isoDate, isoDateTime, todayIso } from '../format';
-import { gapToPpm, isGapText } from '../gaps';
+import { api } from '../api';
+import type { SimRunDto } from '../api';
+import { SimConfigFields } from '../components/forms/SimConfigFields';
+import { useAsync, useDefaultCostText } from '../components/hooks';
+import { Button, Card, EmptyNote, ErrorNote, Field, Input, SectionTitle, Spinner, TableWrap, Td, Th } from '../components/ui';
+import { centsUsd, costPercentText, isoDate, isoDateTime, todayIso } from '../format';
 import { useT } from '../i18n';
+import { parseSimTicker, simFieldFlags, validateSimConfig } from '../simconfig';
+import type { SimConfigForm } from '../simconfig';
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+type ConfigRest = Omit<SimConfigForm, 'cost'>;
+
+function SimTable({ rows, onDiscard }: { rows: SimRunDto[]; onDiscard?: (id: number) => void }) {
+  const t = useT();
+  return (
+    <TableWrap>
+      <thead>
+        <tr>
+          <Th>{t('simColId')}</Th>
+          <Th>{t('simColTicker')}</Th>
+          <Th>{t('simColRange')}</Th>
+          <Th className="text-right">{t('runColPool')}</Th>
+          <Th className="text-right">{t('runColCost')}</Th>
+          <Th>{t('simColCreated')}</Th>
+          {onDiscard && <Th />}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((sim) => (
+          <tr key={sim.id} className="hover:bg-muted/50">
+            <Td className="tabular-nums text-muted-foreground">{sim.id}</Td>
+            <Td>
+              <a href={`#/sim/${sim.id}`} className="font-medium text-primary hover:underline">
+                {t('simDetailTitle', { id: sim.id })}
+              </a>
+              <div className="font-mono text-[11px] text-muted-foreground">{sim.ticker}</div>
+            </Td>
+            <Td className="whitespace-nowrap tabular-nums">
+              {isoDate(sim.fromDate)} → {isoDate(sim.toDate)}
+            </Td>
+            <Td className="text-right tabular-nums">{centsUsd(sim.poolCents)}</Td>
+            <Td className="text-right tabular-nums">{costPercentText(sim.costPpm)} %</Td>
+            <Td className="whitespace-nowrap tabular-nums text-muted-foreground">{isoDateTime(sim.createdAt)}</Td>
+            {onDiscard && (
+              <Td className="text-right">
+                <Button data-testid={`simDiscardRow-${sim.id}`} onClick={() => onDiscard(sim.id)}>
+                  {t('simDiscard')}
+                </Button>
+              </Td>
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </TableWrap>
+  );
+}
 
 export function SimPage() {
   const t = useT();
@@ -29,85 +66,55 @@ export function SimPage() {
 
   const [name, setName] = useState('');
   const [ticker, setTicker] = useState('');
-  const [fromDate, setFromDate] = useState(() => todayIso());
-  const [toDate, setToDate] = useState('');
-  const [poolUsd, setPoolUsd] = useState('');
-  const [costPpm, setCostPpm] = useState('200');
-  const [buyGap, setBuyGap] = useState('');
-  const [sellGap, setSellGap] = useState('');
-  const [bucketCount, setBucketCount] = useState('');
-  const [maxAge, setMaxAge] = useState('');
+  const [rest, setRest] = useState<ConfigRest>({
+    from: todayIso(),
+    to: '',
+    pool: '',
+    buyGap: '',
+    sellGap: '',
+    cutLoss: '',
+    bucketCount: '',
+    maxAge: '',
+  });
+  const [cost, setCost] = useDefaultCostText();
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const gapsValid = (buyGap === '' || isGapText(buyGap)) && (sellGap === '' || isGapText(sellGap));
-
-  function validate(): SimInput | null {
-    const tid = ticker.trim().toUpperCase();
-    if (!/^[A-Za-z.]{1,10}$/.test(tid)) return fail(t('simInvalidTicker'));
-    if (!DATE_RE.test(fromDate) || !DATE_RE.test(toDate)) return fail(t('simInvalidDate'));
-    if (fromDate >= toDate) return fail(t('simInvalidRange'));
-    const poolCents = usdToCents(poolUsd);
-    if (poolCents === null || poolCents <= 0) return fail(t('simInvalidPool'));
-    const cost = costPpm.trim();
-    if (!/^\d{1,7}$/.test(cost)) return fail(t('runInvalidCostPpm'));
-
-    const buckets = optInt(bucketCount, 2, 20, t('runInvalidBucketCount'));
-    if (buckets === null) return null;
-    const age = optInt(maxAge, 1, 250, t('runInvalidMaxAge'));
-    if (age === null) return null;
-
-    setFieldError(null);
-    const input: SimInput = {
-      name: name.trim(),
-      ticker: tid,
-      from: fromDate,
-      to: toDate,
-      poolCents,
-      costPpm: Number(cost),
-      // blank gap = "not set" → explicit 0 (the server's unset value).
-      buyGapPpm: buyGap === '' ? 0 : gapToPpm(buyGap),
-      sellGapPpm: sellGap === '' ? 0 : gapToPpm(sellGap),
-    };
-    const params: NonNullable<SimInput['params']> = {};
-    if (buckets !== undefined) params.bucketCount = buckets;
-    if (age !== undefined) params.maxAgeDays = age;
-    if (Object.keys(params).length > 0) input.params = params;
-    return input;
-  }
-
-  function fail(message: string): null {
-    setFieldError(message);
-    return null;
-  }
-
-  /** Optional integer input → number | undefined; `null` (via fail) when invalid. */
-  function optInt(value: string, min: number, max: number, message: string): number | null | undefined {
-    const text = value.trim();
-    if (!text) return undefined;
-    if (!/^\d{1,3}$/.test(text)) return fail(message);
-    const n = Number(text);
-    if (n < min || n > max) return fail(message);
-    return n;
-  }
+  const form: SimConfigForm = { ...rest, cost };
+  const percentsValid = !Object.values(simFieldFlags(form)).some(Boolean);
+  const drafts = (data ?? []).filter((s) => s.draft);
+  const saved = (data ?? []).filter((s) => !s.draft);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    // Defense in depth: the button is disabled while invalid, but Enter in a
-    // text field would still fire a native form submit.
-    if (busy || !gapsValid) return;
-    const input = validate();
-    if (!input) return;
+    // The button is disabled while a percent is malformed, but Enter in a text
+    // field still fires a native submit: that path validates and explains.
+    if (busy) return;
+    const tid = parseSimTicker(ticker);
+    if (tid === null) return setFieldError(t('simInvalidTicker'));
+    const result = validateSimConfig(form, t);
+    if (!result.ok) return setFieldError(result.error);
+    setFieldError(null);
     setBusy(true);
     setSubmitError(null);
     try {
-      const res = await api.runSim(input);
+      const res = await api.runSim({ name: name.trim(), ticker: tid, ...result.input });
       window.location.hash = `#/sim/${res.id}`;
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : String(err));
       setBusy(false);
     }
+  };
+
+  const discardDraft = async (id: number) => {
+    try {
+      await api.deleteSimRun(id);
+      setSubmitError(null);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : String(err));
+    }
+    await reload();
   };
 
   return (
@@ -118,60 +125,23 @@ export function SimPage() {
       </div>
 
       <Card>
-        <form onSubmit={submit} className="grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+        <form onSubmit={submit} className="max-w-3xl space-y-3">
           {fieldError !== null && <ErrorNote message={fieldError} />}
-          {submitError !== null && <div className="sm:col-span-2"><ErrorNote message={submitError} /></div>}
-          <Field label={t('simName')}>
-            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
-          </Field>
-          <Field label={t('simTicker')}>
-            <Input value={ticker} onChange={(e) => setTicker(e.target.value)} maxLength={10} placeholder="AAA" required dir="ltr" />
-          </Field>
-          <Field label={t('simStart')}>
-            <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} required />
-          </Field>
-          <Field label={t('simEnd')}>
-            <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} required />
-          </Field>
-          <Field label={t('simPool')}>
-            <Input value={poolUsd} onChange={(e) => setPoolUsd(e.target.value)} inputMode="decimal" placeholder="100000" required />
-          </Field>
-          <Field label={t('simCostPpm')}>
-            <Input value={costPpm} onChange={(e) => setCostPpm(e.target.value)} inputMode="numeric" required />
-          </Field>
-          <Field label={t('simForm.buyGapLabel')}>
-            <Input
-              data-testid="buyGapInput"
-              value={buyGap}
-              onChange={(e) => setBuyGap(e.target.value)}
-              inputMode="decimal"
-              placeholder="0"
-              invalid={buyGap !== '' && !isGapText(buyGap)}
-            />
-          </Field>
-          <Field label={t('simForm.sellGapLabel')}>
-            <Input
-              data-testid="sellGapInput"
-              value={sellGap}
-              onChange={(e) => setSellGap(e.target.value)}
-              inputMode="decimal"
-              placeholder="0"
-              invalid={sellGap !== '' && !isGapText(sellGap)}
-            />
-          </Field>
-          <details className="text-sm sm:col-span-2">
-            <summary className="cursor-pointer text-muted-foreground">{t('runParamsOptional')}</summary>
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label={t('runBucketCount')}>
-                <Input value={bucketCount} onChange={(e) => setBucketCount(e.target.value)} inputMode="numeric" />
-              </Field>
-              <Field label={t('simMaxAge')}>
-                <Input value={maxAge} onChange={(e) => setMaxAge(e.target.value)} inputMode="numeric" />
-              </Field>
-            </div>
-          </details>
-          <div className="flex items-center gap-3 sm:col-span-2">
-            <Button type="submit" variant="primary" busy={busy} disabled={!gapsValid}>
+          {submitError !== null && <ErrorNote message={submitError} />}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label={t('simName')}>
+              <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
+            </Field>
+            <Field label={t('simTicker')}>
+              <Input value={ticker} onChange={(e) => setTicker(e.target.value)} maxLength={10} placeholder="AAA" required dir="ltr" />
+            </Field>
+          </div>
+          <SimConfigFields
+            form={form}
+            onChange={(field, value) => (field === 'cost' ? setCost(value) : setRest((r) => ({ ...r, [field]: value })))}
+          />
+          <div className="flex items-center gap-3">
+            <Button type="submit" variant="primary" busy={busy} disabled={!percentsValid}>
               {t('simRun')}
             </Button>
             {busy && <span className="text-sm text-muted-foreground">{t('simRunning')}</span>}
@@ -179,50 +149,35 @@ export function SimPage() {
         </form>
       </Card>
 
-      <Card>
-        {loading ? (
+      {loading ? (
+        <Card>
           <Spinner />
-        ) : error ? (
+        </Card>
+      ) : error ? (
+        <Card>
           <div className="flex items-center gap-3">
             <ErrorNote message={error} />
             <Button onClick={() => void reload()}>{t('retry')}</Button>
           </div>
-        ) : (data ?? []).length === 0 ? (
-          <EmptyNote>{t('simEmpty')}</EmptyNote>
-        ) : (
-          <TableWrap>
-            <thead>
-              <tr>
-                <Th>{t('simColId')}</Th>
-                <Th>{t('simColTicker')}</Th>
-                <Th>{t('simColRange')}</Th>
-                <Th className="text-right">{t('runColPool')}</Th>
-                <Th className="text-right">{t('runColCost')}</Th>
-                <Th>{t('simColCreated')}</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data ?? []).map((sim) => (
-                <tr key={sim.id} className="hover:bg-muted/50">
-                  <Td className="tabular-nums text-muted-foreground">{sim.id}</Td>
-                  <Td>
-                    <a href={`#/sim/${sim.id}`} className="font-medium text-primary hover:underline">
-                      {t('simDetailTitle', { id: sim.id })}
-                    </a>
-                    <div className="font-mono text-[11px] text-muted-foreground">{sim.ticker}</div>
-                  </Td>
-                  <Td className="whitespace-nowrap tabular-nums">
-                    {isoDate(sim.fromDate)} → {isoDate(sim.toDate)}
-                  </Td>
-                  <Td className="text-right tabular-nums">{centsUsd(sim.poolCents)}</Td>
-                  <Td className="text-right tabular-nums">{bpPercent(sim.costPpm / 100)}</Td>
-                  <Td className="whitespace-nowrap tabular-nums text-muted-foreground">{isoDateTime(sim.createdAt)}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </TableWrap>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <>
+          {drafts.length > 0 && (
+            <div data-testid="simDrafts">
+              <Card>
+                <SectionTitle>{t('simDrafts')}</SectionTitle>
+                <SimTable rows={drafts} onDiscard={(id) => void discardDraft(id)} />
+              </Card>
+            </div>
+          )}
+          <div data-testid="simSaved">
+            <Card>
+              <SectionTitle>{t('simSavedTitle')}</SectionTitle>
+              {saved.length === 0 ? <EmptyNote>{t('simEmpty')}</EmptyNote> : <SimTable rows={saved} />}
+            </Card>
+          </div>
+        </>
+      )}
     </div>
   );
 }
