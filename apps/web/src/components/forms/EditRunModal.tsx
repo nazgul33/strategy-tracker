@@ -4,7 +4,8 @@ import type { BucketDto } from '../../api';
 import { useT } from '../../i18n';
 import { cutLossToPpm, gapToPpm, isCutLossText, isGapText, ppmToPercentText } from '../../gaps';
 import { priceUsd } from '../../format';
-import { poolAfterTopUp, underwaterStopCount } from '../../viewmodels';
+import { stopCheckUnavailable, underwaterStopCount } from '../../cutloss';
+import { poolAfterTopUp } from '../../viewmodels';
 import { Button, ErrorNote, Field, Input, Modal } from '../ui';
 
 // Combined run edit: pool top-up + buy/sell price gaps + cut-loss, one Save.
@@ -47,7 +48,9 @@ export function EditRunModal({
 
   const cutLossValid = cutLoss === '' || isCutLossText(cutLoss);
   const gapsValid = (buyGap === '' || isGapText(buyGap)) && (sellGap === '' || isGapText(sellGap)) && cutLossValid;
-  const underwater = cutLossValid ? underwaterStopCount(buckets, cutLossToPpm(cutLoss), latestClose) : 0;
+  const cutLossPpm = cutLossValid ? cutLossToPpm(cutLoss) : 0;
+  const underwater = underwaterStopCount(buckets, cutLossPpm, latestClose);
+  const closeUnknown = stopCheckUnavailable(buckets, cutLossPpm, latestClose);
 
   const submit = async () => {
     if (busy || !gapsValid) return;
@@ -67,7 +70,7 @@ export function EditRunModal({
       await api.setGaps(runId, {
         buyGapPpm: gapToPpm(buyGap),
         sellGapPpm: gapToPpm(sellGap),
-        cutLossPpm: cutLossToPpm(cutLoss),
+        cutLossPpm,
       });
       setSaved(true);
       onSaved();
@@ -146,6 +149,15 @@ export function EditRunModal({
               className="rounded border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
             >
               {t('runDetail.cutLossUnderwater', { n: underwater, price: priceUsd(latestClose) })}
+            </div>
+          )}
+          {closeUnknown && (
+            <div
+              role="status"
+              data-testid="cutLossCloseUnknown"
+              className="rounded border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
+            >
+              {t('runDetail.cutLossCloseUnknown')}
             </div>
           )}
           <div className="flex justify-end gap-2">

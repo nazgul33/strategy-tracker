@@ -158,7 +158,10 @@ export interface SimRunDto {
   costPpm: number;
   buyGapPpm: number; // integer ppm 0–1_000_000; 0 = unset
   sellGapPpm: number; // integer ppm 0–1_000_000; 0 = unset
+  cutLossPpm: number; // integer ppm, multiple of 1_000, 0–500_000; 0 = off
   paramsJson: string;
+  /** A draft is editable and re-runnable; saving it makes it read-only history. */
+  draft: boolean;
   createdAt: string;
 }
 
@@ -225,5 +228,9 @@ export interface SimInput {
   costPpm: number;
   buyGapPpm?: number; // integer ppm 0–1_000_000; omitted → server default 0 (unset)
   sellGapPpm?: number; // integer ppm 0–1_000_000; omitted → server default 0 (unset)
+  cutLossPpm?: number; // integer ppm, multiple of 1_000, 0–500_000; omitted → server default 0 (off)
   params?: { bucketCount?: number; maxAgeDays?: number };
 }
+
+/** PUT body for Apply: the draft's ticker is its identity, so it is never sent. */
+export type SimUpdateInput = Omit<SimInput, 'ticker' | 'name'> & { name?: string };

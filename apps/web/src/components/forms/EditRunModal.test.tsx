@@ -62,6 +62,10 @@ function warning(): HTMLElement | null {
   return document.querySelector('[data-testid="cutLossWarning"]');
 }
 
+function unknownClose(): HTMLElement | null {
+  return document.querySelector('[data-testid="cutLossCloseUnknown"]');
+}
+
 async function type(testid: string, value: string) {
   await act(async () => {
     setInputValue(inputByTestId(testid), value);
@@ -199,9 +203,34 @@ describe('EditRunModal cut-loss', () => {
     expect(warning()).toBeNull();
   });
 
-  it('shows no warning when the latest close is unknown', async () => {
+  it('says the check could not run when the latest close is unknown, and still saves', async () => {
     await render({ latestClose: null });
+    expect(unknownClose()).toBeNull();
     await type('cutLossInput', '3');
     expect(warning()).toBeNull();
+    expect(unknownClose()!.textContent).toContain('Latest close unknown');
+    expect(saveButton().disabled).toBe(false);
+
+    await save();
+    const gaps = calls.find((c) => c.url.includes('/gaps'));
+    expect((gaps!.body as Record<string, unknown>).cutLossPpm).toBe(30_000);
+    expect(saved).toBe(1);
+  });
+
+  it('does not claim an unchecked stop when cut-loss is off or invalid', async () => {
+    await render({ latestClose: null, initialCutLossPpm: 0 });
+    expect(unknownClose()).toBeNull();
+    await type('cutLossInput', '3.55');
+    expect(unknownClose()).toBeNull();
+    await type('cutLossInput', '3');
+    expect(unknownClose()).not.toBeNull();
+    await type('cutLossInput', '');
+    expect(unknownClose()).toBeNull();
+  });
+
+  it('does not show the unknown-close line when the close is known', async () => {
+    await render();
+    await type('cutLossInput', '3');
+    expect(unknownClose()).toBeNull();
   });
 });

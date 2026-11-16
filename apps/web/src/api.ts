@@ -3,6 +3,7 @@
 // fees the client *sends* are USD strings ("12.34"), parsed via @st/core.
 import { parseUsd } from '@st/core/money';
 
+import { simConfigBody } from './api.sim';
 import type {
   CorrectionDto,
   CreateRunInput,
@@ -19,6 +20,7 @@ import type {
   SimDetailDto,
   SimInput,
   SimRunDto,
+  SimUpdateInput,
 } from './api.types';
 
 export type * from './api.types';
@@ -51,6 +53,7 @@ export type ApiErrorCode =
   | 'correction-not-found'
   | 'correction-not-open'
   | 'correction-stale'
+  | 'sim-finalized'
   | `http-${number}`;
 
 export class ApiError extends Error {
@@ -165,6 +168,12 @@ export interface Api {
     visionApiKey?: string;
   }): Promise<void>;
   runSim(input: SimInput): Promise<{ id: number; dayCount: number }>;
+  /** Apply: recompute a draft in place. 409 `sim-finalized` once saved, 404 when unknown. */
+  updateSimRun(id: number, input: SimUpdateInput): Promise<{ id: number; dayCount: number }>;
+  /** Save: put a draft into the append-only history (204). 409 `sim-finalized` if already saved. */
+  saveSimRun(id: number): Promise<void>;
+  /** Discard: delete a draft (204). 409 `sim-finalized` for a saved sim. */
+  deleteSimRun(id: number): Promise<void>;
   listSimRuns(): Promise<SimRunDto[]>;
   getSimRun(id: number): Promise<SimDetailDto>;
 }
@@ -250,20 +259,17 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
       }
       return send<{ ok: true }>('PUT', '/api/settings', body).then(() => undefined);
     },
-    runSim: (input) => {
-      const body: Record<string, unknown> = {
-        name: input.name.trim(),
+    runSim: (input) =>
+      send<{ id: number; dayCount: number }>('POST', '/api/sim', {
         ticker: input.ticker.trim().toUpperCase(),
-        from: input.from,
-        to: input.to,
-        poolCents: input.poolCents,
-        costPpm: input.costPpm,
-      };
-      if (input.buyGapPpm !== undefined) body.buyGapPpm = input.buyGapPpm;
-      if (input.sellGapPpm !== undefined) body.sellGapPpm = input.sellGapPpm;
-      if (input.params && Object.keys(input.params).length > 0) body.params = input.params;
-      return send<{ id: number; dayCount: number }>('POST', '/api/sim', body);
-    },
+        ...simConfigBody(input.name, input),
+      }),
+    // The server keeps no sim name (it only labels the in-memory run), so Apply
+    // sends a stable placeholder when the caller has none.
+    updateSimRun: (id, input) =>
+      send<{ id: number; dayCount: number }>('PUT', `/api/sim/${id}`, simConfigBody(input.name || `Sim #${id}`, input)),
+    saveSimRun: (id) => send<unknown>('POST', `/api/sim/${id}/save`).then(() => undefined),
+    deleteSimRun: (id) => send<unknown>('DELETE', `/api/sim/${id}`).then(() => undefined),
     listSimRuns: () => get<SimRunDto[]>('/api/sim'),
     getSimRun: (id) => get<SimDetailDto>(`/api/sim/${id}`),
   };

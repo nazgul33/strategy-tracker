@@ -27,7 +27,9 @@ const run: SimRunDto = {
   costPpm: 200,
   buyGapPpm: 5000,
   sellGapPpm: 0,
+  cutLossPpm: 35_000,
   paramsJson: '{"bucketCount":2,"maxAgeDays":5}',
+  draft: true,
   createdAt: '2026-01-04 09:00:00',
 };
 
@@ -45,7 +47,7 @@ const day: SimDayDto = {
   eventsJson: [],
 };
 
-describe('SimReplay stored-run gaps', () => {
+describe('SimReplay', () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
 
@@ -65,14 +67,37 @@ describe('SimReplay stored-run gaps', () => {
     delete globalThis.IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it('renders stored gaps in the run meta: 5000 ppm as 0.5%, 0 as the default marker', async () => {
+  it('no longer repeats the config in its nav meta line', async () => {
     await act(async () => {
       root.render(d(SimReplay, { run, days: [day] }));
     });
     const text = container.textContent ?? '';
-    expect(text).toContain('Buy gap');
-    expect(text).toContain('0.5%');
-    expect(text).toContain('Sell gap');
-    expect(text).toContain('default');
+    // The config panel above owns these numbers; two copies would drift.
+    expect(text).not.toContain('QQQ');
+    expect(text).not.toContain('Buy gap');
+    expect(text).not.toContain('Sell gap');
+    expect(text).not.toContain('Max age');
+    expect(text).not.toContain('2026-01-02 → 2026-01-03');
+    // The navigation itself is intact.
+    expect(text).toContain('Day 1 of 1');
+    expect(text).toContain('2026-01-02');
+  });
+
+  it('a stop-preempted skip event is rendered with its own copy', async () => {
+    const preempted: SimDayDto = {
+      ...day,
+      eventsJson: [
+        { type: 'skipped', bucketIndex: 0, reason: 'stop-preempted' },
+        { type: 'skipped', bucketIndex: 1, reason: 'no-bucket' },
+      ],
+    };
+    await act(async () => {
+      root.render(d(SimReplay, { run, days: [preempted] }));
+    });
+    const text = container.textContent ?? '';
+    expect(text).toContain('Cut-loss stop took this bucket first');
+    // An existing reason keeps its own, different copy.
+    expect(text).toContain('No free bucket');
+    expect(text).not.toContain('simSkipStopPreempted');
   });
 });

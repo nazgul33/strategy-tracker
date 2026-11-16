@@ -74,6 +74,55 @@ describe('runSim gaps', () => {
   });
 });
 
+// Sim drafts: Apply is a PUT without the ticker, Save/Discard are body-less,
+// and the 409 refusal surfaces as a typed error code.
+describe('sim draft endpoints', () => {
+  const config = { from: '2026-01-02', to: '2026-06-30', poolCents: 1000, costPpm: 200, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 35_000 };
+
+  function recorder(status = 200, body: unknown = { id: 4, dayCount: 9 }) {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const http: Http = async (url, init) => {
+      calls.push({ url, init });
+      return status === 204 ? new Response(null, { status }) : Response.json(body, { status });
+    };
+    return { calls, api: createApi(http, { getToken: () => 't' }) };
+  }
+
+  test('updateSimRun PUTs the config with cut-loss and never a ticker', async () => {
+    const { calls, api } = recorder();
+    await expect(api.updateSimRun(4, { ...config, params: { bucketCount: 6 } })).resolves.toEqual({ id: 4, dayCount: 9 });
+    expect(calls[0]!.url).toBe('/api/sim/4');
+    expect(calls[0]!.init?.method).toBe('PUT');
+    const body = JSON.parse(String(calls[0]!.init?.body));
+    expect(body).toMatchObject({ ...config, params: { bucketCount: 6 } });
+    expect('ticker' in body).toBe(false);
+  });
+
+  test('runSim carries cutLossPpm when set', async () => {
+    const { calls, api } = recorder();
+    await api.runSim({ ...config, name: 'S', ticker: 'qqq' });
+    expect(JSON.parse(String(calls[0]!.init?.body))).toMatchObject({ ticker: 'QQQ', cutLossPpm: 35_000 });
+  });
+
+  test('saveSimRun POSTs /save and deleteSimRun DELETEs, both resolving on 204', async () => {
+    const { calls, api } = recorder(204);
+    await expect(api.saveSimRun(4)).resolves.toBeUndefined();
+    await expect(api.deleteSimRun(4)).resolves.toBeUndefined();
+    expect(calls.map((c) => [c.init?.method, c.url])).toEqual([
+      ['POST', '/api/sim/4/save'],
+      ['DELETE', '/api/sim/4'],
+    ]);
+  });
+
+  test('a 409 sim-finalized is an ApiError with that code', async () => {
+    const { api } = recorder(409, { error: 'sim-finalized' });
+    const err = await api.saveSimRun(4).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(409);
+    expect((err as ApiError).code).toBe('sim-finalized');
+  });
+});
+
 // Gap edit: POST /api/runs/:id/gaps, all three values sent, 204 no-content.
 describe('setGaps', () => {
   test('posts the three ppm values and resolves on 204', async () => {
