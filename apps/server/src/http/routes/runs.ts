@@ -6,6 +6,7 @@ import { t as tgT } from '@st/telegram/i18n'
 import { seedRun, manualFill, cancelOrder } from '../../domain/booking'
 import type { RawFill } from '@st/ingest'
 import { jsonBig, type HttpDeps } from '../app'
+import { fillBookingDeps } from '../booking-deps'
 import { MAX_PPM, isValidPpm } from '../../domain/ppm'
 import { prevTradingDay, type ISODate } from '@st/calendar'
 
@@ -233,7 +234,7 @@ export function runsRouter(deps: HttpDeps): Hono {
     // manualFill ignores it and stamps the run's ticker (pinned by booking.test.ts and http.test.ts).
     const fill = body as Omit<RawFill, 'ticker'> & { filledOn: string }
     try {
-      await manualFill(id, fill, { repos: deps.repos as any, today: deps.today() as any })
+      await manualFill(id, fill, fillBookingDeps(deps))
     } catch (e: any) {
       if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
       return c.json({ error: e?.message ?? 'error' }, 422)

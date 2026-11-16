@@ -6,6 +6,7 @@ import type { Lang } from '@st/telegram/i18n';
 
 import { confirmPendingFill, ingestCapture } from '../domain/booking';
 import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/booking';
+import { makeSiblingNotifier } from './sibling-notifier';
 
 type PendingRow = { id: number; side: string; ticker: string; shares: number; price: bigint | string; bucketIdx: number | null; filledOn: string; status: string };
 
@@ -29,6 +30,8 @@ export interface CaptureDeps {
   getVisionApiKey(): Promise<string>;
   today(): string;
   lang?: Lang;
+  // chats told to pull a cancelled sibling leg at the broker; omitted or empty: nobody
+  allowedChatIds?: string[];
   send(chatId: string, text: string, extra?: Record<string, unknown>): Promise<void>;
   fetchImpl?: typeof fetch;
 }
@@ -183,7 +186,11 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     const id = Number(m[2]);
     if (approved) {
       try {
-        await confirmPendingFill(id, null, { repos: deps.repos, today: deps.today() });
+        await confirmPendingFill(id, null, {
+          repos: deps.repos,
+          today: deps.today(),
+          notifySiblingCancelled: makeSiblingNotifier({ repos: deps.repos, allowedChatIds: deps.allowedChatIds ?? [], send: deps.send, lang }),
+        });
       } catch (e) {
         await deps.send(chatId, confirmErrorText(e));
         return;

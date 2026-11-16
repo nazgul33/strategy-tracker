@@ -40,6 +40,7 @@ async function main(): Promise<void> {
     getVisionApiKey: async () => (await repos.settingsRepo.getAll()).visionApiKey || env.visionApiKey,
     today: todayEt,
     lang: digestLang,
+    allowedChatIds: env.telegram?.allowedChatIds ?? [],
     send,
   })
 

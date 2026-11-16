@@ -150,6 +150,13 @@ describe('digest', () => {
     expect(t('order-cancelled', 'en', { kind: 'buy_loc', bucket: 0, price: '1.00', reason: t('reason-broker-filled', 'en') }))
       .toBe('🚫 Cancelled: buy_loc bucket 0 — filled elsewhere at broker (1.00)')
   })
+  test('sibling-cancelled tells the operator to pull the leg, in both languages', () => {
+    const params = { kind: 'stop_sell', bucket: 3, price: '97.00' }
+    expect(t('sibling-cancelled', 'en', params))
+      .toBe('⚠️ Cancel stop_sell bucket 3 (97.00) at your broker — the other leg already filled, so this order is no longer needed.')
+    expect(t('sibling-cancelled', 'ko', params))
+      .toBe('⚠️ 증권사에서 stop_sell 버킷 3 (97.00) 주문을 취소하세요 — 반대편 주문이 이미 체결되어 이 주문은 더 이상 필요하지 않습니다.')
+  })
 })
 
 describe('digest stop line', () => {

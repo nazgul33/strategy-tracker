@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { jsonBig, type HttpDeps } from '../app'
 import { DomainError } from '@st/core'
 import { confirmPendingFill } from '../../domain/booking'
+import { fillBookingDeps } from '../booking-deps'
 export function pendingRouter(deps: HttpDeps): Hono {
   const r = new Hono()
   r.get('/pending', async (c) => {
@@ -13,7 +14,7 @@ export function pendingRouter(deps: HttpDeps): Hono {
     const body = await c.req.json().catch(() => ({}))
     const overrides = body?.overrides ?? null
     try {
-      await confirmPendingFill(id, overrides, { repos: deps.repos as any, today: deps.today() as any })
+      await confirmPendingFill(id, overrides, fillBookingDeps(deps))
     } catch (e: any) {
       if (e?.message === 'ticker-mismatch') return c.json({ error: 'ticker-mismatch' }, 409)
       if (e?.message === 'pending-not-pending' || e?.message === 'pending-not-found-or-not-pending') return c.json({ error: 'not-pending' }, 409)

@@ -55,6 +55,7 @@ export const CATALOG: Record<string, MsgEntry> = {
   'bucket-force-sell': { en: 'Bucket {index}: FORCE SELL {shares} sh @ ${price}', ko: '버킷 {index}: 강제 매도 {shares}주 @ ${price}' },
   'vision-not-configured': { en: 'Vision is not configured — set VISION_BASE_URL and VISION_MODEL.', ko: '비전 설정이 없습니다 — VISION_BASE_URL과 VISION_MODEL을 설정하세요.' },
   'order-cancelled': { en: '🚫 Cancelled: {kind} bucket {bucket} — {reason} ({price})', ko: '🚫 취소: {kind} 버킷 {bucket} — {reason} ({price})' },
+  'sibling-cancelled': { en: '⚠️ Cancel {kind} bucket {bucket} ({price}) at your broker — the other leg already filled, so this order is no longer needed.', ko: '⚠️ 증권사에서 {kind} 버킷 {bucket} ({price}) 주문을 취소하세요 — 반대편 주문이 이미 체결되어 이 주문은 더 이상 필요하지 않습니다.' },
   'cut-loss-immediate': { en: '⚠️ {n} stop trigger(s) already at or above the last close — the stop may fire as soon as it is placed', ko: '⚠️ 손절 발동가 {n}건이 이미 최근 종가 이상입니다 — 주문하자마자 체결될 수 있습니다' },
   'stop-verb': { en: 'Sell', ko: '매도' },
   'stop-label': { en: 'trigger', ko: '발동가' },

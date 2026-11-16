@@ -6,6 +6,7 @@ import { matchCapturedFills, type CaptureConflict } from './capture-dedup'
 import { claimCapture } from './capture-claim'
 import { recordCorrections } from './capture-corrections'
 import { withRunLock } from './run-lock'
+import { notifySiblingsCancelled } from './sibling-notify'
 import { matchSellOrder, openSellLegs, type OrderRow } from './sell-match'
 import type { CorrectionRepo } from './correction-types'
 
@@ -46,7 +47,8 @@ export interface RepoSurface {
   notificationRepo: { insert(n: any): Promise<any> }
 }
 
-export interface BookingDeps { repos: RepoSurface; today: ISODate }
+// notifySiblingCancelled: told, once per order, about a leg cancelled here that the operator must still pull at the broker.
+export interface BookingDeps { repos: RepoSurface; today: ISODate; notifySiblingCancelled?: (runId: number, order: OrderRow) => Promise<void> }
 
 export type CaptureOutcome =
   | 'duplicate'
@@ -74,9 +76,12 @@ export interface BookInput {
 // → fill → ledger → sibling cancel → order flip) must not interleave with another
 // writer on the same run. Not reentrant: never call this from inside a withRunLock
 // on the same run. Resolves to the ids of the sell orders cancelled because this
-// fill emptied its bucket (empty when nothing was cancelled).
-export function runBooking(input: BookInput, deps: BookingDeps): Promise<number[]> {
-  return withRunLock(input.runId, () => bookUnlocked(input, deps))
+// fill emptied its bucket (empty when nothing was cancelled). The operator hears of
+// them after the lock is released; a notifier failure never reaches the caller.
+export async function runBooking(input: BookInput, deps: BookingDeps): Promise<number[]> {
+  const cancelled = await withRunLock(input.runId, () => bookUnlocked(input, deps))
+  await notifySiblingsCancelled(input.runId, cancelled, deps)
+  return cancelled
 }
 
 async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number[]> {
@@ -197,7 +202,7 @@ export async function confirmPendingFill(pendingId: number, overrides: { shares?
   if (!known) throw new Error('pending-not-found-or-not-pending')
 
   // bookUnlocked, not runBooking: the lock is not reentrant.
-  await withRunLock(known.runId, async () => {
+  const cancelled = await withRunLock(known.runId, async () => {
     const pendingList = await repos.pendingRepo.listPending()
     const pending = pendingList.find((p: any) => p.id === pendingId)
     if (!pending) throw new Error('pending-not-found-or-not-pending')
@@ -208,7 +213,7 @@ export async function confirmPendingFill(pendingId: number, overrides: { shares?
     const shares = overrides?.shares ?? pending.shares
     const filledOn = overrides?.filledOn ?? pending.filledOn
 
-    await bookUnlocked({
+    return bookUnlocked({
       runId: pending.runId,
       side: pending.side,
       shares,
@@ -219,6 +224,7 @@ export async function confirmPendingFill(pendingId: number, overrides: { shares?
       source: 'capture',
     }, deps)
   })
+  await notifySiblingsCancelled(known.runId, cancelled, deps)
 }
 
 export async function manualFill(runId: number, fill: Omit<RawFill, 'ticker' | 'date'> & { filledOn: ISODate }, deps: BookingDeps): Promise<void> {

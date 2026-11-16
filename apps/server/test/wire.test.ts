@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
-import { emptyState, parseUsd } from '@st/core';
+import { describe, expect, spyOn, test } from 'bun:test';
+import { applyBuyFill, emptyState, parseUsd } from '@st/core';
 import { buildPendingKeyboard } from '@st/telegram';
 import { t, type Lang } from '@st/telegram/i18n';
 import type { FillRow, LedgerRow } from '../src/db/schema';
@@ -707,5 +707,71 @@ describe('capture status and orders', () => {
     ];
     await h.handlers.onOrders('777');
     expect(h.sent[1]!.text).toContain('#1 buy_loc NVDA 10 sh @ $170.00');
+  });
+});
+
+describe('capture confirm — sibling leg cancelled by a bucket-emptying sell', () => {
+  async function setupSell(opts: { allowedChatIds?: string[]; send?: (chatId: string, text: string) => Promise<void> } = {}) {
+    const fakes = makeCaptureFakes({ runs: [activeRun(1, 'NVDA')] });
+    await fakes.repos.bucketRepo.saveState(1, applyBuyFill(fakes.stateFor(1), 0, 10, parseUsd('100.00'), 0, '2026-11-02'));
+    const orders: FakeRow[] = [
+      { id: 1, runId: 1, tradeDate: '2026-11-10', kind: 'sell_loc', bucketIdx: 0, limitPrice: parseUsd('103.00'), shares: 10, status: 'open' },
+      { id: 2, runId: 1, tradeDate: '2026-11-10', kind: 'stop_sell', bucketIdx: 0, limitPrice: parseUsd('97.00'), shares: 10, status: 'open' },
+    ];
+    Object.assign(fakes.repos.orderRepo, {
+      listForDate: async () => orders,
+      get: async (id: number) => orders.find((o) => o.id === id) ?? null,
+      setStatus: async (id: number, status: string, reason?: string) => {
+        const o = orders.find((x) => x.id === id)!;
+        o.status = status;
+        if (reason !== undefined) o.cancelReason = reason;
+      },
+    });
+    const pid = await fakes.repos.pendingRepo.insert({ runId: 1, captureId: null, bucketIdx: null, side: 'sell', ticker: 'NVDA', shares: 10, price: parseUsd('96.50'), fee: null, filledOn: '2026-11-10' });
+    const sent: { chatId: string; text: string }[] = [];
+    const handlers = makeCaptureHandlers({
+      repos: fakes.repos as never,
+      vision: { baseUrl: 'https://vision.example/v1', model: 'vision-model' },
+      getVisionApiKey: async () => 'k',
+      today: () => '2026-11-10',
+      allowedChatIds: opts.allowedChatIds ?? ['111', '222'],
+      send: opts.send ?? (async (chatId, text) => void sent.push({ chatId, text })),
+    });
+    return { fakes, orders, pid, sent, handlers };
+  }
+
+  test('confirming the sell tells every allowed chat to pull the cancelled leg and records the notifications', async () => {
+    const { fakes, orders, pid, sent, handlers } = await setupSell();
+    await handlers.onConfirm(`yes:${pid}`, true);
+    const text = '⚠️ Cancel sell_loc bucket 0 (103.00) at your broker — the other leg already filled, so this order is no longer needed.';
+    expect(sent.filter((s) => s.text === text).map((s) => s.chatId)).toEqual(['111', '222']);
+    expect(fakes.notifications).toEqual([
+      { runId: 1, chatId: '111', text },
+      { runId: 1, chatId: '222', text },
+    ]);
+    expect(orders[0]).toMatchObject({ status: 'cancelled', cancelReason: 'broker-filled' });
+    expect(orders[1]!.status).toBe('filled');
+  });
+
+  test('a Telegram outage on the notice never fails the confirm', async () => {
+    const sent: string[] = [];
+    const { fakes, orders, pid, handlers } = await setupSell({
+      send: async (_chatId, text) => {
+        if (text.startsWith('⚠️ Cancel')) throw new Error('telegram-down');
+        sent.push(text);
+      },
+    });
+    const errors = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await handlers.onConfirm(`yes:${pid}`, true);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toStartWith('Booked NVDA sell 10 sh');
+      expect(fakes.fills).toHaveLength(1);
+      expect(fakes.ledger).toHaveLength(1);
+      expect(orders[0]!.status).toBe('cancelled');
+      expect(errors).toHaveBeenCalled();
+    } finally {
+      errors.mockRestore();
+    }
   });
 });
