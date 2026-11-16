@@ -151,3 +151,54 @@ describe('digest', () => {
       .toBe('🚫 Cancelled: buy_loc bucket 0 — filled elsewhere at broker (1.00)')
   })
 })
+
+describe('digest stop line', () => {
+  const planWithStops: DayPlan = {
+    orders: [
+      { kind: 'sell_loc', bucketIndex: 0, limitPrice: 3500000n, shares: 10 },
+      { kind: 'stop_sell', bucketIndex: 0, limitPrice: 2700000n, shares: 10 },
+      { kind: 'sell_loc', bucketIndex: 2, limitPrice: 3600000n, shares: 5 },
+      { kind: 'stop_sell', bucketIndex: 2, limitPrice: 2800000n, shares: 5 },
+    ],
+    skips: [],
+    notices: [],
+  }
+
+  test('stop line follows its bucket sell line (en)', () => {
+    const lines = renderDigest(run, planWithStops, ctx, 'en')[0]!.split('\n')
+    const sellIdx = lines.findIndex((l) => l.includes('bucket 0') && l.includes('LOC'))
+    expect(lines[sellIdx]).toBe('Sell  LOC  10 sh  @ 350.00  → bucket 0')
+    expect(lines[sellIdx + 1]).toBe('Sell  STOP  10 sh  trigger 270.00  → bucket 0')
+    const sell2 = lines.findIndex((l) => l.includes('bucket 2') && l.includes('LOC'))
+    expect(lines[sell2 + 1]).toBe('Sell  STOP  5 sh  trigger 280.00  → bucket 2')
+  })
+  test('stop line renders in ko', () => {
+    const lines = renderDigest(run, planWithStops, ctx, 'ko')[0]!.split('\n')
+    expect(lines).toContain('매도  STOP  10 sh  발동가 270.00  → bucket 0')
+  })
+  test('stop lines stay paired with their sell lines when input order is shuffled', () => {
+    const shuffled: DayPlan = { ...planWithStops, orders: [planWithStops.orders[3]!, planWithStops.orders[2]!, planWithStops.orders[1]!, planWithStops.orders[0]!] }
+    const lines = renderDigest(run, shuffled, ctx, 'en')[0]!.split('\n').slice(2)
+    expect(lines.map((l) => l.split('→ ')[1] + ':' + l.split('  ')[1])).toEqual(['bucket 0:LOC', 'bucket 0:STOP', 'bucket 2:LOC', 'bucket 2:STOP'])
+  })
+  test('a stop without a sell line is still rendered, and market sells keep their place after', () => {
+    const plan: DayPlan = {
+      orders: [
+        { kind: 'market_sell', bucketIndex: 1, limitPrice: 0n, shares: 7 },
+        { kind: 'stop_sell', bucketIndex: 3, limitPrice: 2500000n, shares: 4 },
+      ],
+      skips: [],
+      notices: [],
+    }
+    const lines = renderDigest(run, plan, ctx, 'en')[0]!.split('\n').slice(2)
+    expect(lines).toEqual(['Sell  STOP  4 sh  trigger 250.00  → bucket 3', 'Market  SELL  7 sh  bucket 1'])
+  })
+  test('cut-loss-immediate notice is rendered from the catalog', () => {
+    const plan = { ...planWithStops, notices: [{ code: 'cut-loss-immediate', params: { n: 2 } }] }
+    const en = renderDigest(run, plan, ctx, 'en')[0]!.split('\n')
+    expect(en.at(-1)).toBe('⚠️ 2 stop trigger(s) already at or above the last close — the stop may fire as soon as it is placed')
+    expect(en.join('\n')).not.toContain('cut-loss-immediate')
+    const ko = renderDigest(run, plan, ctx, 'ko')[0]!.split('\n')
+    expect(ko.at(-1)).toBe('⚠️ 손절 발동가 2건이 이미 최근 종가 이상입니다 — 주문하자마자 체결될 수 있습니다')
+  })
+})

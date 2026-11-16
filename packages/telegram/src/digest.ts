@@ -13,8 +13,10 @@ export function renderDigest(run: Run, plan: DayPlan, ctx: DayContext, lang: Lan
   for (const o of plan.orders.filter((x) => x.kind === 'buy_loc')) {
     lines.push(buyLine(o, lang))
   }
-  const sellLocs = plan.orders.filter((x) => x.kind === 'sell_loc').sort((a, b) => a.bucketIndex - b.bucketIndex)
-  for (const o of sellLocs) lines.push(sellLocLine(o, lang, ages))
+  const sells = plan.orders
+    .filter((x) => x.kind === 'sell_loc' || x.kind === 'stop_sell')
+    .sort((a, b) => a.bucketIndex - b.bucketIndex || sellRank(a) - sellRank(b))
+  for (const o of sells) lines.push(o.kind === 'stop_sell' ? stopSellLine(o, lang) : sellLocLine(o, lang, ages))
   const marketSells = plan.orders.filter((x) => x.kind === 'market_sell').sort((a, b) => a.bucketIndex - b.bucketIndex)
   for (const o of marketSells) lines.push(marketSellLine(o, lang, ages))
   const consumedNotices = new Set<number>()
@@ -63,6 +65,15 @@ function sellLocLine(o: PlannedOrder, lang: Lang, ages?: Record<number, number>)
   const age = orderAge(o, ages)
   const ageClause = age !== undefined ? `  (${t('age', lang, { n: age })})` : ''
   return `${verb}  LOC  ${o.shares} sh  @ ${formatUsd(o.limitPrice)}  → bucket ${o.bucketIndex}${ageClause}`
+}
+
+function sellRank(o: PlannedOrder): number {
+  return o.kind === 'stop_sell' ? 1 : 0
+}
+
+// limitPrice on a stop_sell is the trigger price; the order fills at market once triggered.
+function stopSellLine(o: PlannedOrder, lang: Lang): string {
+  return `${t('stop-verb', lang)}  STOP  ${o.shares} sh  ${t('stop-label', lang)} ${formatUsd(o.limitPrice)}  → bucket ${o.bucketIndex}`
 }
 
 function marketSellLine(o: PlannedOrder, lang: Lang, ages?: Record<number, number>): string {
