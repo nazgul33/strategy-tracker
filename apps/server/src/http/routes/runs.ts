@@ -181,7 +181,8 @@ export function runsRouter(deps: HttpDeps): Hono {
 
   // one ranged read through the injected (cached) bar reader over
   // [start, prevTradingDay(today)]; the reader fetches only what it has never
-  // fetched before. Bars may carry `date` (OHLCBar) or `tradeDate` (legacy shape).
+  // fetched before. Compatibility shim: the real fetchDailyBars/cached reader emit
+  // OHLCBar keyed `date`; older test fakes (and the old route code) used `tradeDate`.
   async function backfillPriceHistory(
     deps: HttpDeps,
     ticker: string,

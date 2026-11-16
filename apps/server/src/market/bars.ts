@@ -1,5 +1,5 @@
 import { dayInfo, prevTradingDay, type ISODate } from '@st/calendar'
-import type { OHLCBar } from '@st/market-data'
+import { MarketDataError, type OHLCBar } from '@st/market-data'
 import type { BarRow } from '../db/repos-bars'
 
 export interface BarCacheRepos {
@@ -99,7 +99,13 @@ export function makeCachedBarReader(deps: {
     const tailFrom = from > addDays(horizon, 1) ? from : addDays(horizon, 1)
     let tail: OHLCBar[] = []
     if (tailFrom <= to && firstOpen(tailFrom, to) !== null) {
-      tail = inRange(await upstream(ticker, tailFrom, to), tailFrom, to)
+      try {
+        tail = inRange(await upstream(ticker, tailFrom, to), tailFrom, to)
+      } catch (e) {
+        // No data for an unfinished or not-yet-open session is normal (pre-open,
+        // holiday); only a transport/provider failure is a real error.
+        if (!(e instanceof MarketDataError && e.kind === 'no-data')) throw e
+      }
     }
     return [...cached, ...tail].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
   }

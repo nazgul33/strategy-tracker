@@ -149,6 +149,30 @@ describe('makeCachedBarReader', () => {
     expect(f.coverage.length).toBe(0)
   })
 
+  test('a tail the provider has no data for returns the cached bars instead of failing', async () => {
+    today = '2026-01-09'
+    await read('AAPL', '2026-01-05', '2026-01-08') // cache everything before today
+    up.state.reset()
+    up.state.missing.add('2026-01-09') // pre-open: provider answers no-data for today
+    const bars = await read('AAPL', '2026-01-05', '2026-01-09')
+    expect(up.state.ranges).toEqual([['2026-01-09', '2026-01-09']]) // the tail was really attempted
+    expect(bars.map((b) => b.date)).toEqual(['2026-01-05', '2026-01-06', '2026-01-07', '2026-01-08'])
+  })
+
+  test('a tail failing with an http error still propagates', async () => {
+    today = '2026-01-09'
+    await read('AAPL', '2026-01-05', '2026-01-08')
+    up.state.failFrom = '2026-01-09'
+    await expect(read('AAPL', '2026-01-05', '2026-01-09')).rejects.toMatchObject({ kind: 'http' })
+  })
+
+  test('a no-data answer for a historical gap still propagates even when a tail exists', async () => {
+    today = '2026-01-09'
+    up.state.missing = new Set(['2026-01-05', '2026-01-06', '2026-01-07', '2026-01-08'])
+    await expect(read('AAPL', '2026-01-05', '2026-01-09')).rejects.toMatchObject({ kind: 'no-data' })
+    expect(f.coverage.length).toBe(0)
+  })
+
   test('a tail with no trading day makes no upstream call', async () => {
     today = '2026-01-10' // Saturday
     await read('AAPL', '2026-01-05', '2026-01-09')
