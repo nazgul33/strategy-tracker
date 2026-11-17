@@ -2,9 +2,11 @@ import { describe, test, expect, spyOn } from 'bun:test'
 import { emptyState } from '@st/core'
 import { parseUsd } from '@st/core/money'
 import type { ExtractResult } from '@st/ingest'
-import { ingestCapture, confirmPendingFill, type BookingDeps, type PendingFillRow } from '../src/domain/booking'
+import { ingestCapture, confirmPendingFill, rejectPendingFill, type BookingDeps, type PendingFillRow } from '../src/domain/booking'
 import { isEdited, resolveReview, type DetectedValues, type FinalValues } from '../src/domain/vision-review'
 import { createApp } from '../src/http/app'
+import { makeCaptureHandlers } from '../src/wire/capture'
+import { t } from '@st/telegram/i18n'
 import { fakeRepos } from './booking.test'
 import { makeFakes, makeDeps, loginAs, createRun } from './http-fakes'
 
@@ -204,6 +206,63 @@ describe('freeze, keep, sweep', () => {
     expect(f._stores.pending.find((p: any) => p.id === sellId)!.status).toBe('confirmed')
     expect(f._stores.orders.map((o: any) => o.status)).toEqual(['filled', 'cancelled'])
     expect(notified).toEqual([f._stores.orders[1]!.id])
+  })
+})
+
+describe('rejectPendingFill', () => {
+  test('resolves false for a missing or already handled row and writes nothing', async () => {
+    const { f, deps, ids } = await setup(2)
+    expect(await rejectPendingFill(999, deps)).toBe(false)
+    expect(await rejectPendingFill(ids[0]!, deps)).toBe(true)
+    expect(await rejectPendingFill(ids[0]!, deps)).toBe(false)
+    expect(f._stores.visionReviews).toHaveLength(1)
+  })
+
+  test('an archive failure after the reject took effect is logged, not thrown', async () => {
+    const { f, deps, ids } = await setup(1)
+    f.repos.visionReviewRepo.insertIgnore = async () => { throw new Error('archive-down') }
+    const err = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(await rejectPendingFill(ids[0]!, deps)).toBe(true)
+      expect(String(err.mock.calls[0]!.join(' '))).toContain('archive-down')
+    } finally {
+      err.mockRestore()
+    }
+    expect(f._stores.pending.find((p: any) => p.id === ids[0])!.status).toBe('rejected')
+  })
+})
+
+describe('Telegram reject', () => {
+  async function telegram() {
+    const s = await setup(2)
+    const sent: string[] = []
+    const repos = { ...s.f.repos, pendingRepo: { ...s.f.repos.pendingRepo, get: async (id: number) => s.f._stores.pending.find((p: any) => p.id === id) ?? null } }
+    const handlers = makeCaptureHandlers({
+      repos: repos as any, vision: { baseUrl: 'http://x', model: 'm' }, getVisionApiKey: async () => 'k',
+      today: () => TODAY, send: async (_chat, text) => { sent.push(text) },
+    })
+    return { ...s, sent, handlers }
+  }
+
+  test('rejecting the last pending fill of a capture freezes its row and sweeps the bytes', async () => {
+    const { f, ids, sent, handlers } = await telegram()
+    await handlers.onConfirm(`no:${ids[0]}`, false)
+    expect(f._stores.captureImages).toHaveLength(1)
+    expect(f._stores.visionReviews).toHaveLength(1)
+    expect(f._stores.visionReviews[0]).toMatchObject({ pendingFillId: ids[0], outcome: 'rejected', finalShares: null, edited: false })
+
+    await handlers.onConfirm(`no:${ids[1]}`, false)
+    expect(f._stores.captureImages).toHaveLength(0)
+    expect(f._stores.visionReviews).toHaveLength(0)
+    expect(sent).toEqual([t('rejected-line', 'en'), t('rejected-line', 'en')])
+  })
+
+  test('a repeat reject sends the duplicate message and archives nothing more', async () => {
+    const { f, ids, sent, handlers } = await telegram()
+    await handlers.onConfirm(`no:${ids[0]}`, false)
+    await handlers.onConfirm(`no:${ids[0]}`, false)
+    expect(sent).toEqual([t('rejected-line', 'en'), t('duplicate-capture', 'en')])
+    expect(f._stores.visionReviews).toHaveLength(1)
   })
 })
 

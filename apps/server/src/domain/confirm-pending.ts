@@ -68,3 +68,30 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
   })
   await notifySiblingsCancelled(known.runId, cancelled, deps)
 }
+
+// Resolves false when the row is missing or already handled (callers answer 409 /
+// the duplicate message). Under the run lock so two siblings resolving at once
+// cannot both see "no pending left" and race the sweep. The reject has taken
+// effect once decide succeeds, so an archive failure is logged and contained,
+// exactly as on the confirm path.
+export async function rejectPendingFill(pendingId: number, deps: Pick<BookingDeps, 'repos'>, opts?: { keepImage?: boolean }): Promise<boolean> {
+  const repos = deps.repos
+  // Only a peek to learn the run; the row is re-read inside the lock.
+  const known = (await repos.pendingRepo.listPending()).find((p: any) => p.id === pendingId)
+  if (!known) return false
+
+  return withRunLock(known.runId, async () => {
+    const pending = (await repos.pendingRepo.listPending()).find((p: any) => p.id === pendingId)
+    if (!pending) return false
+    if ((await repos.pendingRepo.decide(pendingId, 'rejected')) === false) return false
+    try {
+      await resolveReview(repos, {
+        pendingRow: pending, captureId: pending.captureId ?? null, outcome: 'rejected',
+        final: null, keepImage: opts?.keepImage === true,
+      })
+    } catch (e) {
+      console.error('vision review archive failed:', pendingId, String(e))
+    }
+    return true
+  })
+}

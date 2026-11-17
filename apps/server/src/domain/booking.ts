@@ -20,7 +20,7 @@ export type { CaptureConflict, OrderRow }
 
 // confirmPendingFill lives in its own module (this file's size); re-exported so
 // every caller keeps importing the booking surface from here.
-export { confirmPendingFill, type ConfirmOverrides } from './confirm-pending'
+export { confirmPendingFill, rejectPendingFill, type ConfirmOverrides } from './confirm-pending'
 
 export async function sha256(buf: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', buf as any)

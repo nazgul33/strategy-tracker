@@ -1,9 +1,7 @@
 import { Hono } from 'hono'
 import { jsonBig, type HttpDeps } from '../app'
 import { DomainError } from '@st/core'
-import { confirmPendingFill } from '../../domain/booking'
-import { withRunLock } from '../../domain/run-lock'
-import { resolveReview } from '../../domain/vision-review'
+import { confirmPendingFill, rejectPendingFill } from '../../domain/booking'
 import { fillBookingDeps } from '../booking-deps'
 export function pendingRouter(deps: HttpDeps): Hono {
   const r = new Hono()
@@ -27,16 +25,8 @@ export function pendingRouter(deps: HttpDeps): Hono {
   })
   r.post('/pending/:id/reject', async (c) => {
     const id = Number(c.req.param('id'))
-    const row = await deps.repos.pendingRepo.get(id)
-    if (!row || row.status !== 'pending') return c.json({ error: 'not-pending' }, 409)
-    // Under the run lock so two siblings resolving at once cannot both see "no
-    // pending left" and race the sweep.
-    const ok = await withRunLock(row.runId, async () => {
-      if ((await deps.repos.pendingRepo.decide(id, 'rejected')) === false) return false
-      await resolveReview(deps.repos, { pendingRow: row, captureId: row.captureId ?? null, outcome: 'rejected', final: null, keepImage: false })
-      return true
-    })
-    if (!ok) return c.json({ error: 'not-pending' }, 409)
+    // keepImage stays false until the request body carries it.
+    if (!(await rejectPendingFill(id, fillBookingDeps(deps), { keepImage: false }))) return c.json({ error: 'not-pending' }, 409)
     return c.json({ ok: true })
   })
   return r
