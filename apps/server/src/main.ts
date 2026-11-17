@@ -19,9 +19,15 @@ async function main(): Promise<void> {
   await applyMigrations(db)
   const repos = getRepos(db)
 
+  // Cleaning up throwaway sims must never keep the server from booting: a lock
+  // timeout or transient error here is logged and the boot continues.
   const SIM_DRAFT_MAX_AGE_DAYS = 7
-  const sweptDrafts = await repos.simRepo.sweepDrafts(new Date(Date.now() - SIM_DRAFT_MAX_AGE_DAYS * 86_400_000))
-  console.log(`[main] swept ${sweptDrafts} stale sim draft(s) older than ${SIM_DRAFT_MAX_AGE_DAYS} days`)
+  try {
+    const sweptDrafts = await repos.simRepo.sweepDrafts(new Date(Date.now() - SIM_DRAFT_MAX_AGE_DAYS * 86_400_000))
+    console.log(`[main] swept ${sweptDrafts} stale sim draft(s) older than ${SIM_DRAFT_MAX_AGE_DAYS} days`)
+  } catch (e) {
+    console.error('[main] sim draft sweep failed (continuing):', e)
+  }
 
   // vision/digest config: DB settings override env (api key re-read on every capture)
   const settings = await repos.settingsRepo.getAll()

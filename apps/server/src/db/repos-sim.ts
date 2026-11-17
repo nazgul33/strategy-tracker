@@ -73,6 +73,9 @@ export function getSimRepo(db: any) {
           await tx.delete(s.simDays).where(eq(s.simDays.simRunId, id))
           await tx.delete(s.simRuns).where(and(eq(s.simRuns.id, id), eq(s.simRuns.draft, true)))
         }
+        // The ids, not just the count: this deletes rows nothing else can restore,
+        // so an unexpected sweep must be reconstructible from the log.
+        if (ids.length > 0) console.log(`[simRepo] swept draft sim run ids: ${ids.join(', ')}`)
         return ids.length
       })
     },

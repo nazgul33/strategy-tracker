@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll } from 'bun:test'
+import { describe, test, expect, beforeAll, spyOn } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { sql } from 'drizzle-orm'
 import { emptyState, parseUsd } from '@st/core'
@@ -583,7 +583,15 @@ describeIf('db integration', () => {
       await db.execute(sql.raw(`UPDATE sim_runs SET created_at = '2020-01-01 00:00:00' WHERE id IN (${oldDraft}, ${oldSaved})`))
       const freshDraft = await repos.simRepo.insertRun(simInput())
 
-      const swept = await repos.simRepo.sweepDrafts(new Date('2021-01-01T00:00:00Z'))
+      // the deleted ids must be recoverable from the log, not just their count
+      const logs: string[] = []
+      const log = spyOn(console, 'log').mockImplementation((...args: unknown[]) => void logs.push(args.join(' ')))
+      let swept: number
+      try {
+        swept = await repos.simRepo.sweepDrafts(new Date('2021-01-01T00:00:00Z'))
+      } finally { log.mockRestore() }
+      expect(logs.join('\n')).toContain(`swept draft sim run ids`)
+      expect(logs.some((l) => l.includes(String(oldDraft)))).toBe(true)
       expect(swept).toBeGreaterThanOrEqual(1)
       expect(await repos.simRepo.getRun(oldDraft)).toBeNull()
       expect(await repos.simRepo.listDays(oldDraft)).toEqual([])

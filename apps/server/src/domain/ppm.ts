@@ -7,8 +7,10 @@ export function isValidPpm(x: unknown): x is number {
 // the web UI shows cost as a percent with three decimals (10 ppm = 0.001 %)
 export const COST_PPM_STEP = 10
 
+// Capped at MAX_PPM like isValidPpm: the value flows straight into feeCents, so
+// anything above 100 % per side is a money bug, not an exotic broker.
 export function isValidCostPpm(x: unknown): x is number {
-  return Number.isInteger(x) && (x as number) >= 0 && (x as number) % COST_PPM_STEP === 0
+  return Number.isInteger(x) && (x as number) >= 0 && (x as number) <= MAX_PPM && (x as number) % COST_PPM_STEP === 0
 }
 
 export const MAX_CUT_LOSS_PPM = 500_000
