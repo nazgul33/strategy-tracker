@@ -447,7 +447,9 @@ Expected: FAIL — `resolveReview` not exported.
 
 Call it from `confirmPendingFill` **after `bookUnlocked` returns**, inside the existing `withRunLock` span (see the spec: a late `no-empty-bucket` must not leave a confirmed-looking record), with `confirmPendingFill` taking a fourth argument `opts?: { keepImage?: boolean }`. Mind the shape #42 left behind: that block now ends with `return bookUnlocked(…)` and its value feeds `notifySiblingsCancelled` outside the lock (`booking.ts:206-229`). Capture the result in a local, `await resolveReview(...)`, then return the local — the archive write must not displace the sibling-cancel notification.
 
-Call it from the reject route after `pendingRepo.decide(id, 'rejected')` succeeds — wrap that in `withRunLock(row.runId, …)` so the sweep cannot race a sibling (Review Focus: concurrent siblings).
+Reject has **two** callers, and both must freeze and sweep: the HTTP route and the Telegram `onConfirm` "no" branch (`apps/server/src/wire/capture.ts`, which today calls `pendingRepo.decide(id, 'rejected')` bare). Put reject in one domain helper — `rejectPendingFill(pendingId, deps, opts?: { keepImage?: boolean })` in `confirm-pending.ts` — that takes `withRunLock(runId, …)`, calls `decide`, then `resolveReview`, containing archive failures the same way the confirm path does. Call it from both sites. A bare `decide` in either place leaves no frozen row and, if it was the capture's last pending fill, never sweeps the bytes.
+
+*Plan correction, made during execution:* the original text wired only the HTTP route and described Telegram's reject as "discards", conflating "keeps no image" with "needs no lifecycle". Telegram rejects still pass `keepImage: false` — the spec's non-goal stands, there is no keep prompt over Telegram — but they must freeze and sweep like any other resolution.
 
 - [ ] **Step 7: Run to verify they pass**
 
