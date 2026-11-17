@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, spyOn } from 'bun:test'
 import { emptyState } from '@st/core'
 import { parseUsd } from '@st/core/money'
 import type { ExtractResult } from '@st/ingest'
@@ -161,7 +161,9 @@ describe('freeze, keep, sweep', () => {
     expect(f._stores.captureImages[0]).toMatchObject({ captureId, keep: true })
   })
 
-  test('the sibling-cancel notification still fires after the archive write', async () => {
+  // A held bucket, a capture holding the sell that empties it, and the two open
+  // legs of that bucket: confirming the sell pulls the stop leg.
+  async function sellEmptyingBucket() {
     const f = fakeRepos()
     const notified: number[] = []
     const deps: BookingDeps = { repos: f.repos as any, today: TODAY, notifySiblingCancelled: async (_r, o) => { notified.push(o.id) } }
@@ -176,10 +178,32 @@ describe('freeze, keep, sweep', () => {
       { runId, tradeDate: TODAY, kind: 'sell_loc', bucketIdx: 0, limitPrice: parseUsd('103.00'), shares: 10, status: 'open' },
       { runId, tradeDate: TODAY, kind: 'stop_sell', bucketIdx: 0, limitPrice: parseUsd('97.00'), shares: 10, status: 'open' },
     ])
-    await confirmPendingFill(out.pending[1]!.id, null, deps, { keepImage: true })
+    return { f, deps, notified, sellId: out.pending[1]!.id }
+  }
+
+  test('the sibling-cancel notification still fires after the archive write', async () => {
+    const { f, deps, notified, sellId } = await sellEmptyingBucket()
+    await confirmPendingFill(sellId, null, deps, { keepImage: true })
     expect(f._stores.orders.map((o: any) => o.status)).toEqual(['filled', 'cancelled'])
     expect(notified).toEqual([f._stores.orders[1]!.id])
     expect(f._stores.visionReviews).toHaveLength(2)
+  })
+
+  test('an archive failure after booking is logged, not thrown, and the sibling-cancel notification still fires', async () => {
+    const { f, deps, notified, sellId } = await sellEmptyingBucket()
+    f.repos.visionReviewRepo.insertIgnore = async () => { throw new Error('archive-down') }
+    const err = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await confirmPendingFill(sellId, null, deps, { keepImage: true })
+      expect(err).toHaveBeenCalledTimes(1)
+      expect(String(err.mock.calls[0]!.join(' '))).toContain('archive-down')
+    } finally {
+      err.mockRestore()
+    }
+    expect(f._stores.fills).toHaveLength(2)
+    expect(f._stores.pending.find((p: any) => p.id === sellId)!.status).toBe('confirmed')
+    expect(f._stores.orders.map((o: any) => o.status)).toEqual(['filled', 'cancelled'])
+    expect(notified).toEqual([f._stores.orders[1]!.id])
   })
 })
 

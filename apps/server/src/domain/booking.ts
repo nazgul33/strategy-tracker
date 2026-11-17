@@ -104,12 +104,19 @@ export async function runBooking(input: BookInput, deps: BookingDeps): Promise<n
   return cancelled
 }
 
+// The one place a booked fill's fee is decided: the explicit cents when given,
+// otherwise computed from the run's costPpm. confirmPendingFill freezes the same
+// number into the review record, so the two must never diverge.
+export function finalFeeCents(run: { costPpm: number }, price: bigint, shares: number, feeCentsOverride: number | null): number {
+  return feeCentsOverride !== null ? feeCentsOverride : feeCents(price, shares, run.costPpm)
+}
+
 export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number[]> {
   const repos = deps.repos
   const run = await repos.runRepo.get(input.runId)
   const state: RunState = await repos.bucketRepo.loadState(input.runId)
   const priceBigInt = parseUsd(input.priceStr)
-  const finalFee = input.feeCents !== null ? input.feeCents : feeCents(priceBigInt, input.shares, run.costPpm)
+  const finalFee = finalFeeCents(run, priceBigInt, input.shares, input.feeCents)
 
   let next: RunState
   let bucketIdx: number

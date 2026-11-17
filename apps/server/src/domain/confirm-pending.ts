@@ -1,6 +1,6 @@
 import { parseUsd, type ISODate } from '@st/core'
-import { feeCents as computeFee, formatUsd } from '@st/core/money'
-import { bookUnlocked, type BookingDeps } from './booking'
+import { formatUsd } from '@st/core/money'
+import { bookUnlocked, finalFeeCents, type BookingDeps } from './booking'
 import { withRunLock } from './run-lock'
 import { notifySiblingsCancelled } from './sibling-notify'
 import { resolveReview } from './vision-review'
@@ -52,13 +52,18 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
 
     // After booking, inside the lock: a late no-empty-bucket / no-bucket-for-sell
     // leaves the fill pending for a retry and must not leave a 'confirmed' record
-    // behind. The booked fee is feeCents, or the computed one when that is null.
+    // behind. Once booked, archive bookkeeping must not fail the confirm or skip
+    // the sibling-cancel notification, so a failure here is logged and swallowed.
     const price = parseUsd(priceStr)
-    await resolveReview(repos, {
-      pendingRow: pending, captureId: pending.captureId ?? null, outcome: 'confirmed',
-      final: { side, shares, price, filledOn, fee: feeCents ?? computeFee(price, shares, run.costPpm) },
-      keepImage: opts?.keepImage === true,
-    })
+    try {
+      await resolveReview(repos, {
+        pendingRow: pending, captureId: pending.captureId ?? null, outcome: 'confirmed',
+        final: { side, shares, price, filledOn, fee: finalFeeCents(run, price, shares, feeCents) },
+        keepImage: opts?.keepImage === true,
+      })
+    } catch (e) {
+      console.error('vision review archive failed:', pendingId, String(e))
+    }
     return booked
   })
   await notifySiblingsCancelled(known.runId, cancelled, deps)
