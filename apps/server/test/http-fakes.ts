@@ -99,6 +99,7 @@ export function makeFakes() {
       const r = captureImages.find((x) => x.captureId === captureId)
       return r ? { mime: r.mime as string, bytes: r.bytes as Buffer } : null
     },
+    async isKept(captureId: number) { return captureImages.some((x) => x.captureId === captureId && x.keep) },
     async setKeep(captureId: number) { const r = captureImages.find((x) => x.captureId === captureId); if (r) r.keep = true },
     async deleteFor(captureId: number) {
       const i = captureImages.findIndex((x) => x.captureId === captureId)

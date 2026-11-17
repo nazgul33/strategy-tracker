@@ -436,6 +436,7 @@ describe('routes', () => {
       fillRepo: { insert: async () => {}, listForRun: async () => [] },
       pendingRepo: { insert: async () => 1, listPending: async () => [], hasLiveForCapture: async () => false, hasConfirmedForCapture: async () => false, decide: async () => {}, get: async () => null },
       captureRepo: { findByHash: async () => null, setStatus: async () => {}, insert: async () => ({ inserted: true, id: 1 }) },
+      captureImageRepo: { insertIgnore: async () => true, getBytes: async () => null, isKept: async () => false, setKeep: async () => {}, deleteFor: async () => {}, listKept: async () => [] }, visionReviewRepo: { insertIgnore: async () => {}, listForCaptures: async () => [], deleteFor: async () => {} },
       ledgerRepo: { insert: async () => {}, listForRun: async () => [] },
       notificationRepo: { insert: async () => {}, listForRun: async () => [] },
       settingsRepo: { getAll: async () => ({}), set: async () => {} },

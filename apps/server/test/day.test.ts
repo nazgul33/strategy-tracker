@@ -47,7 +47,7 @@ function makeRepos() {
   const notificationRepo = {
     async insert(n: any) { notifications.push({ ...n }) },
   }
-  const repos: any = { runRepo, bucketRepo, orderRepo, notificationRepo, fillRepo: { insert: async () => {}, async listForRun() { return [] as any[] } }, pendingRepo: { insert: async () => 1, listPending: async () => [], hasLiveForCapture: async () => false, hasConfirmedForCapture: async () => false, decide: async () => {} }, captureRepo: { findByHash: async () => null, setStatus: async () => {}, insert: async () => ({ inserted: true, id: 1 }) }, ledgerRepo: { insert: async () => {}, listForRun: async () => [] } }
+  const repos: any = { runRepo, bucketRepo, orderRepo, notificationRepo, fillRepo: { insert: async () => {}, async listForRun() { return [] as any[] } }, pendingRepo: { insert: async () => 1, listPending: async () => [], hasLiveForCapture: async () => false, hasConfirmedForCapture: async () => false, decide: async () => {} }, captureRepo: { findByHash: async () => null, setStatus: async () => {}, insert: async () => ({ inserted: true, id: 1 }) }, captureImageRepo: { insertIgnore: async () => true, getBytes: async () => null, isKept: async () => false, setKeep: async () => {}, deleteFor: async () => {}, listKept: async () => [] }, visionReviewRepo: { insertIgnore: async () => {}, listForCaptures: async () => [], deleteFor: async () => {} }, ledgerRepo: { insert: async () => {}, listForRun: async () => [] } }
   return { repos, runs, orders, notifications }
 }
 

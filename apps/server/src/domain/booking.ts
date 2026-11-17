@@ -10,7 +10,8 @@ import { notifySiblingsCancelled } from './sibling-notify'
 import { matchSellOrder, openSellLegs, type OrderRow } from './sell-match'
 import { storeCaptureImage } from './capture-image'
 import type { CorrectionRepo } from './correction-types'
-import type { CaptureImageInsert, CaptureImageListing, VisionReviewInsert, VisionReviewRow } from '../db/repos-vision'
+import type { CaptureImageInsert, CaptureImageListing } from '../db/repos-vision'
+import type { VisionReviewInsert, VisionReviewRow } from './vision-review'
 
 // The conflict shape belongs to the dedup matcher and the order row to the sell
 // matcher; re-exported so the booking surface keeps being the single place its
@@ -52,6 +53,7 @@ export interface RepoSurface {
   captureImageRepo: {
     insertIgnore(row: CaptureImageInsert): Promise<boolean>
     getBytes(captureId: number): Promise<{ mime: string; bytes: Buffer } | null>
+    isKept(captureId: number): Promise<boolean>
     setKeep(captureId: number): Promise<void>
     deleteFor(captureId: number): Promise<void>
     listKept(limit: number): Promise<CaptureImageListing[]>

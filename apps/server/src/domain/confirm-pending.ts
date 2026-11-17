@@ -1,8 +1,9 @@
-import { type ISODate } from '@st/core'
-import { formatUsd } from '@st/core/money'
+import { parseUsd, type ISODate } from '@st/core'
+import { feeCents as computeFee, formatUsd } from '@st/core/money'
 import { bookUnlocked, type BookingDeps } from './booking'
 import { withRunLock } from './run-lock'
 import { notifySiblingsCancelled } from './sibling-notify'
+import { resolveReview } from './vision-review'
 
 // Operator corrections to what the vision model read. feeCents: null recomputes the
 // fee from the run's costPpm; undefined keeps the fee captured on the pending row.
@@ -14,7 +15,7 @@ export interface ConfirmOverrides {
   feeCents?: number | null
 }
 
-export async function confirmPendingFill(pendingId: number, overrides: ConfirmOverrides | null, deps: BookingDeps): Promise<void> {
+export async function confirmPendingFill(pendingId: number, overrides: ConfirmOverrides | null, deps: BookingDeps, opts?: { keepImage?: boolean }): Promise<void> {
   const repos = deps.repos
   if (overrides?.side !== undefined && overrides.side !== 'buy' && overrides.side !== 'sell') throw new Error('invalid-side')
   const feeOverride = overrides?.feeCents
@@ -36,16 +37,29 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
     const shares = overrides?.shares ?? pending.shares
     const filledOn = overrides?.filledOn ?? pending.filledOn
 
-    return bookUnlocked({
+    const side = overrides?.side ?? pending.side
+    const feeCents: number | null = feeOverride !== undefined ? feeOverride : pending.fee
+    const booked = await bookUnlocked({
       runId: pending.runId,
-      side: overrides?.side ?? pending.side,
+      side,
       shares,
       priceStr,
-      feeCents: feeOverride !== undefined ? feeOverride : pending.fee,
+      feeCents,
       filledOn,
       pendingId,
       source: 'capture',
     }, deps)
+
+    // After booking, inside the lock: a late no-empty-bucket / no-bucket-for-sell
+    // leaves the fill pending for a retry and must not leave a 'confirmed' record
+    // behind. The booked fee is feeCents, or the computed one when that is null.
+    const price = parseUsd(priceStr)
+    await resolveReview(repos, {
+      pendingRow: pending, captureId: pending.captureId ?? null, outcome: 'confirmed',
+      final: { side, shares, price, filledOn, fee: feeCents ?? computeFee(price, shares, run.costPpm) },
+      keepImage: opts?.keepImage === true,
+    })
+    return booked
   })
   await notifySiblingsCancelled(known.runId, cancelled, deps)
 }

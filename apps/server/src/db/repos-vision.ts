@@ -1,28 +1,9 @@
 import { eq, inArray } from 'drizzle-orm'
 import * as s from './schema'
+import type { VisionReviewInsert, VisionReviewRow } from '../domain/vision-review'
 
 export type CaptureImageInsert = { captureId: number; mime: string; bytes: Buffer; byteLen: number }
 export type CaptureImageListing = { captureId: number; mime: string; byteLen: number; createdAt: string }
-
-export type VisionReviewInsert = {
-  runId: number
-  captureId: number
-  pendingFillId: number
-  ticker: string
-  outcome: 'confirmed' | 'rejected'
-  detectedSide: string | null
-  detectedShares: number | null
-  detectedPrice: bigint | null
-  detectedFilledOn: string | null
-  detectedFee: number | null
-  finalSide: string | null
-  finalShares: number | null
-  finalPrice: bigint | null
-  finalFilledOn: string | null
-  finalFee: number | null
-  edited: boolean
-}
-export type VisionReviewRow = VisionReviewInsert & { id: number; createdAt: string }
 
 export function getVisionRepos(db: any) {
   const captureImageRepo = {
@@ -38,6 +19,11 @@ export function getVisionRepos(db: any) {
       const rows = await db.select({ mime: s.captureImages.mime, bytes: s.captureImages.bytes }).from(s.captureImages)
         .where(eq(s.captureImages.captureId, captureId)).limit(1)
       return rows[0] ?? null
+    },
+    async isKept(captureId: number): Promise<boolean> {
+      const rows = await db.select({ keep: s.captureImages.keep }).from(s.captureImages)
+        .where(eq(s.captureImages.captureId, captureId)).limit(1)
+      return rows[0]?.keep === true
     },
     async setKeep(captureId: number): Promise<void> {
       await db.update(s.captureImages).set({ keep: true }).where(eq(s.captureImages.captureId, captureId))

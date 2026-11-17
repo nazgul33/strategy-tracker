@@ -220,9 +220,10 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
     },
   };
   const correctionFake = fakeCorrectionRepo();
-  // Ingest stores the screenshot; these tests do not inspect it.
-  const captureImageRepo = { async insertIgnore() { return true } };
-  const repos = { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, captureImageRepo, ledgerRepo, notificationRepo };
+  // Ingest stores the screenshot and a resolution archives it; these tests do not inspect either.
+  const captureImageRepo = { async insertIgnore() { return true }, async getBytes() { return null }, async isKept() { return false }, async setKeep() {}, async deleteFor() {}, async listKept() { return [] } };
+  const visionReviewRepo = { async insertIgnore() {}, async listForCaptures() { return [] }, async deleteFor() {} };
+  const repos = { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, captureImageRepo, visionReviewRepo, ledgerRepo, notificationRepo };
   return { repos, pending, fills, ledger, notifications, captures, corrections: correctionFake.store, stateFor };
 }
 
