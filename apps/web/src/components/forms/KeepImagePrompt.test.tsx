@@ -78,6 +78,14 @@ describe('KeepImagePrompt', () => {
     expect(container.textContent).not.toContain('Values were edited');
   });
 
+  it('leads with Keep for review as the primary button, Discard second', async () => {
+    await show('confirm');
+    const buttons = Array.from(container.querySelectorAll('button')).filter((b) => b.textContent !== '✕');
+    expect(buttons.map((b) => b.textContent)).toEqual(['Keep for review', 'Discard']);
+    expect(buttons[0]!.className).toContain('bg-primary');
+    expect(buttons[1]!.className).not.toContain('bg-primary');
+  });
+
   it('Keep for review decides true, and nothing else', async () => {
     await show('confirm');
     await click('Keep for review');

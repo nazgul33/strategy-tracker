@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { api, type PendingFillDto } from '../../api';
+import type { PendingFillDto } from '../../api';
 import { useT } from '../../i18n';
 import type { RowValues } from '../../viewmodels';
+import { ScreenshotLink } from '../ScreenshotLink';
 import { Button, Field, Input, Modal, Select } from '../ui';
 
 interface PendingReviewDialogProps {
@@ -23,9 +24,7 @@ export function PendingReviewDialog({ row, values, onCancel, onDone }: PendingRe
     <Modal wide title={`${t('pendingReviewTitle')} · ${row.ticker || '?'}`} onClose={onCancel}>
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem]">
         <div className="max-h-[70vh] overflow-auto rounded border border-border bg-background">
-          {row.captureId !== null && (
-            <img src={api.captureImageUrl(row.captureId)} alt={t('pendingScreenshotAlt')} className="w-full" />
-          )}
+          {row.captureId !== null && <ScreenshotLink captureId={row.captureId} imgClassName="w-full" />}
         </div>
         <div className="space-y-3">
           <Field label={t('pendingColDate')}>

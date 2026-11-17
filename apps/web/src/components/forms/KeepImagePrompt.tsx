@@ -18,10 +18,10 @@ export function KeepImagePrompt({ action, onDecide, onDismiss }: KeepImagePrompt
         {t(action === 'reject' ? 'keepImageRejectBody' : 'keepImageEditedBody')}
       </p>
       <div className="flex justify-end gap-2">
-        <Button onClick={() => onDecide(false)}>{t('keepImageDiscard')}</Button>
         <Button variant="primary" onClick={() => onDecide(true)}>
           {t('keepImageKeep')}
         </Button>
+        <Button onClick={() => onDecide(false)}>{t('keepImageDiscard')}</Button>
       </div>
     </Modal>
   );

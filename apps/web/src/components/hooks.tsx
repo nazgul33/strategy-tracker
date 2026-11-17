@@ -84,6 +84,7 @@ export type Route =
   | { page: 'runs' }
   | { page: 'run'; id: number }
   | { page: 'pending' }
+  | { page: 'visionReview' }
   | { page: 'sim' }
   | { page: 'simRun'; id: number }
   | { page: 'settings' }
@@ -104,6 +105,8 @@ export function parseHash(hash: string): Route {
       return { page: 'notFound', hash };
     case 'pending':
       return parts.length === 1 ? { page: 'pending' } : { page: 'notFound', hash };
+    case 'vision-review':
+      return parts.length === 1 ? { page: 'visionReview' } : { page: 'notFound', hash };
     case 'sim':
       if (parts.length === 1) return { page: 'sim' };
       if (parts.length === 2) {

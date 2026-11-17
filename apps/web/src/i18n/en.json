@@ -148,6 +148,7 @@
   "navRuns": "Runs",
   "navSettings": "Settings",
   "navSim": "Sim",
+  "navVisionReview": "Vision review",
   "none": "None",
   "notFound": "Not found",
   "notifColBody": "Message",
@@ -285,6 +286,7 @@
   "save": "Save",
   "saved": "Saved",
   "saving": "Saving…",
+  "screenshotOpenFull": "Open full size",
   "seedAddRow": "+ Add position",
   "seedBuyPrice": "Buy price (USD)",
   "seedCash": "Cash (USD)",
@@ -400,5 +402,14 @@
   "today": "Today",
   "triggerMorning": "Run morning pipeline",
   "triggerMorningResult": "Morning run: {result}",
-  "updateButton": "Update"
+  "updateButton": "Update",
+  "visionReviewAsRead": "As read",
+  "visionReviewDelete": "Delete",
+  "visionReviewEdited": "Edited",
+  "visionReviewEmpty": "No screenshots kept for review yet. You are asked whether to keep one when you edit or reject a fill.",
+  "visionReviewIntro": "Screenshots you kept for review. For each fill, what vision read and what it was booked as; changed fields are highlighted.",
+  "visionReviewRowDetected": "Vision read",
+  "visionReviewRowFinal": "Final",
+  "visionReviewRun": "Run #{id}",
+  "visionReviewTitle": "Vision review"
 }

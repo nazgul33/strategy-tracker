@@ -120,6 +120,14 @@ describe('PendingReviewDialog', () => {
     expect(container.textContent).toContain('AAPL');
   });
 
+  it('the screenshot opens at full size in a new tab', async () => {
+    await show();
+    const link = container.querySelector('a[href="/api/captures/3/image"]') as HTMLAnchorElement;
+    expect(link.target).toBe('_blank');
+    expect(link.rel).toContain('noreferrer');
+    expect(link.querySelector('img')).toBeTruthy();
+  });
+
   it('Done reports the edited values and Cancel reports nothing', async () => {
     await show();
     await act(async () => {

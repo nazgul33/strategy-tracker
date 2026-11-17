@@ -148,13 +148,15 @@ export function Td({
   children,
   className = '',
   colSpan,
+  rowSpan,
 }: {
   children?: ReactNode;
   className?: string;
   colSpan?: number;
+  rowSpan?: number;
 }) {
   return (
-    <td colSpan={colSpan} className={`border-b border-border/60 py-1.5 pr-3 align-top ${className}`}>
+    <td colSpan={colSpan} rowSpan={rowSpan} className={`border-b border-border/60 py-1.5 pr-3 align-top ${className}`}>
       {children}
     </td>
   );
