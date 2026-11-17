@@ -20,8 +20,9 @@ const final = (over: Partial<FinalValues> = {}): FinalValues => ({
   side: 'buy', shares: 10, price: parseUsd('180.50'), filledOn: '2026-11-04', fee: 12, ...over,
 })
 
-const NO_FEE = { feeOverridden: false }
-const FEE = { feeOverridden: true }
+const NO_FEE = { feeOverride: undefined }
+const FEE = { feeOverride: 7 }
+const RECOMPUTE = { feeOverride: null }
 
 describe('isEdited', () => {
   test('identical values are not edited', () => {
@@ -52,6 +53,16 @@ describe('isEdited', () => {
 
   test('an explicit fee override that differs from a null detected fee is an edit', () => {
     expect(isEdited(detected({ fee: null }), final({ fee: 7 }), FEE)).toBe(true)
+  })
+
+  test('feeCents null on a null detected fee discards nothing: not an edit', () => {
+    expect(isEdited(detected({ fee: null }), final({ fee: 7 }), RECOMPUTE)).toBe(false)
+    expect(isEdited(detected({ fee: null }), final({ fee: 7, shares: 11 }), RECOMPUTE)).toBe(true)
+  })
+
+  test('feeCents null on a detected fee is compared by value against the recomputed fee', () => {
+    expect(isEdited(detected({ fee: 12 }), final({ fee: 7 }), RECOMPUTE)).toBe(true)
+    expect(isEdited(detected({ fee: 12 }), final({ fee: 12 }), RECOMPUTE)).toBe(false)
   })
 
   test('a fee override equal to the detected fee is not an edit', () => {
@@ -189,6 +200,28 @@ describe('freeze, keep, sweep', () => {
     expect(row.detectedFee).toBeNull()
     expect(row.finalFee).toBeGreaterThan(0)
     expect(row.edited).toBe(false)
+  })
+
+  test('a feeless capture confirmed with feeCents null is not edited, and records the recomputed fee', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: TODAY }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'nf3', poolCents: 10_000_000, costPpm: 100, initialRunState: emptyState(6) })
+    const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 10, price: '100.00', date: '2026-11-04' }] }
+    const out = await ingestCapture(runId, PNG, ext, deps) as { pending: PendingFillRow[] }
+    await confirmPendingFill(out.pending[0]!.id, { feeCents: null }, deps, { keepImage: true })
+    const row = f._stores.visionReviews[0]!
+    expect(row.detectedFee).toBeNull()
+    expect(row.finalFee).toBeGreaterThan(0)
+    expect(row.edited).toBe(false)
+  })
+
+  test('a fee-bearing capture confirmed with feeCents null is edited when the recomputed fee differs', async () => {
+    const { f, deps, ids } = await setup(1)
+    await confirmPendingFill(ids[0]!, { feeCents: null }, deps, { keepImage: true })
+    const row = f._stores.visionReviews[0]!
+    expect(row.detectedFee).toBe(5)
+    expect(row.finalFee).not.toBe(5)
+    expect(row.edited).toBe(true)
   })
 
   test('a feeless capture confirmed with an explicit differing fee is edited', async () => {

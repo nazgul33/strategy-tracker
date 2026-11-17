@@ -42,18 +42,25 @@ export type VisionReviewRow = VisionReviewInsert & { id: number; createdAt: stri
 
 export type ReviewRepos = Pick<RepoSurface, 'pendingRepo' | 'captureImageRepo' | 'visionReviewRepo'>
 
+function feeCounts(detected: DetectedValues, feeOverride: number | null | undefined): boolean {
+  if (feeOverride === undefined) return false
+  return !(feeOverride === null && detected.fee === null)
+}
+
 /**
  * null detected value + non-null final counts as edited; legacy rows (detectedAt null) never do.
  * The fee is the one field the system derives on its own (a feeless capture books at the run's
- * cost), so it counts only when the operator sent a fee override (`feeOverridden`).
+ * cost), so it counts only when the confirm carried a `feeCents` override (`feeOverride`, undefined
+ * when absent), and `feeCents: null` ("recompute from cost ppm") is an edit only when it discards
+ * a fee vision read (`detected.fee !== null`), compared by value against the booked fee.
  */
-export function isEdited(detected: DetectedValues, final: FinalValues | null, opts: { feeOverridden: boolean }): boolean {
+export function isEdited(detected: DetectedValues, final: FinalValues | null, opts: { feeOverride: number | null | undefined }): boolean {
   if (detected.detectedAt === null || final === null) return false
   return detected.side !== final.side
     || detected.shares !== final.shares
     || detected.price !== final.price
     || detected.filledOn !== final.filledOn
-    || (opts.feeOverridden && detected.fee !== final.fee)
+    || (feeCounts(detected, opts.feeOverride) && detected.fee !== final.fee)
 }
 
 // Freeze, keep, sweep, in that order. The frozen row is written for every
@@ -68,11 +75,11 @@ export async function resolveReview(
     outcome: 'confirmed' | 'rejected'
     final: FinalValues | null
     keepImage: boolean
-    /** The confirm carried a `feeCents` override (null included); false for a reject. */
-    feeOverridden?: boolean
+    /** The confirm's `feeCents` override (undefined when it carried none, and for a reject); see `isEdited`. */
+    feeOverride?: number | null
   },
 ): Promise<void> {
-  const { pendingRow, captureId, outcome, final, keepImage, feeOverridden = false } = args
+  const { pendingRow, captureId, outcome, final, keepImage, feeOverride } = args
   if (captureId === null) return
 
   const detected: DetectedValues = {
@@ -99,7 +106,7 @@ export async function resolveReview(
     finalPrice: final?.price ?? null,
     finalFilledOn: final?.filledOn ?? null,
     finalFee: final?.fee ?? null,
-    edited: isEdited(detected, final, { feeOverridden }),
+    edited: isEdited(detected, final, { feeOverride }),
   })
 
   // Sticky: only ever raised, never lowered.
