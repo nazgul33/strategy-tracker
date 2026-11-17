@@ -144,7 +144,7 @@ async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number
 
   // persist order: decide -> saveState -> fill -> ledger -> order flip (R15: flip last, only after ledger)
   if (input.pendingId != null) {
-    const edited: any = { shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, bucketIdx }
+    const edited: any = { side: input.side, shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, bucketIdx }
     const flipped = await repos.pendingRepo.decide(input.pendingId, 'confirmed', edited)
     if (flipped === false) throw new Error('pending-not-pending')
   }
@@ -214,8 +214,21 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
   })
 }
 
-export async function confirmPendingFill(pendingId: number, overrides: { shares?: number; price?: string; filledOn?: ISODate } | null, deps: BookingDeps): Promise<void> {
+// Operator corrections to what the vision model read. feeCents: null recomputes the
+// fee from the run's costPpm; undefined keeps the fee captured on the pending row.
+export interface ConfirmOverrides {
+  shares?: number
+  price?: string
+  filledOn?: ISODate
+  side?: 'buy' | 'sell'
+  feeCents?: number | null
+}
+
+export async function confirmPendingFill(pendingId: number, overrides: ConfirmOverrides | null, deps: BookingDeps): Promise<void> {
   const repos = deps.repos
+  if (overrides?.side !== undefined && overrides.side !== 'buy' && overrides.side !== 'sell') throw new Error('invalid-side')
+  const feeOverride = overrides?.feeCents
+  if (feeOverride !== undefined && feeOverride !== null && !(Number.isInteger(feeOverride) && feeOverride >= 0)) throw new Error('invalid-fee')
   // Only a peek to learn which run this pending belongs to; everything that
   // reads and writes state happens inside the lock, where the row is re-read.
   const known = (await repos.pendingRepo.listPending()).find((p: any) => p.id === pendingId)
@@ -235,10 +248,10 @@ export async function confirmPendingFill(pendingId: number, overrides: { shares?
 
     return bookUnlocked({
       runId: pending.runId,
-      side: pending.side,
+      side: overrides?.side ?? pending.side,
       shares,
       priceStr,
-      feeCents: pending.fee,
+      feeCents: feeOverride !== undefined ? feeOverride : pending.fee,
       filledOn,
       pendingId,
       source: 'capture',

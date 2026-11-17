@@ -130,6 +130,21 @@ describe('http pending', () => {
     expect((await f.repos.pendingRepo.get(pid))!.status).toBe('pending')
   })
 
+  test('confirm with an invalid side or fee override -> 422 with the code, nothing booked', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const auth = await loginAs(app)
+    const id = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 })
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    for (const [overrides, error] of [[{ side: 'SELL' }, 'invalid-side'], [{ feeCents: -1 }, 'invalid-fee'], [{ feeCents: 1.5 }, 'invalid-fee']] as const) {
+      const res = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({ overrides }), headers: { ...json, ...auth } })
+      expect(res.status).toBe(422)
+      expect(await res.json()).toEqual({ error })
+    }
+    expect(f.fills.length).toBe(0)
+    expect((await f.repos.pendingRepo.get(pid))!.status).toBe('pending')
+  })
+
   test('confirm with ticker mismatch returns 409', async () => {
     const f = makeFakes()
     const app = createApp(makeDeps(f))

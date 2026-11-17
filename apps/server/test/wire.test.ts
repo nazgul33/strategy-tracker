@@ -571,6 +571,23 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
     expect(h.sent.at(-1)!.text).toBe('이 매도를 처리할 수 있는 보유 버킷이 없습니다 — 수량을 확인하세요.');
   });
 
+  test('bucket-not-held is rendered from the catalog in en and ko', async () => {
+    for (const [lang, text] of [
+      ['en', 'The matched bucket is not currently held — check the side and the share count.'],
+      ['ko', '매칭된 버킷이 현재 보유 중이 아닙니다 — 매매 구분과 수량을 확인하세요.'],
+    ] as const) {
+      const { h, p } = await capturedPending(lang);
+      p.side = 'sell';
+      // an exact-price target on a bucket nothing is held in: the sell match is loud, not silent
+      h.repos.orderRepo.listForRun = async () => [
+        { id: 1, runId: 1, tradeDate: '2026-11-10', kind: 'sell_loc', bucketIdx: 0, limitPrice: parseUsd('180.50'), shares: 10, status: 'open' },
+      ];
+      await h.handlers.onConfirm(`yes:${p.id}`, true);
+      expect(h.sent.at(-1)!.text).toBe(text);
+      expect(h.fills.length).toBe(0);
+    }
+  });
+
   test('unknown error falls back to a catalog line carrying the raw code', async () => {
     for (const [lang, text] of [
       ['en', 'Could not confirm this fill (boom).'],

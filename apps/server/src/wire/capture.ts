@@ -18,6 +18,9 @@ const CONFIRM_ERROR_KEYS: Record<string, string> = {
   'no-bucket-for-sell': 'confirm-err-no-bucket-for-sell',
   'too-many-shares': 'confirm-err-too-many-shares',
   'invalid-shares': 'confirm-err-invalid-shares',
+  'invalid-side': 'confirm-err-invalid-side',
+  'invalid-fee': 'confirm-err-invalid-fee',
+  'bucket-not-held': 'confirm-err-bucket-not-held',
 };
 
 export interface CaptureRepos extends RepoSurface {
