@@ -1,12 +1,13 @@
-// Cut-loss display math shared by the run edit dialog: bigint only, mirrors the server.
-import { floorCents } from '@st/core/money';
+// Cut-loss display math shared by the run edit dialog: bigint only, server formula.
+import { stopPrice } from '@st/strategies';
 import type { BucketDto } from './api';
 
 /**
  * Held buckets whose cut-loss trigger would already be at or above the latest
- * close, i.e. stops that fire at the next open. Mirrors the server's
- * `stopPrice` (buy × (1 − cut loss), truncated to whole cents) and its `>=`
- * test; bigint only. 0 when cut-loss is off or the close is unknown.
+ * close, i.e. stops that fire at the next open. Uses the planner's own
+ * `stopPrice` (buy × (1 − cut loss), truncated to whole cents) rather than a
+ * copy of it, so the warning cannot drift from the stops the server will place.
+ * 0 when cut-loss is off or the close is unknown.
  */
 export function underwaterStopCount(
   buckets: readonly BucketDto[],
@@ -18,8 +19,8 @@ export function underwaterStopCount(
   let n = 0;
   for (const b of buckets) {
     if (b.state !== 'held' || b.buyPrice === null) continue;
-    const stop = floorCents((BigInt(b.buyPrice) * (1_000_000n - BigInt(cutLossPpm))) / 1_000_000n);
-    if (stop >= close) n++;
+    const stop = stopPrice(BigInt(b.buyPrice), cutLossPpm);
+    if (stop !== null && stop >= close) n++;
   }
   return n;
 }
