@@ -35,8 +35,10 @@ export function fakeRepos() {
   const pending: any[] = []
   const captures: any[] = []
   const ledger: any[] = []
+  const captureImages: any[] = []
+  const visionReviews: any[] = []
   const corrections = fakeCorrectionRepo()
-  let runSeq = 1, orderSeq = 1, fillSeq = 1, pendingSeq = 1, captureSeq = 1, ledgerSeq = 1
+  let runSeq = 1, orderSeq = 1, fillSeq = 1, pendingSeq = 1, captureSeq = 1, ledgerSeq = 1, visionSeq = 1
 
   const runRepo = {
     async list() { return [...runs.values()] },
@@ -124,9 +126,38 @@ export function fakeRepos() {
     async insert(l: any) { ledger.push({ id: ledgerSeq++, ...l }) },
     async listForRun(runId: number) { return ledger.filter((l) => l.runId === runId) },
   }
+  const captureImageRepo = {
+    async insertIgnore(row: any): Promise<boolean> {
+      if (captureImages.some((x) => x.captureId === row.captureId)) return false
+      captureImages.push({ ...row, keep: false })
+      return true
+    },
+    async getBytes(captureId: number) {
+      const r = captureImages.find((x) => x.captureId === captureId)
+      return r ? { mime: r.mime as string, bytes: r.bytes as Buffer } : null
+    },
+    async setKeep(captureId: number) { const r = captureImages.find((x) => x.captureId === captureId); if (r) r.keep = true },
+    async deleteFor(captureId: number) {
+      const i = captureImages.findIndex((x) => x.captureId === captureId)
+      if (i >= 0) captureImages.splice(i, 1)
+    },
+    async listKept(limit: number) {
+      return captureImages.filter((x) => x.keep).slice(0, limit).map((x) => ({ captureId: x.captureId, mime: x.mime, byteLen: x.byteLen, createdAt: '' }))
+    },
+  }
+  const visionReviewRepo = {
+    async insertIgnore(row: any): Promise<void> {
+      if (visionReviews.some((x) => x.pendingFillId === row.pendingFillId)) return
+      visionReviews.push({ id: visionSeq++, createdAt: '', ...row })
+    },
+    async listForCaptures(captureIds: number[]) { return visionReviews.filter((x) => captureIds.includes(x.captureId)) },
+    async deleteFor(captureId: number) {
+      for (let i = visionReviews.length - 1; i >= 0; i--) if (visionReviews[i]!.captureId === captureId) visionReviews.splice(i, 1)
+    },
+  }
   return {
-    repos: { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: corrections.repo, captureRepo, ledgerRepo },
-    _stores: { runs, orders, fills, pending, captures, ledger, corrections: corrections.store },
+    repos: { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: corrections.repo, captureRepo, ledgerRepo, captureImageRepo, visionReviewRepo },
+    _stores: { runs, orders, fills, pending, captures, ledger, corrections: corrections.store, captureImages, visionReviews },
   }
 }
 

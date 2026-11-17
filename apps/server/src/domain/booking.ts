@@ -8,7 +8,9 @@ import { recordCorrections } from './capture-corrections'
 import { withRunLock } from './run-lock'
 import { notifySiblingsCancelled } from './sibling-notify'
 import { matchSellOrder, openSellLegs, type OrderRow } from './sell-match'
+import { storeCaptureImage } from './capture-image'
 import type { CorrectionRepo } from './correction-types'
+import type { CaptureImageInsert, CaptureImageListing, VisionReviewInsert, VisionReviewRow } from '../db/repos-vision'
 
 // The conflict shape belongs to the dedup matcher and the order row to the sell
 // matcher; re-exported so the booking surface keeps being the single place its
@@ -43,6 +45,18 @@ export interface RepoSurface {
   }
   correctionRepo: CorrectionRepo
   captureRepo: { findByHash(runId: number, hash: string): Promise<{ id: number; status: string } | null>; setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
+  captureImageRepo: {
+    insertIgnore(row: CaptureImageInsert): Promise<boolean>
+    getBytes(captureId: number): Promise<{ mime: string; bytes: Buffer } | null>
+    setKeep(captureId: number): Promise<void>
+    deleteFor(captureId: number): Promise<void>
+    listKept(limit: number): Promise<CaptureImageListing[]>
+  }
+  visionReviewRepo: {
+    insertIgnore(row: VisionReviewInsert): Promise<void>
+    listForCaptures(captureIds: number[]): Promise<VisionReviewRow[]>
+    deleteFor(captureId: number): Promise<void>
+  }
   ledgerRepo: { insert(l: any): Promise<any>; listForRun(runId: number): Promise<any[]> }
   notificationRepo: { insert(n: any): Promise<any> }
 }
@@ -180,6 +194,10 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
       const pendingId = await repos.pendingRepo.insert({
         runId, captureId, bucketIdx: null, side: f.side, ticker: f.ticker, shares: f.shares,
         price: parseUsd(f.price), fee: feeCentsVal, filledOn, status: 'pending',
+        // Frozen vision snapshot: the extractor's own values, so a missing date stays null
+        // rather than taking the filledOn substitute.
+        detectedSide: f.side, detectedShares: f.shares, detectedPrice: parseUsd(f.price),
+        detectedFilledOn: f.date ?? null, detectedFee: feeCentsVal, detectedAt: deps.today,
       })
       pendingRows.push({
         id: pendingId, runId, captureId, side: f.side, ticker: f.ticker, shares: f.shares,
@@ -188,6 +206,7 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
         filledOn, status: 'pending',
       })
     }
+    if (pendingRows.length > 0) await storeCaptureImage(repos, captureId, image)
     if (fresh.length === 0) return { conflicts }
     const earlier = claim.bookedEarlier ? { bookedEarlier: true as const } : {}
     if (conflicts.length > 0) return { pending: pendingRows, conflicts, ...earlier }

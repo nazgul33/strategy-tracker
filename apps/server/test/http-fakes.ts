@@ -88,6 +88,37 @@ export function makeFakes() {
     async get(id: number) { return pending.find((x) => x.id === id) ?? null },
   }
   const captureRepo = { async findByHash() { return null }, async setStatus() {}, async insert(c: any) { return { inserted: true, id: 1 } } }
+  const captureImages: any[] = []
+  const captureImageRepo = {
+    async insertIgnore(row: any): Promise<boolean> {
+      if (captureImages.some((x) => x.captureId === row.captureId)) return false
+      captureImages.push({ ...row, keep: false })
+      return true
+    },
+    async getBytes(captureId: number) {
+      const r = captureImages.find((x) => x.captureId === captureId)
+      return r ? { mime: r.mime as string, bytes: r.bytes as Buffer } : null
+    },
+    async setKeep(captureId: number) { const r = captureImages.find((x) => x.captureId === captureId); if (r) r.keep = true },
+    async deleteFor(captureId: number) {
+      const i = captureImages.findIndex((x) => x.captureId === captureId)
+      if (i >= 0) captureImages.splice(i, 1)
+    },
+    async listKept(limit: number) {
+      return captureImages.filter((x) => x.keep).slice(0, limit).map((x) => ({ captureId: x.captureId, mime: x.mime, byteLen: x.byteLen, createdAt: '' }))
+    },
+  }
+  const visionReviews: any[] = []
+  const visionReviewRepo = {
+    async insertIgnore(row: any): Promise<void> {
+      if (visionReviews.some((x) => x.pendingFillId === row.pendingFillId)) return
+      visionReviews.push({ id: visionReviews.length + 1, createdAt: '', ...row })
+    },
+    async listForCaptures(captureIds: number[]) { return visionReviews.filter((x) => captureIds.includes(x.captureId)) },
+    async deleteFor(captureId: number) {
+      for (let i = visionReviews.length - 1; i >= 0; i--) if (visionReviews[i]!.captureId === captureId) visionReviews.splice(i, 1)
+    },
+  }
   const ledgerRepo = {
     async insert(l: any) { ledger.push({ id: ledger.length + 1, ...l }) },
     async listForRun(runId: number) { return ledger.filter((l) => l.runId === runId) },
@@ -211,10 +242,10 @@ export function makeFakes() {
     },
   }
   const repos: HttpRepoSurface = {
-    runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, ledgerRepo, notificationRepo,
+    runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, captureImageRepo, visionReviewRepo, ledgerRepo, notificationRepo,
     settingsRepo, poolEditRepo, simRepo, priceHistoryRepo, barCoverageRepo,
   } as any
-  return { repos, corrections: correctionFake.store, runs, poolEdits, fills, ledger, orders, pending, notifications, sent, settings, states, simRuns, simDays, priceHistory, coverage }
+  return { repos, corrections: correctionFake.store, runs, poolEdits, fills, ledger, orders, pending, captureImages, visionReviews, notifications, sent, settings, states, simRuns, simDays, priceHistory, coverage }
 }
 
 export const PASSWORD = 'secret'
