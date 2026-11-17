@@ -50,6 +50,7 @@
   "dialog.save": "저장",
   "digest.closed": "시장 휴장",
   "digest.closed-named": "시장 휴장 ({name})",
+  "digest.cut-loss-immediate": "손절 발동가 {n}건이 이미 최근 종가 이상 — 주문 직후 체결될 수 있음",
   "digest.december-nudge": "12월입니다 — 내년 NYSE 휴장 캘린더를 업데이트하세요",
   "digest.header": "{name}  {ticker}",
   "digest.help": "help",

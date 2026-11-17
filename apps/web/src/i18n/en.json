@@ -50,6 +50,7 @@
   "dialog.save": "Save",
   "digest.closed": "Market closed",
   "digest.closed-named": "Market closed ({name})",
+  "digest.cut-loss-immediate": "{n} stop trigger(s) already at or above the last close — may fire as soon as placed",
   "digest.december-nudge": "December — time to load next year's NYSE calendar",
   "digest.header": "{name}  {ticker}",
   "digest.help": "help",
