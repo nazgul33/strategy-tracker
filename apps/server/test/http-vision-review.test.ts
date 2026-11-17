@@ -60,6 +60,16 @@ describe('http vision reviews', () => {
     expect(fills[0].id).toBeLessThan(fills[1].id)
   })
 
+  test('GET /api/vision-reviews lists entries in the order the repo returns them: newest first, same-time ties by capture id', async () => {
+    const { f, app, auth, keep } = await setup()
+    for (const [id, at] of [[1, '2026-11-10 09:00:00'], [2, '2026-11-12 09:00:00'], [3, '2026-11-12 09:00:00'], [4, '2026-11-11 09:00:00']] as const) {
+      await keep(id, at)
+      await f.repos.visionReviewRepo.insertIgnore(review(id, id * 10) as any)
+    }
+    const { entries } = await (await app.request('/api/vision-reviews', { headers: auth })).json()
+    expect(entries.map((e: any) => e.captureId)).toEqual([3, 2, 4, 1])
+  })
+
   test('GET /api/vision-reviews never carries image bytes', async () => {
     const { f, app, auth, keep } = await setup()
     await keep(1, '2026-11-10 09:00:00')

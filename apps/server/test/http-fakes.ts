@@ -106,7 +106,9 @@ export function makeFakes() {
       if (i >= 0) captureImages.splice(i, 1)
     },
     async listKept(limit: number) {
-      return captureImages.filter((x) => x.keep).slice(0, limit).map((x) => ({ captureId: x.captureId, mime: x.mime, byteLen: x.byteLen, createdAt: x.createdAt ?? '' }))
+      // newest first, ties by capture id, like the real repo
+      const newestFirst = (a: any, b: any) => ((b.createdAt ?? '') < (a.createdAt ?? '') ? -1 : (b.createdAt ?? '') > (a.createdAt ?? '') ? 1 : b.captureId - a.captureId)
+      return captureImages.filter((x) => x.keep).sort(newestFirst).slice(0, limit).map((x) => ({ captureId: x.captureId, mime: x.mime, byteLen: x.byteLen, createdAt: x.createdAt ?? '' }))
     },
     async existingIds(captureIds: number[]) { return new Set<number>(captureImages.filter((x) => captureIds.includes(x.captureId)).map((x) => x.captureId)) },
   }

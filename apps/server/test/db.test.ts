@@ -734,6 +734,24 @@ describeIf('db integration', () => {
       expect(await repos.captureImageRepo.getBytes(captureId)).toBeNull()
     })
 
+    test('captureImageRepo: listKept is newest first, ties broken by capture id, and the limit drops the oldest', async () => {
+      const [a, b, c] = [await newCapture(), await newCapture(), await newCapture()]
+      const stamps = [[a, '2098-01-01 00:00:00'], [b, '2099-01-01 00:00:00'], [c, '2099-01-01 00:00:00']] as const
+      for (const [cap] of stamps) await repos.captureImageRepo.insertIgnore({ captureId: cap.captureId, mime: 'image/png', bytes: Buffer.from('x'), byteLen: 1 })
+      try {
+        for (const [cap, at] of stamps) {
+          await repos.captureImageRepo.setKeep(cap.captureId)
+          await db.execute(sql`UPDATE capture_images SET created_at = ${at} WHERE capture_id = ${cap.captureId}`)
+        }
+        const expected = [Math.max(b.captureId, c.captureId), Math.min(b.captureId, c.captureId), a.captureId]
+        expect((await repos.captureImageRepo.listKept(1000)).map((r: any) => r.captureId).filter((id: number) => expected.includes(id))).toEqual(expected)
+        // 2099 rows outrank anything a sibling test left behind, so the top two are exactly ours.
+        expect((await repos.captureImageRepo.listKept(2)).map((r: any) => r.captureId)).toEqual(expected.slice(0, 2))
+      } finally {
+        for (const cap of [a, b, c]) await repos.captureImageRepo.deleteFor(cap.captureId)
+      }
+    })
+
     test('captureImageRepo: existingIds reports only captures that have bytes', async () => {
       const a = await newCapture()
       const b = await newCapture()

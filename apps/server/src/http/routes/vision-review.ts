@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { jsonBig, type HttpDeps } from '../app'
 import type { VisionReviewRow } from '../../domain/vision-review'
 
-// The repo lists oldest first, so a cap would hide the newest entries; far above
+// The repo lists newest first, so the cap drops the oldest entries; far above
 // what one operator keeps by hand.
 const KEPT_LIMIT = 1000
 
@@ -39,8 +39,6 @@ export function visionReviewRouter(deps: HttpDeps): Hono {
         return { captureId: k.captureId, runId: fills[0]!.runId, ticker: fills[0]!.ticker, createdAt: k.createdAt, mime: k.mime, byteLen: k.byteLen, fills: fills.map(fillDto) }
       })
       .filter((e) => e !== null)
-      .sort(byCreatedThen((a, b) => a.captureId - b.captureId))
-      .reverse()
     return c.json(jsonBig({ entries }))
   })
 

@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm'
+import { desc, eq, inArray } from 'drizzle-orm'
 import * as s from './schema'
 import type { VisionReviewInsert, VisionReviewRow } from '../domain/vision-review'
 
@@ -43,7 +43,7 @@ export function getVisionRepos(db: any) {
         captureId: s.captureImages.captureId, mime: s.captureImages.mime,
         byteLen: s.captureImages.byteLen, createdAt: s.captureImages.createdAt,
       }).from(s.captureImages).where(eq(s.captureImages.keep, true))
-        .orderBy(s.captureImages.createdAt, s.captureImages.captureId).limit(limit)
+        .orderBy(desc(s.captureImages.createdAt), desc(s.captureImages.captureId)).limit(limit)
     },
   }
 
