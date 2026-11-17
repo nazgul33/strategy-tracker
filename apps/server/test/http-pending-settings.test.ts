@@ -211,13 +211,12 @@ describe('http pending', () => {
       expect(rows[0].detected).toEqual({ side: 'buy', shares: 3, price: null, filledOn: null, fee: null })
     })
 
-    test('GET /api/pending exposes autoFeeCents from the run cost ppm', async () => {
+    test('GET /api/pending exposes the run cost ppm so the client can derive a fee as qty and price change', async () => {
       const { app, auth, addPending } = await setup(5000)
       await addPending({ captureId: 7, ...DETECTED })
       const rows = await (await app.request('/api/pending', { headers: auth })).json()
-      const expected = feeCents(100000n, 3, 5000)
-      expect(expected).toBeGreaterThan(0)
-      expect(rows[0].autoFeeCents).toBe(expected)
+      expect(rows[0].costPpm).toBe(5000)
+      expect(rows[0]).not.toHaveProperty('autoFeeCents')
     })
 
     test('POST confirm forwards side and feeCents overrides', async () => {

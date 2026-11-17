@@ -2,7 +2,7 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { PendingFillDto } from '../../api.types';
 import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
-import type { RowValues } from '../../viewmodels';
+import type { RowValues } from '../../pendingvalues';
 
 GlobalRegistrator.register();
 
@@ -35,11 +35,11 @@ const ROW: PendingFillDto = {
   status: 'pending',
   createdAt: '2026-11-10T14:30:00Z',
   hasImage: true,
-  autoFeeCents: 100,
+  costPpm: 40,
   detected: { side: 'buy', shares: 10, price: '123450000', filledOn: '2026-11-10', fee: 100 },
 };
 
-const VALUES: RowValues = { filledOn: '2026-11-10', side: 'buy', shares: '10', price: '12345.00', fee: '1.00' };
+const VALUES: RowValues = { filledOn: '2026-11-10', side: 'buy', shares: '10', price: '12345.00', fee: '1.00', feeTouched: false };
 
 function setInputValue(el: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
@@ -106,7 +106,7 @@ describe('PendingReviewDialog', () => {
   });
 
   it('shows the screenshot and fields pre-filled with the row values', async () => {
-    await show(ROW, { filledOn: '2026-11-11', side: 'sell', shares: '4', price: '99.50', fee: '0.25' });
+    await show(ROW, { filledOn: '2026-11-11', side: 'sell', shares: '4', price: '99.50', fee: '0.25', feeTouched: false });
 
     const img = container.querySelector('img') as HTMLImageElement;
     expect(img.getAttribute('src')).toContain('/api/captures/3/image');
@@ -165,6 +165,51 @@ describe('PendingReviewDialog', () => {
       button('Done').click();
     });
     expect(done[0]!.side).toBe('sell');
+  });
+
+  describe('a fee vision did not read', () => {
+    // 10 sh @ 12,345.00 at 40 ppm: 4.94; 12 sh: 5.93.
+    const feeless: PendingFillDto = { ...ROW, fee: null, detected: { ...ROW.detected!, fee: null } };
+    const derived: RowValues = { ...VALUES, fee: '4.94' };
+
+    it('marks the derived fee and re-derives it as qty changes, reporting it still untouched', async () => {
+      await show(feeless, derived);
+      expect(container.textContent).toContain('Derived from the run');
+      await act(async () => {
+        setInputValue(input('Qty'), '12');
+      });
+      expect(input('Fee').value).toBe('5.93');
+      expect(container.textContent).toContain('Derived from the run');
+      await act(async () => {
+        button('Done').click();
+      });
+      expect(done).toEqual([{ ...derived, shares: '12', fee: '5.93', feeTouched: false }]);
+    });
+
+    it('a typed fee loses the marker, stops following qty, and is reported touched', async () => {
+      await show(feeless, derived);
+      await act(async () => {
+        setInputValue(input('Fee'), '2.00');
+      });
+      expect(container.textContent).not.toContain('Derived from the run');
+      await act(async () => {
+        setInputValue(input('Qty'), '12');
+      });
+      expect(input('Fee').value).toBe('2.00');
+      await act(async () => {
+        button('Done').click();
+      });
+      expect(done).toEqual([{ ...derived, shares: '12', fee: '2.00', feeTouched: true }]);
+    });
+  });
+
+  it('a fee vision read is not marked and does not follow qty', async () => {
+    await show();
+    await act(async () => {
+      setInputValue(input('Qty'), '12');
+    });
+    expect(input('Fee').value).toBe('1.00');
+    expect(container.textContent).not.toContain('Derived from the run');
   });
 
   it('Done does not book anything', async () => {

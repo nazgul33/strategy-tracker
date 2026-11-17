@@ -1,7 +1,6 @@
 import { Hono } from 'hono'
 import { jsonBig, type HttpDeps } from '../app'
 import { DomainError } from '@st/core'
-import { feeCents } from '@st/core/money'
 import { confirmPendingFill, rejectPendingFill } from '../../domain/booking'
 import { fillBookingDeps } from '../booking-deps'
 
@@ -27,7 +26,7 @@ export function pendingRouter(deps: HttpDeps): Hono {
         ...row,
         hasImage: p.captureId != null && withImage.has(p.captureId),
         detected: detectedDto(p),
-        autoFeeCents: feeCents(p.price, p.shares, costPpm.get(p.runId)!),
+        costPpm: costPpm.get(p.runId)!,
       }
     })))
   })

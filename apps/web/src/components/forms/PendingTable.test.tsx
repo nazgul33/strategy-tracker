@@ -35,7 +35,7 @@ const ROW: PendingFillDto = {
   status: 'pending',
   createdAt: '2026-11-10T14:30:00Z',
   hasImage: true,
-  autoFeeCents: 100,
+  costPpm: 40,
   detected: { side: 'buy', shares: 10, price: '123450000', filledOn: '2026-11-10', fee: 100 },
 };
 
@@ -289,6 +289,22 @@ describe('PendingTable', () => {
       expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ price: '12345.50' });
     });
 
+    it('a derived fee carries through Done and keeps following qty on the row', async () => {
+      const feeless: PendingFillDto = { ...ROW, fee: null, detected: { ...ROW.detected!, fee: null } };
+      const calls = await renderWithConfirmCalls(feeless);
+      await click('Compare');
+      const qty = container.querySelector('[role=dialog] input[inputmode=numeric]') as HTMLInputElement;
+      await act(async () => setInputValue(qty, '12'));
+      await click('Done');
+      expect(control<HTMLInputElement>(5, 'input').value).toBe('5.93');
+      expect(container.querySelector('[data-auto-fee]')).toBeTruthy();
+
+      await act(async () => setInputValue(control<HTMLInputElement>(3, 'input'), '20'));
+      expect(control<HTMLInputElement>(5, 'input').value).toBe('9.88');
+      await confirmKeeping();
+      expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ shares: 20 });
+    });
+
     it('Cancel leaves the row untouched', async () => {
       const calls = await renderWithConfirmCalls(ROW);
       await click('Compare');
@@ -500,32 +516,89 @@ describe('PendingTable', () => {
   });
 
   describe('a fee vision did not read', () => {
-    const feeless: PendingFillDto = { ...ROW, fee: null, autoFeeCents: 7, detected: { ...ROW.detected!, fee: null } };
+    // 10 sh @ 12,345.00 at 40 ppm: 4.94; 12 sh: 5.93.
+    const feeless: PendingFillDto = { ...ROW, fee: null, detected: { ...ROW.detected!, fee: null } };
+    const feeInput = () => control<HTMLInputElement>(5, 'input');
+    const autoMarker = () => container.querySelector('[data-auto-fee]');
+    const type = (idx: number, value: string) => act(async () => setInputValue(control<HTMLInputElement>(idx, 'input'), value));
 
-    it('prefills the derived fee, and an untouched confirm still posts {}', async () => {
+    it('prefills the derived fee, marks it auto, and an untouched confirm still posts {}', async () => {
       const calls = await renderWithConfirmCalls(feeless);
-      expect(control<HTMLInputElement>(5, 'input').value).toBe('0.07');
+      expect(feeInput().value).toBe('4.94');
+      expect(autoMarker()!.textContent).toBe('auto');
       await clickConfirm();
       expect(calls[0]!.body).toEqual({});
     });
 
     it('clearing the field posts nothing, since the server derives that fee anyway', async () => {
       const calls = await renderWithConfirmCalls(feeless);
-      await act(async () => {
-        setInputValue(control<HTMLInputElement>(5, 'input'), '');
-      });
+      await type(5, '');
       await clickConfirm();
       expect(calls[0]!.body).toEqual({});
+    });
+
+    it('a qty edit re-derives the fee on screen, and the confirm sends the qty and no fee', async () => {
+      const calls = await renderWithConfirmCalls(feeless);
+      await type(3, '12');
+      expect(feeInput().value).toBe('5.93');
+      expect(autoMarker()).toBeTruthy();
+      await confirmKeeping();
+      expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ shares: 12 });
+    });
+
+    it('a price edit re-derives it too', async () => {
+      await renderWithConfirmCalls(feeless);
+      await type(4, '24690.00');
+      expect(feeInput().value).toBe('9.88');
+    });
+
+    it('a typed fee drops the auto marker, is sent, and stops following qty', async () => {
+      const calls = await renderWithConfirmCalls(feeless);
+      await type(5, '2.00');
+      expect(autoMarker()).toBeNull();
+      await type(3, '12');
+      expect(feeInput().value).toBe('2.00');
+      await confirmKeeping();
+      expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ shares: 12, feeCents: 200 });
+    });
+
+    // The reviewer's second case: typing the number the derivation gave earlier must not
+    // be mistaken for "the derived fee" once the quantity has moved on.
+    it('a typed fee equal to the earlier derived value is still sent after a qty edit', async () => {
+      const calls = await renderWithConfirmCalls(feeless);
+      await type(3, '12');
+      await type(5, '4.94');
+      expect(autoMarker()).toBeNull();
+      await confirmKeeping();
+      expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ shares: 12, feeCents: 494 });
+    });
+
+    it('the fee on screen is the one a confirm books: no fee is sent while the field follows the derivation', async () => {
+      const calls = await renderWithConfirmCalls(feeless);
+      await type(3, '12');
+      await type(4, '24690.00');
+      expect(feeInput().value).toBe('11.85');
+      await confirmKeeping();
+      expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ shares: 12, price: '24690.00' });
+    });
+  });
+
+  describe('a fee vision read', () => {
+    it('stays as read when the qty changes, and is not marked auto', async () => {
+      await renderWithConfirmCalls(ROW);
+      await act(async () => setInputValue(control<HTMLInputElement>(3, 'input'), '12'));
+      expect(control<HTMLInputElement>(5, 'input').value).toBe('1.00');
+      expect(container.querySelector('[data-auto-fee]')).toBeNull();
     });
   });
 
   describe('a legacy row (no detected snapshot)', () => {
-    const legacy: PendingFillDto = { ...ROW, detected: null, fee: null, autoFeeCents: 7 };
+    const legacy: PendingFillDto = { ...ROW, detected: null, fee: null };
 
     it('prefills from the row itself and an untouched confirm posts {}', async () => {
       const calls = await renderWithConfirmCalls(legacy);
       expect(control<HTMLInputElement>(3, 'input').value).toBe('10');
-      expect(control<HTMLInputElement>(5, 'input').value).toBe('0.07');
+      expect(control<HTMLInputElement>(5, 'input').value).toBe('4.94');
       await clickConfirm();
       expect(calls[0]!.body).toEqual({});
     });
@@ -567,12 +640,42 @@ describe('PendingTable', () => {
     expect(container.textContent).toContain('Check the values');
   });
 
-  it('empty detected trade date renders an empty date input that keeps the warning border', async () => {
-    stubFetch('conflict', { ...ROW, filledOn: '', detected: { ...ROW.detected!, filledOn: null } });
-    await renderTable(root);
-    const cell = container.querySelectorAll('tbody tr td')[0]!;
-    const input = cell.querySelector('input[type=date]') as HTMLInputElement | null;
-    expect(input).toBeTruthy();
-    expect(input!.className).toContain('border-warning');
+  // Ingest stores the capture date in `filledOn` when vision read none (the row is never
+  // blank), and `detected.filledOn` is null: the only trace that the operator has not seen the date.
+  describe('a trade date vision missed', () => {
+    const missedDate: PendingFillDto = { ...ROW, filledOn: '2026-11-09', detected: { ...ROW.detected!, filledOn: null } };
+    const dateInput = () => control<HTMLInputElement>(0, 'input[type=date]');
+
+    it('renders an empty date input with the warning border and the needs-input hint', async () => {
+      stubFetch('conflict', missedDate);
+      await renderTable(root);
+      expect(dateInput().value).toBe('');
+      expect(dateInput().className).toContain('border-warning');
+      expect(container.textContent).toContain('fill in the highlighted field');
+    });
+
+    it('blocks the confirm: nothing is posted and the operator is told to fill it in', async () => {
+      const calls = await renderWithConfirmCalls(missedDate);
+      await clickConfirm();
+      expect(calls.length).toBe(0);
+      expect(promptOpen()).toBe(false);
+      expect(container.textContent).toContain('fill in the highlighted field');
+    });
+
+    it('once filled in the warning clears and the date is posted as an override', async () => {
+      const calls = await renderWithConfirmCalls(missedDate);
+      await act(async () => setInputValue(dateInput(), '2026-11-09'));
+      expect(dateInput().className).not.toContain('border-warning');
+      await confirmKeeping();
+      expect(calls.length).toBe(1);
+      expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ filledOn: '2026-11-09' });
+    });
+
+    it('a date vision read has no warning', async () => {
+      stubFetch('conflict');
+      await renderTable(root);
+      expect(dateInput().value).toBe('2026-11-10');
+      expect(dateInput().className).not.toContain('border-warning');
+    });
   });
 });

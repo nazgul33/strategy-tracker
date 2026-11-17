@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { PendingFillDto } from '../../api';
 import { useT } from '../../i18n';
-import type { RowValues } from '../../viewmodels';
+import { feeIsDerived, patchRowValues, type RowValues } from '../../pendingvalues';
 import { ScreenshotLink } from '../ScreenshotLink';
 import { Button, Field, Input, Modal, Select } from '../ui';
 
@@ -18,7 +18,7 @@ interface PendingReviewDialogProps {
 export function PendingReviewDialog({ row, values, onCancel, onDone }: PendingReviewDialogProps) {
   const t = useT();
   const [draft, setDraft] = useState<RowValues>(values);
-  const set = (patch: Partial<RowValues>) => setDraft((prev) => ({ ...prev, ...patch }));
+  const set = (patch: Partial<RowValues>) => setDraft((prev) => patchRowValues(row, prev, patch));
 
   return (
     <Modal wide title={`${t('pendingReviewTitle')} · ${row.ticker || '?'}`} onClose={onCancel}>
@@ -58,7 +58,7 @@ export function PendingReviewDialog({ row, values, onCancel, onDone }: PendingRe
               onChange={(e) => set({ price: e.target.value })}
             />
           </Field>
-          <Field label={t('pendingColFee')}>
+          <Field label={t('pendingColFee')} hint={feeIsDerived(row, draft) ? t('pendingFeeAutoHint') : undefined}>
             <Input
               className="w-full"
               inputMode="decimal"

@@ -207,6 +207,8 @@
   "pendingConfirm": "확인",
   "pendingConfirmed": "반영됨",
   "pendingEmpty": "확인 대기 중인 체결이 없습니다.",
+  "pendingFeeAuto": "자동",
+  "pendingFeeAutoHint": "런의 비용으로 계산한 값입니다. 수수료를 직접 입력하기 전에는 수량과 가격에 따라 바뀝니다.",
   "pendingFeeOverride": "수수료",
   "pendingInvalidOverride": "값을 확인하세요: 수량과 단가는 0보다 커야 하고, 거래일과 구분은 비워 둘 수 없습니다.",
   "pendingNeedsOverride": "인식하지 못한 항목이 있습니다 — 강조된 필드를 입력하거나, 이 행을 반려하고 다시 캡처하세요.",

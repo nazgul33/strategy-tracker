@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ApiError, api, usdFeeOrNull, usdOrNull, usdToCents, type PendingFillDto, type PendingOverrides } from '../../api';
 import { useT } from '../../i18n';
-import { pendingEdits, type RowValues } from '../../viewmodels';
+import { patchRowValues, pendingEdits, standingIssue, type RowValues } from '../../pendingvalues';
 import { useAsync } from '../hooks';
 import { EmptyNote, TableWrap, Th } from '../ui';
 import { KeepImagePrompt } from './KeepImagePrompt';
@@ -35,11 +35,15 @@ export function PendingTable({ runId }: { runId?: number }) {
 
   const valuesFor = (r: PendingFillDto) => edited[r.id] ?? initialRowValues(r);
   const patchValues = (r: PendingFillDto, patch: Partial<RowValues>) =>
-    setEdited((prev) => ({ ...prev, [r.id]: { ...(prev[r.id] ?? initialRowValues(r)), ...patch } }));
+    setEdited((prev) => ({ ...prev, [r.id]: patchRowValues(r, prev[r.id] ?? initialRowValues(r), patch) }));
+  const setValues = (r: PendingFillDto, values: RowValues) => setEdited((prev) => ({ ...prev, [r.id]: values }));
 
   const buildOverrides = (r: PendingFillDto): PendingOverrides | undefined => {
     const v = valuesFor(r);
     const invalid = () => new Error(t('pendingInvalidOverride'));
+    // A field vision missed stays unbooked until it is filled in: left blank it reads as
+    // unedited, and the server would substitute its own value (the capture date for a date).
+    if (standingIssue(r, v) !== null && standingIssue(r, v) !== 'ticker') throw new Error(t('pendingNeedsOverride'));
     const body: PendingOverrides = {};
     for (const field of pendingEdits(r, v)) {
       if (field === 'side') {
@@ -175,7 +179,7 @@ export function PendingTable({ runId }: { runId?: number }) {
           values={valuesFor(reviewing)}
           onCancel={() => setReviewId(null)}
           onDone={(values) => {
-            patchValues(reviewing, values);
+            setValues(reviewing, values);
             setReviewId(null);
           }}
         />

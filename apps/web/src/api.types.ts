@@ -110,8 +110,8 @@ export interface PendingFillDto {
   createdAt: string;
   /** A screenshot is still stored for this row (it is shown beside the row). */
   hasImage: boolean;
-  /** Fee for the row as captured, cents; only prefills the fee field. Never tracks edits. */
-  autoFeeCents: number;
+  /** The run's cost in ppm: the fee the server derives when none is supplied is `feeCents(price, shares, costPpm)`. */
+  costPpm: number;
   /** What vision read. `null` = the row predates the snapshot; a null field = vision missed it. */
   detected: DetectedDto | null;
 }

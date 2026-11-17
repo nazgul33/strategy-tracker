@@ -1,7 +1,8 @@
 import { api, type PendingFillDto } from '../../api';
 import { useT } from '../../i18n';
 import { isoDate, priceInputValue } from '../../format';
-import { pendingIssue, type RowValues } from '../../viewmodels';
+import { autoFeeUsd } from '../../autofee';
+import { feeIsDerived, standingIssue, type RowField, type RowValues } from '../../pendingvalues';
 import { Button, Input, Select, Td } from '../ui';
 
 // Myriadths → an input value: at least two decimals, more only when the price
@@ -15,16 +16,24 @@ function feeField(cents: number): string {
   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
 }
 
-/** What the row's controls start with: what vision detected, the fee falling back to the derived one. */
+/**
+ * What the row's controls start with: what vision detected. A fee vision did not
+ * read starts as the one the server would derive and keeps tracking qty and price
+ * until the operator types a fee (`patchRowValues`).
+ */
 export function initialRowValues(row: PendingFillDto): RowValues {
   const d = row.detected;
   const shares = d ? d.shares : row.shares;
+  const sharesText = shares ? String(shares) : '';
+  const price = priceField(d ? d.price : row.price);
+  const fee = d ? d.fee : row.fee;
   return {
     filledOn: (d ? d.filledOn : row.filledOn) ?? '',
     side: (d ? d.side : row.side) ?? '',
-    shares: shares ? String(shares) : '',
-    price: priceField(d ? d.price : row.price),
-    fee: feeField((d ? d.fee : row.fee) ?? row.autoFeeCents),
+    shares: sharesText,
+    price,
+    fee: fee === null ? autoFeeUsd(sharesText, price, row.costPpm) : feeField(fee),
+    feeTouched: false,
   };
 }
 
@@ -40,10 +49,10 @@ interface PendingRowProps {
 
 export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm, onReject, busy }: PendingRowProps) {
   const t = useT();
-  const issue = pendingIssue(row).field;
   // Flag a field the row is missing until the operator has filled it in.
-  const missing = (f: keyof RowValues) => (issue === f && values[f] === '' ? 'border-warning' : '');
-  const needsInput = issue === 'ticker' || (issue !== null && values[issue] === '');
+  const issue = standingIssue(row, values);
+  const missing = (f: RowField) => (issue === f ? 'border-warning' : '');
+  const needsInput = issue !== null;
   const needsMsg = t(issue === 'ticker' ? 'pendingNeedsTicker' : 'pendingNeedsOverride');
   const captureId = row.hasImage ? row.captureId : null;
   return (
@@ -96,6 +105,11 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
           aria-label={t('pendingColFee')}
           onChange={(e) => onChange({ fee: e.target.value })}
         />
+        {feeIsDerived(row, values) && (
+          <div data-auto-fee title={t('pendingFeeAutoHint')} className="text-xs text-muted-foreground">
+            {t('pendingFeeAuto')}
+          </div>
+        )}
       </Td>
       <Td>
         {captureId !== null && (

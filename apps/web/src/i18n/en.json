@@ -207,6 +207,8 @@
   "pendingConfirm": "Confirm",
   "pendingConfirmed": "Booked",
   "pendingEmpty": "Nothing waiting for confirmation.",
+  "pendingFeeAuto": "auto",
+  "pendingFeeAutoHint": "Derived from the run's cost. It follows qty and price until you type a fee.",
   "pendingFeeOverride": "Fee",
   "pendingInvalidOverride": "Check the values: qty and price must be positive, and the date and side must be set.",
   "pendingNeedsOverride": "Vision could not read this field — fill in the highlighted field, or reject the row and re-capture.",

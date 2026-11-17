@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { BucketDto, DetectedDto, PendingFillDto } from './api';
+import type { BucketDto } from './api';
 import {
   bucketCells,
   bulkPlan,
@@ -13,8 +13,6 @@ import {
   orderKindTone,
   orderReasonText,
   orderStatusTone,
-  pendingEdits,
-  pendingIssue,
   pnlBadgeTone,
   poolAfterTopUp,
   priceToCents,
@@ -23,7 +21,6 @@ import {
   runStatusTone,
   seedCashErrorKey,
   toneFor,
-  type RowValues,
 } from './viewmodels';
 
 describe('enumLabelKey / reasonKey', () => {
@@ -104,41 +101,6 @@ describe('money conversions', () => {
   test('daysBetween is whole days, 0 on bad input', () => {
     expect(daysBetween('2026-11-02', '2026-11-10')).toBe(8);
     expect(daysBetween('nope', '2026-11-10')).toBe(0);
-  });
-});
-
-function pendingRow(over: Partial<PendingFillDto> = {}): PendingFillDto {
-  return {
-    id: 1,
-    runId: 1,
-    captureId: null,
-    bucketIdx: 0,
-    side: 'buy',
-    ticker: 'AAPL',
-    shares: 10,
-    price: '3499900',
-    fee: null,
-    filledOn: '2026-11-02',
-    status: 'pending',
-    createdAt: '2026-11-02T14:00:00Z',
-    hasImage: true,
-    autoFeeCents: 7,
-    detected: null,
-    ...over,
-  };
-}
-
-describe('pendingIssue', () => {
-  test('first missing field wins', () => {
-    expect(pendingIssue(pendingRow({ ticker: '' }))).toEqual({ field: 'ticker' });
-    expect(pendingIssue(pendingRow({ side: 'SELL' }))).toEqual({ field: 'side' });
-    expect(pendingIssue(pendingRow({ shares: 0 }))).toEqual({ field: 'shares' });
-    expect(pendingIssue(pendingRow({ price: '' }))).toEqual({ field: 'price' });
-    expect(pendingIssue(pendingRow({ filledOn: '' }))).toEqual({ field: 'filledOn' });
-  });
-
-  test('complete row needs no fix', () => {
-    expect(pendingIssue(pendingRow())).toEqual({ field: null });
   });
 });
 
@@ -259,112 +221,5 @@ describe('orderReasonText', () => {
 
   test('CANCEL_REASONS lists the four codes in display order', () => {
     expect([...CANCEL_REASONS]).toEqual(['broker-filled', 'strategy-change', 'stale-price', 'other']);
-  });
-});
-
-describe('pendingEdits', () => {
-  const detected: DetectedDto = { side: 'buy', shares: 10, price: '1784000', filledOn: '2026-11-02', fee: 50 };
-  const row = (d: DetectedDto | null = detected) => pendingRow({ detected: d });
-  const same: RowValues = { side: 'buy', shares: '10', price: '178.40', filledOn: '2026-11-02', fee: '0.50' };
-
-  test('returns [] when every value matches the detected snapshot', () => {
-    expect(pendingEdits(row(), same)).toEqual([]);
-  });
-
-  test('names each field that differs', () => {
-    expect(pendingEdits(row(), { ...same, side: 'sell' })).toEqual(['side']);
-    expect(pendingEdits(row(), { ...same, shares: '11' })).toEqual(['shares']);
-    expect(pendingEdits(row(), { ...same, price: '178.41' })).toEqual(['price']);
-    expect(pendingEdits(row(), { ...same, filledOn: '2026-11-03' })).toEqual(['filledOn']);
-    expect(pendingEdits(row(), { ...same, fee: '0.51' })).toEqual(['fee']);
-    expect(pendingEdits(row(), { side: 'sell', shares: '11', price: '1', filledOn: '2026-11-03', fee: '9' })).toEqual([
-      'filledOn',
-      'side',
-      'shares',
-      'price',
-      'fee',
-    ]);
-  });
-
-  test('treats a null detected value with a filled-in field as edited', () => {
-    const missed: DetectedDto = { side: null, shares: null, price: null, filledOn: null, fee: null };
-    expect(pendingEdits(row(missed), same)).toEqual(['filledOn', 'side', 'shares', 'price', 'fee']);
-    expect(pendingEdits(row({ ...detected, side: null }), same)).toEqual(['side']);
-  });
-
-  test('a fee equal to autoFeeCents against a null detected fee is unedited', () => {
-    const feeless: DetectedDto = { ...detected, fee: null };
-    expect(pendingEdits(row(feeless), { ...same, fee: '0.07' })).toEqual([]);
-    expect(pendingEdits(row(feeless), { ...same, fee: '0.070' })).toEqual([]);
-    expect(pendingEdits(row(feeless), { ...same, fee: '' })).toEqual([]);
-    expect(pendingEdits(row(feeless), { ...same, fee: '0.08' })).toEqual(['fee']);
-  });
-
-  test('autoFeeCents does not excuse a fee when vision did read one', () => {
-    expect(pendingEdits(row(), { ...same, fee: '0.07' })).toEqual(['fee']);
-  });
-
-  test('a blank field against a null detected value is unedited', () => {
-    const missed: DetectedDto = { side: null, shares: null, price: null, filledOn: null, fee: null };
-    expect(pendingEdits(row(missed), { side: '', shares: '', price: ' ', filledOn: '', fee: '' })).toEqual([]);
-  });
-
-  test('clearing a field vision did read counts as edited', () => {
-    expect(pendingEdits(row(), { ...same, fee: '' })).toEqual(['fee']);
-    expect(pendingEdits(row(), { ...same, price: '' })).toEqual(['price']);
-    expect(pendingEdits(row(), { ...same, shares: '' })).toEqual(['shares']);
-  });
-
-  test('unparsable input differs from what vision read', () => {
-    expect(pendingEdits(row(), { ...same, price: 'abc', shares: '1.5', fee: 'x' })).toEqual(['shares', 'price', 'fee']);
-  });
-
-  describe('a legacy row (detected null) is compared against the row itself', () => {
-    const untouched: RowValues = { side: 'buy', shares: '10', price: '349.99', filledOn: '2026-11-02', fee: '0.07' };
-
-    test('its prefilled values are no edit, including the derived fee', () => {
-      expect(pendingEdits(row(null), untouched)).toEqual([]);
-    });
-
-    test('names each field the operator changed', () => {
-      expect(pendingEdits(row(null), { side: 'sell', shares: '99', price: '1', filledOn: '2020-01-01', fee: '9' })).toEqual([
-        'filledOn',
-        'side',
-        'shares',
-        'price',
-        'fee',
-      ]);
-      expect(pendingEdits(row(null), { ...untouched, shares: '11' })).toEqual(['shares']);
-    });
-
-    test('a field the row lacks counts as edited once filled in', () => {
-      const blank = pendingRow({ detected: null, side: '', shares: 0, price: '', filledOn: '' });
-      expect(pendingEdits(blank, untouched)).toEqual(['filledOn', 'side', 'shares', 'price']);
-    });
-
-    test('a stored fee is the baseline instead of the derived one', () => {
-      const stored = pendingRow({ detected: null, fee: 50 });
-      expect(pendingEdits(stored, { ...untouched, fee: '0.50' })).toEqual([]);
-      expect(pendingEdits(stored, { ...untouched, fee: '' })).toEqual(['fee']);
-    });
-  });
-
-  test('treats 178.4 and 178.40 as the same price', () => {
-    expect(pendingEdits(row(), { ...same, price: '178.4' })).toEqual([]);
-    expect(pendingEdits(row(), { ...same, price: '178.40' })).toEqual([]);
-    expect(pendingEdits(row(), { ...same, price: '178.4000' })).toEqual([]);
-    expect(pendingEdits(row(), { ...same, price: '178.401' })).toEqual(['price']);
-  });
-
-  test('treats a fee of "0.00" against detected fee 0 as unedited', () => {
-    const zero = row({ ...detected, fee: 0 });
-    expect(pendingEdits(zero, { ...same, fee: '0.00' })).toEqual([]);
-    expect(pendingEdits(zero, { ...same, fee: '0' })).toEqual([]);
-    expect(pendingEdits(zero, { ...same, fee: '0.01' })).toEqual(['fee']);
-  });
-
-  test('treats shares with stray whitespace or a leading zero as the same count', () => {
-    expect(pendingEdits(row(), { ...same, shares: ' 10 ' })).toEqual([]);
-    expect(pendingEdits(row(), { ...same, shares: '010' })).toEqual([]);
   });
 });

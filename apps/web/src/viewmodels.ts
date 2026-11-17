@@ -1,5 +1,5 @@
 import { parseUsd } from '@st/core/money';
-import { usdToCents, type BucketDto, type DetectedDto, type PendingFillDto, type RunStatus } from './api';
+import type { BucketDto, RunStatus } from './api';
 
 /**
  * Presentation logic worth unit testing: bucket cells, badge tones, form
@@ -188,88 +188,6 @@ export function bucketCells(
     });
   }
   return cells;
-}
-
-export interface PendingIssue {
-  /** Field the user must fix before confirming; `null` when nothing is missing. */
-  field: 'ticker' | 'side' | 'shares' | 'price' | 'filledOn' | null;
-}
-
-/**
- * Fields `confirmPendingFill` needs present (on the row or as an override);
- * surfacing them turns a server 400 into an actionable hint.
- */
-export function pendingIssue(row: PendingFillDto): PendingIssue {
-  if (!row.ticker) return { field: 'ticker' };
-  if (row.side !== 'buy' && row.side !== 'sell') return { field: 'side' };
-  if (!Number.isInteger(row.shares) || row.shares <= 0) return { field: 'shares' };
-  if (!row.price) return { field: 'price' };
-  if (!row.filledOn) return { field: 'filledOn' };
-  return { field: null };
-}
-
-/** What the operator currently has in each editable field of a pending row. */
-export interface RowValues {
-  filledOn: string;
-  side: string;
-  shares: string;
-  price: string;
-  fee: string;
-}
-
-function sameShares(detected: number | null, value: string): boolean {
-  const s = value.trim();
-  if (detected === null || s === '') return detected === null && s === '';
-  return /^\d+$/.test(s) && Number(s) === detected;
-}
-
-// Compared as myriadths, never as display strings: "178.4" and "178.40" are one price.
-function samePrice(detected: string | null, value: string): boolean {
-  const s = value.trim();
-  if (detected === null || s === '') return detected === null && s === '';
-  try {
-    return parseUsd(s) === BigInt(detected);
-  } catch {
-    return false;
-  }
-}
-
-// Compared as integer cents. A cleared field is an edit when vision read a fee:
-// it asks the server to recompute (`feeCents: null`). When vision read no fee the
-// field is prefilled with `autoFeeCents`, and the server derives that same fee
-// itself, so blank or the prefilled amount is not an edit.
-function sameFee(detected: number | null, value: string, autoFeeCents: number): boolean {
-  const s = value.trim();
-  if (detected === null) return s === '' || usdToCents(s) === autoFeeCents;
-  return s !== '' && usdToCents(s) === detected;
-}
-
-/**
- * Fields whose current value differs from what vision detected, in `RowValues`
- * order. Only these belong in a confirm's overrides, so an unchanged field is
- * omitted from the request, never sent as null. `detected: null` (a row that
- * predates the snapshot) is compared against the row's own values, so an old
- * row can still be corrected; this says what to send, not whether the operator
- * corrected vision (callers gate that on `row.detected`). A null field in the
- * snapshot means vision missed it, so any filled-in value counts as edited
- * (except a fee equal to `autoFeeCents`, which the server derives itself).
- */
-export function pendingEdits(row: PendingFillDto, values: RowValues): Array<keyof RowValues> {
-  const d: DetectedDto = row.detected ?? {
-    side: row.side || null,
-    shares: row.shares > 0 ? row.shares : null,
-    price: row.price || null,
-    filledOn: row.filledOn || null,
-    fee: row.fee,
-  };
-  const edited: Array<keyof RowValues> = [];
-  const text = (detected: string | null, value: string) => (detected ?? '') === value.trim();
-  if (!text(d.filledOn, values.filledOn)) edited.push('filledOn');
-  if (!text(d.side, values.side)) edited.push('side');
-  if (!sameShares(d.shares, values.shares)) edited.push('shares');
-  if (!samePrice(d.price, values.price)) edited.push('price');
-  if (!sameFee(d.fee, values.fee, row.autoFeeCents)) edited.push('fee');
-  return edited;
 }
 
 /** Whole days between two ISO dates (0 on bad input). */
