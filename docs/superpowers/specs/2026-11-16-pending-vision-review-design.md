@@ -206,6 +206,7 @@ keep. See "Lifecycle" for why.
 | `detected_side` / `detected_shares` / `detected_price` / `detected_filled_on` / `detected_fee` | varchar(8) / int / bigint / date / int | all nullable: vision can miss a field entirely |
 | `final_side` / `final_shares` / `final_price` / `final_filled_on` / `final_fee` | same types, nullable | all null when `outcome = 'rejected'` |
 | `edited` | boolean | true when any final differs from its detected value; drives the review tab's marking without re-deriving |
+| `fee_overridden` | boolean | true when the confirm carried a `feeCents` override. Without it the review tab cannot tell a fee the operator typed from one the system derived, and would mark the derived fee as a misread on **every** feeless capture — the same conflation corrected in the snapshot notes above, one layer up. Added during execution, while `0008` was still unshipped. |
 | `created_at` | timestamp, default now | |
 
 ## Lifecycle
@@ -378,6 +379,25 @@ Domain:
   inputs are USD strings. Display through `format.ts:priceUsd`, validate with
   `api.ts:usdOrNull`, and send USD. Never compare USD strings for edit
   detection — compare parsed myriadths, so `178.4` and `178.40` are equal.
+- **A field vision missed must be visibly missing.** `ingestCapture`
+  substitutes `filledOn = f.date ?? today`, so a capture with no readable date
+  books a real trade date the operator never saw. The row must therefore drive
+  its "needs input" warning off the **snapshot** (`detected.filledOn === null`
+  with `detected` present), not off the row's substituted value, and confirm
+  must be blocked until the operator fills it in. Filling it counts as an edit,
+  which is what the server already thinks.
+
+  *Found during execution, after the plan was written.* The plan listed
+  `pendingIssue` under Task 6's modified files but never gave it a step, so it
+  kept reading `row.filledOn` — which the substitute makes always non-empty.
+  The result was an empty date box with no warning that silently booked the
+  ingest date.
+- **The displayed fee and the booked fee must be the same number.** The derived
+  fee is prefilled *and marked as derived*, and it tracks later qty and price
+  edits — which means the client needs the run's `costPpm` on the wire. An
+  earlier execution ruling of mine said the client could not recompute and that
+  `autoFeeCents` was frozen "as captured"; that was wrong. It let an operator
+  change the quantity, see the old fee, and have a different one booked.
 - Because every field is now pre-filled, confirm requests always carry a full
   override set. An unedited confirm must behave exactly as today's
   no-overrides confirm, and must not trigger the keep prompt.
