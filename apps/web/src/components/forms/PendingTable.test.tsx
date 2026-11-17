@@ -312,6 +312,27 @@ describe('PendingTable', () => {
     });
   });
 
+  describe('a legacy row (no detected snapshot)', () => {
+    const legacy: PendingFillDto = { ...ROW, detected: null, fee: null, autoFeeCents: 7 };
+
+    it('prefills from the row itself and an untouched confirm posts {}', async () => {
+      const calls = await renderWithConfirmCalls(legacy);
+      expect(control<HTMLInputElement>(3, 'input').value).toBe('10');
+      expect(control<HTMLInputElement>(5, 'input').value).toBe('0.07');
+      await clickConfirm();
+      expect(calls[0]!.body).toEqual({});
+    });
+
+    it('an edited qty posts overrides.shares', async () => {
+      const calls = await renderWithConfirmCalls(legacy);
+      await act(async () => {
+        setInputValue(control<HTMLInputElement>(3, 'input'), '11');
+      });
+      await clickConfirm();
+      expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ shares: 11 });
+    });
+  });
+
   it('clearing a fee vision read posts feeCents null (recompute)', async () => {
     const calls = await renderWithConfirmCalls(ROW);
     await act(async () => {

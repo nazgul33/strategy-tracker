@@ -1,5 +1,5 @@
 import { parseUsd } from '@st/core/money';
-import { usdToCents, type BucketDto, type PendingFillDto, type RunStatus } from './api';
+import { usdToCents, type BucketDto, type DetectedDto, type PendingFillDto, type RunStatus } from './api';
 
 /**
  * Presentation logic worth unit testing: bucket cells, badge tones, form
@@ -248,13 +248,20 @@ function sameFee(detected: number | null, value: string, autoFeeCents: number): 
  * Fields whose current value differs from what vision detected, in `RowValues`
  * order. Only these belong in a confirm's overrides, so an unchanged field is
  * omitted from the request, never sent as null. `detected: null` (a row that
- * predates the snapshot) has nothing to compare against → `[]`; an object with
- * a null field means vision missed it, so any filled-in value counts as edited
+ * predates the snapshot) is compared against the row's own values, so an old
+ * row can still be corrected; this says what to send, not whether the operator
+ * corrected vision (callers gate that on `row.detected`). A null field in the
+ * snapshot means vision missed it, so any filled-in value counts as edited
  * (except a fee equal to `autoFeeCents`, which the server derives itself).
  */
 export function pendingEdits(row: PendingFillDto, values: RowValues): Array<keyof RowValues> {
-  const d = row.detected;
-  if (d === null) return [];
+  const d: DetectedDto = row.detected ?? {
+    side: row.side || null,
+    shares: row.shares > 0 ? row.shares : null,
+    price: row.price || null,
+    filledOn: row.filledOn || null,
+    fee: row.fee,
+  };
   const edited: Array<keyof RowValues> = [];
   const text = (detected: string | null, value: string) => (detected ?? '') === value.trim();
   if (!text(d.filledOn, values.filledOn)) edited.push('filledOn');

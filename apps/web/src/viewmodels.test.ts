@@ -319,8 +319,34 @@ describe('pendingEdits', () => {
     expect(pendingEdits(row(), { ...same, price: 'abc', shares: '1.5', fee: 'x' })).toEqual(['shares', 'price', 'fee']);
   });
 
-  test('returns [] for a legacy row with detected null', () => {
-    expect(pendingEdits(row(null), { side: 'sell', shares: '99', price: '1', filledOn: '2020-01-01', fee: '9' })).toEqual([]);
+  describe('a legacy row (detected null) is compared against the row itself', () => {
+    const untouched: RowValues = { side: 'buy', shares: '10', price: '349.99', filledOn: '2026-11-02', fee: '0.07' };
+
+    test('its prefilled values are no edit, including the derived fee', () => {
+      expect(pendingEdits(row(null), untouched)).toEqual([]);
+    });
+
+    test('names each field the operator changed', () => {
+      expect(pendingEdits(row(null), { side: 'sell', shares: '99', price: '1', filledOn: '2020-01-01', fee: '9' })).toEqual([
+        'filledOn',
+        'side',
+        'shares',
+        'price',
+        'fee',
+      ]);
+      expect(pendingEdits(row(null), { ...untouched, shares: '11' })).toEqual(['shares']);
+    });
+
+    test('a field the row lacks counts as edited once filled in', () => {
+      const blank = pendingRow({ detected: null, side: '', shares: 0, price: '', filledOn: '' });
+      expect(pendingEdits(blank, untouched)).toEqual(['filledOn', 'side', 'shares', 'price']);
+    });
+
+    test('a stored fee is the baseline instead of the derived one', () => {
+      const stored = pendingRow({ detected: null, fee: 50 });
+      expect(pendingEdits(stored, { ...untouched, fee: '0.50' })).toEqual([]);
+      expect(pendingEdits(stored, { ...untouched, fee: '' })).toEqual(['fee']);
+    });
   });
 
   test('treats 178.4 and 178.40 as the same price', () => {
