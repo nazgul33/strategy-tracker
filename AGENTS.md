@@ -25,19 +25,23 @@ packages/
 apps/server/       drizzle.config.ts
   src/
     main.ts
-    db/schema.ts db/client.ts db/repos.ts
-    domain/booking.ts domain/capture-claim.ts domain/capture-corrections.ts domain/capture-dedup.ts domain/correction-types.ts domain/corrections.ts domain/ppm.ts domain/recompute.ts domain/run-lock.ts
-    wire/deps.ts wire/capture.ts
+    db/schema.ts db/client.ts db/repos.ts db/repos-bars.ts db/repos-sim.ts db/repos-vision.ts
+    domain/booking.ts domain/confirm-pending.ts domain/capture-claim.ts domain/capture-corrections.ts domain/capture-dedup.ts domain/capture-image.ts domain/correction-types.ts domain/corrections.ts domain/ppm.ts domain/recompute.ts domain/run-lock.ts domain/sell-match.ts domain/sibling-notify.ts domain/vision-review.ts
+    wire/deps.ts wire/capture.ts wire/sibling-notifier.ts
     pipeline/day.ts pipeline/wire.ts
-    sim/sim.ts
-    http/app.ts http/auth.ts http/routes/{runs,fills,pending,corrections,sim,settings}.ts
-  db/migrations/   0000_fantastic_thunderbolts.sql … 0006_flippant_gladiator.sql (+ meta/)
-  test/            booking.test.ts corrections.test.ts day.test.ts sim.test.ts http.test.ts db.test.ts wire.test.ts fake-corrections.ts
-apps/web/src/      main.tsx App.tsx api.ts api.types.ts format.ts viewmodels.ts (+ colocated *.test.ts)
-  components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,RunPanels,RunHistory,hooks,ui,forms/*}
-  pages/{RunsList,RunDetail,Sim,SimRun,Settings,Login,Pending}.tsx
-  i18n/en.json i18n/ko.json
-scripts/           e2e.ts tsconfig.json — operator smoke on a scratch DB (see Test matrix)
+    market/bars.ts
+    sim/sim.ts sim/serialize.ts
+    http/app.ts http/auth.ts http/booking-deps.ts http/routes/{runs,fills,pending,corrections,sim,settings,vision-review}.ts
+  db/migrations/   0000_fantastic_thunderbolts.sql … 0008_cultured_karen_page.sql (+ meta/)
+  test/            *.test.ts per area (booking, vision-review, capture-image, http-*, db*, sim, wire, …) + fake-corrections.ts http-fakes.ts
+apps/web/src/      main.tsx App.tsx api.ts api.sim.ts api.types.ts format.ts viewmodels.ts cutloss.ts gaps.ts priceHistory.ts simconfig.ts simview.ts (+ colocated *.test.ts)
+  components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,PriceChart,RecalcSummary,RunPanels,RunHistory,ScreenshotLink,VisionReviewEntry,hooks,ui,forms/*}
+  components/forms/{CorrectionList,CreateRunForm,EditRunModal,FillDialog,KeepImagePrompt,PendingReviewDialog,PendingRow,PendingTable,SimConfigFields,SimConfigPanel}
+  pages/{RunsList,RunDetail,Sim,SimRun,Settings,Login,Pending,VisionReview}.tsx
+  i18n/catalog.ts i18n/index.tsx i18n/en.json i18n/ko.json
+scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-sim-drafts.ts e2e-vision-review.ts tsconfig.json
+                   — operator smoke on a scratch DB (see Test matrix); e2e.ts sets up and drives the step modules in order
+                   (e2e-ctx.ts = shared ctx incl. the `photo` capture helper; e2e-vision-review.ts = screenshot retention)
 ```
 
 ## Commands

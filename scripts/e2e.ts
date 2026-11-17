@@ -14,7 +14,7 @@
  * through the real Hono app → seeded run create → photo capture through
  * wire/capture against a fake vision model → duplicate guard → HTTP pending
  * confirm → state asserts → morning digest (+ cut-loss stops) → web viewmodels →
- * stop-fill booking → sim drafts (cached bars) → deterministic sim. Steps live in e2e-*.ts.
+ * stop-fill booking → sim drafts (cached bars) → screenshot retention + vision review → deterministic sim. Steps live in e2e-*.ts.
  * Exit 0 = every pinned assertion below held.
  */
 import { getDb, closeDb, applyMigrations } from '../apps/server/src/db/client'
@@ -30,9 +30,10 @@ import type { OHLCBar } from '../packages/market-data/src/yahoo'
 import { formatUsd, parseUsd } from '../packages/core/src/money'
 import { CATALOG } from '../packages/telegram/src/i18n'
 import { makeCachedBarReader } from '../apps/server/src/market/bars'
-import { jsonOf } from './e2e-ctx'
+import { jsonOf, type E2eCtx, type VisionFill } from './e2e-ctx'
 import { CUT_LOSS_PPM, checkPlannedStops, checkStopBooking } from './e2e-cutloss'
 import { countingUpstream, checkSimDrafts } from './e2e-sim-drafts'
+import { runVisionReview } from './e2e-vision-review'
 
 let checks = 0
 function ok(cond: unknown, label: string): void {
@@ -47,7 +48,7 @@ const SECRET = 'e2e-session-secret'
 const TODAY: ISODate = '2026-11-09' // Monday
 const PREV: ISODate = prevTradingDay(TODAY) // previous open = Friday 2026-11-06
 const IMG = { base64: 'ZTJlLWZhZ2UtcG5n', mime: 'image/png' } // 'e2e-fake-png'
-const VISION_FILLS = [{ side: 'buy', ticker: 'NVDA', shares: 30, price: '179.50', fee: '0.50' }]
+const VISION_FILLS: VisionFill[] = [{ side: 'buy', ticker: 'NVDA', shares: 30, price: '179.50', fee: '0.50' }]
 
 // deterministic sim bars (myriadths via parseUsd); 4 bars → 3 sim days
 const BAR_FIXTURE: [ISODate, string, string, string, string][] = [
@@ -71,12 +72,13 @@ async function main(): Promise<void> {
   const scratchUrl = `${u.protocol}//${u.username}:${u.password}@${u.host}/${SCRATCH}`
 
   const visionHits: any[] = []
+  let visionFills = VISION_FILLS // what the fake model answers; ctx.photo swaps it per capture
   const vision = Bun.serve({
     hostname: '127.0.0.1',
     port: 0,
     async fetch(req) {
       visionHits.push(await req.json().catch(() => null))
-      return Response.json({ choices: [{ message: { content: JSON.stringify({ fills: VISION_FILLS }) } }] })
+      return Response.json({ choices: [{ message: { content: JSON.stringify({ fills: visionFills }) } }] })
     },
   })
   console.log(`fake vision on http://127.0.0.1:${vision.port}/v1`)
@@ -121,7 +123,6 @@ async function main(): Promise<void> {
     const login = await req('POST', '/login', { password: PASSWORD })
     ok(login.status === 200, 'login -> 200')
     const { token } = (await jsonOf(login)) as { token: string }
-    const ctx = { ok, req, token }
     ok((login.headers.get('set-cookie') ?? '').includes('st_session='), 'login also sets st_session cookie')
 
     // ---- run create via HTTP (seeded first bucket) ----------------------------
@@ -154,6 +155,11 @@ async function main(): Promise<void> {
       today: () => TODAY,
       send: async (_chatId: string, text: string) => { captureMsgs.push(text) },
     })
+    const photo: E2eCtx['photo'] = async (fills, image) => {
+      visionFills = fills
+      try { await capture.onPhoto('chat-1', image, 'NVDA 11/9 broker fill') } finally { visionFills = VISION_FILLS }
+    }
+    const ctx: E2eCtx = { ok, req, token, photo }
     await capture.onPhoto('chat-1', IMG, 'NVDA 11/9 broker fill') // no run id in caption -> ticker auto-route
     ok(captureMsgs.some((m) => m === 'Booked NVDA buy 30 sh @ $179.50 on 2026-11-09 — confirm?'), 'capture-booked message verbatim')
     const pend = await repos.pendingRepo.listPending()
@@ -254,6 +260,9 @@ async function main(): Promise<void> {
 
     // ---- sim drafts: create -> apply (cache hit) -> save / discard
     await checkSimDrafts(ctx, barSource.calls)
+
+    // ---- screenshot retention: keep a corrected one, sweep the rest, vision-review list
+    await runVisionReview(ctx)
 
     // ---- deterministic sim (fixture bars, pure + persisted) ------------------
     const simRun = { id: 0, name: 'E2E Sim', ticker: 'NVDA', strategyKey: 'mean-reversion' as const, costPpm: 1_000, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }
