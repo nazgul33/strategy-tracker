@@ -686,4 +686,93 @@ describeIf('db integration', () => {
       expect(await repos.barCoverageRepo.list('ZZ' + Date.now())).toEqual([])
     })
   })
+
+  describe('vision review storage', () => {
+    async function newCapture(): Promise<{ runId: number; captureId: number }> {
+      const stamp = Date.now() + '-' + Math.random().toString(36).slice(2)
+      const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'V' + stamp.slice(-8), name: 'vision-' + stamp, poolCents: 1000, costPpm: 10 })
+      const ins = await repos.captureRepo.insert({ runId, chatId: 'c', imageHash: 'h' + stamp, status: 'pending' })
+      return { runId, captureId: ins.id! }
+    }
+    const review = (runId: number, captureId: number, pendingFillId: number, over: Record<string, unknown> = {}) => ({
+      runId, captureId, pendingFillId, ticker: 'VV', outcome: 'confirmed' as const,
+      detectedSide: 'buy', detectedShares: 5, detectedPrice: 1234567n, detectedFilledOn: '2026-02-10', detectedFee: null,
+      finalSide: 'buy', finalShares: 6, finalPrice: 1234567n, finalFilledOn: '2026-02-10', finalFee: 3,
+      edited: true, ...over,
+    })
+
+    test('captureImageRepo: insertIgnore stores once, second call reports false and keeps the original bytes', async () => {
+      const { captureId } = await newCapture()
+      expect(await repos.captureImageRepo.insertIgnore({ captureId, mime: 'image/png', bytes: Buffer.from('one'), byteLen: 3 })).toBe(true)
+      expect(await repos.captureImageRepo.insertIgnore({ captureId, mime: 'image/jpeg', bytes: Buffer.from('two'), byteLen: 3 })).toBe(false)
+      const got = await repos.captureImageRepo.getBytes(captureId)
+      expect(got.mime).toBe('image/png')
+      expect(Buffer.isBuffer(got.bytes)).toBe(true)
+      expect(got.bytes.equals(Buffer.from('one'))).toBe(true)
+    })
+
+    test('captureImageRepo: bytes round trip binary content intact', async () => {
+      const { captureId } = await newCapture()
+      const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i))
+      await repos.captureImageRepo.insertIgnore({ captureId, mime: 'image/jpeg', bytes, byteLen: bytes.length })
+      expect((await repos.captureImageRepo.getBytes(captureId)).bytes.equals(bytes)).toBe(true)
+      expect(await repos.captureImageRepo.getBytes(2_000_000_000)).toBeNull()
+    })
+
+    test('captureImageRepo: setKeep then deleteFor', async () => {
+      const { captureId } = await newCapture()
+      await repos.captureImageRepo.insertIgnore({ captureId, mime: 'image/png', bytes: Buffer.from('abcd'), byteLen: 4 })
+      expect((await repos.captureImageRepo.listKept(1000)).some((r: any) => r.captureId === captureId)).toBe(false)
+      await repos.captureImageRepo.setKeep(captureId)
+      const kept = (await repos.captureImageRepo.listKept(1000)).find((r: any) => r.captureId === captureId)
+      expect(kept).toEqual({ captureId, mime: 'image/png', byteLen: 4, createdAt: expect.any(String) })
+      expect(kept).not.toHaveProperty('bytes')
+      await repos.captureImageRepo.deleteFor(captureId)
+      expect((await repos.captureImageRepo.listKept(1000)).some((r: any) => r.captureId === captureId)).toBe(false)
+      expect(await repos.captureImageRepo.getBytes(captureId)).toBeNull()
+    })
+
+    test('visionReviewRepo: insertIgnore is idempotent per pendingFillId and listForCaptures groups by capture', async () => {
+      const a = await newCapture()
+      const b = await newCapture()
+      const base = Date.now() % 1_000_000_000
+      await repos.visionReviewRepo.insertIgnore(review(a.runId, a.captureId, base))
+      await repos.visionReviewRepo.insertIgnore(review(a.runId, a.captureId, base, { finalShares: 99 }))
+      await repos.visionReviewRepo.insertIgnore(review(a.runId, a.captureId, base + 1, { outcome: 'rejected', finalSide: null, finalShares: null, finalPrice: null, finalFilledOn: null, finalFee: null, edited: false }))
+      await repos.visionReviewRepo.insertIgnore(review(b.runId, b.captureId, base + 2))
+      const rows = await repos.visionReviewRepo.listForCaptures([a.captureId, b.captureId])
+      expect(rows.map((r: any) => r.pendingFillId)).toEqual([base, base + 1, base + 2])
+      expect(rows.map((r: any) => r.captureId)).toEqual([a.captureId, a.captureId, b.captureId])
+      expect(rows[0]).toMatchObject({ detectedPrice: 1234567n, detectedFee: null, finalShares: 6, finalFee: 3, edited: true, outcome: 'confirmed' })
+      expect(rows[1]).toMatchObject({ outcome: 'rejected', finalShares: null, edited: false })
+      expect(await repos.visionReviewRepo.listForCaptures([])).toEqual([])
+      expect(await repos.visionReviewRepo.listForCaptures([a.captureId])).toHaveLength(2)
+    })
+
+    test('visionReviewRepo: deleteFor removes only that capture', async () => {
+      const a = await newCapture()
+      const b = await newCapture()
+      const base = (Date.now() % 1_000_000_000) + 10
+      await repos.visionReviewRepo.insertIgnore(review(a.runId, a.captureId, base))
+      await repos.visionReviewRepo.insertIgnore(review(b.runId, b.captureId, base + 1))
+      await repos.visionReviewRepo.deleteFor(a.captureId)
+      expect(await repos.visionReviewRepo.listForCaptures([a.captureId])).toEqual([])
+      expect(await repos.visionReviewRepo.listForCaptures([b.captureId])).toHaveLength(1)
+    })
+
+    test('pending_fills snapshot columns round trip, detectedAt null on rows without a snapshot', async () => {
+      const { runId, captureId } = await newCapture()
+      const legacy = await repos.pendingRepo.insert({ runId, captureId, side: 'buy', ticker: 'V', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status: 'pending' })
+      const snap = await repos.pendingRepo.insert({
+        runId, captureId, side: 'buy', ticker: 'V', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status: 'pending',
+        detectedSide: 'buy', detectedShares: 1, detectedPrice: 100n, detectedFilledOn: null, detectedFee: null, detectedAt: '2026-02-10 12:00:00',
+      })
+      const l = await repos.pendingRepo.get(legacy)
+      const s = await repos.pendingRepo.get(snap)
+      expect(l.detectedAt).toBeNull()
+      expect(l.detectedSide).toBeNull()
+      expect(s).toMatchObject({ detectedSide: 'buy', detectedShares: 1, detectedPrice: 100n, detectedFilledOn: null, detectedFee: null })
+      expect(s.detectedAt).not.toBeNull()
+    })
+  })
 })

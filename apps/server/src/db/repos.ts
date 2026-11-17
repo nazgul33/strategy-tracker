@@ -3,6 +3,7 @@ import { eq, and, sql, inArray } from 'drizzle-orm'
 import * as s from './schema'
 import { getSimRepo } from './repos-sim'
 import { getBarRepos } from './repos-bars'
+import { getVisionRepos } from './repos-vision'
 import type { CorrectionRepo } from '../domain/correction-types'
 
 function serializeState(state: RunState): string {
@@ -224,5 +225,5 @@ export function getRepos(db: any) {
   }
   const simRepo = getSimRepo(db)
   const { priceHistoryRepo, barCoverageRepo } = getBarRepos(db)
-  return { runRepo, orderRepo, fillRepo, priceHistoryRepo, barCoverageRepo, pendingRepo, correctionRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo, settingsRepo, poolEditRepo, simRepo }
+  return { runRepo, orderRepo, fillRepo, priceHistoryRepo, barCoverageRepo, pendingRepo, correctionRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo, settingsRepo, poolEditRepo, simRepo, ...getVisionRepos(db) }
 }

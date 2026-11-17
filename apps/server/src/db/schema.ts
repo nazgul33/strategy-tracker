@@ -1,4 +1,7 @@
-import { mysqlTable, bigint, boolean, int, varchar, text, date, timestamp, json, mysqlEnum, primaryKey, index } from 'drizzle-orm/mysql-core'
+import { mysqlTable, bigint, boolean, int, varchar, text, date, timestamp, json, mysqlEnum, primaryKey, index, customType } from 'drizzle-orm/mysql-core'
+
+// drizzle-orm/mysql-core has no blob helper; LONGBLOB needs a custom type.
+const longblob = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'longblob' })
 
 export const strategyRuns = mysqlTable('strategy_runs', {
   id: int('id').primaryKey().autoincrement(),
@@ -69,8 +72,51 @@ export const pendingFills = mysqlTable('pending_fills', {
   fee: int('fee'),
   filledOn: date('filled_on', { mode: 'string' }).notNull(),
   status: mysqlEnum('status', ['pending', 'confirmed', 'rejected']).notNull().default('pending'),
+  // Vision snapshot frozen at insert. Nulls are honest "vision missed it";
+  // detectedAt null means the row predates the snapshot.
+  detectedSide: varchar('detected_side', { length: 8 }),
+  detectedShares: int('detected_shares'),
+  detectedPrice: bigint('detected_price', { mode: 'bigint' }),
+  detectedFilledOn: date('detected_filled_on', { mode: 'string' }),
+  detectedFee: int('detected_fee'),
+  detectedAt: timestamp('detected_at', { mode: 'string' }),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 })
+
+// Screenshot bytes, 1:1 with captures; presence means the bytes exist.
+export const captureImages = mysqlTable('capture_images', {
+  captureId: int('capture_id').primaryKey(),
+  mime: varchar('mime', { length: 32 }).notNull(),
+  bytes: longblob('bytes').notNull(),
+  byteLen: int('byte_len').notNull(),
+  keep: boolean('keep').notNull().default(false),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
+})
+
+// One frozen detected-vs-final record per resolved fill.
+export const visionReviews = mysqlTable('vision_reviews', {
+  id: int('id').primaryKey().autoincrement(),
+  runId: int('run_id').notNull(),
+  captureId: int('capture_id').notNull(),
+  pendingFillId: int('pending_fill_id').notNull(),
+  ticker: varchar('ticker', { length: 16 }).notNull(),
+  outcome: mysqlEnum('outcome', ['confirmed', 'rejected']).notNull(),
+  detectedSide: varchar('detected_side', { length: 8 }),
+  detectedShares: int('detected_shares'),
+  detectedPrice: bigint('detected_price', { mode: 'bigint' }),
+  detectedFilledOn: date('detected_filled_on', { mode: 'string' }),
+  detectedFee: int('detected_fee'),
+  finalSide: varchar('final_side', { length: 8 }),
+  finalShares: int('final_shares'),
+  finalPrice: bigint('final_price', { mode: 'bigint' }),
+  finalFilledOn: date('final_filled_on', { mode: 'string' }),
+  finalFee: int('final_fee'),
+  edited: boolean('edited').notNull(),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
+}, (t) => ({
+  pendingFillUnique: uniqueIndex('vision_reviews_pending_fill_unique').on(t.pendingFillId),
+  captureIdx: index('vision_reviews_capture_idx').on(t.captureId),
+}))
 
 export const fillCorrections = mysqlTable('fill_corrections', {
   id: int('id').primaryKey().autoincrement(),
