@@ -530,7 +530,15 @@ describeIf('db integration', () => {
     })
 
     test('pre-existing sim runs are not drafts after migration', async () => {
-      // a row as it existed before 0007, then replay the migration's backfill chunk
+      // A row as it existed before 0007, then replay the migration's backfill chunk.
+      // The chunk's presence is also asserted without a database in
+      // migration-sql.test.ts; here it is really executed.
+      //
+      // Careful: that chunk is an unscoped `UPDATE sim_runs SET draft = 0`, so it
+      // clears the draft flag on every row in the shared test database. That is safe
+      // only because bun runs test files sequentially and this describe block is the
+      // last one in this file — keep it last, and keep any new draft assertion after
+      // this test creating its own rows.
       const id = await repos.simRepo.insertRun(simInput())
       await db.execute(sql.raw(`UPDATE sim_runs SET draft = 1 WHERE id = ${id}`))
       const migrationsDir = fileURLToPath(new URL('../db/migrations/', import.meta.url))
