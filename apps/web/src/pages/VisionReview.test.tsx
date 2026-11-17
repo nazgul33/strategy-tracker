@@ -22,16 +22,36 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const READ = { side: 'buy', shares: 10, price: '1234500', filledOn: '2026-11-10', fee: 100 };
 
-// Vision read the price as $123.45 and missed the fee; the operator booked $125.50 and a $1.00 fee.
+// Vision read the price as $123.45 and missed the fee; the operator corrected the price to
+// $125.50 and left the fee alone, so the $1.00 booked is the one the system derived.
 const EDITED: VisionReviewFillDto = {
   id: 11,
   outcome: 'confirmed',
   edited: true,
+  feeOverridden: false,
   detected: { ...READ, fee: null },
   final: { ...READ, price: '1255000', fee: 100 },
 };
-const UNEDITED: VisionReviewFillDto = { id: 12, outcome: 'confirmed', edited: false, detected: READ, final: READ };
-const REJECTED: VisionReviewFillDto = { id: 13, outcome: 'rejected', edited: false, detected: READ, final: null };
+const UNEDITED: VisionReviewFillDto = { id: 12, outcome: 'confirmed', edited: false, feeOverridden: false, detected: READ, final: READ };
+const REJECTED: VisionReviewFillDto = { id: 13, outcome: 'rejected', edited: false, feeOverridden: false, detected: READ, final: null };
+// The common case: vision read no fee, nothing was edited, the booked fee is the derived one.
+const FEELESS: VisionReviewFillDto = {
+  id: 14,
+  outcome: 'confirmed',
+  edited: false,
+  feeOverridden: false,
+  detected: { ...READ, fee: null },
+  final: READ,
+};
+// Vision read no fee and the operator typed one.
+const TYPED_FEE: VisionReviewFillDto = {
+  id: 15,
+  outcome: 'confirmed',
+  edited: true,
+  feeOverridden: true,
+  detected: { ...READ, fee: null },
+  final: { ...READ, fee: 250 },
+};
 
 function entry(captureId: number, fills: VisionReviewFillDto[], ticker = 'AAPL'): VisionReviewEntryDto {
   return { captureId, runId: 7, ticker, createdAt: '2026-11-10 14:30:00', mime: 'image/png', byteLen: 20480, fills };
@@ -128,11 +148,9 @@ describe('VisionReviewPage', () => {
     expect(cell(detected, 'fee').textContent).toBe('—');
     expect(cell(final, 'fee').textContent).toBe('$1.00');
 
-    for (const field of ['price', 'fee']) {
-      expect(cell(detected, field).dataset.changed).toBe('true');
-      expect(cell(final, field).dataset.changed).toBe('true');
-    }
-    for (const field of ['side', 'shares', 'filledOn']) {
+    expect(cell(detected, 'price').dataset.changed).toBe('true');
+    expect(cell(final, 'price').dataset.changed).toBe('true');
+    for (const field of ['side', 'shares', 'filledOn', 'fee']) {
       expect(cell(detected, field).dataset.changed).toBeUndefined();
       expect(cell(final, field).dataset.changed).toBeUndefined();
     }
@@ -140,6 +158,34 @@ describe('VisionReviewPage', () => {
     expect(cell(final, 'shares').textContent).toBe('10');
     expect(cell(final, 'filledOn').textContent).toBe('2026-11-10');
     expect(card.textContent).toContain('Edited');
+  });
+
+  it('does not mark the derived fee as a misread, even when another field was corrected', async () => {
+    await render([entry(3, [EDITED])]);
+    const card = cards()[0]!;
+    expect(cell(rowOf(card, 11, 'detected'), 'fee').dataset.changed).toBeUndefined();
+    expect(cell(rowOf(card, 11, 'final'), 'fee').dataset.changed).toBeUndefined();
+    expect(rowOf(card, 11, 'final').querySelector('[data-auto-fee]')!.textContent).toBe('auto');
+  });
+
+  it('shows an unedited feeless capture as read, with the derived fee tagged auto and nothing highlighted', async () => {
+    await render([entry(3, [FEELESS])]);
+    const card = cards()[0]!;
+    expect(card.querySelector('[data-changed]')).toBeNull();
+    expect(card.textContent).toContain('As read');
+    expect(card.textContent).not.toContain('Edited');
+    expect(cell(rowOf(card, 14, 'detected'), 'fee').textContent).toBe('—');
+    expect(cell(rowOf(card, 14, 'final'), 'fee').textContent).toBe('$1.00');
+    expect(rowOf(card, 14, 'final').querySelector('[data-auto-fee]')).toBeTruthy();
+    expect(rowOf(card, 14, 'detected').querySelector('[data-auto-fee]')).toBeNull();
+  });
+
+  it('marks a fee the operator typed as changed, and does not call it auto', async () => {
+    await render([entry(3, [TYPED_FEE])]);
+    const card = cards()[0]!;
+    expect(cell(rowOf(card, 15, 'detected'), 'fee').dataset.changed).toBe('true');
+    expect(cell(rowOf(card, 15, 'final'), 'fee').dataset.changed).toBe('true');
+    expect(card.querySelector('[data-auto-fee]')).toBeNull();
   });
 
   it('keeps an unedited sibling fill unmarked', async () => {

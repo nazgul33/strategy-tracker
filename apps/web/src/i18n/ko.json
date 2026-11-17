@@ -408,6 +408,7 @@
   "visionReviewDeleteWarning": "이 스크린샷과 인식값·수정값 기록을 삭제할까요? 되돌릴 수 없습니다.",
   "visionReviewEdited": "수정됨",
   "visionReviewEmpty": "검토용으로 보관한 스크린샷이 아직 없습니다. 체결을 수정하거나 거부할 때 보관 여부를 묻습니다.",
+  "visionReviewFeeAuto": "자동",
   "visionReviewIntro": "검토용으로 보관한 스크린샷입니다. 체결마다 Vision이 읽은 값과 실제 반영한 값을 보여 주며, 바뀐 항목은 강조됩니다.",
   "visionReviewRowDetected": "Vision 인식",
   "visionReviewRowFinal": "최종",

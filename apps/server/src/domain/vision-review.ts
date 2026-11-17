@@ -37,6 +37,9 @@ export type VisionReviewInsert = {
   finalFilledOn: string | null
   finalFee: number | null
   edited: boolean
+  // The confirm carried a `feeCents` override, so a final fee differing from the detected one is
+  // the operator's doing; otherwise it is the fee the system derived. Always false for a reject.
+  feeOverridden: boolean
 }
 export type VisionReviewRow = VisionReviewInsert & { id: number; createdAt: string }
 
@@ -107,6 +110,7 @@ export async function resolveReview(
     finalFilledOn: final?.filledOn ?? null,
     finalFee: final?.fee ?? null,
     edited: isEdited(detected, final, { feeOverride }),
+    feeOverridden: feeOverride !== undefined,
   })
 
   // Sticky: only ever raised, never lowered.

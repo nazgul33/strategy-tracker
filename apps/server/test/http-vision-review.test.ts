@@ -9,7 +9,7 @@ function review(captureId: number, pendingFillId: number, extra: Record<string, 
     runId: 1, captureId, pendingFillId, ticker: 'AAPL', outcome: 'confirmed',
     detectedSide: 'buy', detectedShares: 3, detectedPrice: 100000n, detectedFilledOn: '2026-11-10', detectedFee: null,
     finalSide: 'buy', finalShares: 2, finalPrice: 100000n, finalFilledOn: '2026-11-10', finalFee: 7,
-    edited: true, createdAt: '2026-11-10 10:00:00', ...extra,
+    edited: true, feeOverridden: false, createdAt: '2026-11-10 10:00:00', ...extra,
   }
 }
 
@@ -52,7 +52,7 @@ describe('http vision reviews', () => {
     const fills = entries[1].fills
     expect(fills.map((x: any) => x.outcome)).toEqual(['confirmed', 'confirmed', 'rejected'])
     expect(fills[0]).toEqual({
-      id: expect.any(Number), outcome: 'confirmed', edited: true,
+      id: expect.any(Number), outcome: 'confirmed', edited: true, feeOverridden: false,
       detected: { side: 'buy', shares: 3, price: '100000', filledOn: '2026-11-10', fee: null },
       final: { side: 'buy', shares: 2, price: '100000', filledOn: '2026-11-10', fee: 7 },
     })

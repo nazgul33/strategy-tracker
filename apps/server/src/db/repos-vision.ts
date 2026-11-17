@@ -63,7 +63,7 @@ export function getVisionRepos(db: any) {
         finalSide: s.visionReviews.finalSide, finalShares: s.visionReviews.finalShares,
         finalPrice: s.visionReviews.finalPrice, finalFilledOn: s.visionReviews.finalFilledOn,
         finalFee: s.visionReviews.finalFee,
-        edited: s.visionReviews.edited, createdAt: s.visionReviews.createdAt,
+        edited: s.visionReviews.edited, feeOverridden: s.visionReviews.feeOverridden, createdAt: s.visionReviews.createdAt,
       }).from(s.visionReviews).where(inArray(s.visionReviews.captureId, captureIds)).orderBy(s.visionReviews.id)
     },
     async deleteFor(captureId: number): Promise<void> {

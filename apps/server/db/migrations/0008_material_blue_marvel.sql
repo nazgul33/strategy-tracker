@@ -26,6 +26,7 @@ CREATE TABLE `vision_reviews` (
 	`final_filled_on` date,
 	`final_fee` int,
 	`edited` boolean NOT NULL,
+	`fee_overridden` boolean NOT NULL,
 	`created_at` timestamp NOT NULL DEFAULT (now()),
 	CONSTRAINT `vision_reviews_id` PRIMARY KEY(`id`),
 	CONSTRAINT `vision_reviews_pending_fill_unique` UNIQUE(`pending_fill_id`)

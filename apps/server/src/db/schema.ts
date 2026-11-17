@@ -112,6 +112,7 @@ export const visionReviews = mysqlTable('vision_reviews', {
   finalFilledOn: date('final_filled_on', { mode: 'string' }),
   finalFee: int('final_fee'),
   edited: boolean('edited').notNull(),
+  feeOverridden: boolean('fee_overridden').notNull(),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 }, (t) => ({
   pendingFillUnique: uniqueIndex('vision_reviews_pending_fill_unique').on(t.pendingFillId),

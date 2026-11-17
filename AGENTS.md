@@ -32,7 +32,7 @@ apps/server/       drizzle.config.ts
     market/bars.ts
     sim/sim.ts sim/serialize.ts
     http/app.ts http/auth.ts http/booking-deps.ts http/routes/{runs,fills,pending,corrections,sim,settings,vision-review}.ts
-  db/migrations/   0000_fantastic_thunderbolts.sql … 0008_cultured_karen_page.sql (+ meta/)
+  db/migrations/   0000_fantastic_thunderbolts.sql … 0008_material_blue_marvel.sql (+ meta/)
   test/            *.test.ts per area (booking, vision-review, capture-image, http-*, db*, sim, wire, …) + fake-corrections.ts http-fakes.ts
 apps/web/src/      main.tsx App.tsx api.ts api.sim.ts api.types.ts format.ts viewmodels.ts cutloss.ts gaps.ts priceHistory.ts simconfig.ts simview.ts (+ colocated *.test.ts)
   components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,PriceChart,RecalcSummary,RunPanels,RunHistory,ScreenshotLink,VisionReviewEntry,hooks,ui,forms/*}

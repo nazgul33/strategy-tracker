@@ -15,6 +15,7 @@ function fillDto(r: VisionReviewRow) {
     id: r.id,
     outcome: r.outcome,
     edited: r.edited,
+    feeOverridden: r.feeOverridden,
     detected: snapshot(r.detectedSide, r.detectedShares, r.detectedPrice, r.detectedFilledOn, r.detectedFee),
     final: r.outcome === 'rejected' ? null : snapshot(r.finalSide, r.finalShares, r.finalPrice, r.finalFilledOn, r.finalFee),
   }

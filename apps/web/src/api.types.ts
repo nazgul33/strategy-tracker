@@ -130,6 +130,8 @@ export interface VisionReviewFillDto {
   id: number;
   outcome: 'confirmed' | 'rejected';
   edited: boolean;
+  /** The operator supplied the fee; when false, a final fee that differs from the detected one was derived, not typed. */
+  feeOverridden: boolean;
   detected: DetectedDto;
   final: DetectedDto | null;
 }

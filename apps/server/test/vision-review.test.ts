@@ -215,6 +215,48 @@ describe('freeze, keep, sweep', () => {
     expect(row.edited).toBe(false)
   })
 
+  // fee_overridden is the bit the review tab needs: `edited` alone cannot say whether a differing
+  // fee is the operator's or the one the system derived.
+  async function feelessCapture() {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: TODAY }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'fo', poolCents: 10_000_000, costPpm: 100, initialRunState: emptyState(6) })
+    const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 10, price: '100.00', date: '2026-11-04' }] }
+    const out = await ingestCapture(runId, PNG, ext, deps) as { pending: PendingFillRow[] }
+    return { f, deps, id: out.pending[0]!.id }
+  }
+
+  test('fee_overridden is false when the confirm carried no feeCents, even with another field edited', async () => {
+    const plain = await feelessCapture()
+    await confirmPendingFill(plain.id, null, plain.deps, { keepImage: true })
+    expect(plain.f._stores.visionReviews[0]).toMatchObject({ edited: false, feeOverridden: false })
+
+    const other = await feelessCapture()
+    await confirmPendingFill(other.id, { shares: 11 }, other.deps, { keepImage: true })
+    const row = other.f._stores.visionReviews[0]!
+    expect(row.detectedFee).toBeNull()
+    expect(row.finalFee).toBeGreaterThan(0)
+    expect(row).toMatchObject({ edited: true, feeOverridden: false })
+  })
+
+  test('fee_overridden is true whenever the confirm carried a feeCents, null included', async () => {
+    const typed = await feelessCapture()
+    await confirmPendingFill(typed.id, { feeCents: 999 }, typed.deps, { keepImage: true })
+    expect(typed.f._stores.visionReviews[0]).toMatchObject({ edited: true, feeOverridden: true })
+
+    const recompute = await feelessCapture()
+    await confirmPendingFill(recompute.id, { feeCents: null }, recompute.deps, { keepImage: true })
+    expect(recompute.f._stores.visionReviews[0]).toMatchObject({ edited: false, feeOverridden: true })
+  })
+
+  test('fee_overridden is false for a reject', async () => {
+    const { f, deps, ids, captureId } = await setup(1)
+    const row = f._stores.pending.find((p: any) => p.id === ids[0])
+    await f.repos.pendingRepo.decide(ids[0]!, 'rejected')
+    await resolveReview(deps.repos, { pendingRow: row, captureId, outcome: 'rejected', final: null, keepImage: true })
+    expect(f._stores.visionReviews[0]!.feeOverridden).toBe(false)
+  })
+
   test('a fee-bearing capture confirmed with feeCents null is edited when the recomputed fee differs', async () => {
     const { f, deps, ids } = await setup(1)
     await confirmPendingFill(ids[0]!, { feeCents: null }, deps, { keepImage: true })

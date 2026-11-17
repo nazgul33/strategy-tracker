@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "1ec4d6e1-bde5-4fff-bd0f-40f0c06204c3",
+  "id": "7247c4c9-a4b5-4586-95cd-1337878946f1",
   "prevId": "a6dbc94c-5b44-42e6-b129-5a0db6069b40",
   "tables": {
     "bar_coverage": {
@@ -1361,6 +1361,13 @@
         },
         "edited": {
           "name": "edited",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fee_overridden": {
+          "name": "fee_overridden",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,

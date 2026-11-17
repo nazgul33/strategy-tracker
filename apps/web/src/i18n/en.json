@@ -408,6 +408,7 @@
   "visionReviewDeleteWarning": "Delete this screenshot and its detected-vs-corrected record? This cannot be undone.",
   "visionReviewEdited": "Edited",
   "visionReviewEmpty": "No screenshots kept for review yet. You are asked whether to keep one when you edit or reject a fill.",
+  "visionReviewFeeAuto": "auto",
   "visionReviewIntro": "Screenshots you kept for review. For each fill, what vision read and what it was booked as; changed fields are highlighted.",
   "visionReviewRowDetected": "Vision read",
   "visionReviewRowFinal": "Final",

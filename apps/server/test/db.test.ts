@@ -698,7 +698,7 @@ describeIf('db integration', () => {
       runId, captureId, pendingFillId, ticker: 'VV', outcome: 'confirmed' as const,
       detectedSide: 'buy', detectedShares: 5, detectedPrice: 1234567n, detectedFilledOn: '2026-02-10', detectedFee: null,
       finalSide: 'buy', finalShares: 6, finalPrice: 1234567n, finalFilledOn: '2026-02-10', finalFee: 3,
-      edited: true, ...over,
+      edited: true, feeOverridden: false, ...over,
     })
 
     test('captureImageRepo: insertIgnore stores once, second call reports false and keeps the original bytes', async () => {
@@ -767,12 +767,13 @@ describeIf('db integration', () => {
       await repos.visionReviewRepo.insertIgnore(review(a.runId, a.captureId, base))
       await repos.visionReviewRepo.insertIgnore(review(a.runId, a.captureId, base, { finalShares: 99 }))
       await repos.visionReviewRepo.insertIgnore(review(a.runId, a.captureId, base + 1, { outcome: 'rejected', finalSide: null, finalShares: null, finalPrice: null, finalFilledOn: null, finalFee: null, edited: false }))
-      await repos.visionReviewRepo.insertIgnore(review(b.runId, b.captureId, base + 2))
+      await repos.visionReviewRepo.insertIgnore(review(b.runId, b.captureId, base + 2, { feeOverridden: true }))
       const rows = await repos.visionReviewRepo.listForCaptures([a.captureId, b.captureId])
       expect(rows.map((r: any) => r.pendingFillId)).toEqual([base, base + 1, base + 2])
       expect(rows.map((r: any) => r.captureId)).toEqual([a.captureId, a.captureId, b.captureId])
-      expect(rows[0]).toMatchObject({ detectedPrice: 1234567n, detectedFee: null, finalShares: 6, finalFee: 3, edited: true, outcome: 'confirmed' })
-      expect(rows[1]).toMatchObject({ outcome: 'rejected', finalShares: null, edited: false })
+      expect(rows[0]).toMatchObject({ detectedPrice: 1234567n, detectedFee: null, finalShares: 6, finalFee: 3, edited: true, outcome: 'confirmed', feeOverridden: false })
+      expect(rows[1]).toMatchObject({ outcome: 'rejected', finalShares: null, edited: false, feeOverridden: false })
+      expect(rows[2]).toMatchObject({ feeOverridden: true })
       expect(await repos.visionReviewRepo.listForCaptures([])).toEqual([])
       expect(await repos.visionReviewRepo.listForCaptures([a.captureId])).toHaveLength(2)
     })

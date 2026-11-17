@@ -15,16 +15,25 @@ const FIELD_LABEL: Record<Field, string> = {
   fee: 'pendingColFee',
 };
 
-// A rejected fill has no final values; every field of a confirmed one is compared.
+// A rejected fill has no final values; every field of a confirmed one is compared. The fee is
+// the exception: the system derives it when vision read none, so a differing fee is a change
+// only when the operator supplied one (`feeOverridden`). Checking `edited` instead would
+// highlight the derived fee again whenever any other field was corrected.
 function changedFields(fill: VisionReviewFillDto): ReadonlySet<Field> {
   if (!fill.final) return new Set();
   const { detected, final } = fill;
-  return new Set(FIELDS.filter((f) => detected[f] !== final[f]));
+  return new Set(FIELDS.filter((f) => detected[f] !== final[f] && (f !== 'fee' || fill.feeOverridden)));
+}
+
+// Vision read no fee and the operator did not supply one: the booked fee is the derived one.
+function feeWasDerived(fill: VisionReviewFillDto): boolean {
+  return fill.final !== null && !fill.feeOverridden && fill.detected.fee === null && fill.final.fee !== null;
 }
 
 function FillRows({ fill }: { fill: VisionReviewFillDto }) {
   const t = useT();
   const changed = changedFields(fill);
+  const derivedFee = feeWasDerived(fill);
 
   const show = (field: Field, value: DetectedDto): string => {
     switch (field) {
@@ -72,6 +81,11 @@ function FillRows({ fill }: { fill: VisionReviewFillDto }) {
             >
               {values ? show(field, values) : '—'}
             </span>
+            {field === 'fee' && kind === 'final' && derivedFee && (
+              <span data-auto-fee className="ml-1 text-xs text-muted-foreground">
+                {t('visionReviewFeeAuto')}
+              </span>
+            )}
           </Td>
         );
       })}
