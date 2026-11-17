@@ -34,9 +34,9 @@ const ROW: PendingFillDto = {
   filledOn: '2026-11-10',
   status: 'pending',
   createdAt: '2026-11-10T14:30:00Z',
-  hasImage: false,
+  hasImage: true,
   autoFeeCents: 100,
-  detected: null,
+  detected: { side: 'buy', shares: 10, price: '123450000', filledOn: '2026-11-10', fee: 100 },
 };
 
 // GET /api/pending always returns [row] (default ROW); every POST (the
@@ -172,79 +172,177 @@ describe('PendingTable', () => {
     expect(container.textContent).toContain('weird-code');
   });
 
-  it('trade date column shows the detected date above the override input', async () => {
-    stubFetch('conflict');
-    await renderTable(root);
-    const cell = container.querySelectorAll('tbody tr td')[0]!;
-    expect(cell.textContent).toContain('2026-11-10');
-    const input = cell.querySelector('input[type=date]') as HTMLInputElement | null;
-    expect(input).toBeTruthy();
-    expect(input!.value).toBe('');
-    // DOM order: detected date block first, override picker right below it.
-    expect(cell.firstElementChild?.tagName).toBe('DIV');
-    expect(cell.firstElementChild?.textContent).toBe('2026-11-10');
-    expect(cell.firstElementChild?.nextElementSibling).toBe(input);
-  });
+  const cells = () => Array.from(container.querySelectorAll('tbody tr td'));
+  const control = <T extends HTMLElement>(idx: number, selector: string) => cells()[idx]!.querySelector(selector) as T;
 
-  it('quantity and price cells stack the detected value in a div above the override input, like the date cell', async () => {
+  async function renderWithConfirmCalls(row: PendingFillDto) {
+    const calls = installFetchStub([
+      { method: 'POST', url: '/api/pending', json: { ok: true } },
+      { url: '/api/pending', json: [row] },
+    ]);
+    await renderTable(root);
+    return calls;
+  }
+
+  it('renders exactly one control per editable field, pre-filled from the detected values', async () => {
     stubFetch('conflict');
     await renderTable(root);
-    const cells = container.querySelectorAll('tbody tr td');
-    for (const [idx, text] of [[3, '10'], [4, '$12,345.00']] as const) {
-      const cell = cells[idx]!;
-      const input = cell.querySelector('input');
-      expect(input).toBeTruthy();
-      expect(cell.firstElementChild?.tagName).toBe('DIV');
-      expect(cell.firstElementChild?.textContent).toBe(text);
-      expect(cell.firstElementChild?.nextElementSibling).toBe(input);
+
+    expect(control<HTMLInputElement>(0, 'input[type=date]').value).toBe('2026-11-10');
+    expect(control<HTMLSelectElement>(2, 'select').value).toBe('buy');
+    expect(control<HTMLInputElement>(3, 'input').value).toBe('10');
+    expect(control<HTMLInputElement>(4, 'input').value).toBe('12345.00');
+    expect(control<HTMLInputElement>(5, 'input').value).toBe('1.00');
+
+    // One control per field and no static copy of the value next to it.
+    for (const idx of [0, 3, 4, 5]) {
+      expect(cells()[idx]!.querySelectorAll('input, select').length).toBe(1);
+      expect(cells()[idx]!.textContent).toBe('');
     }
+    expect(cells()[2]!.querySelectorAll('input, select').length).toBe(1);
+    expect(cells()[2]!.textContent).toBe('BuySell');
+    expect(cells()[1]!.textContent).toBe('AAPL');
+    expect(cells()[1]!.querySelector('input, select')).toBeNull();
   });
 
-  it('typing an override date keeps the detected date above it and confirm posts overrides.filledOn', async () => {
-    const calls = installFetchStub([
-      { method: 'POST', url: '/api/pending', json: { ok: true } },
-      { url: '/api/pending', json: [ROW] },
-    ]);
+  it('the side control is a select offering buy and sell', async () => {
+    stubFetch('conflict');
     await renderTable(root);
+    const options = Array.from(control<HTMLSelectElement>(2, 'select').options).map((o) => o.value);
+    expect(options).toEqual(['buy', 'sell']);
+  });
 
-    const cell = () => container.querySelectorAll('tbody tr td')[0]!;
-    const input = cell().querySelector('input[type=date]') as HTMLInputElement;
+  it('a side vision missed shows an empty select and keeps the flagged border', async () => {
+    const missed = { ...ROW, side: '', detected: { ...ROW.detected!, side: null } };
+    stubFetch('conflict', missed);
+    await renderTable(root);
+    const select = control<HTMLSelectElement>(2, 'select');
+    expect(select.value).toBe('');
+    expect(select.className).toContain('border-warning');
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['', 'buy', 'sell']);
+  });
+
+  it('renders the screenshot thumbnail pointing at the capture image endpoint', async () => {
+    stubFetch('conflict');
+    await renderTable(root);
+    const img = container.querySelector('tbody img') as HTMLImageElement | null;
+    expect(img).toBeTruthy();
+    expect(img!.getAttribute('src')).toContain('/api/captures/3/image');
+  });
+
+  it('renders no thumbnail when hasImage is false', async () => {
+    stubFetch('conflict', { ...ROW, hasImage: false });
+    await renderTable(root);
+    expect(container.querySelector('tbody img')).toBeNull();
+  });
+
+  it('the side-by-side button is only offered while a screenshot exists', async () => {
+    stubFetch('conflict');
+    await renderTable(root);
+    expect(Array.from(container.querySelectorAll('tbody button')).some((b) => b.textContent === 'Compare')).toBe(true);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    stubFetch('conflict', { ...ROW, hasImage: false });
+    await renderTable(root);
+    expect(Array.from(container.querySelectorAll('tbody button')).some((b) => b.textContent === 'Compare')).toBe(false);
+  });
+
+  it('confirm posts the edited values as overrides', async () => {
+    const calls = await renderWithConfirmCalls(ROW);
     await act(async () => {
-      setInputValue(input, '2026-11-12');
+      setInputValue(control<HTMLInputElement>(3, 'input'), '11');
     });
-
-    const input2 = cell().querySelector('input[type=date]') as HTMLInputElement;
-    expect(input2.value).toBe('2026-11-12');
-    expect(cell().firstElementChild?.tagName).toBe('DIV');
-    expect(cell().firstElementChild?.textContent).toBe('2026-11-10');
-    expect(cell().firstElementChild?.nextElementSibling).toBe(input2);
-
     await clickConfirm();
-
     expect(calls.length).toBe(1);
-    expect(calls[0]).toMatchObject({
-      method: 'POST',
-      url: '/api/pending/9/confirm',
-      body: { overrides: { filledOn: '2026-11-12' } },
+    expect(calls[0]).toMatchObject({ method: 'POST', url: '/api/pending/9/confirm', body: { overrides: { shares: 11 } } });
+    expect(Object.keys((calls[0]!.body as { overrides: object }).overrides)).toEqual(['shares']);
+  });
+
+  it('editing the date, price and fee posts only those fields; side stays omitted', async () => {
+    const calls = await renderWithConfirmCalls(ROW);
+    await act(async () => {
+      setInputValue(control<HTMLInputElement>(0, 'input'), '2026-11-12');
+      setInputValue(control<HTMLInputElement>(4, 'input'), '12345.50');
+      setInputValue(control<HTMLInputElement>(5, 'input'), '0.75');
+    });
+    await clickConfirm();
+    expect((calls[0]!.body as { overrides: object }).overrides).toEqual({
+      filledOn: '2026-11-12',
+      price: '12345.50',
+      feeCents: 75,
     });
   });
 
-  it('confirm without any override posts an empty body', async () => {
-    const calls = installFetchStub([
-      { method: 'POST', url: '/api/pending', json: { ok: true } },
-      { url: '/api/pending', json: [ROW] },
-    ]);
-    await renderTable(root);
+  it('changing the side posts side', async () => {
+    const calls = await renderWithConfirmCalls(ROW);
+    const select = control<HTMLSelectElement>(2, 'select');
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!;
+      setter.call(select, 'sell');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await clickConfirm();
+    expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ side: 'sell' });
+  });
+
+  it('confirm on an untouched row posts no overrides', async () => {
+    const calls = await renderWithConfirmCalls(ROW);
     await clickConfirm();
     expect(calls.length).toBe(1);
     expect(calls[0]!.body).toEqual({});
   });
 
-  it('empty detected trade date renders an em dash and keeps the flagged override input', async () => {
-    stubFetch('conflict', { ...ROW, filledOn: '' });
+  describe('a fee vision did not read', () => {
+    const feeless: PendingFillDto = { ...ROW, fee: null, autoFeeCents: 7, detected: { ...ROW.detected!, fee: null } };
+
+    it('prefills the derived fee, and an untouched confirm still posts {}', async () => {
+      const calls = await renderWithConfirmCalls(feeless);
+      expect(control<HTMLInputElement>(5, 'input').value).toBe('0.07');
+      await clickConfirm();
+      expect(calls[0]!.body).toEqual({});
+    });
+
+    it('clearing the field posts nothing, since the server derives that fee anyway', async () => {
+      const calls = await renderWithConfirmCalls(feeless);
+      await act(async () => {
+        setInputValue(control<HTMLInputElement>(5, 'input'), '');
+      });
+      await clickConfirm();
+      expect(calls[0]!.body).toEqual({});
+    });
+  });
+
+  it('clearing a fee vision read posts feeCents null (recompute)', async () => {
+    const calls = await renderWithConfirmCalls(ROW);
+    await act(async () => {
+      setInputValue(control<HTMLInputElement>(5, 'input'), '');
+    });
+    await clickConfirm();
+    expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ feeCents: null });
+  });
+
+  it('a price with sub-cent precision prefills without loss and an untouched confirm posts {}', async () => {
+    const row = { ...ROW, price: '1784050', detected: { ...ROW.detected!, price: '1784050' } };
+    const calls = await renderWithConfirmCalls(row);
+    expect(control<HTMLInputElement>(4, 'input').value).toBe('178.405');
+    await clickConfirm();
+    expect(calls[0]!.body).toEqual({});
+  });
+
+  it('an invalid edited value blocks the confirm and shows the validation message', async () => {
+    const calls = await renderWithConfirmCalls(ROW);
+    await act(async () => {
+      setInputValue(control<HTMLInputElement>(3, 'input'), '0');
+    });
+    await clickConfirm();
+    expect(calls.length).toBe(0);
+    expect(container.textContent).toContain('Check the values');
+  });
+
+  it('empty detected trade date renders an empty date input that keeps the warning border', async () => {
+    stubFetch('conflict', { ...ROW, filledOn: '', detected: { ...ROW.detected!, filledOn: null } });
     await renderTable(root);
     const cell = container.querySelectorAll('tbody tr td')[0]!;
-    expect(cell.textContent).toContain('—');
     const input = cell.querySelector('input[type=date]') as HTMLInputElement | null;
     expect(input).toBeTruthy();
     expect(input!.className).toContain('border-warning');
