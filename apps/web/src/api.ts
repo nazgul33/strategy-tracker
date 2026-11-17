@@ -12,6 +12,7 @@ import type {
   NotificationDto,
   OrderDto,
   PendingFillDto,
+  PendingOverrides,
   PriceHistoryDto,
   RunDetailDto,
   RunDto,
@@ -21,6 +22,7 @@ import type {
   SimInput,
   SimRunDto,
   SimUpdateInput,
+  VisionReviewEntryDto,
 } from './api.types';
 
 export type * from './api.types';
@@ -157,8 +159,15 @@ export interface Api {
   recalcRun(runId: number): Promise<{ ok: true; deltaCents: number; fillCount: number }>;
   triggerMorning(): Promise<string>;
   listPending(): Promise<PendingFillDto[]>;
-  confirmPending(id: number, overrides?: { shares?: number; price?: string; filledOn?: string }): Promise<void>;
-  rejectPending(id: number): Promise<void>;
+  /** `keepImage` archives the screenshot as evidence; it is sent only when true. */
+  confirmPending(id: number, overrides?: PendingOverrides, keepImage?: boolean): Promise<void>;
+  rejectPending(id: number, keepImage?: boolean): Promise<void>;
+  /** Kept screenshots with the fills resolved from them, newest first. */
+  listVisionReviews(): Promise<VisionReviewEntryDto[]>;
+  /** Discards a kept screenshot and its review rows; 404 `not-found` when not kept. */
+  deleteVisionReview(captureId: number): Promise<void>;
+  /** `<img src>` for a stored screenshot. Raw bytes, so it never goes through `call()`. */
+  captureImageUrl(captureId: number): string;
   listCorrections(): Promise<CorrectionDto[]>;
   /** 200 `{ok:true,deltaCents}`; 404 `correction-not-found`, 409 `correction-not-open` | `correction-stale`. */
   applyCorrection(id: number): Promise<void>;
@@ -244,9 +253,17 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
     recalcRun: (runId) => send<{ ok: true; deltaCents: number; fillCount: number }>('POST', `/api/runs/${runId}/recalc`),
     triggerMorning: () => send<{ result: string }>('POST', '/api/trigger/morning').then((r) => r.result),
     listPending: () => get<PendingFillDto[]>('/api/pending'),
-    confirmPending: (id, overrides) =>
-      send<{ ok: true }>('POST', `/api/pending/${id}/confirm`, overrides ? { overrides } : {}).then(() => undefined),
-    rejectPending: (id) => send<{ ok: true }>('POST', `/api/pending/${id}/reject`).then(() => undefined),
+    confirmPending: (id, overrides, keepImage) =>
+      send<{ ok: true }>('POST', `/api/pending/${id}/confirm`, {
+        ...(overrides ? { overrides } : {}),
+        ...(keepImage ? { keepImage: true } : {}),
+      }).then(() => undefined),
+    rejectPending: (id, keepImage) =>
+      send<{ ok: true }>('POST', `/api/pending/${id}/reject`, keepImage ? { keepImage: true } : {}).then(() => undefined),
+    listVisionReviews: () => get<{ entries: VisionReviewEntryDto[] }>('/api/vision-reviews').then((r) => r.entries),
+    deleteVisionReview: (captureId) =>
+      send<{ ok: true }>('DELETE', `/api/vision-reviews/${captureId}`).then(() => undefined),
+    captureImageUrl: (captureId) => `/api/captures/${captureId}/image`,
     listCorrections: () => get<CorrectionDto[]>('/api/corrections'),
     applyCorrection: (id) => send<{ ok: true }>('POST', `/api/corrections/${id}/apply`).then(() => undefined),
     dismissCorrection: (id) => send<{ ok: true }>('POST', `/api/corrections/${id}/dismiss`).then(() => undefined),

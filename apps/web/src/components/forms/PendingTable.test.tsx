@@ -34,6 +34,9 @@ const ROW: PendingFillDto = {
   filledOn: '2026-11-10',
   status: 'pending',
   createdAt: '2026-11-10T14:30:00Z',
+  hasImage: false,
+  autoFeeCents: 100,
+  detected: null,
 };
 
 // GET /api/pending always returns [row] (default ROW); every POST (the

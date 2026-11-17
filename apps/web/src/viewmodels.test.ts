@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { BucketDto, PendingFillDto } from './api';
+import type { BucketDto, DetectedDto, PendingFillDto } from './api';
 import {
   bucketCells,
   bulkPlan,
@@ -13,6 +13,7 @@ import {
   orderKindTone,
   orderReasonText,
   orderStatusTone,
+  pendingEdits,
   pendingIssue,
   pnlBadgeTone,
   poolAfterTopUp,
@@ -22,6 +23,7 @@ import {
   runStatusTone,
   seedCashErrorKey,
   toneFor,
+  type RowValues,
 } from './viewmodels';
 
 describe('enumLabelKey / reasonKey', () => {
@@ -119,6 +121,9 @@ function pendingRow(over: Partial<PendingFillDto> = {}): PendingFillDto {
     filledOn: '2026-11-02',
     status: 'pending',
     createdAt: '2026-11-02T14:00:00Z',
+    hasImage: true,
+    autoFeeCents: 7,
+    detected: null,
     ...over,
   };
 }
@@ -254,5 +259,74 @@ describe('orderReasonText', () => {
 
   test('CANCEL_REASONS lists the four codes in display order', () => {
     expect([...CANCEL_REASONS]).toEqual(['broker-filled', 'strategy-change', 'stale-price', 'other']);
+  });
+});
+
+describe('pendingEdits', () => {
+  const detected: DetectedDto = { side: 'buy', shares: 10, price: '1784000', filledOn: '2026-11-02', fee: 50 };
+  const row = (d: DetectedDto | null = detected) => pendingRow({ detected: d });
+  const same: RowValues = { side: 'buy', shares: '10', price: '178.40', filledOn: '2026-11-02', fee: '0.50' };
+
+  test('returns [] when every value matches the detected snapshot', () => {
+    expect(pendingEdits(row(), same)).toEqual([]);
+  });
+
+  test('names each field that differs', () => {
+    expect(pendingEdits(row(), { ...same, side: 'sell' })).toEqual(['side']);
+    expect(pendingEdits(row(), { ...same, shares: '11' })).toEqual(['shares']);
+    expect(pendingEdits(row(), { ...same, price: '178.41' })).toEqual(['price']);
+    expect(pendingEdits(row(), { ...same, filledOn: '2026-11-03' })).toEqual(['filledOn']);
+    expect(pendingEdits(row(), { ...same, fee: '0.51' })).toEqual(['fee']);
+    expect(pendingEdits(row(), { side: 'sell', shares: '11', price: '1', filledOn: '2026-11-03', fee: '9' })).toEqual([
+      'filledOn',
+      'side',
+      'shares',
+      'price',
+      'fee',
+    ]);
+  });
+
+  test('treats a null detected value with a filled-in field as edited', () => {
+    const missed: DetectedDto = { side: null, shares: null, price: null, filledOn: null, fee: null };
+    expect(pendingEdits(row(missed), same)).toEqual(['filledOn', 'side', 'shares', 'price', 'fee']);
+    expect(pendingEdits(row({ ...detected, side: null }), same)).toEqual(['side']);
+  });
+
+  test('a blank field against a null detected value is unedited', () => {
+    const missed: DetectedDto = { side: null, shares: null, price: null, filledOn: null, fee: null };
+    expect(pendingEdits(row(missed), { side: '', shares: '', price: ' ', filledOn: '', fee: '' })).toEqual([]);
+  });
+
+  test('clearing a field vision did read counts as edited', () => {
+    expect(pendingEdits(row(), { ...same, fee: '' })).toEqual(['fee']);
+    expect(pendingEdits(row(), { ...same, price: '' })).toEqual(['price']);
+    expect(pendingEdits(row(), { ...same, shares: '' })).toEqual(['shares']);
+  });
+
+  test('unparsable input differs from what vision read', () => {
+    expect(pendingEdits(row(), { ...same, price: 'abc', shares: '1.5', fee: 'x' })).toEqual(['shares', 'price', 'fee']);
+  });
+
+  test('returns [] for a legacy row with detected null', () => {
+    expect(pendingEdits(row(null), { side: 'sell', shares: '99', price: '1', filledOn: '2020-01-01', fee: '9' })).toEqual([]);
+  });
+
+  test('treats 178.4 and 178.40 as the same price', () => {
+    expect(pendingEdits(row(), { ...same, price: '178.4' })).toEqual([]);
+    expect(pendingEdits(row(), { ...same, price: '178.40' })).toEqual([]);
+    expect(pendingEdits(row(), { ...same, price: '178.4000' })).toEqual([]);
+    expect(pendingEdits(row(), { ...same, price: '178.401' })).toEqual(['price']);
+  });
+
+  test('treats a fee of "0.00" against detected fee 0 as unedited', () => {
+    const zero = row({ ...detected, fee: 0 });
+    expect(pendingEdits(zero, { ...same, fee: '0.00' })).toEqual([]);
+    expect(pendingEdits(zero, { ...same, fee: '0' })).toEqual([]);
+    expect(pendingEdits(zero, { ...same, fee: '0.01' })).toEqual(['fee']);
+  });
+
+  test('treats shares with stray whitespace or a leading zero as the same count', () => {
+    expect(pendingEdits(row(), { ...same, shares: ' 10 ' })).toEqual([]);
+    expect(pendingEdits(row(), { ...same, shares: '010' })).toEqual([]);
   });
 });
