@@ -4,8 +4,16 @@ import { useT } from '../../i18n';
 import { pendingEdits, type RowValues } from '../../viewmodels';
 import { useAsync } from '../hooks';
 import { EmptyNote, TableWrap, Th } from '../ui';
+import { KeepImagePrompt } from './KeepImagePrompt';
 import { PendingReviewDialog } from './PendingReviewDialog';
 import { PendingRow, initialRowValues } from './PendingRow';
+
+// An action waiting on the keep/discard prompt, with its overrides already built.
+interface Decision {
+  row: PendingFillDto;
+  action: 'confirm' | 'reject';
+  overrides: PendingOverrides | undefined;
+}
 
 // Unrecognized screenshot fills. Every field is one control pre-filled with what
 // vision detected; confirm sends only the fields that differ from that
@@ -20,6 +28,7 @@ export function PendingTable({ runId }: { runId?: number }) {
   const [reviewId, setReviewId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [decision, setDecision] = useState<Decision | null>(null);
 
   const visible = (data ?? []).filter((r) => runId === undefined || r.runId === runId);
   const reviewing = visible.find((r) => r.id === reviewId);
@@ -28,7 +37,7 @@ export function PendingTable({ runId }: { runId?: number }) {
   const patchValues = (r: PendingFillDto, patch: Partial<RowValues>) =>
     setEdited((prev) => ({ ...prev, [r.id]: { ...(prev[r.id] ?? initialRowValues(r)), ...patch } }));
 
-  const confirm = async (r: PendingFillDto) => {
+  const buildOverrides = (r: PendingFillDto): PendingOverrides | undefined => {
     const v = valuesFor(r);
     const invalid = () => new Error(t('pendingInvalidOverride'));
     const body: PendingOverrides = {};
@@ -37,7 +46,8 @@ export function PendingTable({ runId }: { runId?: number }) {
         if (v.side !== 'buy' && v.side !== 'sell') throw invalid();
         body.side = v.side;
       } else if (field === 'shares') {
-        const n = Number(v.shares);
+        // Digits only: Number() would read "1e1" as 10 and "0x10" as 16.
+        const n = /^\d+$/.test(v.shares.trim()) ? Number(v.shares) : NaN;
         if (!Number.isInteger(n) || n <= 0) throw invalid();
         body.shares = n;
       } else if (field === 'price') {
@@ -56,36 +66,59 @@ export function PendingTable({ runId }: { runId?: number }) {
         body.feeCents = cents;
       }
     }
-    await api.confirmPending(r.id, Object.keys(body).length > 0 ? body : undefined);
+    return Object.keys(body).length > 0 ? body : undefined;
   };
 
-  const act = async (r: PendingFillDto, action: 'confirm' | 'reject') => {
-    setBusyId(r.id);
-    setActionError(null);
+  const reportError = async (err: unknown) => {
+    if (err instanceof ApiError && err.code === 'ticker-mismatch') {
+      // The row is untouched — do NOT reload; it must stay visible so the
+      // user can reject it.
+      setActionError(t('pendingTickerMismatch'));
+    } else if (err instanceof ApiError && err.status === 409) {
+      setActionError(t('pendingAlreadyHandled'));
+      await reload();
+    } else if (err instanceof ApiError) {
+      // Same rule as FillDialog: known fillErr.* codes read localized, the
+      // rest fall back to the raw server code (ApiError.message).
+      const key = `fillErr.${err.code}`;
+      const msg = t(key);
+      setActionError(msg === key ? err.message : msg);
+    } else {
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const submit = async ({ row, action, overrides }: Decision, keepImage?: boolean) => {
+    setBusyId(row.id);
     try {
-      if (action === 'confirm') await confirm(r);
-      else await api.rejectPending(r.id);
+      if (action === 'confirm') await api.confirmPending(row.id, overrides, keepImage);
+      else await api.rejectPending(row.id, keepImage);
       await reload();
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'ticker-mismatch') {
-        // The row is untouched — do NOT reload; it must stay visible so the
-        // user can reject it.
-        setActionError(t('pendingTickerMismatch'));
-      } else if (err instanceof ApiError && err.status === 409) {
-        setActionError(t('pendingAlreadyHandled'));
-        await reload();
-      } else if (err instanceof ApiError) {
-        // Same rule as FillDialog: known fillErr.* codes read localized, the
-        // rest fall back to the raw server code (ApiError.message).
-        const key = `fillErr.${err.code}`;
-        const msg = t(key);
-        setActionError(msg === key ? err.message : msg);
-      } else {
-        setActionError(err instanceof Error ? err.message : String(err));
-      }
+      await reportError(err);
     } finally {
       setBusyId(null);
     }
+  };
+
+  // A vision misread is only plausible when there is a screenshot to keep, the
+  // row really was a vision reading (a legacy row has no snapshot to be wrong
+  // against), and the operator either corrected it or threw it out.
+  const asksAboutImage = (r: PendingFillDto, action: 'confirm' | 'reject') =>
+    r.hasImage && r.detected !== null && (action === 'reject' || pendingEdits(r, valuesFor(r)).length > 0);
+
+  const act = async (r: PendingFillDto, action: 'confirm' | 'reject') => {
+    setActionError(null);
+    let overrides: PendingOverrides | undefined;
+    try {
+      if (action === 'confirm') overrides = buildOverrides(r);
+    } catch (err) {
+      await reportError(err);
+      return;
+    }
+    const next: Decision = { row: r, action, overrides };
+    if (asksAboutImage(r, action)) setDecision(next);
+    else await submit(next);
   };
 
   if (loading) return <p className="text-sm text-muted-foreground">{t('loading')}</p>;
@@ -125,6 +158,16 @@ export function PendingTable({ runId }: { runId?: number }) {
             ))}
           </tbody>
         </TableWrap>
+      )}
+      {decision && (
+        <KeepImagePrompt
+          action={decision.action}
+          onDecide={(keep) => {
+            setDecision(null);
+            void submit(decision, keep);
+          }}
+          onDismiss={() => setDecision(null)}
+        />
       )}
       {reviewing && (
         <PendingReviewDialog

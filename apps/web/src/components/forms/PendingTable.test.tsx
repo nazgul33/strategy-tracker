@@ -107,6 +107,22 @@ describe('PendingTable', () => {
     root = createRoot(container);
   });
 
+  async function pressButton(text: string) {
+    const btn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === text);
+    if (!btn) throw new Error(`button ${text} not found`);
+    await act(async () => (btn as HTMLButtonElement).click());
+    await flush();
+  }
+
+  const promptOpen = () => container.querySelector('[role=dialog]') !== null;
+
+  // Edited rows with a screenshot stop at the keep/discard prompt; this walks
+  // through it so a test can read the posted body.
+  async function confirmKeeping() {
+    await clickConfirm();
+    await pressButton('Keep for review');
+  }
+
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
@@ -269,7 +285,7 @@ describe('PendingTable', () => {
       expect(control<HTMLInputElement>(4, 'input').value).toBe('12345.50');
       expect(calls.length).toBe(0);
 
-      await clickConfirm();
+      await confirmKeeping();
       expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ price: '12345.50' });
     });
 
@@ -308,10 +324,145 @@ describe('PendingTable', () => {
     await act(async () => {
       setInputValue(control<HTMLInputElement>(3, 'input'), '11');
     });
-    await clickConfirm();
+    await confirmKeeping();
     expect(calls.length).toBe(1);
     expect(calls[0]).toMatchObject({ method: 'POST', url: '/api/pending/9/confirm', body: { overrides: { shares: 11 } } });
     expect(Object.keys((calls[0]!.body as { overrides: object }).overrides)).toEqual(['shares']);
+  });
+
+  describe('keep or discard the screenshot', () => {
+    const editQty = () => act(async () => setInputValue(control<HTMLInputElement>(3, 'input'), '11'));
+
+    it('confirming an edited row prompts before posting, then posts keepImage true', async () => {
+      const calls = await renderWithConfirmCalls(ROW);
+      await editQty();
+      await clickConfirm();
+
+      expect(promptOpen()).toBe(true);
+      expect(container.textContent).toContain('Values were edited');
+      expect(calls.length).toBe(0);
+
+      await pressButton('Keep for review');
+      expect(promptOpen()).toBe(false);
+      expect(calls.length).toBe(1);
+      expect(calls[0]!.body).toEqual({ overrides: { shares: 11 }, keepImage: true });
+    });
+
+    it('Discard posts the edit with no keepImage', async () => {
+      const calls = await renderWithConfirmCalls(ROW);
+      await editQty();
+      await clickConfirm();
+      await pressButton('Discard');
+
+      expect(calls.length).toBe(1);
+      expect(calls[0]!.body).toEqual({ overrides: { shares: 11 } });
+    });
+
+    it('dismissing the prompt posts nothing and leaves the edit in place', async () => {
+      const calls = await renderWithConfirmCalls(ROW);
+      await editQty();
+      await clickConfirm();
+      await pressButton('✕');
+
+      expect(promptOpen()).toBe(false);
+      expect(calls.length).toBe(0);
+      expect(control<HTMLInputElement>(3, 'input').value).toBe('11');
+    });
+
+    it('confirming an untouched row posts immediately with no prompt', async () => {
+      const calls = await renderWithConfirmCalls(ROW);
+      await clickConfirm();
+
+      expect(promptOpen()).toBe(false);
+      expect(calls.length).toBe(1);
+      expect(calls[0]!.body).toEqual({});
+    });
+
+    it('rejecting prompts, and Keep for review posts keepImage true', async () => {
+      const calls = await renderWithConfirmCalls(ROW);
+      await pressButton('Reject');
+
+      expect(promptOpen()).toBe(true);
+      expect(container.textContent).toContain('Rejecting this fill');
+      expect(calls.length).toBe(0);
+
+      await pressButton('Keep for review');
+      expect(calls.length).toBe(1);
+      expect(calls[0]).toMatchObject({ method: 'POST', url: '/api/pending/9/reject', body: { keepImage: true } });
+    });
+
+    it('rejecting prompts, and Discard posts a reject with no keepImage', async () => {
+      const calls = await renderWithConfirmCalls(ROW);
+      await pressButton('Reject');
+      await pressButton('Discard');
+
+      expect(calls.length).toBe(1);
+      expect(calls[0]).toMatchObject({ method: 'POST', url: '/api/pending/9/reject' });
+      expect(calls[0]!.body).toEqual({});
+    });
+
+    it('dismissing the reject prompt posts nothing', async () => {
+      const calls = await renderWithConfirmCalls(ROW);
+      await pressButton('Reject');
+      await pressButton('✕');
+
+      expect(promptOpen()).toBe(false);
+      expect(calls.length).toBe(0);
+    });
+
+    it('no prompt when the row has no image, even when edited', async () => {
+      const calls = await renderWithConfirmCalls({ ...ROW, hasImage: false });
+      await editQty();
+      await clickConfirm();
+
+      expect(promptOpen()).toBe(false);
+      expect(calls.length).toBe(1);
+      expect(calls[0]!.body).toEqual({ overrides: { shares: 11 } });
+    });
+
+    it('no prompt when rejecting a row that has no image', async () => {
+      const calls = await renderWithConfirmCalls({ ...ROW, hasImage: false });
+      await pressButton('Reject');
+
+      expect(promptOpen()).toBe(false);
+      expect(calls.length).toBe(1);
+      expect(calls[0]!.body).toEqual({});
+    });
+
+    it('no prompt for a legacy row with detected null, on confirm or reject', async () => {
+      const legacy: PendingFillDto = { ...ROW, detected: null };
+      const calls = await renderWithConfirmCalls(legacy);
+      await editQty();
+      await clickConfirm();
+      expect(promptOpen()).toBe(false);
+      expect(calls[0]!.body).toEqual({ overrides: { shares: 11 } });
+
+      await pressButton('Reject');
+      expect(promptOpen()).toBe(false);
+      expect(calls.length).toBe(2);
+      expect(calls[1]!.body).toEqual({});
+    });
+
+    it('a failed validation opens no prompt', async () => {
+      const calls = await renderWithConfirmCalls(ROW);
+      await act(async () => setInputValue(control<HTMLInputElement>(3, 'input'), '0'));
+      await clickConfirm();
+
+      expect(promptOpen()).toBe(false);
+      expect(calls.length).toBe(0);
+      expect(container.textContent).toContain('Check the values');
+    });
+
+    for (const bad of ['1e1', '0x10', '1.5', '-3']) {
+      it(`rejects the share count "${bad}" instead of reading it as a number`, async () => {
+        const calls = await renderWithConfirmCalls({ ...ROW, hasImage: false });
+        await act(async () => setInputValue(control<HTMLInputElement>(3, 'input'), bad));
+        await clickConfirm();
+
+        expect(calls.length).toBe(0);
+        expect(container.textContent).toContain('Check the values');
+      });
+    }
   });
 
   it('editing the date, price and fee posts only those fields; side stays omitted', async () => {
@@ -321,7 +472,7 @@ describe('PendingTable', () => {
       setInputValue(control<HTMLInputElement>(4, 'input'), '12345.50');
       setInputValue(control<HTMLInputElement>(5, 'input'), '0.75');
     });
-    await clickConfirm();
+    await confirmKeeping();
     expect((calls[0]!.body as { overrides: object }).overrides).toEqual({
       filledOn: '2026-11-12',
       price: '12345.50',
@@ -337,7 +488,7 @@ describe('PendingTable', () => {
       setter.call(select, 'sell');
       select.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    await clickConfirm();
+    await confirmKeeping();
     expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ side: 'sell' });
   });
 
@@ -394,7 +545,7 @@ describe('PendingTable', () => {
     await act(async () => {
       setInputValue(control<HTMLInputElement>(5, 'input'), '');
     });
-    await clickConfirm();
+    await confirmKeeping();
     expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ feeCents: null });
   });
 

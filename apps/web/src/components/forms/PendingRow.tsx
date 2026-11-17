@@ -44,6 +44,7 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
   // Flag a field the row is missing until the operator has filled it in.
   const missing = (f: keyof RowValues) => (issue === f && values[f] === '' ? 'border-warning' : '');
   const needsInput = issue === 'ticker' || (issue !== null && values[issue] === '');
+  const needsMsg = t(issue === 'ticker' ? 'pendingNeedsTicker' : 'pendingNeedsOverride');
   const captureId = row.hasImage ? row.captureId : null;
   return (
     <tr>
@@ -111,7 +112,7 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
       </Td>
       <Td className="whitespace-nowrap text-muted-foreground tabular-nums">{isoDate(row.createdAt)}</Td>
       <Td>
-        {needsInput && <div className="mb-1 max-w-48 text-xs text-warning">{t(issue === 'ticker' ? 'pendingNeedsTicker' : 'pendingNeedsOverride')}</div>}
+        {needsInput && <div className="mb-1 max-w-48 text-xs text-warning">{needsMsg}</div>}
         <div className="flex gap-2">
           <Button variant="primary" busy={busy} onClick={onConfirm}>
             {t('pendingConfirm')}
