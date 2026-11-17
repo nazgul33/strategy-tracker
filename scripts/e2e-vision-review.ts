@@ -8,11 +8,15 @@
  *   A  price corrected, keepImage true   -> survives, listed with detected != final, then discarded
  *   B  confirmed untouched               -> bytes and record swept
  *   C  price corrected, keepImage false  -> bytes and record swept (a correction alone keeps nothing)
+ * and a fourth photo of two fills, the second with neither a fee nor a date from vision:
+ *   D  first fill kept, second confirmed beside it with the date filled in and the fee left derived
+ *      -> the derived fee is not marked as the operator's, the missed date is a recorded edit
  */
 import { jsonOf, type E2eCtx } from './e2e-ctx'
 
 const photoOf = (text: string, mime: string) => ({ base64: Buffer.from(text).toString('base64'), mime })
 const buy = (shares: number, price: string) => ({ side: 'buy', ticker: 'NVDA', shares, price, fee: '0.50' })
+const feelessBuy = (shares: number, price: string) => ({ side: 'buy', ticker: 'NVDA', shares, price })
 
 const imageOf = (c: E2eCtx, captureId: number) => c.req('GET', `/captures/${captureId}/image`, undefined, c.token)
 const entriesOf = async (c: E2eCtx): Promise<any[]> =>
@@ -80,4 +84,36 @@ export async function runVisionReview(c: E2eCtx): Promise<void> {
   c.ok(confirmC.status === 200, 'corrected confirm without keep -> 200')
   c.ok((await imageOf(c, captureC)).status === 404, 'a correction alone does not keep the screenshot')
   c.ok((await entriesOf(c)).length === 0, 'a correction alone leaves no vision-review entry')
+
+  // ---- D: no fee and no date from vision, confirmed beside a kept sibling ------
+  // Ingest substitutes the capture date for a missing one and the booking path derives a missing
+  // fee, so the booked row alone cannot say either was never read. The frozen record must.
+  await c.photo([{ ...buy(7, '171.00'), date: '2026-11-09' }, feelessBuy(5, '170.00')], photoOf('e2e-retention-D-png', 'image/png'))
+  const rowsD = ((await jsonOf(await c.req('GET', '/pending', undefined, c.token))) as any[]).sort((a, b) => a.id - b.id)
+  c.ok(rowsD.length === 2 && rowsD[0].captureId === rowsD[1].captureId && rowsD[0].captureId != null,
+    `capture D left two pending rows under one capture: ${JSON.stringify(rowsD.map((r) => [r.id, r.shares, r.captureId]))}`)
+  const [siblingD, bareD] = rowsD as [any, any]
+  const captureD = bareD.captureId as number
+  c.ok(siblingD.shares === 7 && bareD.shares === 5, 'pending rows come back as the read fill then the feeless, dateless one')
+  c.ok(bareD.detected?.fee === null && bareD.detected?.filledOn === null && bareD.detected?.price === '1700000',
+    `the snapshot keeps the honest nulls for what vision missed: ${JSON.stringify(bareD.detected)}`)
+  c.ok(typeof bareD.filledOn === 'string' && bareD.filledOn.length > 0 && bareD.fee == null,
+    `...while the row itself carries the substituted date and no fee: ${JSON.stringify([bareD.filledOn, bareD.fee])}`)
+  c.ok(bareD.costPpm === 1000 && !('autoFeeCents' in bareD), `the row carries the run's cost ppm so the client can derive the fee: ${bareD.costPpm}`)
+
+  const confirmSibling = await c.req('POST', `/pending/${siblingD.id}/confirm`, { keepImage: true }, c.token)
+  c.ok(confirmSibling.status === 200, 'confirming the fill vision read fully, keeping the screenshot -> 200')
+  const confirmBare = await c.req('POST', `/pending/${bareD.id}/confirm`, { overrides: { filledOn: '2026-11-09' }, keepImage: false }, c.token)
+  c.ok(confirmBare.status === 200, 'confirming the dateless, feeless fill with the date filled in -> 200')
+
+  const keptD = (await entriesOf(c)).filter((e) => e.captureId === captureD)
+  c.ok(keptD.length === 1 && keptD[0].fills.length === 2, `capture D is kept with both fills (keep is sticky past the discard): ${JSON.stringify(keptD.map((e) => e.fills.length))}`)
+  const [readFill, bareFill] = keptD[0].fills
+  c.ok(readFill.edited === false && readFill.feeOverridden === false, `the fully-read sibling is as read: ${JSON.stringify([readFill.edited, readFill.feeOverridden])}`)
+  c.ok(bareFill.detected.fee === null && bareFill.final.fee === 85,
+    `the derived fee is the run's cost on the booked price (5 sh x 170.00 at 1000 ppm = 85 cents): ${JSON.stringify([bareFill.detected.fee, bareFill.final.fee])}`)
+  c.ok(bareFill.feeOverridden === false, 'the derived fee is not recorded as supplied by the operator')
+  c.ok(bareFill.detected.filledOn === null && bareFill.final.filledOn === '2026-11-09' && bareFill.edited === true,
+    `filling in the date vision missed is a recorded edit: ${JSON.stringify([bareFill.detected.filledOn, bareFill.final.filledOn, bareFill.edited])}`)
+  c.ok((await c.req('DELETE', `/vision-reviews/${captureD}`, undefined, c.token)).status === 200, 'discarding capture D from the review tab -> 200')
 }
