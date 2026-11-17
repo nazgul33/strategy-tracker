@@ -1209,6 +1209,24 @@ describe('sell matching with target and stop legs', () => {
     expect(order(f, 1, 'sell_loc').status).toBe('open')
   })
 
+  test('an exact target match with impossible shares fails loudly instead of landing elsewhere', async () => {
+    // Bucket 0 holds 10 but its target prints 103.00 for 15 shares: the only honest
+    // answer is a 422 the operator resolves, never a silent booking into bucket 1
+    // (whose 92.00 target also qualifies at 103.00) plus a cancel of bucket 1's legs.
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 1, shares: 15, buy: '90.00' }],
+      [
+        { idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' },
+        { idx: 1, kind: 'sell_loc', price: '92.00' }, { idx: 1, kind: 'stop_sell', price: '87.00' },
+      ],
+    )
+    await expect(runBooking(bookInput(runId, 15, '103.00'), deps)).rejects.toMatchObject({ kind: 'too-many-shares' })
+    expect(f._stores.fills).toHaveLength(0)
+    expect(f._stores.orders.every((o: any) => o.status === 'open')).toBe(true)
+    const st = await f.repos.bucketRepo.loadState(runId)
+    expect(st.buckets.map((b: any) => b.shares)).toEqual([10, 15, ...Array(8).fill(0)])
+  })
+
   test('a target fill above its limit books to the highest qualifying target, not a loose stop', async () => {
     // bucket 0: buy 100.00, stop trigger 97.00; bucket 9: buy 90.00, target limit 91.00. 91.50 is also <= 97.00.
     const { f, deps, runId } = await setup(
@@ -1610,7 +1628,8 @@ describe('matchSellOrder', () => {
   const input = { runId: 1, filledOn: '2026-11-12' as ISODate, shares: 10, price: parseUsd('103.00') }
 
   test('returns null for an empty bucket, a wrong run, a wrong date and a non-open status', () => {
-    expect(matchSellOrder([o({ bucketIdx: 0 })], state, input)).toBeNull()
+    // 100.00 is under the 103.00 fill price, so this is a rung 1b candidate and the gate applies.
+    expect(matchSellOrder([o({ bucketIdx: 0, limitPrice: parseUsd('100.00') })], state, input)).toBeNull()
     expect(matchSellOrder([o({ runId: 2 })], state, input)).toBeNull()
     expect(matchSellOrder([o({ tradeDate: '2026-11-11' })], state, input)).toBeNull()
     expect(matchSellOrder([o({ status: 'stale' })], state, input)).toBeNull()
@@ -1620,5 +1639,14 @@ describe('matchSellOrder', () => {
   test('returns the order on the happy path and ignores buy_loc', () => {
     expect(matchSellOrder([o({ kind: 'buy_loc' })], state, input)).toBeNull()
     expect(matchSellOrder([o({})], state, input)?.id).toBe(1)
+  })
+
+  // Rung 1a alone ignores the shares/emptiness gate: the booking must fail loudly
+  // rather than attribute an exact-price print to some other bucket.
+  test('an exact-price target is returned even when its bucket cannot cover the fill', () => {
+    expect(matchSellOrder([o({ bucketIdx: 0 })], state, input)?.bucketIdx).toBe(0)
+    expect(matchSellOrder([o({})], state, { ...input, shares: 99 })?.id).toBe(1)
+    // the gate still applies to every other rung
+    expect(matchSellOrder([o({ kind: 'stop_sell', limitPrice: parseUsd('110.00') })], state, { ...input, shares: 99 })).toBeNull()
   })
 })

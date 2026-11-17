@@ -32,17 +32,25 @@ const cmp = (a: bigint, b: bigint): number => (a < b ? -1 : a > b ? 1 : 0)
 // fit), stop at/over the price (lowest trigger = tightest fit), market_sell.
 // Every tie breaks on the lowest bucketIdx. null leaves the caller's fallback.
 export function matchSellOrder(orders: OrderRow[], state: RunState, input: SellFillKey): OrderRow | null {
-  const live = orders.filter((o) => {
-    if (o.status !== 'open' || o.runId !== input.runId || o.tradeDate !== input.filledOn) return false
+  const onDay = orders.filter((o) => o.status === 'open' && o.runId === input.runId && o.tradeDate === input.filledOn)
+  const live = onDay.filter((o) => {
     const b = state.buckets.find((x: Bucket) => x.index === o.bucketIdx)
     return !!b && b.state !== 'empty' && b.shares >= input.shares
   })
-  const pick = (kind: string, test: (o: OrderRow) => boolean, rank: (a: OrderRow, b: OrderRow) => number): OrderRow | null =>
-    live.filter((o) => o.kind === kind && test(o)).sort((a, b) => rank(a, b) || a.bucketIdx - b.bucketIdx)[0] ?? null
+  const pick = (from: OrderRow[], kind: string, test: (o: OrderRow) => boolean, rank: (a: OrderRow, b: OrderRow) => number): OrderRow | null =>
+    from.filter((o) => o.kind === kind && test(o)).sort((a, b) => rank(a, b) || a.bucketIdx - b.bucketIdx)[0] ?? null
   return (
-    pick('sell_loc', (o) => o.limitPrice === input.price, () => 0) ??
-    pick('sell_loc', (o) => input.price >= o.limitPrice, (a, b) => cmp(b.limitPrice, a.limitPrice)) ??
-    pick('stop_sell', (o) => input.price <= o.limitPrice, (a, b) => cmp(a.limitPrice, b.limitPrice)) ??
-    pick('market_sell', () => true, () => 0)
+    // Exact price is read from `onDay`, not `live`: a deliberate, recorded deviation
+    // from the spec's uniform "non-empty bucket with shares >= fill.shares" gate.
+    // Under the gate an exact-price sell with impossible shares is filtered out, the
+    // chain falls through, and the fill is booked into a DIFFERENT bucket while the
+    // sibling cancel pulls that bucket's legs — leaving the bucket that really sold
+    // held in the tracker with two live broker orders, the design's first anti-goal.
+    // Matching it here makes applySellFill throw 'too-many-shares' (a 422 the operator
+    // resolves) instead. 1b/1c/1d keep the gate, where it is load-bearing for ranking.
+    pick(onDay, 'sell_loc', (o) => o.limitPrice === input.price, () => 0) ??
+    pick(live, 'sell_loc', (o) => input.price >= o.limitPrice, (a, b) => cmp(b.limitPrice, a.limitPrice)) ??
+    pick(live, 'stop_sell', (o) => input.price <= o.limitPrice, (a, b) => cmp(a.limitPrice, b.limitPrice)) ??
+    pick(live, 'market_sell', () => true, () => 0)
   )
 }
