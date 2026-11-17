@@ -160,8 +160,18 @@ export function Td({
   );
 }
 
-/** Simple fixed-overlay modal used by the dialogs (pool edit, new run). */
-export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+/** Simple fixed-overlay modal used by the dialogs (pool edit, new run); `wide` makes room for side-by-side content. */
+export function Modal({
+  title,
+  onClose,
+  wide = false,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  wide?: boolean;
+  children: ReactNode;
+}) {
   const t = useT();
   return (
     <div
@@ -172,7 +182,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
       aria-label={title}
     >
       <div
-        className="w-full max-w-md rounded-lg border border-border bg-card p-4 shadow-lg"
+        className={`w-full ${wide ? 'max-w-4xl' : 'max-w-md'} rounded-lg border border-border bg-card p-4 shadow-lg`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between gap-4">

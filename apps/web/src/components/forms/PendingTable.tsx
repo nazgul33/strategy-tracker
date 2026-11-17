@@ -4,6 +4,7 @@ import { useT } from '../../i18n';
 import { pendingEdits, type RowValues } from '../../viewmodels';
 import { useAsync } from '../hooks';
 import { EmptyNote, TableWrap, Th } from '../ui';
+import { PendingReviewDialog } from './PendingReviewDialog';
 import { PendingRow, initialRowValues } from './PendingRow';
 
 // Unrecognized screenshot fills. Every field is one control pre-filled with what
@@ -16,10 +17,12 @@ export function PendingTable({ runId }: { runId?: number }) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.listPending(), []);
   const [edited, setEdited] = useState<Record<number, RowValues>>({});
+  const [reviewId, setReviewId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const visible = (data ?? []).filter((r) => runId === undefined || r.runId === runId);
+  const reviewing = visible.find((r) => r.id === reviewId);
 
   const valuesFor = (r: PendingFillDto) => edited[r.id] ?? initialRowValues(r);
   const patchValues = (r: PendingFillDto, patch: Partial<RowValues>) =>
@@ -114,7 +117,7 @@ export function PendingTable({ runId }: { runId?: number }) {
                 row={r}
                 values={valuesFor(r)}
                 onChange={(patch) => patchValues(r, patch)}
-                onOpenSideBySide={() => undefined}
+                onOpenSideBySide={() => setReviewId(r.id)}
                 onConfirm={() => void act(r, 'confirm')}
                 onReject={() => void act(r, 'reject')}
                 busy={busyId === r.id}
@@ -122,6 +125,17 @@ export function PendingTable({ runId }: { runId?: number }) {
             ))}
           </tbody>
         </TableWrap>
+      )}
+      {reviewing && (
+        <PendingReviewDialog
+          row={reviewing}
+          values={valuesFor(reviewing)}
+          onCancel={() => setReviewId(null)}
+          onDone={(values) => {
+            patchValues(reviewing, values);
+            setReviewId(null);
+          }}
+        />
       )}
     </div>
   );

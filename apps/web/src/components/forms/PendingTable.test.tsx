@@ -247,6 +247,62 @@ describe('PendingTable', () => {
     expect(Array.from(container.querySelectorAll('tbody button')).some((b) => b.textContent === 'Compare')).toBe(false);
   });
 
+  describe('side-by-side dialog', () => {
+    const click = async (text: string) => {
+      const btn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === text);
+      if (!btn) throw new Error(`button ${text} not found`);
+      await act(async () => (btn as HTMLButtonElement).click());
+    };
+    const dialogPrice = () =>
+      container.querySelector('[role=dialog] input[inputmode=decimal]') as HTMLInputElement;
+
+    it('Compare opens the dialog seeded from the row and Done writes the edit back without booking', async () => {
+      const calls = await renderWithConfirmCalls(ROW);
+      expect(container.querySelector('[role=dialog]')).toBeNull();
+      await click('Compare');
+      expect(dialogPrice().value).toBe('12345.00');
+
+      await act(async () => setInputValue(dialogPrice(), '12345.50'));
+      await click('Done');
+
+      expect(container.querySelector('[role=dialog]')).toBeNull();
+      expect(control<HTMLInputElement>(4, 'input').value).toBe('12345.50');
+      expect(calls.length).toBe(0);
+
+      await clickConfirm();
+      expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ price: '12345.50' });
+    });
+
+    it('Cancel leaves the row untouched', async () => {
+      const calls = await renderWithConfirmCalls(ROW);
+      await click('Compare');
+      await act(async () => setInputValue(dialogPrice(), '1.00'));
+      await click('Cancel');
+
+      expect(container.querySelector('[role=dialog]')).toBeNull();
+      expect(control<HTMLInputElement>(4, 'input').value).toBe('12345.00');
+      expect(calls.length).toBe(0);
+    });
+
+    it('reopening shows the values the row now holds', async () => {
+      await renderWithConfirmCalls(ROW);
+      await act(async () => setInputValue(control<HTMLInputElement>(4, 'input'), '5.00'));
+      await click('Compare');
+      expect(dialogPrice().value).toBe('5.00');
+    });
+  });
+
+  it('a missing ticker points at reject and re-capture, a missing field at the highlighted control', async () => {
+    stubFetch('conflict', { ...ROW, ticker: '' });
+    await renderTable(root);
+    expect(container.textContent).toContain('reject this row and re-capture');
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    stubFetch('conflict', { ...ROW, price: '', detected: { ...ROW.detected!, price: null } });
+    await renderTable(root);
+    expect(container.textContent).toContain('fill in the highlighted field');
+  });
+
   it('confirm posts the edited values as overrides', async () => {
     const calls = await renderWithConfirmCalls(ROW);
     await act(async () => {
