@@ -5,12 +5,17 @@ export interface OrderRow { id: number; runId: number; tradeDate: string; kind: 
 // Every order kind that sells a held bucket.
 const SELL_SIDE_KINDS: readonly string[] = ['sell_loc', 'stop_sell', 'market_sell']
 
-// The open sell-side orders of one bucket, run and trade date, lowest id first,
-// minus `exceptId` (the order a fill matched). Open is load-bearing: a leg an
-// earlier partial fill already flipped to filled must not be reported again.
-export function openSellLegs(orders: OrderRow[], key: { runId: number; bucketIdx: number; tradeDate: string }, exceptId: number | null): OrderRow[] {
+// The open sell-side orders of one bucket and run from `fromTradeDate` onwards,
+// lowest id first, minus `exceptId` (the order a fill matched). Open is load-bearing:
+// a leg an earlier partial fill already flipped to filled must not be reported again.
+//
+// `>= fromTradeDate`, not `===`, is a deliberate deviation from the spec, which scoped
+// the sibling cancel to the fill's own trade date: a fill captured for an earlier day
+// and confirmed after the morning re-plan would otherwise leave today's freshly planned
+// target and stop open — two live broker orders against shares already sold.
+export function openSellLegs(orders: OrderRow[], key: { runId: number; bucketIdx: number; fromTradeDate: string }, exceptId: number | null): OrderRow[] {
   return orders
-    .filter((o) => o.runId === key.runId && o.bucketIdx === key.bucketIdx && o.tradeDate === key.tradeDate && o.status === 'open' && o.id !== exceptId && SELL_SIDE_KINDS.includes(o.kind))
+    .filter((o) => o.runId === key.runId && o.bucketIdx === key.bucketIdx && o.tradeDate >= key.fromTradeDate && o.status === 'open' && o.id !== exceptId && SELL_SIDE_KINDS.includes(o.kind))
     .sort((a, b) => a.id - b.id)
 }
 

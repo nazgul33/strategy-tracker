@@ -63,6 +63,9 @@ export function fakeRepos() {
   const orderRepo = {
     async insertMany(os: any[]) { for (const o of os) { orders.push({ id: orderSeq++, ...o }) } },
     async listForDate(date: string) { return orders.filter((o) => o.tradeDate === date) },
+    async listForRun(runId: number, date?: string) {
+      return orders.filter((o) => o.runId === runId && (date === undefined || o.tradeDate === date))
+    },
     async get(id: number) { return orders.find((x) => x.id === id) ?? null },
     async markStale(date: string) {
       let cnt = 0
@@ -1523,6 +1526,38 @@ describe('sell matching with target and stop legs', () => {
       await runBooking(bookInput(runId, 10, '103.00'), withNotifier(deps, notified))
       expect(notified.map((n) => n.order.kind)).toEqual(['stop_sell', 'market_sell'])
       expect(notified.map((n) => n.order.id)).toEqual([order(f, 1, 'stop_sell').id, order(f, 1, 'market_sell').id])
+    })
+
+    // A screenshot of yesterday's fills, confirmed today after the morning re-plan:
+    // today's legs are live at the broker against shares the operator no longer holds.
+    test('a prior-day fill that empties the bucket also pulls and announces today legs', async () => {
+      const yesterday: ISODate = '2026-11-11'
+      const { f, deps, runId } = await setup(
+        [{ idx: 1, shares: 10, buy: '100.00' }, { idx: 2, shares: 10, buy: '100.00' }],
+        [
+          { idx: 1, kind: 'sell_loc', price: '103.00', tradeDate: yesterday },
+          { idx: 1, kind: 'stop_sell', price: '97.00', tradeDate: yesterday },
+          { idx: 1, kind: 'sell_loc', price: '103.00' },
+          { idx: 1, kind: 'stop_sell', price: '97.00' },
+          { idx: 2, kind: 'sell_loc', price: '103.00' },
+          { idx: 2, kind: 'stop_sell', price: '97.00' },
+        ],
+      )
+      const notified: Notified[] = []
+      const legs = (idx: number, tradeDate: string) => f._stores.orders.filter((o: any) => o.bucketIdx === idx && o.tradeDate === tradeDate)
+      const matched = legs(1, yesterday).find((o: any) => o.kind === 'stop_sell')
+      const cancelled = await runBooking(
+        { ...bookInput(runId, 10, '96.50'), filledOn: yesterday },
+        withNotifier(deps, notified),
+      )
+      expect(matched.status).toBe('filled')
+      const expectedIds = [...legs(1, yesterday).filter((o: any) => o.id !== matched.id), ...legs(1, D)].map((o: any) => o.id)
+      expect(cancelled).toEqual(expectedIds)
+      for (const o of [...legs(1, yesterday), ...legs(1, D)]) {
+        if (o.id !== matched.id) expect(o).toMatchObject({ status: 'cancelled', cancelReason: 'broker-filled' })
+      }
+      expect(notified.map((n) => n.order.id)).toEqual(expectedIds)
+      expect(legs(2, D).every((o: any) => o.status === 'open')).toBe(true)
     })
 
     test('a partial fill notifies nobody', async () => {

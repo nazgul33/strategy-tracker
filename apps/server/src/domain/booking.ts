@@ -26,7 +26,7 @@ export async function sha256(buf: Uint8Array): Promise<string> {
 export interface RepoSurface {
   runRepo: { list(): Promise<any[]>; get(id: number): Promise<any>; create(input: any): Promise<number>; updateStatus(id: number, status: string): Promise<void> }
   bucketRepo: { loadState(runId: number): Promise<RunState>; saveState(runId: number, state: RunState): Promise<void> }
-  orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; markStale(date: string): Promise<any>; get(id: number): Promise<any | null>; setStatus(id: number, status: string, cancelReason?: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
+  orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; listForRun(runId: number, date?: string): Promise<any[]>; markStale(date: string): Promise<any>; get(id: number): Promise<any | null>; setStatus(id: number, status: string, cancelReason?: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
   fillRepo: {
     insert(fill: any): Promise<any>
     listForRun(runId: number): Promise<FillRow[]>
@@ -94,7 +94,7 @@ async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number
   let next: RunState
   let bucketIdx: number
   let matchedOrderId: number | null = null
-  let sellDayOrders: OrderRow[] = []
+  let sellOrders: OrderRow[] = []
 
   if (input.side === 'buy') {
     const picked = nextBuyBucketIndex(state)
@@ -107,8 +107,9 @@ async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number
     const match = orders.find((o: any) => o.runId === input.runId && o.kind === 'buy_loc' && o.status === 'open')
     if (match) matchedOrderId = match.id
   } else {
-    sellDayOrders = await repos.orderRepo.listForDate(input.filledOn)
-    const matchedOrder = matchSellOrder(sellDayOrders, state, { runId: input.runId, filledOn: input.filledOn, shares: input.shares, price: priceBigInt })
+    // Whole run: matchSellOrder narrows to filledOn, the cancel below needs later dates too.
+    sellOrders = await repos.orderRepo.listForRun(input.runId)
+    const matchedOrder = matchSellOrder(sellOrders, state, { runId: input.runId, filledOn: input.filledOn, shares: input.shares, price: priceBigInt })
     let idx: number | undefined
     if (matchedOrder) {
       idx = matchedOrder.bucketIdx
@@ -137,13 +138,13 @@ async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number
   await repos.fillRepo.insert({ runId: input.runId, bucketIdx, side: input.side, ticker: run.ticker, shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, source: input.source })
   await repos.ledgerRepo.insert({ runId: input.runId, kind: input.side === 'buy' ? 'buy' : 'sell', amountCents: delta, ref: JSON.stringify({ bookedOn: deps.today, filledOn: input.filledOn }) })
   // A sell that empties its bucket leaves every open sell-side order of that bucket
-  // and trade date with nothing to sell, however the bucket was chosen (matched order
-  // or fallback guess). A partial fill leaves shares that still need both legs, so
-  // nothing is cancelled. Plain status writer, not cancelOrder (its lookups would
-  // re-enter the lock). The matched order is excluded: it flips to filled below.
+  // with nothing to sell, however the bucket was chosen (matched order or fallback
+  // guess) and whenever it was planned (see openSellLegs). A partial fill leaves
+  // shares that still need both legs, so nothing is cancelled. Plain status writer,
+  // not cancelOrder (re-enters the lock). The matched order flips to filled below.
   const cancelledIds: number[] = []
   if (input.side === 'sell' && next.buckets[bucketIdx]!.state === 'empty') {
-    for (const o of openSellLegs(sellDayOrders, { runId: input.runId, bucketIdx, tradeDate: input.filledOn }, matchedOrderId)) {
+    for (const o of openSellLegs(sellOrders, { runId: input.runId, bucketIdx, fromTradeDate: input.filledOn }, matchedOrderId)) {
       await repos.orderRepo.setStatus(o.id, 'cancelled', 'broker-filled')
       cancelledIds.push(o.id)
     }

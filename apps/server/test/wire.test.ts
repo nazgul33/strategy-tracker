@@ -162,6 +162,7 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
   const orderRepo = {
     insertMany: async () => {},
     listForDate: async (_date: string) => [] as FakeRow[],
+    listForRun: async (_runId: number, _date?: string) => [] as FakeRow[],
     markStale: async () => [],
     setStatus: async () => {},
     listOpenBefore: async () => [],
@@ -757,6 +758,7 @@ describe('capture confirm — sibling leg cancelled by a bucket-emptying sell', 
     ];
     Object.assign(fakes.repos.orderRepo, {
       listForDate: async () => orders,
+      listForRun: async () => orders,
       get: async (id: number) => orders.find((o) => o.id === id) ?? null,
       setStatus: async (id: number, status: string, reason?: string) => {
         const o = orders.find((x) => x.id === id)!;
