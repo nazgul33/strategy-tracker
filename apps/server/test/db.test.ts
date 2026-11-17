@@ -734,6 +734,14 @@ describeIf('db integration', () => {
       expect(await repos.captureImageRepo.getBytes(captureId)).toBeNull()
     })
 
+    test('captureImageRepo: existingIds reports only captures that have bytes', async () => {
+      const a = await newCapture()
+      const b = await newCapture()
+      await repos.captureImageRepo.insertIgnore({ captureId: a.captureId, mime: 'image/png', bytes: Buffer.from('abcd'), byteLen: 4 })
+      expect([...(await repos.captureImageRepo.existingIds([a.captureId, b.captureId, 2_000_000_000]))]).toEqual([a.captureId])
+      expect((await repos.captureImageRepo.existingIds([])).size).toBe(0)
+    })
+
     test('visionReviewRepo: insertIgnore is idempotent per pendingFillId and listForCaptures groups by capture', async () => {
       const a = await newCapture()
       const b = await newCapture()

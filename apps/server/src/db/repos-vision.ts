@@ -20,6 +20,13 @@ export function getVisionRepos(db: any) {
         .where(eq(s.captureImages.captureId, captureId)).limit(1)
       return rows[0] ?? null
     },
+    // Presence check for listings: selects the key only, never the blob.
+    async existingIds(captureIds: number[]): Promise<Set<number>> {
+      if (!captureIds.length) return new Set()
+      const rows = await db.select({ captureId: s.captureImages.captureId }).from(s.captureImages)
+        .where(inArray(s.captureImages.captureId, captureIds))
+      return new Set<number>(rows.map((r: { captureId: number }) => r.captureId))
+    },
     async isKept(captureId: number): Promise<boolean> {
       const rows = await db.select({ keep: s.captureImages.keep }).from(s.captureImages)
         .where(eq(s.captureImages.captureId, captureId)).limit(1)
