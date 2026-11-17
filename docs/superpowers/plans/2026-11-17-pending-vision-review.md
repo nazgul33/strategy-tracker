@@ -803,7 +803,19 @@ Expected: FAIL — the confirm posts without prompting.
 Copy, verbatim from the spec, in both catalogs:
 > **Values were edited** / You changed this fill before confirming, so vision may have misread the screenshot. Keep the screenshot for review? / `[Keep for review]` `[Discard]`
 
-`PendingTable` holds a pending-decision state `{ row, action, overrides } | null`; it opens the prompt when `action === 'reject'` or `pendingEdits(...).length > 0`, **and** `row.hasImage` is true. Dismissing the prompt cancels the action without posting.
+`PendingTable` holds a pending-decision state `{ row, action, overrides } | null`; it opens the prompt when `action === 'reject'` or `pendingEdits(...).length > 0`, **and** `row.hasImage` is true, **and** `row.detected !== null`. Dismissing the prompt cancels the action without posting.
+
+*Plan correction, made during execution:* one helper cannot answer both of the
+questions this plan asked of `pendingEdits`, because they diverge on legacy
+rows. "Which fields changed" drives **which overrides to send**, and its
+baseline must fall back to the row's own values when `detected` is null —
+otherwise a legacy row reports no changes, the confirm body is empty, and the
+operator cannot correct an old row at all, a regression against today's
+override inputs. "Was this an operator correction" drives the **keep prompt**,
+and a legacy row is never one. So `pendingEdits` falls back to the row's own
+values as its baseline, and the prompt trigger adds the `row.detected !== null`
+condition above. The server side already behaves correctly: `isEdited` returns
+false whenever `detected_at` is null.
 
 - [ ] **Step 4: Run to verify they pass**
 
