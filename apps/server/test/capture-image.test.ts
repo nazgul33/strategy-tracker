@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, spyOn } from 'bun:test'
 import { emptyState } from '@st/core'
 import { parseUsd } from '@st/core/money'
 import type { ExtractResult } from '@st/ingest'
@@ -70,6 +70,24 @@ describe('capture image storage at ingest', () => {
     const out = await ingestCapture(runId, big, ext, deps) as { pending: PendingFillRow[] }
     expect(out.pending.length).toBe(1)
     expect(f._stores.captureImages.length).toBe(0)
+  })
+
+  test('a failing image write is logged and the capture still books its fills', async () => {
+    const { f, deps, runId } = await setup()
+    f.repos.captureImageRepo.insertIgnore = async () => { throw new Error('packet too large') }
+    const errSpy = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 1, price: '10.00' }] }
+      const out = await ingestCapture(runId, PNG, ext, deps) as { pending: PendingFillRow[] }
+      expect(out.pending.length).toBe(1)
+      expect(f._stores.pending.length).toBe(1)
+      expect(f._stores.captureImages.length).toBe(0)
+      expect(errSpy).toHaveBeenCalledTimes(1)
+      expect(String(errSpy.mock.calls[0]!.join(' '))).toContain('packet too large')
+      expect(await storeCaptureImage(f.repos as any, 1, PNG)).toBe(false)
+    } finally {
+      errSpy.mockRestore()
+    }
   })
 
   test('an image exactly at the cap is stored', async () => {
