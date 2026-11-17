@@ -22,7 +22,9 @@ function addDays(d: ISODate, n: number): ISODate {
 }
 
 // Outside the committed NYSE years dayInfo is weekends-only, so an uncovered
-// weekday still counts as a trading day: that can only cause an extra fetch.
+// holiday there still counts as a trading day. It is then fetched, upstream has
+// nothing for it, and the gap would never be covered — so the reader swallows a
+// per-gap 'no-data' (see below) and the cost is one wasted fetch, once.
 function isOpen(d: ISODate): boolean {
   return dayInfo(d).open
 }
@@ -73,6 +75,13 @@ export function makeCachedBarReader(deps: {
     const lastFinished = prevTradingDay(deps.today())
     const horizon = to < lastFinished ? to : lastFinished
 
+    // A gap upstream has no data for (a holiday the calendar table does not know,
+    // a pre-IPO stretch) is covered too, so the range stops failing on every retry.
+    // Its coverage is written only once the assembled answer is non-empty: a range
+    // with no data anywhere stays visibly broken instead of silently returning [].
+    let noData: MarketDataError | null = null
+    const emptyGaps: Range[] = []
+
     if (from <= horizon) {
       const covered = await repos.barCoverageRepo.list(ticker)
       for (const [gFrom, gTo] of uncovered(from, horizon, covered)) {
@@ -81,10 +90,17 @@ export function makeCachedBarReader(deps: {
         const first = firstOpen(gFrom, gTo)
         const last = lastOpen(gFrom, gTo)
         if (first !== null && last !== null) {
-          const bars = inRange(await upstream(ticker, first, last), gFrom, gTo)
-          await repos.priceHistoryRepo.upsertBars(bars.map((b) => ({
-            ticker, tradeDate: b.date, open: b.open, high: b.high, low: b.low, close: b.close,
-          })))
+          try {
+            const bars = inRange(await upstream(ticker, first, last), gFrom, gTo)
+            await repos.priceHistoryRepo.upsertBars(bars.map((b) => ({
+              ticker, tradeDate: b.date, open: b.open, high: b.high, low: b.low, close: b.close,
+            })))
+          } catch (e) {
+            if (!(e instanceof MarketDataError && e.kind === 'no-data')) throw e
+            noData = e
+            emptyGaps.push([gFrom, gTo])
+            continue
+          }
         }
         await repos.barCoverageRepo.add(ticker, gFrom, gTo)
       }
@@ -103,11 +119,16 @@ export function makeCachedBarReader(deps: {
         tail = inRange(await upstream(ticker, tailFrom, to), tailFrom, to)
       } catch (e) {
         // No data for an unfinished or not-yet-open session is normal (pre-open,
-        // holiday) when cached bars still answer the request; only a transport/provider
-        // failure, or no data anywhere in the range, is a real error.
-        if (!(e instanceof MarketDataError && e.kind === 'no-data' && cached.length > 0)) throw e
+        // holiday); only a transport/provider failure is a real error here. No data
+        // anywhere in the range is judged once, below.
+        if (!(e instanceof MarketDataError && e.kind === 'no-data')) throw e
+        noData = e
       }
     }
-    return [...cached, ...tail].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+
+    const out = [...cached, ...tail].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    if (noData !== null && out.length === 0) throw noData
+    for (const [gFrom, gTo] of emptyGaps) await repos.barCoverageRepo.add(ticker, gFrom, gTo)
+    return out
   }
 }
