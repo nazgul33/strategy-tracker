@@ -400,7 +400,16 @@ test('a changed share count, price, side, date or fee is edited', …)
 test('a null detected value with a non-null final is edited', …)
 test('a legacy row (detectedAt null) is never edited', …)
 test('a rejected fill (final null) is not edited but is still archivable', …)
+test('a derived fee (detected fee null, no feeCents override) is not edited', …)
 ```
+
+*Plan correction, made during execution:* the fee is the one field the system
+derives on its own, so "detected fee null, final fee computed from cost ppm" is
+the normal path for a feeless screenshot, not a correction. Left as written,
+every such capture would be marked edited and would prompt on every confirm.
+The fee counts toward `edited` only when the confirm carried a `feeCents`
+override; `final_fee` still records the booked fee either way. `isEdited`
+therefore needs to know whether the fee came from the operator.
 
 - [ ] **Step 2: Run to verify they fail**
 

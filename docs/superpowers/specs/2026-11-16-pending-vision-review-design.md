@@ -176,6 +176,15 @@ Two separate reasons for the nulls, and they must not be conflated:
   the case where you want the screenshot kept. A null detected value with any
   final value therefore triggers the prompt.
 
+  **Exception, found during implementation: the fee.** Fee is the one field
+  the system derives on its own — when vision reads no fee, the booking path
+  computes it from the run's cost ppm. So "detected fee null, final fee 7"
+  is the *normal* path for a feeless screenshot, not a correction, and the
+  rule above would mark every such capture edited and prompt on every
+  confirm. The fee therefore counts toward `edited` only when the operator
+  actually supplied one: the confirm carried a `feeCents` override. The
+  frozen row still records the booked fee in `final_fee` either way.
+
 Distinguishing the two cases needs one bit that is not per-field: a legacy row
 has `detected_*` all null *and* predates the migration. The builder should add
 a non-null `detected_at` timestamp alongside the snapshot columns — present
