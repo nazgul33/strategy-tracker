@@ -66,6 +66,7 @@ unset.
 | `SESSION_SECRET` | yes | — | HMAC secret for session tokens |
 | `PORT` | no | `8080` | HTTP port |
 | `DIGEST_LANG` | no | `en` | `en` or `ko` |
+| `DEFAULT_COST_PERCENT` | no | `0.07` | per-side trading cost prefilled for new runs and sims, as a percent with up to 3 decimals (`0` = no cost, max `100`) |
 | `TELEGRAM_BOT_TOKEN` | no | unset | unset ⇒ bot disabled; every send falls back to a console log line |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | when token set | — | comma-separated Telegram chat IDs |
 | `VISION_BASE_URL` | when token set | — | OpenAI-compatible vision endpoint base URL |
@@ -178,6 +179,20 @@ a remote calendar API (`howmanytradingdays.com`, `packages/calendar/src/crossche
 sending anything. A disagreement sends a warning to every allowed chat and aborts that morning's
 digest — a loud conflict, never a silent failure. (If the remote API itself is unreachable, the run
 proceeds with the local calendar.)
+
+## Bar-cache caveat (corporate actions)
+
+Daily OHLC bars are cached for good: a date range once marked covered in `bar_coverage` is never
+refetched (`apps/server/src/market/bars.ts`). Yahoo restates historical OHLC after a split or
+similar corporate action, so a sim spanning the event would mix pre-split cached bars with
+post-split fresh ones — one series at two price scales, silently.
+
+After a corporate action on a tracked ticker, clear its coverage so the next read refetches:
+
+```sql
+DELETE FROM bar_coverage WHERE ticker = 'NVDA';
+DELETE FROM price_history WHERE ticker = 'NVDA';  -- optional; stale rows are overwritten in place
+```
 
 ## Testing
 

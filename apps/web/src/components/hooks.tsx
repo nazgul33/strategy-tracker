@@ -1,7 +1,8 @@
 // Tiny data + routing hooks (no external router/data libraries).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { ApiError, getToken, setToken } from '../api';
+import { ApiError, api, getToken, setToken } from '../api';
+import { costPercentText } from '../format';
 
 export interface AsyncData<T> {
   data: T | undefined;
@@ -46,6 +47,37 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): Asy
 
   const reload = useCallback(() => load(true), [load]);
   return { data, error, loading, reload };
+}
+
+/**
+ * Cost percent text state, prefilled once from the server default. A value
+ * the operator typed before the settings arrived is never overwritten; if the
+ * settings call fails the field stays blank and submit asks for a cost.
+ */
+export function useDefaultCostText(): [string, (v: string) => void] {
+  const [text, setText] = useState('');
+  const touched = useRef(false);
+  useEffect(() => {
+    let live = true;
+    api
+      .getSettings()
+      .then((s) => {
+        if (live && !touched.current && Number.isFinite(s.defaultCostPpm)) {
+          setText(costPercentText(s.defaultCostPpm));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  return [
+    text,
+    (v) => {
+      touched.current = true;
+      setText(v);
+    },
+  ];
 }
 
 export type Route =

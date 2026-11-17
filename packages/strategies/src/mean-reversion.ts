@@ -44,6 +44,11 @@ export function sellLimit(buyPrice: bigint, costPpm: number, shares: number, sel
   return floorCents((buyPrice * (MILLION + BigInt(sellGapPpm))) / MILLION)
 }
 
+export function stopPrice(buyPrice: bigint, cutLossPpm: number): bigint | null {
+  if (cutLossPpm === 0) return null
+  return floorCents((buyPrice * (MILLION - BigInt(cutLossPpm))) / MILLION)
+}
+
 export function ageBuckets(
   ages: Record<number, number>,
   tradeDate: ISODate,
@@ -98,14 +103,22 @@ export function computeOrders(
     }
   }
 
-  // held buckets
+  // held buckets: a target sell plus, when cut-loss is on, a day stop re-planned each morning
+  let immediateStops = 0
   const held = state.buckets
     .filter((b) => b.state === 'held')
     .sort((a, b) => a.index - b.index)
   for (const b of held) {
     const target = sellLimit(b.buyPrice, run.costPpm, b.shares, run.sellGapPpm)
-    orders.push({ kind: 'sell_loc', bucketIndex: b.index, limitPrice: target, shares: b.shares, ageDays: state.ages[b.index] ?? 0 })
+    const ageDays = state.ages[b.index] ?? 0
+    orders.push({ kind: 'sell_loc', bucketIndex: b.index, limitPrice: target, shares: b.shares, ageDays })
+    const stop = stopPrice(b.buyPrice, run.cutLossPpm)
+    if (stop !== null) {
+      orders.push({ kind: 'stop_sell', bucketIndex: b.index, limitPrice: stop, shares: b.shares, ageDays })
+      if (stop >= ctx.lastClose) immediateStops++
+    }
   }
+  if (immediateStops > 0) notices.push({ code: 'cut-loss-immediate', params: { n: immediateStops } })
 
   // force_sell
   const forced = state.buckets

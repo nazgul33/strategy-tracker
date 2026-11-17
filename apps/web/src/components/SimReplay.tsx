@@ -4,19 +4,11 @@
 import { useEffect, useState } from 'react';
 
 import type { SimDayDto, SimEvent, SimRunDto } from '../api';
-import {
-  enumLabelKey,
-  morningAge,
-  pnlBadgeTone,
-  reasonKey,
-  simEventGroup,
-  skipReasons,
-  toneFor,
-  type BadgeTone,
-  type SimGroup,
-} from '../viewmodels';
-import { centsUsd, priceUsd, bpPercent, gapText, isoDate, signedCentsUsd } from '../format';
+import { enumLabelKey, pnlBadgeTone, reasonKey, toneFor, type BadgeTone } from '../viewmodels';
+import { morningAge, simEventGroup, skipReasons, type SimGroup } from '../simview';
+import { centsUsd, priceUsd, isoDate, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
+import { parseSimParams } from '../simconfig';
 import { Badge, Button, Card, EmptyNote, SectionTitle, Stat, TableWrap, Td, Th } from './ui';
 import { BucketBoard } from './BucketBoard';
 import { closedPnlCents } from './RunHistory';
@@ -24,32 +16,17 @@ import { closedPnlCents } from './RunHistory';
 const GROUP_TONE: Record<SimGroup, BadgeTone> = {
   buy: 'info',
   target: 'primary',
+  stop: 'warning',
   force: 'warning',
   skipped: 'neutral',
 };
 const GROUP_LABEL: Record<SimGroup, string> = {
   buy: 'simReasonBuy',
   target: 'simReasonTarget',
+  stop: 'simReasonStop',
   force: 'simReasonForceClose',
   skipped: 'simReasonSkip',
 };
-
-interface SimParams {
-  bucketCount: number;
-  maxAgeDays: number;
-}
-
-function parseParams(paramsJson: string, fallbackBucketCount: number): SimParams {
-  try {
-    const raw = JSON.parse(paramsJson) as { bucketCount?: number; maxAgeDays?: number };
-    return {
-      bucketCount: typeof raw.bucketCount === 'number' && raw.bucketCount > 0 ? raw.bucketCount : fallbackBucketCount,
-      maxAgeDays: typeof raw.maxAgeDays === 'number' && raw.maxAgeDays > 0 ? raw.maxAgeDays : 20,
-    };
-  } catch {
-    return { bucketCount: fallbackBucketCount, maxAgeDays: 20 };
-  }
-}
 
 /** Consecutive fills/skips sharing one bucket fold into one group. */
 function groupEvents(events: SimEvent[], isLastDay: boolean): { group: SimGroup; bucketIndex: number; events: SimEvent[] }[] {
@@ -88,7 +65,7 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
   const clamped = Math.min(idx, total - 1);
   const day = days[clamped]!;
   const isLast = clamped === total - 1;
-  const params = parseParams(run.paramsJson, day.stateJson.buckets.length);
+  const params = parseSimParams(run.paramsJson, day.stateJson.buckets.length);
   const state = day.stateJson;
   const held = state.buckets.filter((b) => b.shares > 0).length;
   const realizedCents = state.closed.reduce((sum, c) => sum + closedPnlCents(c), 0);
@@ -120,12 +97,6 @@ export function SimReplay({ run, days }: { run: SimRunDto; days: SimDayDto[] }) 
         <Button variant="secondary" onClick={() => step(1)} disabled={isLast} aria-label={t('simNextDay')}>
           {t('simNextDay')} ▶
         </Button>
-        <span className="ml-auto text-xs text-muted-foreground">
-          {run.ticker} · {isoDate(run.fromDate)} → {isoDate(run.toDate)} · {t('runPoolCents')} {centsUsd(run.poolCents)}
-          {` · ${t('simMaxAge')} ${params.maxAgeDays}`}
-          {` · ${t('simDetail.buyGap')} ${gapText(run.buyGapPpm / 10_000, t)}`}
-          {` · ${t('simDetail.sellGap')} ${gapText(run.sellGapPpm / 10_000, t)}`}
-        </span>
       </Card>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

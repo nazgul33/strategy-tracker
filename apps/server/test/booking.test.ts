@@ -1,13 +1,14 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, spyOn } from 'bun:test'
 import { emptyState, applyBuyFill, DomainError, type RunState, type ISODate } from '@st/core'
 import { parseUsd, feeCents } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { ExtractResult, RawFill } from '@st/ingest'
 import {
-  ingestCapture, confirmPendingFill, manualFill, rollStale, seedRun, sha256, cancelOrder,
-  type BookingDeps, type PendingFillRow, type CaptureConflict,
+  ingestCapture, confirmPendingFill, manualFill, rollStale, seedRun, sha256, cancelOrder, runBooking,
+  type BookingDeps, type PendingFillRow, type CaptureConflict, type OrderRow,
 } from '../src/domain/booking'
 import { withRunLock } from '../src/domain/run-lock'
+import { matchSellOrder } from '../src/domain/sell-match'
 import { fakeCorrectionRepo } from './fake-corrections'
 
 type BookedConflict = Extract<CaptureConflict, { matchedKind: 'booked' }>
@@ -62,6 +63,9 @@ export function fakeRepos() {
   const orderRepo = {
     async insertMany(os: any[]) { for (const o of os) { orders.push({ id: orderSeq++, ...o }) } },
     async listForDate(date: string) { return orders.filter((o) => o.tradeDate === date) },
+    async listForRun(runId: number, date?: string) {
+      return orders.filter((o) => o.runId === runId && (date === undefined || o.tradeDate === date))
+    },
     async get(id: number) { return orders.find((x) => x.id === id) ?? null },
     async markStale(date: string) {
       let cnt = 0
@@ -1166,5 +1170,518 @@ describe('withRunLock', () => {
     const j = (id: number) => withRunLock(id, async () => { active++; max = Math.max(max, active); await new Promise((r) => setTimeout(r, 2)); active-- })
     await Promise.all([j(1), j(2)])
     expect(max).toBe(2)
+  })
+})
+
+describe('sell matching with target and stop legs', () => {
+  const D: ISODate = '2026-11-12'
+  type Held = { idx: number; shares: number; buy: string }
+  type Ord = { idx: number; kind: 'sell_loc' | 'stop_sell' | 'market_sell'; price: string; status?: string; shares?: number; runId?: number; tradeDate?: string }
+
+  async function setup(held: Held[], ords: Ord[]) {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: D }
+    let s = emptyState(10)
+    for (const h of held) s = applyBuyFill(s, h.idx, h.shares, parseUsd(h.buy), 0, '2026-11-01')
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'stops', poolCents: 1000000, costPpm: 0, initialRunState: { buckets: s.buckets, cashCents: s.cashCents, closed: s.closed, ages: s.ages } })
+    await f.repos.orderRepo.insertMany(ords.map((o) => ({
+      runId: o.runId ?? runId, tradeDate: o.tradeDate ?? D, kind: o.kind, bucketIdx: o.idx,
+      limitPrice: o.kind === 'market_sell' ? 0n : parseUsd(o.price), shares: o.shares ?? 10, status: o.status ?? 'open',
+    })))
+    return { f, deps, runId }
+  }
+  const sell = (runId: number, shares: number, price: string, deps: BookingDeps) =>
+    manualFill(runId, { side: 'sell', shares, price, filledOn: D }, deps)
+  const order = (f: ReturnType<typeof fakeRepos>, idx: number, kind: string) =>
+    f._stores.orders.find((o: any) => o.bucketIdx === idx && o.kind === kind)
+  const lastFill = (f: ReturnType<typeof fakeRepos>) => f._stores.fills[f._stores.fills.length - 1]
+  const bookInput = (runId: number, shares: number, priceStr: string) =>
+    ({ runId, side: 'sell' as const, shares, priceStr, feeCents: null, filledOn: D, pendingId: null, source: 'manual' as const })
+
+  test('exact target match still wins', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 1, shares: 10, buy: '90.00' }],
+      [
+        { idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' },
+        { idx: 1, kind: 'sell_loc', price: '92.00' }, { idx: 1, kind: 'stop_sell', price: '87.00' },
+      ],
+    )
+    await sell(runId, 10, '103.00', deps)
+    expect(lastFill(f).bucketIdx).toBe(0)
+    expect(order(f, 0, 'sell_loc').status).toBe('filled')
+    expect(order(f, 1, 'sell_loc').status).toBe('open')
+  })
+
+  test('an exact target match with impossible shares fails loudly instead of landing elsewhere', async () => {
+    // Bucket 0 holds 10 but its target prints 103.00 for 15 shares: the only honest
+    // answer is a 422 the operator resolves, never a silent booking into bucket 1
+    // (whose 92.00 target also qualifies at 103.00) plus a cancel of bucket 1's legs.
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 1, shares: 15, buy: '90.00' }],
+      [
+        { idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' },
+        { idx: 1, kind: 'sell_loc', price: '92.00' }, { idx: 1, kind: 'stop_sell', price: '87.00' },
+      ],
+    )
+    await expect(runBooking(bookInput(runId, 15, '103.00'), deps)).rejects.toMatchObject({ kind: 'too-many-shares' })
+    expect(f._stores.fills).toHaveLength(0)
+    expect(f._stores.orders.every((o: any) => o.status === 'open')).toBe(true)
+    const st = await f.repos.bucketRepo.loadState(runId)
+    expect(st.buckets.map((b: any) => b.shares)).toEqual([10, 15, ...Array(8).fill(0)])
+  })
+
+  test('a target fill above its limit books to the highest qualifying target, not a loose stop', async () => {
+    // bucket 0: buy 100.00, stop trigger 97.00; bucket 9: buy 90.00, target limit 91.00. 91.50 is also <= 97.00.
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 9, shares: 10, buy: '90.00' }],
+      [
+        { idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' },
+        { idx: 9, kind: 'sell_loc', price: '91.00' }, { idx: 9, kind: 'stop_sell', price: '87.00' },
+      ],
+    )
+    await sell(runId, 10, '91.50', deps)
+    expect(lastFill(f).bucketIdx).toBe(9)
+    expect(order(f, 9, 'sell_loc').status).toBe('filled')
+    expect(order(f, 0, 'stop_sell').status).toBe('open')
+    expect(order(f, 0, 'sell_loc').status).toBe('open')
+  })
+
+  test('with several targets at or below the fill price, the highest limit wins', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '80.00' }, { idx: 1, shares: 10, buy: '90.00' }, { idx: 2, shares: 10, buy: '95.00' }],
+      [
+        { idx: 0, kind: 'sell_loc', price: '82.00' },
+        { idx: 1, kind: 'sell_loc', price: '92.00' },
+        { idx: 2, kind: 'sell_loc', price: '97.00' },
+      ],
+    )
+    await sell(runId, 10, '93.00', deps)
+    expect(lastFill(f).bucketIdx).toBe(1)
+  })
+
+  test('a fill that no bucket target reaches matches no target', async () => {
+    // 94.00 is below bucket 1's 103.00 target limit, so it is not a target fill; it is at or under the 95.00 stop trigger, so the stop takes it.
+    const { f, deps, runId } = await setup(
+      [{ idx: 1, shares: 10, buy: '100.00' }],
+      [{ idx: 1, kind: 'sell_loc', price: '103.00' }, { idx: 1, kind: 'stop_sell', price: '95.00' }],
+    )
+    await sell(runId, 10, '94.00', deps)
+    expect(order(f, 1, 'stop_sell').status).toBe('filled')
+    expect(order(f, 1, 'sell_loc').status).toBe('cancelled')
+  })
+
+  test('a stop fill books to the closest trigger at or above it', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 3, shares: 10, buy: '96.00' }],
+      [
+        { idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' },
+        { idx: 3, kind: 'sell_loc', price: '99.00' }, { idx: 3, kind: 'stop_sell', price: '93.00' },
+      ],
+    )
+    await sell(runId, 10, '92.50', deps)
+    expect(lastFill(f).bucketIdx).toBe(3)
+    expect(order(f, 3, 'stop_sell').status).toBe('filled')
+    expect(order(f, 0, 'stop_sell').status).toBe('open')
+  })
+
+  test('identical triggers resolve to the lowest bucket index', async () => {
+    // Inserted high bucket first so insertion order cannot be what decides it.
+    const { f, deps, runId } = await setup(
+      [{ idx: 2, shares: 10, buy: '100.00' }, { idx: 5, shares: 10, buy: '100.00' }, { idx: 7, shares: 10, buy: '100.00' }],
+      [
+        { idx: 7, kind: 'stop_sell', price: '97.00' },
+        { idx: 5, kind: 'stop_sell', price: '97.00' },
+        { idx: 2, kind: 'stop_sell', price: '97.00' },
+      ],
+    )
+    await sell(runId, 10, '96.00', deps)
+    expect(lastFill(f).bucketIdx).toBe(2)
+    expect(order(f, 2, 'stop_sell').status).toBe('filled')
+    expect(order(f, 5, 'stop_sell').status).toBe('open')
+  })
+
+  test('identical target limits resolve to the lowest bucket index', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 4, shares: 10, buy: '90.00' }, { idx: 6, shares: 10, buy: '90.00' }],
+      [{ idx: 6, kind: 'sell_loc', price: '92.00' }, { idx: 4, kind: 'sell_loc', price: '92.00' }],
+    )
+    await sell(runId, 10, '92.50', deps)
+    expect(lastFill(f).bucketIdx).toBe(4)
+  })
+
+  test('a stale stop order never matches', async () => {
+    // Bucket 3's stop would take a 92.50 fill if it were open; as stale it must fall through to the lowest non-empty bucket (0).
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 3, shares: 10, buy: '96.00' }],
+      [{ idx: 3, kind: 'stop_sell', price: '93.00', status: 'stale' }],
+    )
+    await sell(runId, 10, '92.50', deps)
+    expect(lastFill(f).bucketIdx).toBe(0)
+    expect(order(f, 3, 'stop_sell').status).toBe('stale')
+  })
+
+  test('orders of another run or another trade date never match', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 3, shares: 10, buy: '96.00' }],
+      [
+        { idx: 3, kind: 'stop_sell', price: '93.00', runId: 999 },
+        { idx: 3, kind: 'sell_loc', price: '92.00', tradeDate: '2026-11-11' },
+      ],
+    )
+    await sell(runId, 10, '92.50', deps)
+    expect(lastFill(f).bucketIdx).toBe(0)
+    expect(f._stores.orders.every((o: any) => o.status === 'open')).toBe(true)
+  })
+
+  test('a candidate whose bucket holds fewer shares than the fill is skipped', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 1, shares: 5, buy: '100.00' }, { idx: 2, shares: 10, buy: '100.00' }],
+      [{ idx: 1, kind: 'stop_sell', price: '97.00', shares: 5 }, { idx: 2, kind: 'stop_sell', price: '97.00' }],
+    )
+    await sell(runId, 10, '96.00', deps)
+    expect(lastFill(f).bucketIdx).toBe(2)
+  })
+
+  test('market_sell still matches at any price', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 2, shares: 10, buy: '100.00' }],
+      [{ idx: 2, kind: 'market_sell', price: '0' }],
+    )
+    await sell(runId, 10, '50.00', deps)
+    expect(lastFill(f).bucketIdx).toBe(2)
+    expect(order(f, 2, 'market_sell').status).toBe('filled')
+  })
+
+  test('a target fill outranks a stop that also qualifies on price', async () => {
+    // Bucket 0's stop trigger (105.00) is looser than bucket 1's target (92.00); a 93.00 fill must be read as the target.
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '110.00' }, { idx: 1, shares: 10, buy: '90.00' }],
+      [{ idx: 0, kind: 'stop_sell', price: '105.00' }, { idx: 1, kind: 'sell_loc', price: '92.00' }],
+    )
+    await sell(runId, 10, '93.00', deps)
+    expect(lastFill(f).bucketIdx).toBe(1)
+  })
+
+  test('a bucket-emptying stop fill cancels the sibling sell_loc', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }],
+      [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }],
+    )
+    const cancelledIds = await runBooking(bookInput(runId, 10, '96.50'), deps)
+    const sibling = order(f, 0, 'sell_loc')
+    expect(sibling.status).toBe('cancelled')
+    expect(sibling.cancelReason).toBe('broker-filled')
+    expect(cancelledIds).toEqual([sibling.id])
+    expect(order(f, 0, 'stop_sell').status).toBe('filled')
+    expect(order(f, 0, 'stop_sell').cancelReason).toBeUndefined()
+  })
+
+  test('a bucket-emptying target fill cancels the sibling stop_sell', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }],
+      [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }],
+    )
+    const cancelledIds = await runBooking(bookInput(runId, 10, '103.00'), deps)
+    const sibling = order(f, 0, 'stop_sell')
+    expect(sibling.status).toBe('cancelled')
+    expect(sibling.cancelReason).toBe('broker-filled')
+    expect(cancelledIds).toEqual([sibling.id])
+    expect(order(f, 0, 'sell_loc').status).toBe('filled')
+  })
+
+  test('a bucket-emptying market_sell fill cancels nothing when no other leg is open', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }],
+      [{ idx: 0, kind: 'market_sell', price: '0' }],
+    )
+    const cancelledIds = await runBooking(bookInput(runId, 10, '99.00'), deps)
+    expect(cancelledIds).toEqual([])
+    expect(order(f, 0, 'market_sell').status).toBe('filled')
+  })
+
+  test('the sibling cancel only touches the filled bucket, its own trade date and open orders', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 1, shares: 10, buy: '100.00' }],
+      [
+        { idx: 0, kind: 'stop_sell', price: '97.00' },
+        { idx: 0, kind: 'sell_loc', price: '103.00', status: 'stale', tradeDate: '2026-11-11' },
+        // Same bucket, same trade date, but already filled by an earlier partial fill: not open, so left alone.
+        { idx: 0, kind: 'sell_loc', price: '103.00', status: 'filled' },
+        { idx: 1, kind: 'sell_loc', price: '103.00' },
+        { idx: 1, kind: 'stop_sell', price: '97.00' },
+      ],
+    )
+    expect(await runBooking(bookInput(runId, 10, '96.00'), deps)).toEqual([])
+    expect(f._stores.orders.filter((o: any) => o.status === 'cancelled')).toEqual([])
+    const filledLeg = f._stores.orders.find((o: any) => o.bucketIdx === 0 && o.kind === 'sell_loc' && o.tradeDate === D)
+    expect(filledLeg.status).toBe('filled')
+    expect(filledLeg.cancelReason).toBeUndefined()
+    expect(order(f, 1, 'sell_loc').status).toBe('open')
+    expect(order(f, 1, 'stop_sell').status).toBe('open')
+  })
+
+  test('a partial stop fill cancels nothing and still flips its own order to filled', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }],
+      [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }],
+    )
+    const cancelledIds = await runBooking(bookInput(runId, 4, '96.50'), deps)
+    expect(cancelledIds).toEqual([])
+    const sibling = order(f, 0, 'sell_loc')
+    expect(sibling.status).toBe('open')
+    expect(sibling.cancelReason).toBeUndefined()
+    expect(order(f, 0, 'stop_sell').status).toBe('filled')
+    const st = await f.repos.bucketRepo.loadState(runId)
+    expect(st.buckets[0]!.shares).toBe(6)
+    expect(st.buckets[0]!.state).toBe('held')
+  })
+
+  test('a sell between every trigger and every limit reaches the old fallback', async () => {
+    // Buckets 4 and 6 carry live pairs (97/103); 100.00 is neither <= a trigger nor >= a limit.
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 4, shares: 10, buy: '100.00' }, { idx: 6, shares: 10, buy: '100.00' }],
+      [
+        { idx: 4, kind: 'sell_loc', price: '103.00' }, { idx: 4, kind: 'stop_sell', price: '97.00' },
+        { idx: 6, kind: 'sell_loc', price: '103.00' }, { idx: 6, kind: 'stop_sell', price: '97.00' },
+      ],
+    )
+    const cancelledIds = await runBooking(bookInput(runId, 10, '100.00'), deps)
+    expect(lastFill(f).bucketIdx).toBe(0)
+    expect(cancelledIds).toEqual([])
+    expect(f._stores.orders.every((o: any) => o.status === 'open')).toBe(true)
+  })
+
+  test('a fallback fill that empties its bucket cancels every open sell leg of that bucket', async () => {
+    // 100.00 sits in the gap (97 < 100 < 103): nothing matches, the guess lands on bucket 0 and empties it.
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 4, shares: 10, buy: '100.00' }],
+      [
+        { idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' },
+        { idx: 4, kind: 'sell_loc', price: '103.00' }, { idx: 4, kind: 'stop_sell', price: '97.00' },
+      ],
+    )
+    const cancelledIds = await runBooking(bookInput(runId, 10, '100.00'), deps)
+    expect(lastFill(f).bucketIdx).toBe(0)
+    const legs = [order(f, 0, 'sell_loc'), order(f, 0, 'stop_sell')]
+    expect(cancelledIds).toEqual(legs.map((o: any) => o.id))
+    for (const o of legs) { expect(o.status).toBe('cancelled'); expect(o.cancelReason).toBe('broker-filled') }
+    expect(order(f, 4, 'sell_loc').status).toBe('open')
+    expect(order(f, 4, 'stop_sell').status).toBe('open')
+  })
+
+  test('a partial fallback fill cancels nothing', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }],
+      [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }],
+    )
+    expect(await runBooking(bookInput(runId, 4, '100.00'), deps)).toEqual([])
+    expect(f._stores.orders.map((o: any) => o.status)).toEqual(['open', 'open'])
+  })
+
+  test('a matched fill that empties its bucket also cancels every other open leg, not just one', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }],
+      [
+        { idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' },
+        { idx: 0, kind: 'market_sell', price: '0' },
+      ],
+    )
+    const cancelledIds = await runBooking(bookInput(runId, 10, '103.00'), deps)
+    expect(order(f, 0, 'sell_loc').status).toBe('filled')
+    expect(cancelledIds).toEqual([order(f, 0, 'stop_sell').id, order(f, 0, 'market_sell').id])
+    expect(f._stores.orders.filter((o: any) => o.status === 'cancelled').length).toBe(2)
+  })
+
+  test('a failed fill insert cancels nothing and leaves the matched order open', async () => {
+    const { f, deps, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }],
+      [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }],
+    )
+    f.repos.fillRepo.insert = async () => { throw new Error('db-exploded') }
+    await expect(sell(runId, 10, '96.50', deps)).rejects.toThrow('db-exploded')
+    expect(f._stores.orders.map((o: any) => o.status)).toEqual(['open', 'open'])
+  })
+
+  describe('notifying the operator of the cancelled leg', () => {
+    type Notified = { runId: number; order: OrderRow }
+    const withNotifier = (deps: BookingDeps, notified: Notified[]): BookingDeps => ({
+      ...deps,
+      notifySiblingCancelled: async (runId, order) => { notified.push({ runId, order: { ...order } }) },
+    })
+    const pair: Ord[] = [{ idx: 1, kind: 'sell_loc', price: '103.00' }, { idx: 1, kind: 'stop_sell', price: '97.00' }]
+    const held1: Held[] = [{ idx: 1, shares: 10, buy: '100.00' }]
+
+    test('a bucket-emptying stop fill notifies once, naming the pulled leg', async () => {
+      const { f, deps, runId } = await setup(held1, pair)
+      const notified: Notified[] = []
+      await manualFill(runId, { side: 'sell', shares: 10, price: '96.50', filledOn: D }, withNotifier(deps, notified))
+      expect(notified).toHaveLength(1)
+      expect(notified[0]!.runId).toBe(runId)
+      expect(notified[0]!.order).toMatchObject({ id: order(f, 1, 'sell_loc').id, kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') })
+    })
+
+    test('every cancelled leg gets its own notification, lowest id first', async () => {
+      const { f, deps, runId } = await setup(held1, [...pair, { idx: 1, kind: 'market_sell', price: '0' }])
+      const notified: Notified[] = []
+      await runBooking(bookInput(runId, 10, '103.00'), withNotifier(deps, notified))
+      expect(notified.map((n) => n.order.kind)).toEqual(['stop_sell', 'market_sell'])
+      expect(notified.map((n) => n.order.id)).toEqual([order(f, 1, 'stop_sell').id, order(f, 1, 'market_sell').id])
+    })
+
+    // A screenshot of yesterday's fills, confirmed today after the morning re-plan:
+    // today's legs are live at the broker against shares the operator no longer holds.
+    test('a prior-day fill that empties the bucket also pulls and announces today legs', async () => {
+      const yesterday: ISODate = '2026-11-11'
+      const { f, deps, runId } = await setup(
+        [{ idx: 1, shares: 10, buy: '100.00' }, { idx: 2, shares: 10, buy: '100.00' }],
+        [
+          { idx: 1, kind: 'sell_loc', price: '103.00', tradeDate: yesterday },
+          { idx: 1, kind: 'stop_sell', price: '97.00', tradeDate: yesterday },
+          { idx: 1, kind: 'sell_loc', price: '103.00' },
+          { idx: 1, kind: 'stop_sell', price: '97.00' },
+          { idx: 2, kind: 'sell_loc', price: '103.00' },
+          { idx: 2, kind: 'stop_sell', price: '97.00' },
+        ],
+      )
+      const notified: Notified[] = []
+      const legs = (idx: number, tradeDate: string) => f._stores.orders.filter((o: any) => o.bucketIdx === idx && o.tradeDate === tradeDate)
+      const matched = legs(1, yesterday).find((o: any) => o.kind === 'stop_sell')
+      const cancelled = await runBooking(
+        { ...bookInput(runId, 10, '96.50'), filledOn: yesterday },
+        withNotifier(deps, notified),
+      )
+      expect(matched.status).toBe('filled')
+      const expectedIds = [...legs(1, yesterday).filter((o: any) => o.id !== matched.id), ...legs(1, D)].map((o: any) => o.id)
+      expect(cancelled).toEqual(expectedIds)
+      for (const o of [...legs(1, yesterday), ...legs(1, D)]) {
+        if (o.id !== matched.id) expect(o).toMatchObject({ status: 'cancelled', cancelReason: 'broker-filled' })
+      }
+      expect(notified.map((n) => n.order.id)).toEqual(expectedIds)
+      expect(legs(2, D).every((o: any) => o.status === 'open')).toBe(true)
+    })
+
+    test('a partial fill notifies nobody', async () => {
+      const { deps, runId } = await setup(held1, pair)
+      const notified: Notified[] = []
+      await manualFill(runId, { side: 'sell', shares: 4, price: '96.50', filledOn: D }, withNotifier(deps, notified))
+      expect(notified).toHaveLength(0)
+    })
+
+    test('a buy, and an emptying sell with no other open leg, notify nobody', async () => {
+      const { deps, runId } = await setup(held1, [{ idx: 1, kind: 'market_sell', price: '0' }])
+      const notified: Notified[] = []
+      const d = withNotifier(deps, notified)
+      await manualFill(runId, { side: 'buy', shares: 5, price: '50.00', filledOn: D }, d)
+      await manualFill(runId, { side: 'sell', shares: 10, price: '99.00', filledOn: D }, d)
+      expect(notified).toHaveLength(0)
+    })
+
+    test('confirming a pending sell notifies too', async () => {
+      const { f, deps, runId } = await setup(held1, pair)
+      const notified: Notified[] = []
+      const pid = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: parseUsd('96.50'), fee: null, filledOn: D, status: 'pending' })
+      await confirmPendingFill(pid, null, withNotifier(deps, notified))
+      expect(notified).toHaveLength(1)
+      expect(notified[0]!.order).toMatchObject({ kind: 'sell_loc', bucketIdx: 1 })
+      expect(notified[0]!.runId).toBe(runId)
+    })
+
+    test('the notifier runs after the run lock is released', async () => {
+      const { deps, runId } = await setup(held1, pair)
+      let seen = 'never called'
+      // withRunLock is not reentrant: a probe queued from inside the lock can only wait, so it loses the race.
+      const d: BookingDeps = {
+        ...deps,
+        notifySiblingCancelled: async (rid) => {
+          seen = await Promise.race([withRunLock(rid, async () => 'free'), new Promise<string>((r) => setTimeout(() => r('held'), 100))])
+        },
+      }
+      await manualFill(runId, { side: 'sell', shares: 10, price: '96.50', filledOn: D }, d)
+      expect(seen).toBe('free')
+    })
+
+    test('a failing notifier never fails the booking: fill, ledger row and cancel are all persisted', async () => {
+      const { f, deps, runId } = await setup(held1, pair)
+      const errors = spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        const d: BookingDeps = { ...deps, notifySiblingCancelled: async () => { throw new Error('telegram-down') } }
+        const cancelled = await runBooking(bookInput(runId, 10, '96.50'), d)
+        expect(f._stores.fills).toHaveLength(1)
+        expect(f._stores.fills[0]).toMatchObject({ runId, bucketIdx: 1, side: 'sell', shares: 10 })
+        expect(f._stores.ledger).toHaveLength(1)
+        expect(f._stores.ledger[0].kind).toBe('sell')
+        expect(order(f, 1, 'sell_loc')).toMatchObject({ status: 'cancelled', cancelReason: 'broker-filled' })
+        expect(order(f, 1, 'stop_sell').status).toBe('filled')
+        expect((await f.repos.bucketRepo.loadState(runId)).buckets[1]!.state).toBe('empty')
+        expect(cancelled).toEqual([order(f, 1, 'sell_loc').id])
+        expect(errors).toHaveBeenCalledTimes(1)
+      } finally { errors.mockRestore() }
+    })
+
+    test('a notifier that throws synchronously is swallowed too', async () => {
+      const { f, deps, runId } = await setup(held1, pair)
+      const errors = spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        const d: BookingDeps = { ...deps, notifySiblingCancelled: () => { throw new Error('boom') } }
+        await expect(manualFill(runId, { side: 'sell', shares: 10, price: '96.50', filledOn: D }, d)).resolves.toBeUndefined()
+        expect(f._stores.fills).toHaveLength(1)
+      } finally { errors.mockRestore() }
+    })
+
+    test('a failing notification does not stop the next cancelled leg from being notified', async () => {
+      const { f, deps, runId } = await setup(held1, [...pair, { idx: 1, kind: 'market_sell', price: '0' }])
+      const errors = spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        const attempts: number[] = []
+        const d: BookingDeps = {
+          ...deps,
+          notifySiblingCancelled: async (_rid, o) => { attempts.push(o.id); if (attempts.length === 1) throw new Error('flaky') },
+        }
+        await runBooking(bookInput(runId, 10, '103.00'), d)
+        expect(attempts).toEqual([order(f, 1, 'stop_sell').id, order(f, 1, 'market_sell').id])
+        expect(errors).toHaveBeenCalledTimes(1)
+      } finally { errors.mockRestore() }
+    })
+
+    test('a booking that throws notifies nobody', async () => {
+      const { f, deps, runId } = await setup(held1, pair)
+      const notified: Notified[] = []
+      f.repos.fillRepo.insert = async () => { throw new Error('db-exploded') }
+      await expect(manualFill(runId, { side: 'sell', shares: 10, price: '96.50', filledOn: D }, withNotifier(deps, notified))).rejects.toThrow('db-exploded')
+      expect(notified).toHaveLength(0)
+    })
+  })
+})
+
+describe('matchSellOrder', () => {
+  const state = (() => {
+    let s = emptyState(4)
+    s = applyBuyFill(s, 1, 10, parseUsd('100.00'), 0, '2026-11-01')
+    return s
+  })()
+  const o = (over: Partial<OrderRow>): OrderRow => ({ id: 1, runId: 1, tradeDate: '2026-11-12', kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00'), shares: 10, status: 'open', ...over })
+  const input = { runId: 1, filledOn: '2026-11-12' as ISODate, shares: 10, price: parseUsd('103.00') }
+
+  test('returns null for an empty bucket, a wrong run, a wrong date and a non-open status', () => {
+    // 100.00 is under the 103.00 fill price, so this is a rung 1b candidate and the gate applies.
+    expect(matchSellOrder([o({ bucketIdx: 0, limitPrice: parseUsd('100.00') })], state, input)).toBeNull()
+    expect(matchSellOrder([o({ runId: 2 })], state, input)).toBeNull()
+    expect(matchSellOrder([o({ tradeDate: '2026-11-11' })], state, input)).toBeNull()
+    expect(matchSellOrder([o({ status: 'stale' })], state, input)).toBeNull()
+    expect(matchSellOrder([o({ status: 'cancelled' })], state, input)).toBeNull()
+  })
+
+  test('returns the order on the happy path and ignores buy_loc', () => {
+    expect(matchSellOrder([o({ kind: 'buy_loc' })], state, input)).toBeNull()
+    expect(matchSellOrder([o({})], state, input)?.id).toBe(1)
+  })
+
+  // Rung 1a alone ignores the shares/emptiness gate: the booking must fail loudly
+  // rather than attribute an exact-price print to some other bucket.
+  test('an exact-price target is returned even when its bucket cannot cover the fill', () => {
+    expect(matchSellOrder([o({ bucketIdx: 0 })], state, input)?.bucketIdx).toBe(0)
+    expect(matchSellOrder([o({})], state, { ...input, shares: 99 })?.id).toBe(1)
+    // the gate still applies to every other rung
+    expect(matchSellOrder([o({ kind: 'stop_sell', limitPrice: parseUsd('110.00') })], state, { ...input, shares: 99 })).toBeNull()
   })
 })

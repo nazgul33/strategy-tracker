@@ -35,6 +35,7 @@ export interface Run {
   costPpm: number
   buyGapPpm: number
   sellGapPpm: number
+  cutLossPpm: number
   poolCents: number
   status: 'active' | 'paused' | 'closed'
 }
@@ -47,7 +48,7 @@ export interface DayContext {
   lastClose: bigint
   lastCloseDate: ISODate
 }
-export type OrderKind = 'buy_loc' | 'sell_loc' | 'market_sell'
+export type OrderKind = 'buy_loc' | 'sell_loc' | 'market_sell' | 'stop_sell'
 export interface PlannedOrder {
   kind: OrderKind
   bucketIndex: number

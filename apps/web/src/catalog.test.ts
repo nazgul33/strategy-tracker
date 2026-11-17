@@ -34,6 +34,24 @@ describe('i18n catalogs', () => {
     }
   });
 
+  // Key *parity* cannot see a notice code that is missing from both files, and
+  // `lookup` renders the bare key when it is absent — which is how
+  // `digest.cut-loss-immediate` reached the sim replay as literal text. The
+  // notice codes are read out of the strategy source, so a new
+  // `notices.push({ code })` fails here until both catalogs carry it.
+  test('every notice code computeOrders can emit resolves in both catalogs', async () => {
+    const source = await Bun.file(new URL('../../../packages/strategies/src/mean-reversion.ts', import.meta.url)).text();
+    const codes = [...source.matchAll(/notices\.push\(\{\s*code:\s*'([^']+)'/g)].map((m) => m[1]!);
+    expect(codes).toEqual(['no-bucket-available', 'shares-zero', 'cut-loss-immediate']);
+    const enKeys = new Set(Object.keys(en as Record<string, string>));
+    const koKeys = new Set(Object.keys(ko as Record<string, string>));
+    const missing = codes.flatMap((code) => [
+      ...(enKeys.has(`digest.${code}`) ? [] : [`en:digest.${code}`]),
+      ...(koKeys.has(`digest.${code}`) ? [] : [`ko:digest.${code}`]),
+    ]);
+    expect(missing).toEqual([]);
+  });
+
   test('every key interpolates the same placeholders in both languages', () => {
     const koValues = new Map(koEntries);
     const mismatches = enEntries

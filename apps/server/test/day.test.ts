@@ -15,7 +15,7 @@ function makeRepos() {
   const runRepo = {
     async list() { return runs },
     async get(id: number) { return runs.find((r) => r.id === id) ?? null },
-    async create(input: any) { const id = runs.length + 1; const st = input.initialRunState ?? emptyState(10); const r = { id, buyGapPpm: 0, sellGapPpm: 0, status: input.status ?? 'active', ...input, stateJson: JSON.stringify(st, (_: any, v: any) => typeof v === 'bigint' ? v.toString() : v) }; runs.push(r); return id },
+    async create(input: any) { const id = runs.length + 1; const st = input.initialRunState ?? emptyState(10); const r = { id, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, status: input.status ?? 'active', ...input, stateJson: JSON.stringify(st, (_: any, v: any) => typeof v === 'bigint' ? v.toString() : v) }; runs.push(r); return id },
     async updateStatus(id: number, s: string) { const r = runs.find((x) => x.id === id); if (r) r.status = s },
   }
   const bucketRepo = {
@@ -39,6 +39,7 @@ function makeRepos() {
   const orderRepo = {
     async insertMany(os: any[]) { for (const o of os) orders.push({ id: orderSeq++, ...o }) },
     async listForDate(d: string) { return orders.filter((o) => o.tradeDate === d) },
+    async listForRun(runId: number, d?: string) { return orders.filter((o) => o.runId === runId && (d === undefined || o.tradeDate === d)) },
     async markStale(d: string) { let c = 0; for (const o of orders) if (o.status === 'open' && o.tradeDate < d) { o.status = 'stale'; c++ } return c },
     async setStatus(id: number, s: string) { const o = orders.find((x) => x.id === id); if (o) o.status = s },
     async listOpenBefore(d: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < d) },

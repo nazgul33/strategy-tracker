@@ -2,6 +2,7 @@ import { expect } from 'bun:test'
 import type { RunState } from '@st/core'
 import type { HttpDeps, HttpRepoSurface, createApp } from '../src/http/app'
 import { fakeCorrectionRepo } from './fake-corrections'
+import { normTicker } from '../src/db/repos-bars'
 
 export function makeFakes() {
   let runIdSeq = 1
@@ -26,7 +27,7 @@ export function makeFakes() {
       const id = runIdSeq++
       const state = input.initialRunState
       if (state) states.set(id, state)
-      runs.push({ id, strategyKey: input.strategyKey, ticker: input.ticker, name: input.name, poolCents: input.poolCents, costPpm: input.costPpm, buyGapPpm: input.buyGapPpm ?? 0, sellGapPpm: input.sellGapPpm ?? 0, status: 'active', stateJson: JSON.stringify(state, (_k, v) => typeof v === 'bigint' ? v.toString() : v), createdAt: new Date() })
+      runs.push({ id, strategyKey: input.strategyKey, ticker: input.ticker, name: input.name, poolCents: input.poolCents, costPpm: input.costPpm, buyGapPpm: input.buyGapPpm ?? 0, sellGapPpm: input.sellGapPpm ?? 0, cutLossPpm: input.cutLossPpm ?? 0, status: 'active', stateJson: JSON.stringify(state, (_k, v) => typeof v === 'bigint' ? v.toString() : v), createdAt: new Date() })
       return id
     },
     async updateStatus(id: number, status: string) {
@@ -40,8 +41,8 @@ export function makeFakes() {
     async updatePool(id: number, poolCents: number) {
       const r = runs.find((x) => x.id === id); if (r) r.poolCents = poolCents
     },
-    async updateGaps(id: number, buyGapPpm: number, sellGapPpm: number) {
-      const r = runs.find((x) => x.id === id); if (r) { r.buyGapPpm = buyGapPpm; r.sellGapPpm = sellGapPpm }
+    async updateOrderShaping(id: number, v: { buyGapPpm: number; sellGapPpm: number; cutLossPpm: number }) {
+      const r = runs.find((x) => x.id === id); if (r) { r.buyGapPpm = v.buyGapPpm; r.sellGapPpm = v.sellGapPpm; r.cutLossPpm = v.cutLossPpm }
     },
   }
   const orderRepo = {
@@ -103,35 +104,117 @@ export function makeFakes() {
   const poolEditRepo = {
     async insert(input: { runId: number; poolCents: number }) { poolEdits.push({ id: poolEdits.length + 1, ...input }) },
   }
+  // monotonic like AUTO_INCREMENT: ids are never reused after a delete
+  let simRunIdSeq = 1
+  let simDayIdSeq = 1
   const simRuns: any[] = []
+  const simDays: any[] = []
   const simRepo = {
-    async insertRun(i: any) { simRuns.push({ id: simRuns.length + 1, createdAt: '2026-11-10T00:00:00Z', ...i }); return simRuns.length },
-    async insertDays() {},
+    async insertRun(i: any) {
+      const id = simRunIdSeq++
+      simRuns.push({ id, createdAt: '2026-11-10T00:00:00Z', ...i, draft: true })
+      return id
+    },
+    async insertDays(rows: any[]) { for (const r of rows) simDays.push({ id: simDayIdSeq++, ...r }) },
+    // guarded like the real one: nothing is touched unless the run is still a draft
+    async rewriteDraft(id: number, v: any, rows: any[]): Promise<boolean> {
+      const r = simRuns.find((x) => x.id === id)
+      if (!r || !r.draft) return false
+      Object.assign(r, v)
+      for (let i = simDays.length - 1; i >= 0; i--) if (simDays[i].simRunId === id) simDays.splice(i, 1)
+      for (const d of rows) simDays.push({ id: simDayIdSeq++, ...d })
+      return true
+    },
+    async finalize(id: number) {
+      const r = simRuns.find((x) => x.id === id)
+      if (!r || !r.draft) return false
+      r.draft = false
+      return true
+    },
+    async deleteRun(id: number) {
+      const i = simRuns.findIndex((x) => x.id === id)
+      if (i < 0 || !simRuns[i].draft) return false
+      simRuns.splice(i, 1)
+      for (let j = simDays.length - 1; j >= 0; j--) if (simDays[j].simRunId === id) simDays.splice(j, 1)
+      return true
+    },
+    async sweepDrafts(createdBefore: Date) {
+      let n = 0
+      for (let i = simRuns.length - 1; i >= 0; i--) {
+        const r = simRuns[i]
+        if (!r.draft || new Date(r.createdAt).getTime() >= createdBefore.getTime()) continue
+        simRuns.splice(i, 1)
+        for (let j = simDays.length - 1; j >= 0; j--) if (simDays[j].simRunId === r.id) simDays.splice(j, 1)
+        n += 1
+      }
+      return n
+    },
     async listRuns() { return simRuns },
-    async getRun() { return null },
-    async listDays() { return [] },
+    async getRun(id: number) { return simRuns.find((x) => x.id === id) ?? null },
+    async listDays(id: number) { return simDays.filter((d) => d.simRunId === id).sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1)) },
   }
-  const priceHistory: { ticker: string; tradeDate: string; close: bigint }[] = []
+  type FakeBar = { ticker: string; tradeDate: string; open?: bigint; high?: bigint; low?: bigint; close: bigint }
+  const priceHistory: FakeBar[] = []
   const priceHistoryRepo = {
     async upsertMany(rows: { ticker: string; tradeDate: string; close: bigint }[]) {
       for (const r of rows) {
-        const hit = priceHistory.find((x) => x.ticker === r.ticker && x.tradeDate === r.tradeDate)
+        const ticker = normTicker(r.ticker)
+        const hit = priceHistory.find((x) => x.ticker === ticker && x.tradeDate === r.tradeDate)
         if (hit) hit.close = r.close
-        else priceHistory.push({ ...r })
+        else priceHistory.push({ ...r, ticker })
+      }
+      return rows.length
+    },
+    async upsertBars(rows: Required<FakeBar>[]) {
+      for (const r of rows) {
+        const row = { ...r, ticker: normTicker(r.ticker) }
+        const hit = priceHistory.find((x) => x.ticker === row.ticker && x.tradeDate === row.tradeDate)
+        if (hit) Object.assign(hit, row)
+        else priceHistory.push(row)
       }
       return rows.length
     },
     async listForTicker(ticker: string, from?: string) {
+      const t = normTicker(ticker)
       return priceHistory
-        .filter((r) => r.ticker === ticker && (!from || r.tradeDate >= from))
+        .filter((r) => r.ticker === t && (!from || r.tradeDate >= from))
         .sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1))
+    },
+    async listBars(ticker: string, from: string, to: string) {
+      const t = normTicker(ticker)
+      return priceHistory
+        .filter((r) => r.ticker === t && r.tradeDate >= from && r.tradeDate <= to && r.open !== undefined && r.high !== undefined && r.low !== undefined)
+        .sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1))
+        .map((r) => ({ tradeDate: r.tradeDate, open: r.open!, high: r.high!, low: r.low!, close: r.close }))
+    },
+  }
+  const coverage: { ticker: string; fromDate: string; toDate: string }[] = []
+  const dayNum = (iso: string) => Math.floor(Date.parse(`${iso}T00:00:00Z`) / 86_400_000)
+  const barCoverageRepo = {
+    async list(ticker: string) {
+      const t = normTicker(ticker)
+      return coverage.filter((c) => c.ticker === t).sort((a, b) => (a.fromDate < b.fromDate ? -1 : 1)).map((c) => ({ fromDate: c.fromDate, toDate: c.toDate }))
+    },
+    async add(rawTicker: string, fromDate: string, toDate: string) {
+      if (fromDate > toDate) throw new Error(`bar coverage: inverted range ${fromDate}..${toDate} (from is after to)`)
+      const ticker = normTicker(rawTicker)
+      let from = fromDate
+      let to = toDate
+      for (let i = coverage.length - 1; i >= 0; i--) {
+        const c = coverage[i]
+        if (c.ticker !== ticker || dayNum(c.fromDate) > dayNum(toDate) + 1 || dayNum(c.toDate) < dayNum(fromDate) - 1) continue
+        if (c.fromDate < from) from = c.fromDate
+        if (c.toDate > to) to = c.toDate
+        coverage.splice(i, 1)
+      }
+      coverage.push({ ticker, fromDate: from, toDate: to })
     },
   }
   const repos: HttpRepoSurface = {
     runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, ledgerRepo, notificationRepo,
-    settingsRepo, poolEditRepo, simRepo, priceHistoryRepo,
+    settingsRepo, poolEditRepo, simRepo, priceHistoryRepo, barCoverageRepo,
   } as any
-  return { repos, corrections: correctionFake.store, runs, poolEdits, fills, ledger, orders, pending, notifications, sent, settings, states, simRuns, priceHistory }
+  return { repos, corrections: correctionFake.store, runs, poolEdits, fills, ledger, orders, pending, notifications, sent, settings, states, simRuns, simDays, priceHistory, coverage }
 }
 
 export const PASSWORD = 'secret'
@@ -143,7 +226,7 @@ export function makeDeps(fakes: ReturnType<typeof makeFakes>): HttpDeps {
     password: PASSWORD,
     sessionSecret: SECRET,
     today: () => '2026-11-10',
-    defaultSettings: { visionBaseUrl: 'http://x', visionModel: 'm', digestLang: 'en' },
+    defaultSettings: { visionBaseUrl: 'http://x', visionModel: 'm', digestLang: 'en', defaultCostPpm: 700 },
     triggerMorning: async () => 'morning-ok',
     fetchDailyBars: async () => [],
     allowedChatIds: ['42'],

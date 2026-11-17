@@ -6,11 +6,14 @@ import { matchCapturedFills, type CaptureConflict } from './capture-dedup'
 import { claimCapture } from './capture-claim'
 import { recordCorrections } from './capture-corrections'
 import { withRunLock } from './run-lock'
+import { notifySiblingsCancelled } from './sibling-notify'
+import { matchSellOrder, openSellLegs, type OrderRow } from './sell-match'
 import type { CorrectionRepo } from './correction-types'
 
-// The conflict shape belongs to the dedup matcher; re-exported so the booking
-// surface keeps being the single place its consumers import from.
-export type { CaptureConflict }
+// The conflict shape belongs to the dedup matcher and the order row to the sell
+// matcher; re-exported so the booking surface keeps being the single place its
+// consumers import from.
+export type { CaptureConflict, OrderRow }
 
 export async function sha256(buf: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', buf as any)
@@ -23,7 +26,7 @@ export async function sha256(buf: Uint8Array): Promise<string> {
 export interface RepoSurface {
   runRepo: { list(): Promise<any[]>; get(id: number): Promise<any>; create(input: any): Promise<number>; updateStatus(id: number, status: string): Promise<void> }
   bucketRepo: { loadState(runId: number): Promise<RunState>; saveState(runId: number, state: RunState): Promise<void> }
-  orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; markStale(date: string): Promise<any>; get(id: number): Promise<any | null>; setStatus(id: number, status: string, cancelReason?: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
+  orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; listForRun(runId: number, date?: string): Promise<any[]>; markStale(date: string): Promise<any>; get(id: number): Promise<any | null>; setStatus(id: number, status: string, cancelReason?: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
   fillRepo: {
     insert(fill: any): Promise<any>
     listForRun(runId: number): Promise<FillRow[]>
@@ -44,7 +47,8 @@ export interface RepoSurface {
   notificationRepo: { insert(n: any): Promise<any> }
 }
 
-export interface BookingDeps { repos: RepoSurface; today: ISODate }
+// notifySiblingCancelled: told, once per order, about a leg cancelled here that the operator must still pull at the broker.
+export interface BookingDeps { repos: RepoSurface; today: ISODate; notifySiblingCancelled?: (runId: number, order: OrderRow) => Promise<void> }
 
 export type CaptureOutcome =
   | 'duplicate'
@@ -55,11 +59,9 @@ export type CaptureOutcome =
 
 export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; status: string }
 
-export interface OrderRow { id: number; runId: number; tradeDate: string; kind: string; bucketIdx: number; limitPrice: bigint; shares: number; status: string }
-
 export interface FillRow { id: number; runId: number; bucketIdx: number; side: 'buy' | 'sell'; ticker: string; shares: number; price: bigint; fee: number; filledOn: ISODate; source: string }
 
-interface BookInput {
+export interface BookInput {
   runId: number
   side: 'buy' | 'sell'
   shares: number
@@ -71,13 +73,18 @@ interface BookInput {
 }
 
 // The whole decide→write span (read state → pick bucket → flip pending → saveState
-// → fill → ledger → order flip) must not interleave with another writer on the
-// same run. Not reentrant: never call this from inside a withRunLock on the same run.
-function runBooking(input: BookInput, deps: BookingDeps): Promise<void> {
-  return withRunLock(input.runId, () => bookUnlocked(input, deps))
+// → fill → ledger → sibling cancel → order flip) must not interleave with another
+// writer on the same run. Not reentrant: never call this from inside a withRunLock
+// on the same run. Resolves to the ids of the sell orders cancelled because this
+// fill emptied its bucket (empty when nothing was cancelled). The operator hears of
+// them after the lock is released; a notifier failure never reaches the caller.
+export async function runBooking(input: BookInput, deps: BookingDeps): Promise<number[]> {
+  const cancelled = await withRunLock(input.runId, () => bookUnlocked(input, deps))
+  await notifySiblingsCancelled(input.runId, cancelled, deps)
+  return cancelled
 }
 
-async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<void> {
+async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number[]> {
   const repos = deps.repos
   const run = await repos.runRepo.get(input.runId)
   const state: RunState = await repos.bucketRepo.loadState(input.runId)
@@ -87,6 +94,7 @@ async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<void> 
   let next: RunState
   let bucketIdx: number
   let matchedOrderId: number | null = null
+  let sellOrders: OrderRow[] = []
 
   if (input.side === 'buy') {
     const picked = nextBuyBucketIndex(state)
@@ -99,20 +107,9 @@ async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<void> 
     const match = orders.find((o: any) => o.runId === input.runId && o.kind === 'buy_loc' && o.status === 'open')
     if (match) matchedOrderId = match.id
   } else {
-    // sell bucket matching
-    const orders = await repos.orderRepo.listForDate(input.filledOn)
-    // priority 1a: sell_loc strict price equality
-    let matchedOrder = orders.find((o: any) => o.runId === input.runId && o.kind === 'sell_loc' && o.status === 'open' && o.limitPrice === priceBigInt)
-    // priority 1b: market_sell ignores price; prefer bucketIdx non-empty with shares >= fill
-    if (!matchedOrder) {
-      const msCandidates = orders.filter((o: any) => o.runId === input.runId && o.kind === 'market_sell' && o.status === 'open' && o.tradeDate === input.filledOn)
-      // prefer one whose bucketIdx is a non-empty bucket with shares >= fill.shares
-      const preferred = msCandidates.find((o: any) => {
-        const b = state.buckets.find((x: Bucket) => x.index === o.bucketIdx)
-        return !!b && b.state !== 'empty' && b.shares >= input.shares
-      })
-      matchedOrder = preferred ?? msCandidates[0]
-    }
+    // Whole run: matchSellOrder narrows to filledOn, the cancel below needs later dates too.
+    sellOrders = await repos.orderRepo.listForRun(input.runId)
+    const matchedOrder = matchSellOrder(sellOrders, state, { runId: input.runId, filledOn: input.filledOn, shares: input.shares, price: priceBigInt })
     let idx: number | undefined
     if (matchedOrder) {
       idx = matchedOrder.bucketIdx
@@ -140,7 +137,20 @@ async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<void> 
   await repos.bucketRepo.saveState(input.runId, next)
   await repos.fillRepo.insert({ runId: input.runId, bucketIdx, side: input.side, ticker: run.ticker, shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, source: input.source })
   await repos.ledgerRepo.insert({ runId: input.runId, kind: input.side === 'buy' ? 'buy' : 'sell', amountCents: delta, ref: JSON.stringify({ bookedOn: deps.today, filledOn: input.filledOn }) })
+  // A sell that empties its bucket leaves every open sell-side order of that bucket
+  // with nothing to sell, however the bucket was chosen (matched order or fallback
+  // guess) and whenever it was planned (see openSellLegs). A partial fill leaves
+  // shares that still need both legs, so nothing is cancelled. Plain status writer,
+  // not cancelOrder (re-enters the lock). The matched order flips to filled below.
+  const cancelledIds: number[] = []
+  if (input.side === 'sell' && next.buckets[bucketIdx]!.state === 'empty') {
+    for (const o of openSellLegs(sellOrders, { runId: input.runId, bucketIdx, fromTradeDate: input.filledOn }, matchedOrderId)) {
+      await repos.orderRepo.setStatus(o.id, 'cancelled', 'broker-filled')
+      cancelledIds.push(o.id)
+    }
+  }
   if (matchedOrderId !== null) await repos.orderRepo.setStatus(matchedOrderId, 'filled')
+  return cancelledIds
 }
 
 export async function ingestCapture(runId: number, image: { base64: string; mime: string }, extract: ExtractResult, deps: BookingDeps): Promise<CaptureOutcome> {
@@ -193,7 +203,7 @@ export async function confirmPendingFill(pendingId: number, overrides: { shares?
   if (!known) throw new Error('pending-not-found-or-not-pending')
 
   // bookUnlocked, not runBooking: the lock is not reentrant.
-  await withRunLock(known.runId, async () => {
+  const cancelled = await withRunLock(known.runId, async () => {
     const pendingList = await repos.pendingRepo.listPending()
     const pending = pendingList.find((p: any) => p.id === pendingId)
     if (!pending) throw new Error('pending-not-found-or-not-pending')
@@ -204,7 +214,7 @@ export async function confirmPendingFill(pendingId: number, overrides: { shares?
     const shares = overrides?.shares ?? pending.shares
     const filledOn = overrides?.filledOn ?? pending.filledOn
 
-    await bookUnlocked({
+    return bookUnlocked({
       runId: pending.runId,
       side: pending.side,
       shares,
@@ -215,6 +225,7 @@ export async function confirmPendingFill(pendingId: number, overrides: { shares?
       source: 'capture',
     }, deps)
   })
+  await notifySiblingsCancelled(known.runId, cancelled, deps)
 }
 
 export async function manualFill(runId: number, fill: Omit<RawFill, 'ticker' | 'date'> & { filledOn: ISODate }, deps: BookingDeps): Promise<void> {

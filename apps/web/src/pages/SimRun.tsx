@@ -1,9 +1,13 @@
 import { useAsync } from '../components/hooks';
 import { api } from '../api';
+import { SimConfigPanel } from '../components/forms/SimConfigPanel';
 import { SimReplay } from '../components/SimReplay';
 import { Button, ErrorNote, SectionTitle, Spinner } from '../components/ui';
-import { isoDate } from '../format';
 import { useT } from '../i18n';
+import { parseSimParams } from '../simconfig';
+
+// Server default when a run stored no bucketCount and has no days to infer one from.
+const DEFAULT_BUCKET_COUNT = 10;
 
 export function SimRunPage({ id }: { id: number }) {
   const t = useT();
@@ -24,11 +28,13 @@ export function SimRunPage({ id }: { id: number }) {
         </div>
       ) : data ? (
         <div className="space-y-4">
-          <p className="text-sm text-ink-faint">
-            <span className="font-semibold text-ink">{data.run.ticker}</span>
-            {' · '}{isoDate(data.run.fromDate)} → {isoDate(data.run.toDate)}
-            {' · '}{t('simDayCount', { count: data.days.length })}
-          </p>
+          <SimConfigPanel
+            key={data.run.id}
+            run={data.run}
+            params={parseSimParams(data.run.paramsJson, data.days[data.days.length - 1]?.stateJson.buckets.length || DEFAULT_BUCKET_COUNT)}
+            onApplied={() => void reload()}
+          />
+          <p className="text-sm text-ink-faint">{t('simDayCount', { count: data.days.length })}</p>
           <SimReplay run={data.run} days={data.days} />
         </div>
       ) : null}

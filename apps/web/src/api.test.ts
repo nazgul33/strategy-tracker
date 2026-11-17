@@ -33,10 +33,11 @@ describe('createRun gaps', () => {
       return Response.json({ id: 1 });
     };
     const api = createApi(http, { getToken: () => null });
-    await api.createRun({ ...base, buyGapPpm: 100, sellGapPpm: 200 });
+    await api.createRun({ ...base, buyGapPpm: 100, sellGapPpm: 200, cutLossPpm: 35_000 });
     const body = JSON.parse(String(calls[0]!.init?.body)) as Record<string, unknown>;
     expect(body.buyGapPpm).toBe(100);
     expect(body.sellGapPpm).toBe(200);
+    expect(body.cutLossPpm).toBe(35_000);
   });
 
   test('omits gap keys entirely when not provided', async () => {
@@ -50,6 +51,7 @@ describe('createRun gaps', () => {
     const body = JSON.parse(String(calls[0]!.init?.body)) as Record<string, unknown>;
     expect('buyGapPpm' in body).toBe(false);
     expect('sellGapPpm' in body).toBe(false);
+    expect('cutLossPpm' in body).toBe(false);
   });
 });
 
@@ -72,20 +74,69 @@ describe('runSim gaps', () => {
   });
 });
 
-// Gap edit: POST /api/runs/:id/gaps, both values required, 204 no-content.
+// Sim drafts: Apply is a PUT without the ticker, Save/Discard are body-less,
+// and the 409 refusal surfaces as a typed error code.
+describe('sim draft endpoints', () => {
+  const config = { from: '2026-01-02', to: '2026-06-30', poolCents: 1000, costPpm: 200, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 35_000 };
+
+  function recorder(status = 200, body: unknown = { id: 4, dayCount: 9 }) {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const http: Http = async (url, init) => {
+      calls.push({ url, init });
+      return status === 204 ? new Response(null, { status }) : Response.json(body, { status });
+    };
+    return { calls, api: createApi(http, { getToken: () => 't' }) };
+  }
+
+  test('updateSimRun PUTs the config with cut-loss and never a ticker', async () => {
+    const { calls, api } = recorder();
+    await expect(api.updateSimRun(4, { ...config, params: { bucketCount: 6 } })).resolves.toEqual({ id: 4, dayCount: 9 });
+    expect(calls[0]!.url).toBe('/api/sim/4');
+    expect(calls[0]!.init?.method).toBe('PUT');
+    const body = JSON.parse(String(calls[0]!.init?.body));
+    expect(body).toMatchObject({ ...config, params: { bucketCount: 6 } });
+    expect('ticker' in body).toBe(false);
+  });
+
+  test('runSim carries cutLossPpm when set', async () => {
+    const { calls, api } = recorder();
+    await api.runSim({ ...config, name: 'S', ticker: 'qqq' });
+    expect(JSON.parse(String(calls[0]!.init?.body))).toMatchObject({ ticker: 'QQQ', cutLossPpm: 35_000 });
+  });
+
+  test('saveSimRun POSTs /save and deleteSimRun DELETEs, both resolving on 204', async () => {
+    const { calls, api } = recorder(204);
+    await expect(api.saveSimRun(4)).resolves.toBeUndefined();
+    await expect(api.deleteSimRun(4)).resolves.toBeUndefined();
+    expect(calls.map((c) => [c.init?.method, c.url])).toEqual([
+      ['POST', '/api/sim/4/save'],
+      ['DELETE', '/api/sim/4'],
+    ]);
+  });
+
+  test('a 409 sim-finalized is an ApiError with that code', async () => {
+    const { api } = recorder(409, { error: 'sim-finalized' });
+    const err = await api.saveSimRun(4).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(409);
+    expect((err as ApiError).code).toBe('sim-finalized');
+  });
+});
+
+// Gap edit: POST /api/runs/:id/gaps, all three values sent, 204 no-content.
 describe('setGaps', () => {
-  test('posts both ppm values and resolves on 204', async () => {
+  test('posts the three ppm values and resolves on 204', async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     const http: Http = async (url, init) => {
       calls.push({ url, init });
       return new Response(null, { status: 204 });
     };
     const api = createApi(http, { getToken: () => 't' });
-    await expect(api.setGaps(7, { buyGapPpm: 100, sellGapPpm: 200 })).resolves.toBeUndefined();
+    await expect(api.setGaps(7, { buyGapPpm: 100, sellGapPpm: 200, cutLossPpm: 30_000 })).resolves.toBeUndefined();
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe('/api/runs/7/gaps');
     expect(calls[0]!.init?.method).toBe('POST');
-    expect(calls[0]!.init?.body).toBe(JSON.stringify({ buyGapPpm: 100, sellGapPpm: 200 }));
+    expect(calls[0]!.init?.body).toBe(JSON.stringify({ buyGapPpm: 100, sellGapPpm: 200, cutLossPpm: 30_000 }));
     expect(calls[0]!.init?.headers).toMatchObject({ Authorization: 'Bearer t' });
   });
 });

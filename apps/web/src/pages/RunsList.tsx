@@ -19,7 +19,7 @@ import {
   Td,
   Th,
 } from '../components/ui';
-import { bpPercent, centsUsd, isoDateTime } from '../format';
+import { centsUsd, costPercentText, isoDateTime } from '../format';
 import { useT } from '../i18n';
 import { RUN_STATUSES, bulkPlan, enumLabelKey, runStatusTone } from '../viewmodels';
 
@@ -225,7 +225,7 @@ export function RunsListPage() {
                   </Td>
                   <Td className="text-right tabular-nums">
                     {centsUsd(r.poolCents)}
-                    <div className="text-[11px] text-muted-foreground">{bpPercent(r.costPpm / 100)}</div>
+                    <div className="text-[11px] text-muted-foreground">{costPercentText(r.costPpm)} %</div>
                   </Td>
                   <Td>
                     <Badge tone={runStatusTone(r.status)}>{t(enumLabelKey('status', r.status))}</Badge>

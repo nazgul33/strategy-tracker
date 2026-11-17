@@ -2,9 +2,10 @@
 import { useState } from 'react';
 
 import { api, usdOrNull, usdToCents } from '../../api';
-import { gapToPpm, isGapText } from '../../gaps';
+import { cutLossToPpm, gapToPpm, isCutLossText, isGapText, isPercentText, percentTextToPpm } from '../../gaps';
 import { useT } from '../../i18n';
 import { seedCashErrorKey } from '../../viewmodels';
+import { useDefaultCostText } from '../hooks';
 import { Button, Field, Input } from '../ui';
 
 interface SeedRow {
@@ -28,10 +29,11 @@ export function CreateRunForm({
   const [name, setName] = useState('');
   const [ticker, setTicker] = useState('');
   const [pool, setPool] = useState('');
-  const [costPpm, setCostPpm] = useState('200');
+  const [cost, setCost] = useDefaultCostText();
   const [bucketCount, setBucketCount] = useState('');
   const [buyGap, setBuyGap] = useState('');
   const [sellGap, setSellGap] = useState('');
+  const [cutLoss, setCutLoss] = useState('');
   const [seedCash, setSeedCash] = useState('');
   const [seedRows, setSeedRows] = useState<SeedRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,10 @@ export function CreateRunForm({
   const setRow = (i: number, patch: Partial<SeedRow>) =>
     setSeedRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
-  const gapsValid = (buyGap === '' || isGapText(buyGap)) && (sellGap === '' || isGapText(sellGap));
+  const gapsValid =
+    (buyGap === '' || isGapText(buyGap)) &&
+    (sellGap === '' || isGapText(sellGap)) &&
+    (cutLoss === '' || isCutLossText(cutLoss));
 
   const submit = async () => {
     if (busy) return;
@@ -58,7 +63,7 @@ export function CreateRunForm({
       setError(t('runInvalidPool'));
       return;
     }
-    if (!/^\d{1,7}$/.test(costPpm.trim())) {
+    if (!isPercentText(cost.trim(), 3)) {
       setError(t('runInvalidCostPpm'));
       return;
     }
@@ -109,11 +114,12 @@ export function CreateRunForm({
       const res = await api.createRun({
         name: name.trim() === '' ? ticker.trim().toUpperCase() : name.trim(),
         ticker: ticker.trim().toUpperCase(),
-        costPpm: Number(costPpm),
+        costPpm: percentTextToPpm(cost.trim(), 3),
         poolCents,
         bucketCount: bucketsN,
         buyGapPpm: gapToPpm(buyGap),
         sellGapPpm: gapToPpm(sellGap),
+        cutLossPpm: cutLossToPpm(cutLoss),
         seed,
       });
       setCreatedId(res.id);
@@ -160,8 +166,15 @@ export function CreateRunForm({
         <Field label={t('runPoolCents')}>
           <Input value={pool} onChange={(e) => setPool(e.target.value)} inputMode="decimal" placeholder="10000" />
         </Field>
-        <Field label={`${t('runCostPpm')} (ppm)`}>
-          <Input value={costPpm} onChange={(e) => setCostPpm(e.target.value)} inputMode="numeric" />
+        <Field label={t('runCostPpm')} hint={t('runForm.costHint')}>
+          <Input
+            data-testid="costInput"
+            value={cost}
+            onChange={(e) => setCost(e.target.value)}
+            inputMode="decimal"
+            placeholder="0.070"
+            invalid={cost !== '' && !isPercentText(cost.trim(), 3)}
+          />
         </Field>
         <Field label={t('runForm.buyGapLabel')} hint={t('runForm.buyGapHint')}>
           <Input
@@ -181,6 +194,16 @@ export function CreateRunForm({
             inputMode="decimal"
             placeholder="0"
             invalid={sellGap !== '' && !isGapText(sellGap)}
+          />
+        </Field>
+        <Field label={t('runForm.cutLossLabel')} hint={t('runForm.cutLossHint')}>
+          <Input
+            data-testid="cutLossInput"
+            value={cutLoss}
+            onChange={(e) => setCutLoss(e.target.value)}
+            inputMode="decimal"
+            placeholder="0"
+            invalid={cutLoss !== '' && !isCutLossText(cutLoss)}
           />
         </Field>
       </div>

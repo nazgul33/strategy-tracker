@@ -14,6 +14,7 @@ export interface RunDto {
   costPpm: number;
   buyGapPpm: number; // integer ppm 0–1_000_000; 0 = unset
   sellGapPpm: number; // integer ppm 0–1_000_000; 0 = unset
+  cutLossPpm: number; // integer ppm, multiple of 1_000, 0–500_000; 0 = off
   status: RunStatus;
   stateJson: string;
   createdAt: string;
@@ -63,7 +64,7 @@ export interface OrderDto {
   id: number;
   runId: number;
   tradeDate: string;
-  kind: 'buy_loc' | 'sell_loc' | 'market_sell';
+  kind: 'buy_loc' | 'sell_loc' | 'market_sell' | 'stop_sell';
   bucketIdx: number;
   limitPrice: string; // myriadths as string
   shares: number;
@@ -144,6 +145,8 @@ export interface SettingsDto {
   visionModel: string;
   digestLang: string;
   hasVisionApiKey: boolean;
+  /** Default per-side trading cost, integer ppm (from DEFAULT_COST_PERCENT). */
+  defaultCostPpm: number;
 }
 
 export interface SimRunDto {
@@ -155,12 +158,17 @@ export interface SimRunDto {
   costPpm: number;
   buyGapPpm: number; // integer ppm 0–1_000_000; 0 = unset
   sellGapPpm: number; // integer ppm 0–1_000_000; 0 = unset
+  cutLossPpm: number; // integer ppm, multiple of 1_000, 0–500_000; 0 = off
   paramsJson: string;
+  /** A draft is editable and re-runnable; saving it makes it read-only history. */
+  draft: boolean;
   createdAt: string;
 }
 
 export type SimEvent =
-  | { type: 'fill'; side: 'buy' | 'sell'; bucketIndex: number; shares: number; price: string; feeCents: number }
+  // `kind` is the order kind that filled. Optional on read: sim_days rows stored before the
+  // field existed have none, and the replay falls back to grouping by side and day.
+  | { type: 'fill'; side: 'buy' | 'sell'; kind?: 'buy_loc' | 'sell_loc' | 'market_sell' | 'stop_sell'; bucketIndex: number; shares: number; price: string; feeCents: number }
   | { type: 'skipped'; bucketIndex: number; reason: string };
 
 export interface SimOrderDto {
@@ -198,6 +206,7 @@ export interface CreateRunInput {
   costPpm: number; // integer ppm ≥ 0
   buyGapPpm?: number; // integer ppm 0–1_000_000; omitted → server default 0 (unset)
   sellGapPpm?: number; // integer ppm 0–1_000_000; omitted → server default 0 (unset)
+  cutLossPpm?: number; // integer ppm, multiple of 1_000, 0–500_000; omitted → server default 0 (off)
   poolCents: number; // integer cents > 0
   bucketCount?: number; // omitted → server default (10)
   seed?: { cashCents?: number; buckets?: { shares: number; buyPrice: string; filledOn: string }[] };
@@ -221,5 +230,9 @@ export interface SimInput {
   costPpm: number;
   buyGapPpm?: number; // integer ppm 0–1_000_000; omitted → server default 0 (unset)
   sellGapPpm?: number; // integer ppm 0–1_000_000; omitted → server default 0 (unset)
+  cutLossPpm?: number; // integer ppm, multiple of 1_000, 0–500_000; omitted → server default 0 (off)
   params?: { bucketCount?: number; maxAgeDays?: number };
 }
+
+/** PUT body for Apply: the draft's ticker is its identity, so it is never sent. */
+export type SimUpdateInput = Omit<SimInput, 'ticker' | 'name'> & { name?: string };

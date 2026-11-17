@@ -19,6 +19,11 @@ declare global {
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
+afterAll(() => {
+  GlobalRegistrator.unregister();
+  delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+});
+
 interface FetchCall {
   url: string;
   body: Record<string, unknown>;
@@ -90,7 +95,10 @@ describe('SimPage gap fields', () => {
 
   beforeEach(() => {
     calls = [];
-    stub = installFetchStub([{ method: 'POST', url: '/api/sim', status: 201, json: { id: 3, dayCount: 5 } }]);
+    stub = installFetchStub([
+      { url: '/api/settings', json: { visionBaseUrl: '', visionModel: '', digestLang: 'en', hasVisionApiKey: false, defaultCostPpm: 700 } },
+      { method: 'POST', url: '/api/sim', status: 201, json: { id: 3, dayCount: 5 } },
+    ]);
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -100,11 +108,6 @@ describe('SimPage gap fields', () => {
     act(() => root.unmount());
     container.remove();
     restoreFetch();
-  });
-
-  afterAll(() => {
-    GlobalRegistrator.unregister();
-    delete globalThis.IS_REACT_ACT_ENVIRONMENT;
   });
 
   it('converts percent gap inputs to integer ppm on submit', async () => {
@@ -156,5 +159,74 @@ describe('SimPage gap fields', () => {
     await type('buyGapInput', '');
     expect(inputByTestId('buyGapInput').getAttribute('aria-invalid')).toBeNull();
     expect(runButton().disabled).toBe(false);
+  });
+
+  it('prefills cost from the settings default and posts ppm', async () => {
+    await act(async () => {
+      root.render(d(SimPage));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(inputByTestId('costInput').value).toBe('0.070');
+    await fillBaseFields();
+    await submitForm();
+
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.body.costPpm).toBe(700);
+  });
+
+  it('sends cut-loss as ppm', async () => {
+    await act(async () => {
+      root.render(d(SimPage));
+    });
+    await fillBaseFields();
+    await type('cutLossInput', '3.5');
+    await submitForm();
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.body.cutLossPpm).toBe(35_000);
+  });
+
+  it('blank cut-loss is an explicit 0', async () => {
+    await act(async () => {
+      root.render(d(SimPage));
+    });
+    await fillBaseFields();
+    await submitForm();
+    expect(calls[0]!.body.cutLossPpm).toBe(0);
+  });
+
+  it('marks 3.55 invalid with the shared rule and disables submit', async () => {
+    await act(async () => {
+      root.render(d(SimPage));
+    });
+    await fillBaseFields();
+    await type('cutLossInput', '3.55');
+    expect(inputByTestId('cutLossInput').getAttribute('aria-invalid')).toBe('true');
+    expect(runButton().disabled).toBe(true);
+    await type('cutLossInput', '3.5');
+    expect(inputByTestId('cutLossInput').getAttribute('aria-invalid')).toBeNull();
+    expect(runButton().disabled).toBe(false);
+  });
+
+  it('rejects a four-decimal cost without calling the API', async () => {
+    await act(async () => {
+      root.render(d(SimPage));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await fillBaseFields();
+    await type('costInput', '0.0701');
+    expect(inputByTestId('costInput').getAttribute('aria-invalid')).toBe('true');
+    expect(runButton().disabled).toBe(true);
+
+    // Enter in a field still fires a native submit: it must explain, not call the API.
+    await act(async () => {
+      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    calls = stub.map((c) => ({ url: c.url, body: c.body as Record<string, unknown> }));
+    expect(calls.length).toBe(0);
+    expect(document.body.textContent).toContain('at most 3 decimals');
   });
 });

@@ -3,7 +3,7 @@
 // nearest bar; the latest close is repeated below as the "current (delayed)"
 // price. The window starts one trading day before the first buy — see
 // priceHistory.ts — and the server backfills (and caches) those bars.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { api } from '../api';
 import { priceUsd, todayIso } from '../format';
@@ -21,7 +21,14 @@ function closeDollars(close: string): number {
   return Number(BigInt(close)) / 10_000;
 }
 
-export function PriceChart({ runId }: { runId: number }) {
+export function PriceChart({
+  runId,
+  onLatestClose,
+}: {
+  runId: number;
+  /** Reports the latest bar's close (myriadths string), or null when there is none. */
+  onLatestClose?: (close: string | null) => void;
+}) {
   const t = useT();
   const [hover, setHover] = useState<number | null>(null);
 
@@ -33,6 +40,12 @@ export function PriceChart({ runId }: { runId: number }) {
     );
     return api.priceHistory(runId, window.start ?? undefined);
   }, [runId]);
+
+  const latestClose = state.data?.bars[state.data.bars.length - 1]?.close ?? null;
+  useEffect(() => {
+    onLatestClose?.(latestClose);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latestClose]);
 
   if (state.loading && !state.data) return <Spinner />;
   if (state.error !== undefined) return <ErrorNote message={state.error} />;

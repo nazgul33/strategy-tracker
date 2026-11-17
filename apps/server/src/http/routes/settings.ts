@@ -9,6 +9,7 @@ export function settingsRouter(deps: HttpDeps): Hono {
       visionBaseUrl: db.visionBaseUrl ?? deps.defaultSettings.visionBaseUrl,
       visionModel: db.visionModel ?? deps.defaultSettings.visionModel,
       digestLang: db.digestLang ?? deps.defaultSettings.digestLang,
+      defaultCostPpm: deps.defaultSettings.defaultCostPpm,
       hasVisionApiKey: Object.prototype.hasOwnProperty.call(db, 'visionApiKey'),
     }
     // ensure no key value leaked
