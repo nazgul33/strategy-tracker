@@ -180,6 +180,20 @@ sending anything. A disagreement sends a warning to every allowed chat and abort
 digest — a loud conflict, never a silent failure. (If the remote API itself is unreachable, the run
 proceeds with the local calendar.)
 
+## Bar-cache caveat (corporate actions)
+
+Daily OHLC bars are cached for good: a date range once marked covered in `bar_coverage` is never
+refetched (`apps/server/src/market/bars.ts`). Yahoo restates historical OHLC after a split or
+similar corporate action, so a sim spanning the event would mix pre-split cached bars with
+post-split fresh ones — one series at two price scales, silently.
+
+After a corporate action on a tracked ticker, clear its coverage so the next read refetches:
+
+```sql
+DELETE FROM bar_coverage WHERE ticker = 'NVDA';
+DELETE FROM price_history WHERE ticker = 'NVDA';  -- optional; stale rows are overwritten in place
+```
+
 ## Testing
 
 ```sh

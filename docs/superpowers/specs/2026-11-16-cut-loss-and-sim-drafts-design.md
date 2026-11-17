@@ -378,8 +378,9 @@ half-replaced day set.
 Apply goes through the cached bar reader (design 5), so a sweep over an unchanged
 date range issues no provider requests at all.
 
-`SimRepoSurface` gains `replaceDays`, `updateConfig`, `finalize`, `deleteRun`, and
-`sweepDrafts(olderThan)`.
+`SimRepoSurface` gains `rewriteDraft` (one guarded call that swaps the config and the
+day set together, so no caller can replace days on a saved run), `finalize`,
+`deleteRun`, and `sweepDrafts(olderThan)`.
 
 ### Draft lifecycle
 

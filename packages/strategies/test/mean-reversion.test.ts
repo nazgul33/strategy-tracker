@@ -244,7 +244,7 @@ describe('stopPrice', () => {
     expect(stopPrice(1_000_000n, 0)).toBeNull()
   })
   test('floors to the cent', () => {
-    // 34.5678 USD = 345678n; 3.5% below = 333578.27 → floor to cent = 333500n
+    // 34.5678 USD = 345678n; 3.5% below = 333579.27 → floor to cent = 333500n
     expect(stopPrice(345678n, 35_000)).toBe(333500n)
   })
   test('exact cent is a no-op', () => {

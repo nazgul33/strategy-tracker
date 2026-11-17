@@ -164,7 +164,7 @@ describe('EditRunModal cut-loss', () => {
   });
 
   it('warns how many held buckets are already below the proposed trigger, and still saves', async () => {
-    // 3.0% => triggers 97.00 / 87.30 against a 92.00 close: only bucket 1 is underwater.
+    // 3.0% => triggers 97.00 / 87.30 against a 92.00 close: only bucket 0 is underwater.
     await render();
     expect(warning()).toBeNull();
     await type('cutLossInput', '3');
