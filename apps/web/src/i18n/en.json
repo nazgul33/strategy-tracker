@@ -255,7 +255,7 @@
   "runFilterStatus": "Status",
   "runForm.buyGapHint": "limit = close × (1 − gap), rounded up to cent. blank = close − $0.01",
   "runForm.buyGapLabel": "Buy gap (%)",
-  "runForm.costHint": "Per side. Up to 3 decimals: 0.070 = 700 ppm",
+  "runForm.costHint": "Per side, up to 3 decimals.",
   "runForm.cutLossHint": "stop = buy price × (1 − cut loss), truncated to cent. blank = off",
   "runForm.cutLossLabel": "Cut loss (%)",
   "runForm.sellGapHint": "limit = buy price × (1 + gap), truncated to cent. blank = cost + fees + $0.01",

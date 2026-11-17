@@ -255,7 +255,7 @@
   "runFilterStatus": "상태",
   "runForm.buyGapHint": "지정가 = 종가 × (1 − 간격), 센트 올림. 비우면 종가 − $0.01",
   "runForm.buyGapLabel": "매수 간격 (%)",
-  "runForm.costHint": "편도 기준. 소수점 셋째 자리까지: 0.070 = 700 ppm",
+  "runForm.costHint": "편도 기준, 소수점 셋째 자리까지.",
   "runForm.cutLossHint": "스톱가 = 매수가 × (1 − 손절), 센트 버림. 비우면 끔",
   "runForm.cutLossLabel": "손절 (%)",
   "runForm.sellGapHint": "지정가 = 매수가 × (1 + 간격), 센트 버림. 비우면 매수가 + 수수료 + $0.01",
