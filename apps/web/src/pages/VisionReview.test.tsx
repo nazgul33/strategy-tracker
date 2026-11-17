@@ -168,17 +168,51 @@ describe('VisionReviewPage', () => {
     expect(container.textContent).toContain('No screenshots kept for review yet');
   });
 
-  it('Delete calls the endpoint and drops the entry', async () => {
-    await render([entry(3, [EDITED], 'AAPL'), entry(5, [REJECTED], 'SOXL')]);
+  it('the first Delete click only arms the confirmation and calls nothing', async () => {
+    await render([entry(3, [EDITED])]);
 
     await act(async () => {
       button('Delete', cards()[0]!).click();
     });
     await flush();
 
+    expect(calls.length).toBe(0);
+    expect(cards().length).toBe(1);
+    expect(cards()[0]!.textContent).toContain('This cannot be undone');
+    expect(button('Delete for real', cards()[0]!)).toBeTruthy();
+  });
+
+  it('Delete for real calls the endpoint and drops the entry', async () => {
+    await render([entry(3, [EDITED], 'AAPL'), entry(5, [REJECTED], 'SOXL')]);
+
+    await act(async () => {
+      button('Delete', cards()[0]!).click();
+    });
+    await act(async () => {
+      button('Delete for real', cards()[0]!).click();
+    });
+    await flush();
+
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['DELETE /api/vision-reviews/3']);
     expect(cards().length).toBe(1);
     expect(cards()[0]!.textContent).toContain('SOXL');
+  });
+
+  it('Cancel backs out: the entry stays, un-armed, and nothing is deleted', async () => {
+    await render([entry(3, [EDITED])]);
+
+    await act(async () => {
+      button('Delete', cards()[0]!).click();
+    });
+    await act(async () => {
+      button('Cancel', cards()[0]!).click();
+    });
+    await flush();
+
+    expect(calls.length).toBe(0);
+    expect(cards().length).toBe(1);
+    expect(cards()[0]!.textContent).not.toContain('This cannot be undone');
+    expect(Array.from(cards()[0]!.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['Delete']);
   });
 
   it('shows the error and keeps the list when the delete fails', async () => {
@@ -191,6 +225,9 @@ describe('VisionReviewPage', () => {
 
     await act(async () => {
       button('Delete', cards()[0]!).click();
+    });
+    await act(async () => {
+      button('Delete for real', cards()[0]!).click();
     });
     await flush();
 

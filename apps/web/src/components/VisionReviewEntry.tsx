@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { DetectedDto, VisionReviewEntryDto, VisionReviewFillDto } from '../api.types';
 import { centsUsd, isoDate, isoDateTime, priceUsd } from '../format';
 import { useT } from '../i18n';
@@ -97,6 +98,7 @@ export function VisionReviewEntry({
   busy?: boolean;
 }) {
   const t = useT();
+  const [armed, setArmed] = useState(false);
   return (
     <Card>
       <div data-capture={entry.captureId} className="space-y-3">
@@ -107,10 +109,25 @@ export function VisionReviewEntry({
           </a>
           <span className="text-xs tabular-nums text-muted-foreground">{isoDateTime(entry.createdAt)}</span>
           <span className="text-xs tabular-nums text-muted-foreground">{Math.max(1, Math.round(entry.byteLen / 1024))} KB</span>
-          <Button className="ml-auto" variant="danger" busy={busy} onClick={onDelete}>
-            {t('visionReviewDelete')}
-          </Button>
+          {!armed && (
+            <Button className="ml-auto" variant="danger" onClick={() => setArmed(true)}>
+              {t('visionReviewDelete')}
+            </Button>
+          )}
         </div>
+        {armed && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2">
+            <span className="text-sm text-destructive">{t('visionReviewDeleteWarning')}</span>
+            <div className="ml-auto flex gap-2">
+              <Button disabled={busy} onClick={() => setArmed(false)}>
+                {t('cancel')}
+              </Button>
+              <Button variant="danger" busy={busy} onClick={onDelete}>
+                {t('dialog.deleteConfirm')}
+              </Button>
+            </div>
+          </div>
+        )}
         <div className="grid gap-4 md:grid-cols-[16rem_minmax(0,1fr)]">
           <div className="max-h-80 overflow-auto rounded border border-border bg-background">
             <ScreenshotLink captureId={entry.captureId} imgClassName="w-full" />
