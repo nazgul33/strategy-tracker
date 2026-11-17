@@ -23,8 +23,9 @@ interface SellFillKey { runId: number; filledOn: ISODate; shares: number; price:
 
 const cmp = (a: bigint, b: bigint): number => (a < b ? -1 : a > b ? 1 : 0)
 
-// Which open sell order does a sell fill belong to? Every candidate must be open,
-// of this run and trade date, and sit on a held bucket with at least `shares`.
+// Which open sell order does a sell fill belong to? Every candidate must be open
+// and of this run and trade date; all but the exact-price rung must also sit on a
+// held bucket with at least `shares` (see the exemption at the first pick below).
 // Each held bucket carries two live legs: a limit-on-close target (sell_loc) and
 // a stop-market (stop_sell, limitPrice = trigger), with trigger < buyPrice < sellLimit.
 //   target fill: prints at the close, at or ABOVE its limit  => price >= limit
