@@ -42,14 +42,18 @@ export type VisionReviewRow = VisionReviewInsert & { id: number; createdAt: stri
 
 export type ReviewRepos = Pick<RepoSurface, 'pendingRepo' | 'captureImageRepo' | 'visionReviewRepo'>
 
-/** null detected value + non-null final counts as edited; legacy rows (detectedAt null) never do. */
-export function isEdited(detected: DetectedValues, final: FinalValues | null): boolean {
+/**
+ * null detected value + non-null final counts as edited; legacy rows (detectedAt null) never do.
+ * The fee is the one field the system derives on its own (a feeless capture books at the run's
+ * cost), so it counts only when the operator sent a fee override (`feeOverridden`).
+ */
+export function isEdited(detected: DetectedValues, final: FinalValues | null, opts: { feeOverridden: boolean }): boolean {
   if (detected.detectedAt === null || final === null) return false
   return detected.side !== final.side
     || detected.shares !== final.shares
     || detected.price !== final.price
     || detected.filledOn !== final.filledOn
-    || detected.fee !== final.fee
+    || (opts.feeOverridden && detected.fee !== final.fee)
 }
 
 // Freeze, keep, sweep, in that order. The frozen row is written for every
@@ -64,9 +68,11 @@ export async function resolveReview(
     outcome: 'confirmed' | 'rejected'
     final: FinalValues | null
     keepImage: boolean
+    /** The confirm carried a `feeCents` override (null included); false for a reject. */
+    feeOverridden?: boolean
   },
 ): Promise<void> {
-  const { pendingRow, captureId, outcome, final, keepImage } = args
+  const { pendingRow, captureId, outcome, final, keepImage, feeOverridden = false } = args
   if (captureId === null) return
 
   const detected: DetectedValues = {
@@ -93,7 +99,7 @@ export async function resolveReview(
     finalPrice: final?.price ?? null,
     finalFilledOn: final?.filledOn ?? null,
     finalFee: final?.fee ?? null,
-    edited: isEdited(detected, final),
+    edited: isEdited(detected, final, { feeOverridden }),
   })
 
   // Sticky: only ever raised, never lowered.

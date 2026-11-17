@@ -292,6 +292,18 @@ describe('pendingEdits', () => {
     expect(pendingEdits(row({ ...detected, side: null }), same)).toEqual(['side']);
   });
 
+  test('a fee equal to autoFeeCents against a null detected fee is unedited', () => {
+    const feeless: DetectedDto = { ...detected, fee: null };
+    expect(pendingEdits(row(feeless), { ...same, fee: '0.07' })).toEqual([]);
+    expect(pendingEdits(row(feeless), { ...same, fee: '0.070' })).toEqual([]);
+    expect(pendingEdits(row(feeless), { ...same, fee: '' })).toEqual([]);
+    expect(pendingEdits(row(feeless), { ...same, fee: '0.08' })).toEqual(['fee']);
+  });
+
+  test('autoFeeCents does not excuse a fee when vision did read one', () => {
+    expect(pendingEdits(row(), { ...same, fee: '0.07' })).toEqual(['fee']);
+  });
+
   test('a blank field against a null detected value is unedited', () => {
     const missed: DetectedDto = { side: null, shares: null, price: null, filledOn: null, fee: null };
     expect(pendingEdits(row(missed), { side: '', shares: '', price: ' ', filledOn: '', fee: '' })).toEqual([]);

@@ -235,11 +235,13 @@ function samePrice(detected: string | null, value: string): boolean {
 }
 
 // Compared as integer cents. A cleared field is an edit when vision read a fee:
-// it asks the server to recompute (`feeCents: null`).
-function sameFee(detected: number | null, value: string): boolean {
+// it asks the server to recompute (`feeCents: null`). When vision read no fee the
+// field is prefilled with `autoFeeCents`, and the server derives that same fee
+// itself, so blank or the prefilled amount is not an edit.
+function sameFee(detected: number | null, value: string, autoFeeCents: number): boolean {
   const s = value.trim();
-  if (detected === null || s === '') return detected === null && s === '';
-  return usdToCents(s) === detected;
+  if (detected === null) return s === '' || usdToCents(s) === autoFeeCents;
+  return s !== '' && usdToCents(s) === detected;
 }
 
 /**
@@ -247,7 +249,8 @@ function sameFee(detected: number | null, value: string): boolean {
  * order. Only these belong in a confirm's overrides, so an unchanged field is
  * omitted from the request, never sent as null. `detected: null` (a row that
  * predates the snapshot) has nothing to compare against → `[]`; an object with
- * a null field means vision missed it, so any filled-in value counts as edited.
+ * a null field means vision missed it, so any filled-in value counts as edited
+ * (except a fee equal to `autoFeeCents`, which the server derives itself).
  */
 export function pendingEdits(row: PendingFillDto, values: RowValues): Array<keyof RowValues> {
   const d = row.detected;
@@ -258,7 +261,7 @@ export function pendingEdits(row: PendingFillDto, values: RowValues): Array<keyo
   if (!text(d.side, values.side)) edited.push('side');
   if (!sameShares(d.shares, values.shares)) edited.push('shares');
   if (!samePrice(d.price, values.price)) edited.push('price');
-  if (!sameFee(d.fee, values.fee)) edited.push('fee');
+  if (!sameFee(d.fee, values.fee, row.autoFeeCents)) edited.push('fee');
   return edited;
 }
 

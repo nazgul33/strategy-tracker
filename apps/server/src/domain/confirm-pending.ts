@@ -59,7 +59,7 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
       await resolveReview(repos, {
         pendingRow: pending, captureId: pending.captureId ?? null, outcome: 'confirmed',
         final: { side, shares, price, filledOn, fee: finalFeeCents(run, price, shares, feeCents) },
-        keepImage: opts?.keepImage === true,
+        keepImage: opts?.keepImage === true, feeOverridden: feeOverride !== undefined,
       })
     } catch (e) {
       console.error('vision review archive failed:', pendingId, String(e))

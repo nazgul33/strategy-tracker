@@ -20,37 +20,52 @@ const final = (over: Partial<FinalValues> = {}): FinalValues => ({
   side: 'buy', shares: 10, price: parseUsd('180.50'), filledOn: '2026-11-04', fee: 12, ...over,
 })
 
+const NO_FEE = { feeOverridden: false }
+const FEE = { feeOverridden: true }
+
 describe('isEdited', () => {
   test('identical values are not edited', () => {
-    expect(isEdited(detected(), final())).toBe(false)
+    expect(isEdited(detected(), final(), NO_FEE)).toBe(false)
   })
 
   test('a changed share count, price, side, date or fee is edited', () => {
-    expect(isEdited(detected(), final({ shares: 11 }))).toBe(true)
-    expect(isEdited(detected(), final({ price: parseUsd('180.51') }))).toBe(true)
-    expect(isEdited(detected(), final({ side: 'sell' }))).toBe(true)
-    expect(isEdited(detected(), final({ filledOn: '2026-11-05' }))).toBe(true)
-    expect(isEdited(detected(), final({ fee: 13 }))).toBe(true)
+    expect(isEdited(detected(), final({ shares: 11 }), NO_FEE)).toBe(true)
+    expect(isEdited(detected(), final({ price: parseUsd('180.51') }), NO_FEE)).toBe(true)
+    expect(isEdited(detected(), final({ side: 'sell' }), NO_FEE)).toBe(true)
+    expect(isEdited(detected(), final({ filledOn: '2026-11-05' }), NO_FEE)).toBe(true)
+    expect(isEdited(detected(), final({ fee: 13 }), FEE)).toBe(true)
   })
 
   test('prices compare as numbers, not as spelled strings', () => {
-    expect(isEdited(detected({ price: parseUsd('180.5') }), final({ price: parseUsd('180.50') }))).toBe(false)
+    expect(isEdited(detected({ price: parseUsd('180.5') }), final({ price: parseUsd('180.50') }), NO_FEE)).toBe(false)
   })
 
   test('a null detected value with a non-null final is edited', () => {
-    expect(isEdited(detected({ filledOn: null }), final())).toBe(true)
-    expect(isEdited(detected({ fee: null }), final())).toBe(true)
-    expect(isEdited(detected({ price: null }), final())).toBe(true)
+    expect(isEdited(detected({ filledOn: null }), final(), NO_FEE)).toBe(true)
+    expect(isEdited(detected({ price: null }), final(), NO_FEE)).toBe(true)
+  })
+
+  test('a derived fee is not an edit: detected fee null, no fee override, booked fee computed', () => {
+    expect(isEdited(detected({ fee: null }), final({ fee: 7 }), NO_FEE)).toBe(false)
+    expect(isEdited(detected({ fee: null }), final({ fee: 7, shares: 11 }), NO_FEE)).toBe(true)
+  })
+
+  test('an explicit fee override that differs from a null detected fee is an edit', () => {
+    expect(isEdited(detected({ fee: null }), final({ fee: 7 }), FEE)).toBe(true)
+  })
+
+  test('a fee override equal to the detected fee is not an edit', () => {
+    expect(isEdited(detected(), final(), FEE)).toBe(false)
   })
 
   test('a legacy row (detectedAt null) is never edited', () => {
     const legacy = detected({ side: null, shares: null, price: null, filledOn: null, fee: null, detectedAt: null })
-    expect(isEdited(legacy, final())).toBe(false)
-    expect(isEdited(detected({ detectedAt: null }), final({ shares: 99 }))).toBe(false)
+    expect(isEdited(legacy, final(), FEE)).toBe(false)
+    expect(isEdited(detected({ detectedAt: null }), final({ shares: 99 }), FEE)).toBe(false)
   })
 
   test('a rejected fill (final null) is not edited but is still archivable', async () => {
-    expect(isEdited(detected(), null)).toBe(false)
+    expect(isEdited(detected(), null, FEE)).toBe(false)
     const f = fakeRepos()
     f._stores.captureImages.push({ captureId: 7, mime: 'image/png', bytes: Buffer.from('x'), byteLen: 1, keep: false })
     const row = { id: 1, runId: 1, captureId: 7, ticker: 'AAPL', detectedSide: 'buy', detectedShares: 10, detectedPrice: parseUsd('180.50'), detectedFilledOn: '2026-11-04', detectedFee: 12, detectedAt: '2026-11-06 09:00:00' }
@@ -161,6 +176,32 @@ describe('freeze, keep, sweep', () => {
     await confirmPendingFill(ids[0]!, null, deps, { keepImage: true })
     expect(f._stores.visionReviews).toHaveLength(1)
     expect(f._stores.captureImages[0]).toMatchObject({ captureId, keep: true })
+  })
+
+  test('a feeless capture confirmed as-is is not edited, and records the booked fee', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: TODAY }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'nf', poolCents: 10_000_000, costPpm: 100, initialRunState: emptyState(6) })
+    const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 10, price: '100.00', date: '2026-11-04' }] }
+    const out = await ingestCapture(runId, PNG, ext, deps) as { pending: PendingFillRow[] }
+    await confirmPendingFill(out.pending[0]!.id, null, deps, { keepImage: true })
+    const row = f._stores.visionReviews[0]!
+    expect(row.detectedFee).toBeNull()
+    expect(row.finalFee).toBeGreaterThan(0)
+    expect(row.edited).toBe(false)
+  })
+
+  test('a feeless capture confirmed with an explicit differing fee is edited', async () => {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: TODAY }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'nf2', poolCents: 10_000_000, costPpm: 100, initialRunState: emptyState(6) })
+    const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 10, price: '100.00', date: '2026-11-04' }] }
+    const out = await ingestCapture(runId, PNG, ext, deps) as { pending: PendingFillRow[] }
+    await confirmPendingFill(out.pending[0]!.id, { feeCents: 999 }, deps, { keepImage: true })
+    const row = f._stores.visionReviews[0]!
+    expect(row.detectedFee).toBeNull()
+    expect(row.finalFee).toBe(999)
+    expect(row.edited).toBe(true)
   })
 
   // A held bucket, a capture holding the sell that empties it, and the two open
