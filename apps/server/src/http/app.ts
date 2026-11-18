@@ -17,6 +17,7 @@ export interface HttpRepoSurface extends RepoSurface {
   fillRepo: RepoSurface['fillRepo']
   notificationRepo: RepoSurface['notificationRepo'] & { listForRun(runId: number): Promise<any[]> }
   pendingRepo: RepoSurface['pendingRepo'] & { get(id: number): Promise<any> }
+  captureImageRepo: RepoSurface['captureImageRepo'] & { existingIds(captureIds: number[]): Promise<Set<number>> }
   simRepo: SimRepoSurface
 }
 
@@ -38,6 +39,7 @@ import { pendingRouter } from './routes/pending'
 import { correctionsRouter } from './routes/corrections'
 import { settingsRouter } from './routes/settings'
 import { simRouter } from './routes/sim'
+import { visionReviewRouter } from './routes/vision-review'
 
 export function jsonBig(x: unknown): unknown {
   return JSON.parse(JSON.stringify(x, (_k, v) => typeof v === 'bigint' ? v.toString() : v))
@@ -60,6 +62,7 @@ export function createApp(deps: HttpDeps): Hono {
   app.route('/api', runsRouter(deps))
   app.route('/api', fillsRouter(deps))
   app.route('/api', pendingRouter(deps))
+  app.route('/api', visionReviewRouter(deps))
   app.route('/api', correctionsRouter(deps))
   app.route('/api', settingsRouter(deps))
   app.route('/api/sim', simRouter(deps))

@@ -1,22 +1,15 @@
 import { useState, type FormEvent } from 'react';
-import { feeCents, parseUsd } from '@st/core/money';
 import { api, ApiError, usdFeeOrNull, usdOrNull, type FillUpdatePayload, type ManualFillInput } from '../../api';
+import { autoFeeUsd } from '../../autofee';
 import { useT } from '../../i18n';
 import { centsToUsdText, isoDate, priceInputValue, todayIso, usdTextToCents } from '../../format';
 import type { FillDto } from '../../api.types';
 import { RecalcResultModal, type RecalcResult } from '../RecalcSummary';
 import { Button, Field, Input, Modal, Select } from '../ui';
 
-// Fee text the server would book for these inputs (same feeCents half-up math
-// as booking.ts), or '' when the run has no usable cost, price/shares are
-// invalid, or the fee would not be accepted by the fee field.
-export function autoFeeUsd(shares: string, price: string, costPpm: number | undefined): string {
-  if (costPpm === undefined || !Number.isInteger(costPpm) || costPpm < 0) return '';
-  const priceUsd = usdOrNull(price);
-  if (priceUsd === null || !Number.isInteger(Number(shares)) || Number(shares) <= 0) return '';
-  const text = centsToUsdText(feeCents(parseUsd(priceUsd), Number(shares), costPpm));
-  return usdFeeOrNull(text) === null ? '' : text;
-}
+// Kept as an export of this module for its existing importers; the derivation itself
+// is shared with the pending-fill rows.
+export { autoFeeUsd };
 
 // Shared fill dialog (Modal): add mode posts a manual fill, modify mode (a
 // `fill` prop) PUTs qty/price/fee/date — side stays locked because the server

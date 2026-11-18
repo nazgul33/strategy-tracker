@@ -4,7 +4,7 @@ import { buildPendingKeyboard } from '@st/telegram';
 import { t } from '@st/telegram/i18n';
 import type { Lang } from '@st/telegram/i18n';
 
-import { confirmPendingFill, ingestCapture } from '../domain/booking';
+import { confirmPendingFill, ingestCapture, rejectPendingFill } from '../domain/booking';
 import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/booking';
 import { makeSiblingNotifier } from './sibling-notifier';
 
@@ -18,6 +18,9 @@ const CONFIRM_ERROR_KEYS: Record<string, string> = {
   'no-bucket-for-sell': 'confirm-err-no-bucket-for-sell',
   'too-many-shares': 'confirm-err-too-many-shares',
   'invalid-shares': 'confirm-err-invalid-shares',
+  'invalid-side': 'confirm-err-invalid-side',
+  'invalid-fee': 'confirm-err-invalid-fee',
+  'bucket-not-held': 'confirm-err-bucket-not-held',
 };
 
 export interface CaptureRepos extends RepoSurface {
@@ -203,12 +206,13 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
         t('booked', lang, { ticker: row.ticker, side: row.side, shares: row.shares, price, bucket: row.bucketIdx ?? 0, date: row.filledOn }),
       );
     } else {
-      const row = await deps.repos.pendingRepo.get(id);
-      if (!row || row.status !== 'pending') {
+      // No keep prompt over Telegram: the screenshot is not kept, but the reject
+      // still freezes its record and sweeps the bytes when it was the last fill.
+      const rejected = await rejectPendingFill(id, { repos: deps.repos }, { keepImage: false });
+      if (!rejected) {
         await deps.send(chatId, t('duplicate-capture', lang));
         return;
       }
-      await deps.repos.pendingRepo.decide(id, 'rejected');
       await deps.send(chatId, t('rejected-line', lang));
     }
   }

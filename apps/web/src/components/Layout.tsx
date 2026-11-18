@@ -7,6 +7,7 @@ import { ThemeLangToggle } from './ThemeLangToggle';
 const NAV = [
   { href: '#/runs', key: 'navRuns', page: 'runs' },
   { href: '#/pending', key: 'navPending', page: 'pending' },
+  { href: '#/vision-review', key: 'navVisionReview', page: 'visionReview' },
   { href: '#/sim', key: 'navSim', page: 'sim' },
   { href: '#/settings', key: 'navSettings', page: 'settings' },
 ] as const;

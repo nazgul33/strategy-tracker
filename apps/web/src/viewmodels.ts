@@ -1,5 +1,5 @@
 import { parseUsd } from '@st/core/money';
-import type { BucketDto, PendingFillDto, RunStatus } from './api';
+import type { BucketDto, RunStatus } from './api';
 
 /**
  * Presentation logic worth unit testing: bucket cells, badge tones, form
@@ -188,24 +188,6 @@ export function bucketCells(
     });
   }
   return cells;
-}
-
-export interface PendingIssue {
-  /** Field the user must fix before confirming; `null` when nothing is missing. */
-  field: 'ticker' | 'side' | 'shares' | 'price' | 'filledOn' | null;
-}
-
-/**
- * Fields `confirmPendingFill` needs present (on the row or as an override);
- * surfacing them turns a server 400 into an actionable hint.
- */
-export function pendingIssue(row: PendingFillDto): PendingIssue {
-  if (!row.ticker) return { field: 'ticker' };
-  if (row.side !== 'buy' && row.side !== 'sell') return { field: 'side' };
-  if (!Number.isInteger(row.shares) || row.shares <= 0) return { field: 'shares' };
-  if (!row.price) return { field: 'price' };
-  if (!row.filledOn) return { field: 'filledOn' };
-  return { field: null };
 }
 
 /** Whole days between two ISO dates (0 on bad input). */

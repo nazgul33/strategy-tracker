@@ -35,8 +35,10 @@ export function fakeRepos() {
   const pending: any[] = []
   const captures: any[] = []
   const ledger: any[] = []
+  const captureImages: any[] = []
+  const visionReviews: any[] = []
   const corrections = fakeCorrectionRepo()
-  let runSeq = 1, orderSeq = 1, fillSeq = 1, pendingSeq = 1, captureSeq = 1, ledgerSeq = 1
+  let runSeq = 1, orderSeq = 1, fillSeq = 1, pendingSeq = 1, captureSeq = 1, ledgerSeq = 1, visionSeq = 1
 
   const runRepo = {
     async list() { return [...runs.values()] },
@@ -124,9 +126,39 @@ export function fakeRepos() {
     async insert(l: any) { ledger.push({ id: ledgerSeq++, ...l }) },
     async listForRun(runId: number) { return ledger.filter((l) => l.runId === runId) },
   }
+  const captureImageRepo = {
+    async insertIgnore(row: any): Promise<boolean> {
+      if (captureImages.some((x) => x.captureId === row.captureId)) return false
+      captureImages.push({ ...row, keep: false })
+      return true
+    },
+    async getBytes(captureId: number) {
+      const r = captureImages.find((x) => x.captureId === captureId)
+      return r ? { mime: r.mime as string, bytes: r.bytes as Buffer } : null
+    },
+    async isKept(captureId: number) { return captureImages.some((x) => x.captureId === captureId && x.keep) },
+    async setKeep(captureId: number) { const r = captureImages.find((x) => x.captureId === captureId); if (r) r.keep = true },
+    async deleteFor(captureId: number) {
+      const i = captureImages.findIndex((x) => x.captureId === captureId)
+      if (i >= 0) captureImages.splice(i, 1)
+    },
+    async listKept(limit: number) {
+      return captureImages.filter((x) => x.keep).slice(0, limit).map((x) => ({ captureId: x.captureId, mime: x.mime, byteLen: x.byteLen, createdAt: '' }))
+    },
+  }
+  const visionReviewRepo = {
+    async insertIgnore(row: any): Promise<void> {
+      if (visionReviews.some((x) => x.pendingFillId === row.pendingFillId)) return
+      visionReviews.push({ id: visionSeq++, createdAt: '', ...row })
+    },
+    async listForCaptures(captureIds: number[]) { return visionReviews.filter((x) => captureIds.includes(x.captureId)) },
+    async deleteFor(captureId: number) {
+      for (let i = visionReviews.length - 1; i >= 0; i--) if (visionReviews[i]!.captureId === captureId) visionReviews.splice(i, 1)
+    },
+  }
   return {
-    repos: { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: corrections.repo, captureRepo, ledgerRepo },
-    _stores: { runs, orders, fills, pending, captures, ledger, corrections: corrections.store },
+    repos: { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: corrections.repo, captureRepo, ledgerRepo, captureImageRepo, visionReviewRepo },
+    _stores: { runs, orders, fills, pending, captures, ledger, corrections: corrections.store, captureImages, visionReviews },
   }
 }
 
@@ -1683,5 +1715,104 @@ describe('matchSellOrder', () => {
     expect(matchSellOrder([o({})], state, { ...input, shares: 99 })?.id).toBe(1)
     // the gate still applies to every other rung
     expect(matchSellOrder([o({ kind: 'stop_sell', limitPrice: parseUsd('110.00') })], state, { ...input, shares: 99 })).toBeNull()
+  })
+})
+
+describe('confirmPendingFill side and fee overrides', () => {
+  const D: ISODate = '2026-11-12'
+
+  async function setup(held: Array<{ idx: number; shares: number; buy: string }>, pend: { side?: 'buy' | 'sell'; shares?: number; price?: string; fee?: number | null } = {}, costPpm = 100) {
+    const f = fakeRepos()
+    const deps: BookingDeps = { repos: f.repos as any, today: D }
+    let s = emptyState(10)
+    for (const h of held) s = applyBuyFill(s, h.idx, h.shares, parseUsd(h.buy), 0, '2026-11-01')
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'ov', poolCents: 1_000_000, costPpm, initialRunState: { buckets: s.buckets, cashCents: s.cashCents, closed: s.closed, ages: s.ages } })
+    const pid = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: pend.side ?? 'buy', ticker: 'AAPL', shares: pend.shares ?? 10, price: parseUsd(pend.price ?? '10.00'), fee: pend.fee ?? null, filledOn: D, status: 'pending' })
+    return { f, deps, runId, pid }
+  }
+
+  test('confirming with side: "sell" books a sell against a held bucket', async () => {
+    const { f, deps, runId, pid } = await setup([{ idx: 0, shares: 10, buy: '10.00' }])
+    await confirmPendingFill(pid, { side: 'sell' }, deps)
+    expect(f._stores.fills).toHaveLength(1)
+    expect(f._stores.fills[0]).toMatchObject({ side: 'sell', bucketIdx: 0, shares: 10 })
+    expect((await f.repos.bucketRepo.loadState(runId)).buckets[0]!.state).toBe('empty')
+    expect(f._stores.ledger[0]!.kind).toBe('sell')
+  })
+
+  test('a side override to sell with no held bucket throws no-bucket-for-sell and leaves the row pending', async () => {
+    const { f, deps, pid } = await setup([])
+    await expect(confirmPendingFill(pid, { side: 'sell' }, deps)).rejects.toMatchObject({ kind: 'no-bucket-for-sell' })
+    expect(f._stores.pending[0]!.status).toBe('pending')
+    expect(f._stores.pending[0]!.side).toBe('buy')
+    expect(f._stores.fills).toHaveLength(0)
+  })
+
+  test('a sell override that empties a bucket still cancels and notifies the sibling order', async () => {
+    const { f, deps, runId, pid } = await setup([{ idx: 1, shares: 10, buy: '100.00' }], { price: '96.50' })
+    await f.repos.orderRepo.insertMany([
+      { runId, tradeDate: D, kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00'), shares: 10, status: 'open' },
+      { runId, tradeDate: D, kind: 'stop_sell', bucketIdx: 1, limitPrice: parseUsd('97.00'), shares: 10, status: 'open' },
+    ])
+    const notified: Array<{ runId: number; order: OrderRow }> = []
+    const d: BookingDeps = { ...deps, notifySiblingCancelled: async (rid, o) => { notified.push({ runId: rid, order: { ...o } }) } }
+    await confirmPendingFill(pid, { side: 'sell' }, d)
+    const target = f._stores.orders.find((o: any) => o.kind === 'sell_loc')
+    expect(f._stores.orders.find((o: any) => o.kind === 'stop_sell').status).toBe('filled')
+    expect(target).toMatchObject({ status: 'cancelled', cancelReason: 'broker-filled' })
+    expect(notified.map((n) => n.order.id)).toEqual([target.id])
+    expect(notified[0]!.runId).toBe(runId)
+  })
+
+  test('side joins the edited patch written to the pending row on confirm', async () => {
+    const { f, deps, pid } = await setup([{ idx: 0, shares: 10, buy: '10.00' }])
+    await confirmPendingFill(pid, { side: 'sell' }, deps)
+    expect(f._stores.pending[0]).toMatchObject({ status: 'confirmed', side: 'sell' })
+  })
+
+  test('no side override keeps the pending side', async () => {
+    const { f, deps, pid } = await setup([], { side: 'buy' })
+    await confirmPendingFill(pid, { shares: 4 }, deps)
+    expect(f._stores.fills[0]).toMatchObject({ side: 'buy', shares: 4 })
+    expect(f._stores.pending[0]!.side).toBe('buy')
+  })
+
+  test('feeCents: null recomputes the fee from the run cost ppm', async () => {
+    const { f, deps, pid } = await setup([], { fee: 999, shares: 5 }, 2500)
+    await confirmPendingFill(pid, { price: '20.00', feeCents: null }, deps)
+    const expected = feeCents(parseUsd('20.00'), 5, 2500)
+    expect(expected).not.toBe(999)
+    expect(f._stores.fills[0]!.fee).toBe(expected)
+    expect(f._stores.pending[0]!.fee).toBe(expected)
+  })
+
+  test('feeCents: 0 books a zero fee', async () => {
+    const { f, deps, pid } = await setup([], { fee: 999 }, 2500)
+    await confirmPendingFill(pid, { feeCents: 0 }, deps)
+    expect(f._stores.fills[0]!.fee).toBe(0)
+  })
+
+  test('feeCents: a positive integer overrides the pending fee', async () => {
+    const { f, deps, pid } = await setup([], { fee: 999 })
+    await confirmPendingFill(pid, { feeCents: 17 }, deps)
+    expect(f._stores.fills[0]!.fee).toBe(17)
+  })
+
+  test('an invalid side override throws invalid-side and books nothing', async () => {
+    for (const side of ['SELL', '', 'hold', 1, null]) {
+      const { f, deps, pid } = await setup([{ idx: 0, shares: 10, buy: '10.00' }])
+      await expect(confirmPendingFill(pid, { side: side as any }, deps)).rejects.toThrow('invalid-side')
+      expect(f._stores.fills).toHaveLength(0)
+      expect(f._stores.pending[0]!.status).toBe('pending')
+    }
+  })
+
+  test('an invalid fee override throws invalid-fee and books nothing', async () => {
+    for (const fee of [-1, 1.5, NaN, '5', Infinity]) {
+      const { f, deps, pid } = await setup([])
+      await expect(confirmPendingFill(pid, { feeCents: fee as any }, deps)).rejects.toThrow('invalid-fee')
+      expect(f._stores.fills).toHaveLength(0)
+      expect(f._stores.pending[0]!.status).toBe('pending')
+    }
   })
 })

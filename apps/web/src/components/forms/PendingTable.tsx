@@ -1,79 +1,128 @@
 import { useState } from 'react';
-import { ApiError, api, usdOrNull, type PendingFillDto } from '../../api';
+import { ApiError, api, usdFeeOrNull, usdOrNull, usdToCents, type PendingFillDto, type PendingOverrides } from '../../api';
 import { useT } from '../../i18n';
-import { pendingIssue } from '../../viewmodels';
-import { isoDate, priceUsd } from '../../format';
+import { patchRowValues, pendingEdits, standingIssue, type RowValues } from '../../pendingvalues';
 import { useAsync } from '../hooks';
-import { Button, EmptyNote, Input, TableWrap, Td, Th } from '../ui';
+import { EmptyNote, TableWrap, Th } from '../ui';
+import { KeepImagePrompt } from './KeepImagePrompt';
+import { PendingReviewDialog } from './PendingReviewDialog';
+import { PendingRow, initialRowValues } from './PendingRow';
 
-interface Overrides {
-  shares: string;
-  price: string;
-  filledOn: string;
+// An action waiting on the keep/discard prompt, with its overrides already built.
+interface Decision {
+  row: PendingFillDto;
+  action: 'confirm' | 'reject';
+  overrides: PendingOverrides | undefined;
 }
 
-const EMPTY: Overrides = { shares: '', price: '', filledOn: '' };
-
-// Unrecognized screenshot fills. Confirm accepts optional overrides
-// {shares?, price?, filledOn?}; pendingIssue() highlights the field the row is
-// missing. A 409 on confirm is either ticker-mismatch (integrity guard: the
-// pending row's ticker ≠ the run's ticker — the untouched row stays visible
-// for rejection) or the row was already handled elsewhere.
+// Unrecognized screenshot fills. Every field is one control pre-filled with what
+// vision detected; confirm sends only the fields that differ from that
+// (pendingEdits), so an untouched confirm posts no overrides. A 409 on confirm is
+// either ticker-mismatch (integrity guard: the pending row's ticker ≠ the run's
+// ticker — the untouched row stays visible for rejection) or the row was
+// already handled elsewhere.
 export function PendingTable({ runId }: { runId?: number }) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.listPending(), []);
-  const [overrides, setOverrides] = useState<Record<number, Overrides>>({});
+  const [edited, setEdited] = useState<Record<number, RowValues>>({});
+  const [reviewId, setReviewId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [decision, setDecision] = useState<Decision | null>(null);
 
   const visible = (data ?? []).filter((r) => runId === undefined || r.runId === runId);
+  const reviewing = visible.find((r) => r.id === reviewId);
 
-  const setOverride = (id: number, field: keyof Overrides, value: string) =>
-    setOverrides((prev) => ({ ...prev, [id]: { ...EMPTY, ...prev[id], [field]: value } }));
+  const valuesFor = (r: PendingFillDto) => edited[r.id] ?? initialRowValues(r);
+  const patchValues = (r: PendingFillDto, patch: Partial<RowValues>) =>
+    setEdited((prev) => ({ ...prev, [r.id]: patchRowValues(r, prev[r.id] ?? initialRowValues(r), patch) }));
+  const setValues = (r: PendingFillDto, values: RowValues) => setEdited((prev) => ({ ...prev, [r.id]: values }));
 
-  const confirm = async (r: PendingFillDto) => {
-    const o = overrides[r.id] ?? EMPTY;
-    const body: { shares?: number; price?: string; filledOn?: string } = {};
-    if (o.shares !== '') {
-      if (!Number.isInteger(Number(o.shares)) || Number(o.shares) <= 0) throw new Error(t('pendingInvalidOverride'));
-      body.shares = Number(o.shares);
+  const buildOverrides = (r: PendingFillDto): PendingOverrides | undefined => {
+    const v = valuesFor(r);
+    const invalid = () => new Error(t('pendingInvalidOverride'));
+    // A field vision missed stays unbooked until it is filled in: left blank it reads as
+    // unedited, and the server would substitute its own value (the capture date for a date).
+    if (standingIssue(r, v) !== null && standingIssue(r, v) !== 'ticker') throw new Error(t('pendingNeedsOverride'));
+    const body: PendingOverrides = {};
+    for (const field of pendingEdits(r, v)) {
+      if (field === 'side') {
+        if (v.side !== 'buy' && v.side !== 'sell') throw invalid();
+        body.side = v.side;
+      } else if (field === 'shares') {
+        // Digits only: Number() would read "1e1" as 10 and "0x10" as 16.
+        const n = /^\d+$/.test(v.shares.trim()) ? Number(v.shares) : NaN;
+        if (!Number.isInteger(n) || n <= 0) throw invalid();
+        body.shares = n;
+      } else if (field === 'price') {
+        const price = usdOrNull(v.price);
+        if (price === null) throw invalid();
+        body.price = price;
+      } else if (field === 'filledOn') {
+        if (v.filledOn.trim() === '') throw invalid();
+        body.filledOn = v.filledOn;
+      } else if (v.fee.trim() === '') {
+        body.feeCents = null;
+      } else {
+        const fee = usdFeeOrNull(v.fee);
+        const cents = fee === null ? null : usdToCents(fee);
+        if (cents === null) throw invalid();
+        body.feeCents = cents;
+      }
     }
-    if (o.price !== '') {
-      const price = usdOrNull(o.price);
-      if (price === null) throw new Error(t('pendingInvalidOverride'));
-      body.price = price;
-    }
-    if (o.filledOn !== '') body.filledOn = o.filledOn;
-    await api.confirmPending(r.id, Object.keys(body).length > 0 ? body : undefined);
+    return Object.keys(body).length > 0 ? body : undefined;
   };
 
-  const act = async (r: PendingFillDto, action: 'confirm' | 'reject') => {
-    setBusyId(r.id);
-    setActionError(null);
+  const reportError = async (err: unknown) => {
+    if (err instanceof ApiError && err.code === 'ticker-mismatch') {
+      // The row is untouched — do NOT reload; it must stay visible so the
+      // user can reject it.
+      setActionError(t('pendingTickerMismatch'));
+    } else if (err instanceof ApiError && err.status === 409) {
+      setActionError(t('pendingAlreadyHandled'));
+      await reload();
+    } else if (err instanceof ApiError) {
+      // Same rule as FillDialog: known fillErr.* codes read localized, the
+      // rest fall back to the raw server code (ApiError.message).
+      const key = `fillErr.${err.code}`;
+      const msg = t(key);
+      setActionError(msg === key ? err.message : msg);
+    } else {
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const submit = async ({ row, action, overrides }: Decision, keepImage?: boolean) => {
+    setBusyId(row.id);
     try {
-      if (action === 'confirm') await confirm(r);
-      else await api.rejectPending(r.id);
+      if (action === 'confirm') await api.confirmPending(row.id, overrides, keepImage);
+      else await api.rejectPending(row.id, keepImage);
       await reload();
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'ticker-mismatch') {
-        // The row is untouched — do NOT reload; it must stay visible so the
-        // user can reject it.
-        setActionError(t('pendingTickerMismatch'));
-      } else if (err instanceof ApiError && err.status === 409) {
-        setActionError(t('pendingAlreadyHandled'));
-        await reload();
-      } else if (err instanceof ApiError) {
-        // Same rule as FillDialog: known fillErr.* codes read localized, the
-        // rest fall back to the raw server code (ApiError.message).
-        const key = `fillErr.${err.code}`;
-        const msg = t(key);
-        setActionError(msg === key ? err.message : msg);
-      } else {
-        setActionError(err instanceof Error ? err.message : String(err));
-      }
+      await reportError(err);
     } finally {
       setBusyId(null);
     }
+  };
+
+  // A vision misread is only plausible when there is a screenshot to keep, the
+  // row really was a vision reading (a legacy row has no snapshot to be wrong
+  // against), and the operator either corrected it or threw it out.
+  const asksAboutImage = (r: PendingFillDto, action: 'confirm' | 'reject') =>
+    r.hasImage && r.detected !== null && (action === 'reject' || pendingEdits(r, valuesFor(r)).length > 0);
+
+  const act = async (r: PendingFillDto, action: 'confirm' | 'reject') => {
+    setActionError(null);
+    let overrides: PendingOverrides | undefined;
+    try {
+      if (action === 'confirm') overrides = buildOverrides(r);
+    } catch (err) {
+      await reportError(err);
+      return;
+    }
+    const next: Decision = { row: r, action, overrides };
+    if (asksAboutImage(r, action)) setDecision(next);
+    else await submit(next);
   };
 
   if (loading) return <p className="text-sm text-muted-foreground">{t('loading')}</p>;
@@ -92,68 +141,48 @@ export function PendingTable({ runId }: { runId?: number }) {
               <Th>{t('pendingColSide')}</Th>
               <Th className="text-right">{t('pendingColQty')}</Th>
               <Th className="text-right">{t('pendingColPrice')}</Th>
+              <Th className="text-right">{t('pendingColFee')}</Th>
+              <Th />
               <Th>{t('pendingColDetected')}</Th>
               <Th>{t('pendingColActions')}</Th>
             </tr>
           </thead>
           <tbody>
-            {visible.map((r) => {
-              const issue = pendingIssue(r);
-              const o = overrides[r.id] ?? EMPTY;
-              const bad = (f: keyof Overrides) => (issue.field === f ? 'border-warning' : '');
-              return (
-                <tr key={r.id}>
-                  <Td className="whitespace-nowrap tabular-nums">
-                    <div>{isoDate(r.filledOn)}</div>
-                    <Input
-                      type="date"
-                      className={`mt-1 w-36 ${bad('filledOn')}`}
-                      value={o.filledOn}
-                      aria-label={t('pendingColDate')}
-                      onChange={(e) => setOverride(r.id, 'filledOn', e.target.value)}
-                    />
-                  </Td>
-                  <Td className="font-medium">{r.ticker || '?'}</Td>
-                  <Td>{r.side === 'buy' || r.side === 'sell' ? t(r.side === 'buy' ? 'orderSideBuy' : 'orderSideSell') : '?'}</Td>
-                  <Td className="text-right tabular-nums">
-                    <div>{r.shares > 0 ? r.shares : '?'}</div>
-                    <Input
-                      className={`mt-1 w-24 ${bad('shares')}`}
-                      placeholder={t('pendingQtyOverride')}
-                      inputMode="numeric"
-                      value={o.shares}
-                      onChange={(e) => setOverride(r.id, 'shares', e.target.value)}
-                    />
-                  </Td>
-                  <Td className="text-right tabular-nums">
-                    <div>{priceUsd(r.price)}</div>
-                    <Input
-                      className={`mt-1 w-24 ${bad('price')}`}
-                      placeholder={t('pendingPriceOverride')}
-                      inputMode="decimal"
-                      value={o.price}
-                      onChange={(e) => setOverride(r.id, 'price', e.target.value)}
-                    />
-                  </Td>
-                  <Td className="whitespace-nowrap text-muted-foreground tabular-nums">{isoDate(r.createdAt)}</Td>
-                  <Td>
-                    {issue.field !== null && (
-                      <div className="mb-1 max-w-48 text-xs text-warning">{t('pendingNeedsOverride')}</div>
-                    )}
-                    <div className="flex gap-2">
-                      <Button variant="primary" busy={busyId === r.id} onClick={() => void act(r, 'confirm')}>
-                        {t('pendingConfirm')}
-                      </Button>
-                      <Button variant="danger" disabled={busyId === r.id} onClick={() => void act(r, 'reject')}>
-                        {t('pendingReject')}
-                      </Button>
-                    </div>
-                  </Td>
-                </tr>
-              );
-            })}
+            {visible.map((r) => (
+              <PendingRow
+                key={r.id}
+                row={r}
+                values={valuesFor(r)}
+                onChange={(patch) => patchValues(r, patch)}
+                onOpenSideBySide={() => setReviewId(r.id)}
+                onConfirm={() => void act(r, 'confirm')}
+                onReject={() => void act(r, 'reject')}
+                busy={busyId === r.id}
+              />
+            ))}
           </tbody>
         </TableWrap>
+      )}
+      {decision && (
+        <KeepImagePrompt
+          action={decision.action}
+          onDecide={(keep) => {
+            setDecision(null);
+            void submit(decision, keep);
+          }}
+          onDismiss={() => setDecision(null)}
+        />
+      )}
+      {reviewing && (
+        <PendingReviewDialog
+          row={reviewing}
+          values={valuesFor(reviewing)}
+          onCancel={() => setReviewId(null)}
+          onDone={(values) => {
+            setValues(reviewing, values);
+            setReviewId(null);
+          }}
+        />
       )}
     </div>
   );

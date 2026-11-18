@@ -8,12 +8,19 @@ import { recordCorrections } from './capture-corrections'
 import { withRunLock } from './run-lock'
 import { notifySiblingsCancelled } from './sibling-notify'
 import { matchSellOrder, openSellLegs, type OrderRow } from './sell-match'
+import { storeCaptureImage } from './capture-image'
 import type { CorrectionRepo } from './correction-types'
+import type { CaptureImageInsert, CaptureImageListing } from '../db/repos-vision'
+import type { VisionReviewInsert, VisionReviewRow } from './vision-review'
 
 // The conflict shape belongs to the dedup matcher and the order row to the sell
 // matcher; re-exported so the booking surface keeps being the single place its
 // consumers import from.
 export type { CaptureConflict, OrderRow }
+
+// confirmPendingFill lives in its own module (this file's size); re-exported so
+// every caller keeps importing the booking surface from here.
+export { confirmPendingFill, rejectPendingFill, type ConfirmOverrides } from './confirm-pending'
 
 export async function sha256(buf: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', buf as any)
@@ -43,6 +50,19 @@ export interface RepoSurface {
   }
   correctionRepo: CorrectionRepo
   captureRepo: { findByHash(runId: number, hash: string): Promise<{ id: number; status: string } | null>; setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
+  captureImageRepo: {
+    insertIgnore(row: CaptureImageInsert): Promise<boolean>
+    getBytes(captureId: number): Promise<{ mime: string; bytes: Buffer } | null>
+    isKept(captureId: number): Promise<boolean>
+    setKeep(captureId: number): Promise<void>
+    deleteFor(captureId: number): Promise<void>
+    listKept(limit: number): Promise<CaptureImageListing[]>
+  }
+  visionReviewRepo: {
+    insertIgnore(row: VisionReviewInsert): Promise<void>
+    listForCaptures(captureIds: number[]): Promise<VisionReviewRow[]>
+    deleteFor(captureId: number): Promise<void>
+  }
   ledgerRepo: { insert(l: any): Promise<any>; listForRun(runId: number): Promise<any[]> }
   notificationRepo: { insert(n: any): Promise<any> }
 }
@@ -84,12 +104,19 @@ export async function runBooking(input: BookInput, deps: BookingDeps): Promise<n
   return cancelled
 }
 
-async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number[]> {
+// The one place a booked fill's fee is decided: the explicit cents when given,
+// otherwise computed from the run's costPpm. confirmPendingFill freezes the same
+// number into the review record, so the two must never diverge.
+export function finalFeeCents(run: { costPpm: number }, price: bigint, shares: number, feeCentsOverride: number | null): number {
+  return feeCentsOverride !== null ? feeCentsOverride : feeCents(price, shares, run.costPpm)
+}
+
+export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number[]> {
   const repos = deps.repos
   const run = await repos.runRepo.get(input.runId)
   const state: RunState = await repos.bucketRepo.loadState(input.runId)
   const priceBigInt = parseUsd(input.priceStr)
-  const finalFee = input.feeCents !== null ? input.feeCents : feeCents(priceBigInt, input.shares, run.costPpm)
+  const finalFee = finalFeeCents(run, priceBigInt, input.shares, input.feeCents)
 
   let next: RunState
   let bucketIdx: number
@@ -130,7 +157,7 @@ async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<number
 
   // persist order: decide -> saveState -> fill -> ledger -> order flip (R15: flip last, only after ledger)
   if (input.pendingId != null) {
-    const edited: any = { shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, bucketIdx }
+    const edited: any = { side: input.side, shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, bucketIdx }
     const flipped = await repos.pendingRepo.decide(input.pendingId, 'confirmed', edited)
     if (flipped === false) throw new Error('pending-not-pending')
   }
@@ -180,6 +207,10 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
       const pendingId = await repos.pendingRepo.insert({
         runId, captureId, bucketIdx: null, side: f.side, ticker: f.ticker, shares: f.shares,
         price: parseUsd(f.price), fee: feeCentsVal, filledOn, status: 'pending',
+        // Frozen vision snapshot: the extractor's own values, so a missing date stays null
+        // rather than taking the filledOn substitute.
+        detectedSide: f.side, detectedShares: f.shares, detectedPrice: parseUsd(f.price),
+        detectedFilledOn: f.date ?? null, detectedFee: feeCentsVal, detectedAt: deps.today,
       })
       pendingRows.push({
         id: pendingId, runId, captureId, side: f.side, ticker: f.ticker, shares: f.shares,
@@ -188,44 +219,12 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
         filledOn, status: 'pending',
       })
     }
+    if (pendingRows.length > 0) await storeCaptureImage(repos, captureId, image)
     if (fresh.length === 0) return { conflicts }
     const earlier = claim.bookedEarlier ? { bookedEarlier: true as const } : {}
     if (conflicts.length > 0) return { pending: pendingRows, conflicts, ...earlier }
     return { pending: pendingRows, ...earlier }
   })
-}
-
-export async function confirmPendingFill(pendingId: number, overrides: { shares?: number; price?: string; filledOn?: ISODate } | null, deps: BookingDeps): Promise<void> {
-  const repos = deps.repos
-  // Only a peek to learn which run this pending belongs to; everything that
-  // reads and writes state happens inside the lock, where the row is re-read.
-  const known = (await repos.pendingRepo.listPending()).find((p: any) => p.id === pendingId)
-  if (!known) throw new Error('pending-not-found-or-not-pending')
-
-  // bookUnlocked, not runBooking: the lock is not reentrant.
-  const cancelled = await withRunLock(known.runId, async () => {
-    const pendingList = await repos.pendingRepo.listPending()
-    const pending = pendingList.find((p: any) => p.id === pendingId)
-    if (!pending) throw new Error('pending-not-found-or-not-pending')
-
-    const run = await repos.runRepo.get(pending.runId)
-    if (pending.ticker !== run.ticker) throw new Error('ticker-mismatch')
-    const priceStr = overrides?.price ?? formatUsd(pending.price)
-    const shares = overrides?.shares ?? pending.shares
-    const filledOn = overrides?.filledOn ?? pending.filledOn
-
-    return bookUnlocked({
-      runId: pending.runId,
-      side: pending.side,
-      shares,
-      priceStr,
-      feeCents: pending.fee,
-      filledOn,
-      pendingId,
-      source: 'capture',
-    }, deps)
-  })
-  await notifySiblingsCancelled(known.runId, cancelled, deps)
 }
 
 export async function manualFill(runId: number, fill: Omit<RawFill, 'ticker' | 'date'> & { filledOn: ISODate }, deps: BookingDeps): Promise<void> {

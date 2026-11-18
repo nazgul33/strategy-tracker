@@ -108,6 +108,43 @@ export interface PendingFillDto {
   filledOn: string;
   status: string;
   createdAt: string;
+  /** A screenshot is still stored for this row (it is shown beside the row). */
+  hasImage: boolean;
+  /** The run's cost in ppm: the fee the server derives when none is supplied is `feeCents(price, shares, costPpm)`. */
+  costPpm: number;
+  /** What vision read. `null` = the row predates the snapshot; a null field = vision missed it. */
+  detected: DetectedDto | null;
+}
+
+/** A frozen snapshot of the fields vision read; `price` is myriadths as string, `fee` cents. */
+export interface DetectedDto {
+  side: string | null;
+  shares: number | null;
+  price: string | null;
+  filledOn: string | null;
+  fee: number | null;
+}
+
+/** One resolved fill of a kept screenshot. `final` is null for a reject. */
+export interface VisionReviewFillDto {
+  id: number;
+  outcome: 'confirmed' | 'rejected';
+  edited: boolean;
+  /** The operator supplied the fee; when false, a final fee that differs from the detected one was derived, not typed. */
+  feeOverridden: boolean;
+  detected: DetectedDto;
+  final: DetectedDto | null;
+}
+
+/** A kept screenshot with every fill resolved from it, newest first on the wire. */
+export interface VisionReviewEntryDto {
+  captureId: number;
+  runId: number;
+  ticker: string;
+  createdAt: string;
+  mime: string;
+  byteLen: number;
+  fills: VisionReviewFillDto[];
 }
 
 /** An open fill correction proposed from a later screenshot. */
@@ -210,6 +247,19 @@ export interface CreateRunInput {
   poolCents: number; // integer cents > 0
   bucketCount?: number; // omitted → server default (10)
   seed?: { cashCents?: number; buckets?: { shares: number; buyPrice: string; filledOn: string }[] };
+}
+
+/**
+ * `overrides` of POST /pending/:id/confirm. Only changed fields are present: an
+ * unchanged field is omitted (the server rejects `side: null`). `feeCents: null`
+ * is meaningful: recompute the fee from the run's cost ppm.
+ */
+export interface PendingOverrides {
+  side?: 'buy' | 'sell';
+  shares?: number;
+  price?: string; // "12.34"
+  filledOn?: string; // YYYY-MM-DD
+  feeCents?: number | null;
 }
 
 /** Body of POST /runs/:id/fills — USD strings; the ticker is the run's own, server-stamped. */

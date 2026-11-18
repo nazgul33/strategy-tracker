@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { BucketDto, PendingFillDto } from './api';
+import type { BucketDto } from './api';
 import {
   bucketCells,
   bulkPlan,
@@ -13,7 +13,6 @@ import {
   orderKindTone,
   orderReasonText,
   orderStatusTone,
-  pendingIssue,
   pnlBadgeTone,
   poolAfterTopUp,
   priceToCents,
@@ -102,38 +101,6 @@ describe('money conversions', () => {
   test('daysBetween is whole days, 0 on bad input', () => {
     expect(daysBetween('2026-11-02', '2026-11-10')).toBe(8);
     expect(daysBetween('nope', '2026-11-10')).toBe(0);
-  });
-});
-
-function pendingRow(over: Partial<PendingFillDto> = {}): PendingFillDto {
-  return {
-    id: 1,
-    runId: 1,
-    captureId: null,
-    bucketIdx: 0,
-    side: 'buy',
-    ticker: 'AAPL',
-    shares: 10,
-    price: '3499900',
-    fee: null,
-    filledOn: '2026-11-02',
-    status: 'pending',
-    createdAt: '2026-11-02T14:00:00Z',
-    ...over,
-  };
-}
-
-describe('pendingIssue', () => {
-  test('first missing field wins', () => {
-    expect(pendingIssue(pendingRow({ ticker: '' }))).toEqual({ field: 'ticker' });
-    expect(pendingIssue(pendingRow({ side: 'SELL' }))).toEqual({ field: 'side' });
-    expect(pendingIssue(pendingRow({ shares: 0 }))).toEqual({ field: 'shares' });
-    expect(pendingIssue(pendingRow({ price: '' }))).toEqual({ field: 'price' });
-    expect(pendingIssue(pendingRow({ filledOn: '' }))).toEqual({ field: 'filledOn' });
-  });
-
-  test('complete row needs no fix', () => {
-    expect(pendingIssue(pendingRow())).toEqual({ field: null });
   });
 });
 
