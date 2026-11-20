@@ -10,7 +10,7 @@
 
 **Spec:** There is no design spec. The sources are GitHub #44, #47 and #48 (the "Validation" bullet and the "Server tidiness" bullets) and `docs/superpowers/followups/2026-11-17-pending-vision-review-followups.md` (cited per task as "followups §<heading>").
 
-**Models (operator ruling 2026-11-18):** implementer subagents run on `anthropic/claude-sonnet-5-5`; per-task reviewers, the whole-branch reviewer and any plan amendments run on `anthropic/claude-opus-5-5`. Pass these as the subagent `model` parameter.
+**Models (operator ruling 2026-11-20):** implementer subagents run on `anthropic/claude-sonnet-5-5`; per-task reviewers, the whole-branch reviewer and any plan amendments run on `anthropic/claude-fable-5-2`. Pass these as the subagent `model` parameter.
 
 Branch: `fix/server-hardening` in a dedicated worktree, cut from `main` **after wave A (`docs/superpowers/plans/2026-11-18-sell-attribution.md`) has merged**. Line numbers below are from pre-wave-A `main`, so locate code by symbol. Post-A paths that this plan uses:
 - `apps/server/test/booking-fakes.ts` (`fakeRepos`, `silentNotifier`, `recordingNotifier`)
@@ -47,7 +47,7 @@ Branch: `fix/server-hardening` in a dedicated worktree, cut from `main` **after 
 1. **Two concurrent coverage writes on a ticker with no rows yet.** InnoDB gap locks do not serialize an empty `FOR UPDATE` read, so one transaction deadlocks. A sim Apply must still succeed, which means a retry rather than a 500. Pinned in Task 2 ("concurrent adds on a fresh ticker…").
 2. **A year chunk whose edges are holidays or weekends** (Jan 1 closed, Dec 31 on a weekend). Each chunk must trim to its own first and last trading days, and must not call upstream for a chunk with no open day. Pinned in Task 1 ("a multi-year gap goes upstream one calendar year at a time").
 3. **The janitor meeting a capture that still has a live pending row.** Its bytes must survive. Pinned in Task 6 (`sweepOrphans` keeps an unkept image with a live pending row).
-4. **Ids like `01`, `0x1`, `1e0` or ones above 2^53.** `parseId` returns null, and a route never resolves them to an existing row. Pinned in Task 4.
+4. **Ids like `01`, `0x1`, `1e0` or ones above 2^53** on the sim, corrections and vision-review routes. `parseId` returns null, and those routes never resolve them to an existing row. Pinned in Tasks 4 and 6. The runs, fills and pending routes keep `Number()`: #48 names only the sim routes, so they are out of scope.
 5. **A screenshot whose trade date the extractor dropped as more than 45 days from today.** Telegram must show the same substitution notice as for a missing date. Pinned in Task 10.
 
 ---
@@ -59,7 +59,7 @@ Sources: #47; #48 "duplicates a four-line `addDays`" and "a large uncovered gap 
 **Files:**
 - Modify: `packages/calendar/src/index.ts:44-51` (export `addDays`)
 - Modify: `apps/server/src/market/bars.ts:1`, `:18-22` (drop the local `addDays`), `:87-106` (chunk loop), `:131` (warn)
-- Test: `packages/calendar/test/calendar.test.ts`, `apps/server/test/bars.test.ts`
+- Test: `packages/calendar/test/calendar.test.ts`, `apps/server/test/bars.test.ts` (extend the existing no-data test only), and a new `apps/server/test/bars-chunking.test.ts` for the three new tests below: `bars.test.ts` is 277 lines and would pass 300. Copy its `beforeEach` setup (`up`, `f`, `read`, `today`) into the new file.
 
 **Interfaces:**
 - Produces: `export function addDays(d: ISODate, n: number): ISODate` from `@st/calendar` (the existing body, now exported).
@@ -77,7 +77,7 @@ test('addDays crosses month, leap-day and year boundaries', () => {
 });
 ```
 
-`bars.test.ts` (inside the existing `describe`, default `today = '2026-06-01'`):
+`bars-chunking.test.ts` (same setup as `bars.test.ts`'s `describe`, default `today = '2026-06-01'`):
 ```ts
 test('a multi-year gap goes upstream one calendar year at a time', async () => {
   await read('AAPL', '2024-06-03', '2026-03-31')
@@ -114,7 +114,7 @@ Also extend `a range with no data anywhere propagates…`: wrap it in a `console
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `bun test packages/calendar/test/calendar.test.ts apps/server/test/bars.test.ts`
+Run: `bun test packages/calendar/test/calendar.test.ts apps/server/test/bars.test.ts apps/server/test/bars-chunking.test.ts`
 Expected: FAIL. `addDays` is not exported, the ranges show one unchunked call, and `warn` is called 0 times.
 
 - [ ] **Step 3: Implement**
@@ -126,13 +126,13 @@ Expected: FAIL. `addDays` is not exported, the ranges show one unchunked call, a
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `bun test packages/calendar apps/server/test/bars.test.ts apps/server/test/http-sim-drafts.test.ts apps/server/test/http-price-history.test.ts`
+Run: `bun test packages/calendar apps/server/test/bars.test.ts apps/server/test/bars-chunking.test.ts apps/server/test/http-sim-drafts.test.ts apps/server/test/http-price-history.test.ts`
 Expected: all pass, 0 fail.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/calendar apps/server/src/market/bars.ts apps/server/test/bars.test.ts
+git add packages/calendar apps/server/src/market/bars.ts apps/server/test/bars.test.ts apps/server/test/bars-chunking.test.ts
 git commit -m "fix: chunk uncovered bar gaps by year and warn when an empty gap is covered"
 ```
 
@@ -241,8 +241,10 @@ test('sweepDrafts returns the number of runs it deleted, with their days gone', 
   const y = await repos.simRepo.insertRun(input())
   await repos.simRepo.insertDays([day(x, '2026-03-02'), day(y, '2026-03-02'), day(y, '2026-03-03')])
   await db.execute(sql.raw(`UPDATE sim_runs SET created_at = '2001-01-01 00:00:00' WHERE id IN (${x}, ${y})`))
-  expect(await repos.simRepo.sweepDrafts(new Date('2002-01-01T00:00:00Z'))).toBe(2)
+  // >= 2: st_test is shared, and a crashed earlier run may have left 2001-dated drafts behind
+  expect(await repos.simRepo.sweepDrafts(new Date('2002-01-01T00:00:00Z'))).toBeGreaterThanOrEqual(2)
   expect(await repos.simRepo.getRun(x)).toBeNull()
+  expect(await repos.simRepo.getRun(y)).toBeNull()
   expect(await repos.simRepo.listDays(y)).toEqual([])
 })
 ```
@@ -334,7 +336,7 @@ Expected: FAIL. `params.ts` is missing, `/0x1` resolves to 200, the nameless PUT
 
 - [ ] **Step 3: Implement**
 
-- Create `params.ts`. Delete the local `parseId` from `sim.ts` and import the shared one.
+- Create `params.ts`. Delete the local `parseId` from `sim.ts` and import the shared one. Also delete the local `parseId` in `apps/server/src/http/routes/corrections.ts:18` (`/^\d+$/`, which accepts `01`) and import the shared one; in `apps/server/test/http-corrections.test.ts`, add the test `a non-canonical id never reaches a correction`: with an open correction whose id is `1`, `await call('POST', '/corrections/01/apply')` answers `404` `{ error: 'correction-not-found' }` and the correction's status is still `'open'`. Write this test with the others in Step 1 so it fails first.
 - Split `validateConfig` so it no longer reads `name`. `validateCreate` checks `name` (`'invalid name'`, as now) and adds it to `input`.
 - PUT passes the name-less config to `updateSimRun`.
 - Web: change `simConfigBody` and its two callers as stated under Interfaces. Remove the "stable placeholder" comment at `api.ts:284-285`.
@@ -358,7 +360,7 @@ git commit -m "fix: strict decimal ids on sim routes; PUT /api/sim/:id no longer
 Sources: #48 "the price-history route still issues a close-only `upsertMany`" and "`deleteFill`/`rebookFill` do not undo sibling cancels".
 
 **Files:**
-- Modify: `apps/server/src/http/routes/runs.ts:146-208`. Drop the `upsertMany` call at `:167` and the `b.tradeDate ??` shim at `:204`, and update the comments at `:146-149` and `:183-186`.
+- Modify: `apps/server/src/http/routes/runs.ts:146-208`. Drop the `upsertMany` call at `:166` and the `b.tradeDate ??` shim at `:203`, and update the comments at `:146-149` and `:183-186`.
 - Modify: `apps/server/test/http-price-history.test.ts:28-54`
 - Modify: `apps/server/src/domain/recompute.ts` (comments on `rebookFill` and `deleteFill`)
 
@@ -490,7 +492,7 @@ Sources: followups §"A swallowed archive failure…" (`{ ok: true, archived: fa
 **Files:**
 - Modify: `apps/server/src/domain/confirm-pending.ts`. Move the side/fee validation below the `known` peek, and change the return types.
 - Modify: `apps/server/src/http/routes/pending.ts:16-52`
-- Modify: `apps/server/test/vision-review.test.ts` (the four `rejectPendingFill` assertions at `:329-349`; add return-value assertions to `:310` and `:337`)
+- Modify: `apps/server/test/vision-review.test.ts` (the four `rejectPendingFill` assertions at `:329-349`; add return-value assertions to the confirms at `:304` (`{ archived: true }`) and `:315` (`{ archived: false }`), and to the reject at `:342` (`{ archived: false }`))
 - Create: `apps/server/test/http-pending-routes.test.ts`. `http-pending-settings.test.ts` is already at 317 lines; copy its `setup()` from `:167-176`.
 - Modify: `scripts/e2e-vision-review.ts:50-52` (assert `archived === true` on `confirmA`)
 
@@ -610,7 +612,7 @@ Source: followups §"`fee_overridden` means 'an override was present'…". Opera
 
 - [ ] **Step 1: Pin the semantics**
   - Keep `fee_overridden is true whenever the confirm carried a feeCents, null included` as it is.
-  - Add `a confirm with no fee override records fee_overridden false`: overrides `{ shares: 11 }` give `toMatchObject({ edited: true, feeOverridden: false })`.
+  - The existing test at `:228` (`fee_overridden is false when the confirm carried no feeCents, even with another field edited`) already pins the no-override case. Add nothing for it.
   - In `a fee-bearing capture confirmed with feeCents null is edited when the recomputed fee differs`, add `expect(row.feeOverridden).toBe(true)`.
 - [ ] **Step 2: Run `bun test apps/server/test/vision-review.test.ts`.** Expected: PASS. These pin current behaviour; if one fails, stop and report.
 - [ ] **Step 3: Rewrite both comments** to: "true whenever the confirm carried a fee override, `null` (cleared: the server books the default fee) included; the review tab highlights the fee for either (operator ruling 2026-11-20)."
@@ -643,7 +645,8 @@ Source: followups §"The missed-date block is client-only" ("surface the substit
 
 - [ ] **Step 1: Write the failing tests and fix the fixtures**
 
-- Give the date-less vision fixtures that feed exact prompt assertions a date equal to their test's today. These are `visionFetch` (`:230`), `multiVisionFetch` and any other fixture behind a `'… — confirm?'` assertion (`:289, :404, :440, :461, :614, :628, :661, :680-681, :692`). Add `date: '2026-11-10'` so the existing exact-text assertions stay as written. If a test with a different `today` asserts prompt text, give it its own fixture dated to that `today` rather than changing the expected string.
+- Give the date-less vision fixtures that feed exact prompt assertions a date equal to their test's today. These are `visionFetch` (`:230`), `multiVisionFetch` and any other fixture behind a `'… — confirm?'` assertion (`:289, :404, :440, :461, :614, :628, :661, :680-681, :692`). Add `date: '2026-11-10'` so the existing exact-text assertions stay as written. If a test with a different `today` asserts prompt text, give it its own fixture dated to that `today` rather than changing the expected string. `:707` and `:729` also use `multiVisionFetch`, so the fixture edit covers them.
+- Exception: leave the second `flaky` fill (`wire.test.ts:448`) without a date. Its test is about a re-read that loses the date, which is exactly the case the notice exists for. Change the expected array at `:461` to `[NOTICE_EN, 'Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?\n⚠️ The screenshot showed no trade date, so the capture date 2026-11-10 was used. If the trade was on another day, fix the date in the web app\'s Pending view instead of confirming here.']`.
 - Add a `describe('capture prompt — trade date vision could not read')` with:
   - `a fill with no date carries the substitution notice`. The fixture has no date and today is `2026-11-10`. Expect `sent[0].text` toBe `'Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?\n⚠️ The screenshot showed no trade date, so the capture date 2026-11-10 was used. If the trade was on another day, fix the date in the web app\'s Pending view instead of confirming here.'` and the keyboard unchanged.
   - `a date the extractor dropped as too far from today gets the same notice`. The fixture date is `'2026-01-02'` and today is `2026-11-10`. The text contains `'capture date 2026-11-10 was used'`.
@@ -674,7 +677,7 @@ git commit -m "feat: Telegram capture prompt says when the capture date stands i
 ### Task 11: Repo map, full verification, PR
 
 **Files:**
-- Modify: `AGENTS.md` repo map. Add `http/params.ts` and `wire/boot-sweeps.ts`. Add the new tests to the `test/` line: `db-bar-coverage-lock`, `db-sim-list`, `db-vision-janitor`, `boot-sweeps`, `http-params`, `http-pending-routes`.
+- Modify: `AGENTS.md` repo map. Add `http/params.ts` and `wire/boot-sweeps.ts`. Add the new tests to the `test/` line: `bars-chunking`, `db-bar-coverage-lock`, `db-sim-list`, `db-vision-janitor`, `boot-sweeps`, `http-params`, `http-pending-routes`.
 
 - [ ] **Step 1: Update `AGENTS.md`** as above.
 - [ ] **Step 2: Full unit suite.** Run `bun test`. Expected: 0 fail. DB suites skip.

@@ -10,7 +10,7 @@
 
 **Spec:** GitHub #43 (attribution), #45 (bounded scan), #48 (bullet "`notifySiblingCancelled` is optional" and the `market_sell` tie-break test gap). Parent design: `docs/superpowers/specs/2026-11-16-cut-loss-and-sim-drafts-design.md`, section "Booking a stop fill" (updated by Task 3). Operator rulings 2026-11-18: price distance only; tell the operator via Notifications tab + Telegram; equal distance → target before stop, then lowest bucket.
 
-**Models (operator ruling 2026-11-18):** implementer subagents run on `anthropic/claude-sonnet-5-5`; per-task reviewers, the whole-branch reviewer and any plan amendments run on `anthropic/claude-opus-5-5`. Pass these as the subagent `model` parameter.
+**Models (operator ruling 2026-11-20):** implementer subagents run on `anthropic/claude-sonnet-5-5`; per-task reviewers, the whole-branch reviewer and any plan amendments run on `anthropic/claude-fable-5-2`. Pass these as the subagent `model` parameter.
 
 Branch: `fix/sell-attribution` in a dedicated worktree. Merge before waves B/C (`2026-11-18-server-hardening.md`, `2026-11-18-type-safety-and-test-gaps.md`), which assume this wave's types.
 
@@ -40,7 +40,7 @@ Branch: `fix/sell-attribution` in a dedicated worktree. Merge before waves B/C (
 - Modify: `apps/server/test/booking.test.ts` (import from `./booking-fakes`), and the six importers of `./booking.test`: `vision-review.test.ts`, `rebooking.test.ts`, `capture-image.test.ts`, `recalc.test.ts`, `run-lock-writers.test.ts`, `corrections.test.ts`
 - Modify: `apps/server/src/domain/booking.ts:36` (`RepoSurface.orderRepo` gains `listForRunFrom`), `:137-138` (use it)
 - Modify: `apps/server/src/db/repos.ts:110-113` (real `listForRunFrom`)
-- Modify fakes: `apps/server/test/booking-fakes.ts`, `apps/server/test/http-fakes.ts:58`, `apps/server/test/day.test.ts:42`, `apps/server/test/wire.test.ts` (base fake and the `setupSell` override at `:779-788`), plus any other fake `tsc` reports
+- Modify fakes: `apps/server/test/booking-fakes.ts`, `apps/server/test/http-fakes.ts:58`, `apps/server/test/day.test.ts:42`, `apps/server/test/wire.test.ts` (the base fake at `:162-169`; the `bucket-not-held` override at `:583`, which replaces only `listForRun` today and must set `listForRunFrom` too, or that test falls through to `no-bucket-for-sell`; and the `setupSell` override at `:779-788`), plus any other fake `tsc` reports
 - Test: `apps/server/test/booking.test.ts`, `apps/server/test/db.test.ts`
 
 **Interfaces:**
@@ -67,6 +67,7 @@ Branch: `fix/sell-attribution` in a dedicated worktree. Merge before waves B/C (
 - Modify: `apps/server/src/http/booking-deps.ts`, `apps/server/src/wire/capture.ts:192-196`, `packages/telegram/src/i18n.ts`
 - Create: `apps/server/test/sell-attribution.test.ts`
 - Modify tests: `booking.test.ts` (matchSellOrder unit tests, `notifySiblingCancelled` call sites, `runBooking` return value), `vision-review.test.ts:287`, `http-sibling-notify.test.ts`, `wire.test.ts`, `packages/telegram/test/digest.test.ts`, `apps/server/test/booking-fakes.ts`
+- Modify tests that pass deps into `manualFill` / `confirmPendingFill` / `runBooking` and now need `notify: silentNotifier`: `rebooking.test.ts:11`, `recalc.test.ts:10`, `corrections.test.ts:28`, `run-lock-writers.test.ts:22,81`, `db.test.ts:252-445` (several deps objects)
 
 **Interfaces:**
 - Consumes: `listForRunFrom` and `booking-fakes.ts` from Task 1.
@@ -92,10 +93,11 @@ Branch: `fix/sell-attribution` in a dedicated worktree. Merge before waves B/C (
 - Produces (`booking-fakes.ts`): `silentNotifier: BookingNotifier` and `recordingNotifier(): { notify: BookingNotifier; siblings: Array<{ runId: number; order: OrderRow }>; attributions: Array<{ runId: number; attribution: SellAttribution }> }`.
 
 **Matching rule.** This replaces the header comment of `matchSellOrder`.
-- **1a (unchanged):** an open `sell_loc` with `limitPrice === price`, read from `onDay` with no shares gate.
+- **1a (matching unchanged):** an open `sell_loc` with `limitPrice === price`, read from `onDay` with no shares gate.
 - **1b "nearest":** over `live`, collect every `sell_loc` with `price >= limitPrice` and every `stop_sell` with `price <= limitPrice`. Sort by `distance` ascending, then `sell_loc` before `stop_sell`, then `bucketIdx` ascending. The first entry wins.
 - **1c:** `market_sell`, lowest `bucketIdx`.
-- `attribution` is non-null only on rung 1b, and only when admissible legs exist on other buckets. Those legs, kept in the same sort order, are the `alternatives`.
+- `attribution` is non-null on rungs 1a and 1b, and only when admissible legs exist on other buckets. Those legs are the rung-1b candidates over `live` that sit on a bucket other than the chosen one, kept in the 1b sort order; they are the `alternatives`. On 1a the `chosen` leg has distance `0n`. Rung 1c and the fallback never carry an attribution.
+- `OrderRow.kind` is `string`: narrow it to `LegKind` when building a `SellLeg` (a cast after the kind filter, or a type guard).
 - The header comment must also say why the old per-kind precedence was wrong across buckets: in the #43 scenario, a 96.50 stop fill was booked to another bucket's 91.00 target.
 
 - [ ] **Step 1: Write the failing tests.** Put them in `apps/server/test/sell-attribution.test.ts`, using `fakeRepos` and `recordingNotifier`, with D = `2026-11-12`. Reuse the `setup(held, ords)` shape from `booking.test.ts:1213`; copy it into the new file rather than exporting it.
@@ -104,7 +106,8 @@ Branch: `fix/sell-attribution` in a dedicated worktree. Merge before waves B/C (
   - `a target near the fill beats a loose stop on another bucket`: the existing reviewer scenario (bucket 0 stop 97.00, bucket 9 target 91.00, fill 91.50). Expect bucket 9, `chosen.distance` `parseUsd('0.50')`, alternative bucket 0 `stop_sell` distance `parseUsd('5.50')`.
   - `an unambiguous fill sends no attribution notice`: held 1 only, `pair`, sell 10 @ 96.50. Expect `attributions` `[]` and `siblings` of length 1.
   - `alternatives list every other admissible bucket, nearest first`: held 0, 1 and 2 at 100.00, 96.00 and 110.00; targets 103.00, 99.00 and 113.00; stops 97.00, 93.00 and 106.00; sell 10 @ 100.00. Admissible legs: bucket 1 target (1.00) and bucket 2 stop (6.00). Bucket 0's target needs ≥ 103.00 and its stop ≤ 97.00, so it is not admissible. Expect chosen bucket 1 `sell_loc`, alternatives `[bucket 2 stop_sell distance 6.00]`.
-  - `market_sell ties resolve to the lowest bucket regardless of insertion order` (#48 gap): held 2, 5 and 7; `market_sell` orders inserted in bucket order 7, 5, 2; sell 10 @ 50.00. Expect fill bucket 2 and `attributions` `[]`.
+  - `an exact target hit still reports another admissible bucket`: the #43 book, sell 10 @ 91.00. Expect bucket 9 `sell_loc` filled; `chosen` `{ bucketIdx: 9, kind: 'sell_loc', distance: 0n }`; alternatives `[{ bucketIdx: 0, kind: 'stop_sell', limitPrice: parseUsd('97.00'), distance: parseUsd('6.00') }]`.
+  - `market_sell ties resolve to the lowest bucket regardless of insertion order` (#48 gap; passes before the change, it pins the tie-break): held 2, 5 and 7; `market_sell` orders inserted in bucket order 7, 5, 2; sell 10 @ 50.00. Expect fill bucket 2 and `attributions` `[]`.
   - `a failing attribution notice still lets the sibling notices through`: #43 scenario with `notify = { ...rec.notify, sellAttributed: async () => { throw new Error('telegram-down') } }` and `console.error` spied. Expect: one fill; `siblings` length 1; `console.error` called once.
   - `the attribution notice runs after the run lock is released`: mirror `booking.test.ts:1621`, but probe from `sellAttributed`.
   - `confirming a pending sell sends the attribution notice too`: the #43 scenario through `confirmPendingFill(pid, null, deps)`.
@@ -116,7 +119,7 @@ Branch: `fix/sell-attribution` in a dedicated worktree. Merge before waves B/C (
   Leave `openSellLegs` unchanged.
 - [ ] **Step 4: Create `booking-notify.ts` (`git mv` from `sibling-notify.ts`).** `notifyBookingOutcome` first sends `attribution` (if any) through `notify.sellAttributed`, then each cancelled id through `notify.siblingCancelled` (lowest id first, as today). Each call gets its own try/catch that calls `console.error('booking notification failed:', runId, …)`.
 - [ ] **Step 5: Update `booking.ts`.**
-  - `bookUnlocked` returns `{ cancelledIds, attribution: match?.attribution ?? null }`, which is `null` for buys and fallbacks.
+  - `bookUnlocked` returns `{ cancelledIds, attribution }`. Hoist `let attribution: SellAttribution | null = null` next to `sellOrders` (`:124`) and set it from the match in the sell branch; it stays `null` for buys and fallbacks.
   - `runBooking` returns the outcome after `notifyBookingOutcome`.
   - `manualFill` and the types above change as listed in Interfaces.
   - To keep the file under 300 lines, move `rollStale`, `CANCEL_REASONS` and `cancelOrder` (`:243-265`) into `apps/server/src/domain/order-ops.ts`. Re-export them from `booking.ts` so every importer stays unchanged.
@@ -136,13 +139,15 @@ Branch: `fix/sell-attribution` in a dedicated worktree. Merge before waves B/C (
   - Wire it into `http/booking-deps.ts` (`notify: makeBookingNotifier(...)`) and `wire/capture.ts` `onConfirm`.
 - [ ] **Step 8: Run `bun run typecheck` and fix every site it reports.**
   - Deps passed to `runBooking`, `manualFill` or `confirmPendingFill` gain `notify: silentNotifier`. Sites that used `notifySiblingCancelled` get `notify: { ...silentNotifier, siblingCancelled: … }`. In `booking.test.ts`, `withNotifier` becomes a `siblingCancelled` override of the same kind.
-  - Callers of `runBooking`'s result read `.cancelledIds`.
+  - Callers of `runBooking`'s result read `.cancelledIds`. Typecheck will not flag these, because `toEqual` takes `any`: grep `runBooking(` in `booking.test.ts` and convert all 11 sites (`:1402, 1416, 1429, 1446, 1460, 1480, 1495, 1509, 1521, 1581, 1640`).
+  - `fillBookingDeps` in `http/booking-deps.ts` returns `FillBookingDeps`.
+  - An existing test that asserts an exact `sent` or notifications list after an exact-price sell with another admissible bucket now also sees the attribution message. Update the expectation and name each such test in the report.
   - Update the `matchSellOrder` unit tests at `booking.test.ts:1688-1719` to read `?.order.id` / `?.order.bucketIdx`.
   - Rename `a target fill above its limit books to the highest qualifying target, not a loose stop` to `… books to the nearest leg, not a loose stop`, and `a target fill outranks a stop that also qualifies on price` to `a target nearer the fill outranks a looser stop`. Their assertions stay unchanged.
 - [ ] **Step 9: Add copy and route-level tests.**
   - `packages/telegram/test/digest.test.ts`, test `sell-attributed explains the nearest-price choice in both languages`: render the #43 values through `t` and assert the exact en and ko strings from Step 6, with `{alts}` = `bucket 9 target ($91.00, $5.50 away)` (en) and `버킷 9 목표가 매도 ($91.00, $5.50 차이)` (ko).
-  - `http-sibling-notify.test.ts`, test `an ambiguous manual sell records and sends the attribution notice before the sibling notice`. `createRun` seeds buckets in order, so bucket 0 gets 10 @ 100.0000 and bucket 1 gets 10 @ 88.0000. Insert the #43 orders on buckets 0 and 1 (0: 103.00 / 97.00, 1: 91.00 / 85.40) and POST a sell of 10 @ 96.50. Expect `f.sent` texts for chat `'42'` to be `[<sell-attributed en, alts "bucket 1 target ($91.00, $5.50 away)">, <sibling-cancelled for sell_loc bucket 0 (103.00)>]`, and `f.notifications` to hold the same two rows with `runId: id`.
-  - `wire.test.ts`: in the `setupSell` override, also set `listForRunFrom`. Assert that the existing tests still pass unchanged; they are unambiguous, so no attribution text is sent.
+  - `http-sibling-notify.test.ts`, test `an ambiguous manual sell records and sends the attribution notice before the sibling notice`. The file's `setup()` seeds one bucket and inserts bucket 0's legs, so give this test its own setup: `createRun` with seed buckets `[{ shares: 10, buyPrice: '100.0000' }, { shares: 10, buyPrice: '88.0000' }]` (bucket 0 and bucket 1, in order) and allowed chats `['42']`, then insert only the four #43 orders on buckets 0 and 1 (0: 103.00 / 97.00, 1: 91.00 / 85.40). POST a sell of 10 @ 96.50. Expect `f.sent` texts for chat `'42'` to be `[<sell-attributed en, alts "bucket 1 target ($91.00, $5.50 away)">, <sibling-cancelled for sell_loc bucket 0 (103.00)>]`, and `f.notifications` to hold the same two rows with `runId: id`.
+  - `wire.test.ts`: in the `setupSell` override and the `bucket-not-held` override (`:583`), also set `listForRunFrom`. Assert that the existing tests still pass unchanged; they are unambiguous, so no attribution text is sent.
 - [ ] **Step 10: Run `bun test` and `bun run typecheck`.** Expected: all green, exit 0.
 - [ ] **Step 11: Commit** `fix: attribute ambiguous sell fills to the nearest order price and explain the choice (#43)`.
 

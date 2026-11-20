@@ -9,7 +9,7 @@
 **Tech Stack:** Bun, TypeScript, React 19 + Tailwind, `bun:test` with `@happy-dom/global-registrator`, the shared fetch stub in `apps/web/src/testing/fetchStub.ts`.
 
 **Spec:** No design spec. Sources: GitHub issue #48, "Web polish" section plus the `useDefaultCostText` line under "Server tidiness" (`gh issue view 48`); `docs/superpowers/followups/2026-11-17-pending-vision-review-followups.md`, sections "Behaviour an operator could notice", "Accessibility and layout", and the `samePrice` line under "Code hygiene". Each task cites its source.
-**Models (operator ruling 2026-11-18):** implementer subagents run on `anthropic/claude-sonnet-5-5`; per-task reviewers, the whole-branch reviewer and any plan amendments run on `anthropic/claude-opus-5-5`. Pass these as the subagent `model` parameter.
+**Models (operator ruling 2026-11-20):** implementer subagents run on `anthropic/claude-sonnet-5-5`; per-task reviewers, the whole-branch reviewer and any plan amendments run on `anthropic/claude-fable-5-2`. Pass these as the subagent `model` parameter.
 
 **Branch:** `feat/web-polish-a11y`, cut from `main` **after waves A and B have merged**. Wave B Task 8 changes `PendingTable.tsx`'s `submit`, and Task 10 here builds on it. Line references below were checked against `c76d971`, so locate code by symbol.
 
@@ -27,7 +27,7 @@
 - Money is never float. Cost is integer ppm on the wire and percent text only in the UI.
 - Commit style: `feat|fix|docs|test|refactor|chore:`.
 - No server changes (`apps/server`, `packages/*` untouched).
-- Do not touch `KeepImagePrompt` (wave B adds an `archived: false` note there). Do not add the test-only gaps wave C owns (Modal `wide`, the Compare dialog's empty side, keep-prompt dismiss/re-confirm, null review-tab fields, sibling-card delete, pending-row invalid price/date/fee branches).
+- Do not touch `KeepImagePrompt`. Wave B adds the `archived: false` note to `PendingTable`'s `submit`; keep it intact. Do not add the test-only gaps wave C owns (Modal `wide`, the Compare dialog's empty side, keep-prompt dismiss/re-confirm, null review-tab fields, sibling-card delete, pending-row invalid price/date/fee branches).
 - Component tests load `react-dom/client` with a dynamic import *after* `GlobalRegistrator.register()`, as every existing `*.test.tsx` does.
 
 ## Review Focus
@@ -48,7 +48,9 @@
 - `apps/web/src/simerrors.ts`: `simErrorText(err, t)`, which maps sim API errors to copy.
 - `apps/web/src/simerrors.test.ts`
 - `apps/web/src/components/forms/CreateRunFormCost.test.tsx`: the cost-field tests moved out of `CreateRunForm.test.tsx` (308 lines) plus the new failure-note test.
-- `apps/web/src/components/forms/PendingRow.test.tsx`: thumbnail header name, blank-fee placeholder, comma-grouped price (new file, so it does not collide with wave C's additions to the 681-line `PendingTable.test.tsx`).
+- `apps/web/src/components/forms/PendingRow.test.tsx`: thumbnail header name, blank-fee placeholder, comma-grouped price, sticky actions column, edit hints (new file, so it does not collide with wave C's additions to the 681-line `PendingTable.test.tsx`).
+- `apps/web/src/fieldeditstate.test.ts`: the `fieldEditState` unit tests (`pendingvalues.test.ts` is 287 lines already).
+- `apps/web/src/components/forms/DefaultFeePrompt.tsx`, `DefaultFeePrompt.test.tsx`, and `PendingDefaultFee.test.tsx` (the popup flow through `PendingTable`).
 - `apps/web/src/components/VisionReviewEntry.test.tsx`: review-tab a11y (renders the entry directly).
 
 **Modify**
@@ -56,11 +58,11 @@
 - `apps/web/src/simconfig.ts:7,137`, `apps/web/src/components/hooks.tsx:52-81`, `apps/web/src/pages/RunDetail.tsx:122`, `apps/web/src/pages/RunsList.tsx:228`, `apps/web/src/pages/Sim.tsx:47,79,107,118-123`
 - `apps/web/src/components/forms/CreateRunForm.tsx:32,166-176`, `apps/web/src/components/forms/SimConfigFields.tsx:9-39`, `apps/web/src/components/forms/SimConfigPanel.tsx:39-48`
 - `apps/web/src/components/PriceChart.tsx:45-48`
-- `apps/web/src/api.ts:113-126` (`ungroupUsd`), `apps/web/src/pendingvalues.ts:91-100` (`samePrice`)
+- `apps/web/src/api.ts:113-126` (`ungroupUsd`; the file is 311 lines already, so tighten `usdToCents` around the extraction instead of growing it), `apps/web/src/pendingvalues.ts:91-100` (`samePrice`), `apps/web/src/autofee.ts:10` (`autoFeeUsd` reads grouped prices)
 - `apps/web/src/components/forms/PendingTable.tsx:145`, `apps/web/src/components/forms/PendingRow.tsx:100-113`
 - `apps/web/src/components/VisionReviewEntry.tsx:70-91,105-153`, `apps/web/src/pages/VisionReview.tsx`
 - `apps/web/src/i18n/en.json`, `apps/web/src/i18n/ko.json`
-- Tests: `format.test.ts`, `api.test.ts`, `pendingvalues.test.ts`, `pages/Sim.test.tsx`, `pages/SimDrafts.test.tsx`, `components/forms/CreateRunForm.test.tsx`, `components/PriceChart.test.tsx`, `pages/VisionReview.test.tsx`
+- Tests: `format.test.ts`, `api.test.ts`, `pendingvalues.test.ts`, `pages/Sim.test.tsx`, `pages/SimDrafts.test.tsx`, `components/forms/CreateRunForm.test.tsx`, `components/PriceChart.test.tsx`, `pages/VisionReview.test.tsx`, and two existing blank-fee tests in `components/forms/PendingTable.test.tsx` (Task 10)
 
 ---
 
@@ -205,7 +207,7 @@ test('resetDefaultCostMemo forces a fresh request', async () => {
 
 - [ ] **Step 2: Move the cost tests into `CreateRunFormCost.test.tsx` and add the note test**
 
-Move the four tests verbatim (same names). Add `resetDefaultCostMemo()` to `beforeEach` in this file, in `CreateRunForm.test.tsx`, in `Sim.test.tsx` and in `SimDrafts.test.tsx`. New tests:
+Move the four tests verbatim (same names). The memo adds promise steps before the prefill lands: if a moved test then reads `''` after its single flush, add flushes in the test helper and leave the assertion alone. Add `resetDefaultCostMemo()` to `beforeEach` in this file, in `CreateRunForm.test.tsx`, in `Sim.test.tsx` and in `SimDrafts.test.tsx`. New tests:
 
 ```ts
 it('a failed settings load says so by the cost field, until the operator types', async () => {
@@ -238,7 +240,7 @@ Expected: FAIL (module missing, no `costDefaultFailed` element).
 - `defaultcost.ts` per the Interfaces block.
 - `useDefaultCostText`: seed `useState(() => peekDefaultCostText() ?? '')`. In the effect, `loadDefaultCostText().then(set-if-live-and-untouched, () => live && !touched && setFailed(true))`. The setter sets `touched` and clears `failed`. Update the doc comment (no longer "submit asks for a cost").
 - Catalog key `costDefaultFailed`: en `"Couldn't load the default cost. Enter one."`, ko `"기본 비용을 불러오지 못했습니다. 직접 입력하세요."`.
-- `CreateRunForm.tsx`: `const [cost, setCost, costLoadFailed] = useDefaultCostText();`. Inside the cost `Field`, after the `Input`, render `<p data-testid="costDefaultFailed" role="status" className="mt-1 text-[11px] text-warning">` when `costLoadFailed`.
+- `CreateRunForm.tsx`: `const [cost, setCost, costLoadFailed] = useDefaultCostText();`. Inside the cost `Field`, after the `Input`, render `<span data-testid="costDefaultFailed" role="status" className="mt-1 block text-[11px] text-warning">` when `costLoadFailed`. Use a `span`: `Field` renders a `<label>`, and a `<p>` is not valid inside one.
 - `SimConfigFields.tsx`: render the same element under the cost input when `costNote` is set. `Sim.tsx` passes `costNote={costLoadFailed ? t('costDefaultFailed') : undefined}`. `SimConfigPanel` does not pass it.
 
 - [ ] **Step 5: Run the task's tests**
@@ -420,7 +422,7 @@ Source: followups "Code hygiene", `samePrice` line.
 `usdToCents` (`api.ts:114-126`) strips grouping only when it is strictly well-formed (`/^\d+(,\d{3})+(\.\d+)?$/`). `samePrice` (`pendingvalues.ts:92-100`) calls `parseUsd` directly and rejects commas. Extract the stripping step into `ungroupUsd` and use it in both places. `samePrice` keeps comparing myriadths, not cents, so sub-cent prices stay exact. `buildOverrides` still validates an *edited* price with `usdOrNull`, which rejects commas, so an unequal grouped price is refused before anything is posted.
 
 **Files:**
-- Modify: `apps/web/src/api.ts:113-126`, `apps/web/src/pendingvalues.ts:1-2,91-100`
+- Modify: `apps/web/src/api.ts:113-126`, `apps/web/src/pendingvalues.ts:1-2,91-100`, `apps/web/src/autofee.ts:10`
 - Test: `apps/web/src/api.test.ts` (`usdToCents` describe), `apps/web/src/pendingvalues.test.ts` (`pendingEdits` describe), `apps/web/src/components/forms/PendingRow.test.tsx` (create; Task 6 extends it)
 
 **Interfaces:**
@@ -467,9 +469,9 @@ describe('PendingTable comma-grouped price', () => {
 - [ ] **Step 2: Run to see them fail**
 
 Run: `bun test apps/web/src/api.test.ts apps/web/src/pendingvalues.test.ts apps/web/src/components/forms/PendingRow.test.tsx`
-Expected: FAIL (`ungroupUsd` missing; `'12,345.00'` reads as an edit, so the first PendingRow test sees a prompt or overrides).
+Expected: FAIL (`ungroupUsd` missing; the grouped price `'12,345.00'` is refused as invalid, so the first PendingRow test sees nothing posted).
 
-- [ ] **Step 3: Implement** `ungroupUsd`. Refactor `usdToCents` to use it, and make `samePrice` call `parseUsd(ungroupUsd(s))`.
+- [ ] **Step 3: Implement** `ungroupUsd`. Refactor `usdToCents` to use it, and make `samePrice` call `parseUsd(ungroupUsd(s))`. `autoFeeUsd` calls `usdOrNull(ungroupUsd(price))`: a grouped price that now reads as unedited must still derive its fee, or the placeholder (Task 6) and the default-fee popup (Task 10) silently disappear for it.
 
 - [ ] **Step 4: Run the task's tests**
 
@@ -505,7 +507,7 @@ Decisions:
 
 - [ ] **Step 1: Write the failing tests in `PendingRow.test.tsx`**
 
-Header test: render `PendingTable` as in Task 5. Row tests: render `PendingRow` directly inside `<table><tbody>`, with `values` built by hand and `onChange` a no-op. `feeInput = container.querySelector('input[aria-label="Fee"]')`.
+Header test: render `PendingTable` as in Task 5. Row tests: render `PendingRow` directly inside `<table><tbody>`, with `values` built by hand (`shares: '10'`, `price: '12345.00'` unless a test says otherwise) and `onChange` a no-op. `feeInput = container.querySelector('input[aria-label="Fee"]')`.
 
 ```ts
 describe('PendingTable header', () => {
@@ -524,6 +526,10 @@ describe('PendingRow blank fee', () => {
   });
   it('a cleared fee vision did read shows the recomputed fee too', () => {
     // row: ROW (fee 100); values.fee ''
+    expect(feeInput().placeholder).toBe('auto $4.94');
+  });
+  it('a comma-grouped price still derives the placeholder', () => {
+    // feeless row; values.price '12,345.00', values.fee ''
     expect(feeInput().placeholder).toBe('auto $4.94');
   });
   it('no placeholder while the field holds a fee', () => {
@@ -663,7 +669,8 @@ Wave C planned a test of "the failed-delete error text and the entry staying arm
 Replace `shows the error and keeps the list when the delete fails` with:
 ```ts
 it('shows a failed delete inside the armed entry, not at page level', async () => {
-  // existing setup: DELETE /3 → 500 { error: 'boom' }, list still [entry 3]; render two entries (3 and 5)
+  // reinstall the stub: DELETE /3 → 500 { error: 'boom' }; the list returns
+  // { entries: [entry(3, [EDITED]), entry(5, [REJECTED])] }; render those same two entries
   // Delete → Delete for real on card 0
   const alerts = container.querySelectorAll('[role=alert]');
   expect(alerts.length).toBe(1);
@@ -696,7 +703,7 @@ Expected: FAIL (the alert sits outside the card; Cancel leaves it).
 - [ ] **Step 4: Run the task's tests**
 
 Run: `bun test apps/web/src/pages/VisionReview.test.tsx apps/web/src/components/VisionReviewEntry.test.tsx`
-Expected: PASS. Then run `wc -l apps/web/src/pages/VisionReview.test.tsx`: expected ≤ ~320. If it is over, move the three delete-error tests into `apps/web/src/pages/VisionReviewDelete.test.tsx` with the shared `render` helper.
+Expected: PASS. Then run `wc -l apps/web/src/pages/VisionReview.test.tsx`: expected ≤ 300. If it is over (likely: 283 lines today), move the three delete-error tests into `apps/web/src/pages/VisionReviewDelete.test.tsx` with the shared `render` helper.
 
 - [ ] **Step 5: Typecheck and commit**
 
@@ -736,13 +743,15 @@ The server side of this ruling (keep `fee_overridden` = "any fee override, null 
 
 Rules:
 - **Edited hint.** A field in `pendingEdits(row, values)` with a non-blank value gets `data-edit="changed"`, the class `ring-1 ring-primary`, and `title={t('pendingFieldChanged')}`.
-- **Erased hint.** A field whose value is blank while the detected value (or, for a legacy row, the row's own value) was non-null gets `data-edit="erased"`, the classes `border-dashed border-warning`, and `title={t('pendingFieldErased')}`. This covers a fee vision read and the operator cleared, and a feeless row whose prefilled derived fee was cleared.
+- **Erased hint.** A field whose value is blank while the detected value (or, for a legacy row, the row's own value) was non-null gets `data-edit="erased"` and the classes `border-dashed border-warning`. This covers a fee vision read and the operator cleared, and a feeless row whose prefilled derived fee was cleared. The `title` depends on the field: `t('pendingFeeErased')` for the fee, because the server books the default fee; `t('pendingFieldErased')` for date, qty and price, because confirm refuses a blank one (`buildOverrides` throws `pendingInvalidOverride`). The side select cannot be blanked once set.
 - **The standing-issue border wins.** The `missing(...)` `border-warning` for a field vision missed takes precedence: such a field gets no edit hint until it is filled in.
 - **Default-fee popup.** On Confirm, after `buildOverrides` succeeds, if `values.fee.trim() === ''` and `autoFeeUsd(values.shares, values.price, row.costPpm) !== ''`, a `DefaultFeePrompt` modal opens before anything else. "Use default fee" continues to the keep/discard prompt when `asksAboutImage` holds, otherwise it submits. "Go back" (or closing the modal) cancels and posts nothing. The popup never appears on Reject.
 
 **Files:**
 - Create: `apps/web/src/components/forms/DefaultFeePrompt.tsx`, `apps/web/src/components/forms/DefaultFeePrompt.test.tsx`
-- Modify: `apps/web/src/pendingvalues.ts` (add `fieldEditState`), `apps/web/src/pendingvalues.test.ts`
+- Create: `apps/web/src/fieldeditstate.test.ts`, `apps/web/src/components/forms/PendingDefaultFee.test.tsx`
+- Modify: `apps/web/src/pendingvalues.ts` (add `fieldEditState`)
+- Modify: `apps/web/src/components/forms/PendingTable.test.tsx`: two existing tests confirm with a blank fee and now meet the popup. In `clearing the field posts nothing, since the server derives that fee anyway` (`:533`) and `clearing a fee vision read posts feeCents null (recompute)` (`:616`), press `'Use default fee'` after Confirm and before the keep step or the body check. Do the same for any other existing test that confirms with a blank fee, and name it in the report. Add nothing else to this file.
 - Modify: `apps/web/src/components/forms/PendingRow.tsx` (hints), `apps/web/src/components/forms/PendingTable.tsx` (the popup stage in `act`)
 - Modify: `apps/web/src/i18n/en.json`, `apps/web/src/i18n/ko.json`
 - Test: `apps/web/src/components/forms/PendingRow.test.tsx`
@@ -751,9 +760,9 @@ Rules:
 - Consumes: `costPercentText` (Task 1), `autoFeeUsd` (`apps/web/src/autofee.ts`), `Modal`/`Button` (`components/ui.tsx`).
 - Produces: `fieldEditState(row: PendingFillDto, values: RowValues, field: RowField): 'changed' | 'erased' | null` in `pendingvalues.ts`.
 - Produces: `DefaultFeePrompt({ rate, price, shares, fee, onUse, onBack }: { rate: string; price: string; shares: string; fee: string; onUse: () => void; onBack: () => void })`.
-- `PendingTable`'s `Decision` gains `stage: 'fee' | 'keep'`. `act` sets `stage: 'fee'` when the popup applies. `onUse` either moves the same decision to `stage: 'keep'` (when `asksAboutImage`) or calls `submit`.
+- `PendingTable`'s `Decision` gains `stage: 'fee' | 'keep'`. `act` sets `stage: 'fee'` when the popup applies and `stage: 'keep'` when it skips the popup and `asksAboutImage` holds. `onUse` either moves the same decision to `stage: 'keep'` (when `asksAboutImage`) or calls `submit`. `KeepImagePrompt` renders only when `decision?.stage === 'keep'`.
 
-Copy (slot the keys in alphabetical order; `{rate}` is `costPercentText(row.costPpm)`, e.g. `0.040%`):
+Copy (slot the keys in `localeCompare` order; `{rate}` is `costPercentText(row.costPpm)`, e.g. `0.004%` for 40 ppm: 12,345.00 × 10 × 0.004% = $4.94):
 
 | key | en | ko |
 | --- | --- | --- |
@@ -761,35 +770,39 @@ Copy (slot the keys in alphabetical order; `{rate}` is `costPercentText(row.cost
 | `pendingDefaultFeeBody` | The fee is empty, so the default fee will be booked: {rate} × ${price} × {shares} sh = ${fee}. | 수수료가 비어 있어 기본 수수료가 적용됩니다: {rate} × ${price} × {shares}주 = ${fee}. |
 | `pendingDefaultFeeTitle` | Use the default fee? | 기본 수수료를 적용할까요? |
 | `pendingDefaultFeeUse` | Use default fee | 기본 수수료 사용 |
+| `pendingFeeErased` | Cleared — the default fee will be booked | 지워짐 — 기본 수수료가 적용됩니다 |
 | `pendingFieldChanged` | Changed from what vision read | 비전 판독값에서 변경됨 |
-| `pendingFieldErased` | Cleared — the server will use its default | 지워짐 — 서버 기본값이 사용됩니다 |
+| `pendingFieldErased` | Cleared — enter a value before confirming | 지워짐 — 확인 전에 값을 입력하세요 |
 
 - [ ] **Step 1: Write the failing tests.**
-  - `pendingvalues.test.ts`, `describe('fieldEditState')`:
+  - `fieldeditstate.test.ts` (new file; build the row and values with the same fixtures as `pendingvalues.test.ts`), `describe('fieldEditState')`:
     - An untouched row gives `null` for every field.
     - A qty of `'11'` on a 10-share row gives `'changed'`.
     - A fee of `''` on a row whose detected fee is `100` gives `'erased'`.
     - A fee of `''` on a feeless row (detected fee `null`, prefilled with the derived fee) gives `'erased'`.
     - A price of `''` gives `'erased'`.
+    - A `filledOn` of `''` on a row whose detected date exists gives `'erased'`.
     - A detected `filledOn` of `null` with value `''` gives `null`, because the standing issue owns that field.
   - `DefaultFeePrompt.test.tsx`:
-    - Rendering with `{ rate: '0.040%', price: '12,345.00', shares: '10', fee: '4.94' }` shows the en body `'The fee is empty, so the default fee will be booked: 0.040% × $12,345.00 × 10 sh = $4.94.'`.
+    - Rendering with `{ rate: '0.004%', price: '12,345.00', shares: '10', fee: '4.94' }` shows the en body `'The fee is empty, so the default fee will be booked: 0.004% × $12,345.00 × 10 sh = $4.94.'`.
     - "Use default fee" calls `onUse` once; "Go back" and `✕` call `onBack`.
-    - The ko body is `'수수료가 비어 있어 기본 수수료가 적용됩니다: 0.040% × $12,345.00 × 10주 = $4.94.'`.
+    - The ko body is `'수수료가 비어 있어 기본 수수료가 적용됩니다: 0.004% × $12,345.00 × 10주 = $4.94.'`.
   - `PendingRow.test.tsx`, `describe('edit hints')`:
     - After typing qty `'11'`, the qty input has `data-edit="changed"` and its `title` is `'Changed from what vision read'`.
-    - After clearing the fee on the `ROW` fixture (fee 100), the fee input has `data-edit="erased"`.
+    - After clearing the fee on the `ROW` fixture (fee 100), the fee input has `data-edit="erased"` and its `title` is `'Cleared — the default fee will be booked'`.
+    - After clearing the price, the price input has `data-edit="erased"` and its `title` is `'Cleared — enter a value before confirming'`.
     - An untouched row has no `[data-edit]` element.
-  - `PendingRow.test.tsx`, `describe('default fee popup')`, using `PendingTable` with the confirm-call recorder from Task 5:
+  - `PendingDefaultFee.test.tsx` (new file), `describe('default fee popup')`, using `PendingTable` with the same confirm-call recorder as Task 5 (copy the helper, as each web test file does):
     - `clearing a read fee asks before booking the default fee, then confirms with feeCents null`:
-      1. Clear the fee and click Confirm. A dialog titled `'Use the default fee?'` is open, and `calls.length` is `0`.
+      1. Clear the fee and click Confirm. A dialog titled `'Use the default fee?'` is open, its body contains `'0.004% × $12345.00 × 10 sh = $4.94'` (the price as the field holds it), and `calls.length` is `0`.
       2. Press `'Use default fee'`. The keep prompt opens (the row has an image, and the fee is an edit).
-      3. Press `'Discard'`. `calls[0].body` is `{ overrides: { feeCents: null }, keepImage: false }`.
+      3. Press `'Discard'`. `calls[0].body` is `{ overrides: { feeCents: null } }`. Discard sends no `keepImage`: `api.confirmPending` adds it only when it is true, and that request shape must not change.
     - `Go back posts nothing and leaves the field blank`: after Go back, `calls.length` is `0`, no dialog is open, and the fee input value is `''`.
     - `a blank fee on a feeless row asks too, then confirms with no overrides`: on a row with `fee: null`, `detected.fee: null` and `hasImage: false`, clear the fee, click Confirm and press `'Use default fee'`. Then `calls[0].body` is `{}`.
+    - `a comma-grouped price still gets the popup`: on the feeless row, type the price `'12,345.00'`, clear the fee and click Confirm. The dialog `'Use the default fee?'` is open and its body contains `'$12,345.00'`.
     - `a typed fee never shows the popup`: set the fee to `'1.00'` and click Confirm. No `'Use the default fee?'` dialog appears.
     - `Reject never shows the popup`.
-- [ ] **Step 2: Run `bun test apps/web/src/pendingvalues.test.ts apps/web/src/components/forms/DefaultFeePrompt.test.tsx apps/web/src/components/forms/PendingRow.test.tsx`.** Expected: FAIL.
+- [ ] **Step 2: Run `bun test apps/web/src/fieldeditstate.test.ts apps/web/src/components/forms/DefaultFeePrompt.test.tsx apps/web/src/components/forms/PendingDefaultFee.test.tsx apps/web/src/components/forms/PendingRow.test.tsx`.** Expected: FAIL.
 - [ ] **Step 3: Implement.**
   - `fieldEditState`, checked in order:
     1. `null` for the field `standingIssue` names.
@@ -799,7 +812,7 @@ Copy (slot the keys in alphabetical order; `{rate}` is `costPercentText(row.cost
   - `PendingRow`: pass `data-edit`, the class and the `title` to each of the five controls through one small helper.
   - `PendingTable`: add the `'fee'` stage before the keep stage, and render `DefaultFeePrompt` when `decision?.stage === 'fee'`. Use `values.price` for the price shown, with grouping kept as typed.
   - Wave B Task 8 has already added the `archived` note to `submit`. Leave it intact.
-- [ ] **Step 4: Run `bun test apps/web && bun run typecheck`.** Expected: PASS, exit 0, including `catalog.test.ts`. `PendingTable.tsx` and `PendingRow.tsx` must each stay ≤ ~300 lines.
+- [ ] **Step 4: Run `bun test apps/web && bun run typecheck`.** Expected: PASS, exit 0, including `catalog.test.ts`. Run `wc -l apps/web/src/components/forms/PendingTable.tsx apps/web/src/components/forms/PendingRow.tsx apps/web/src/components/forms/PendingRow.test.tsx apps/web/src/components/forms/PendingDefaultFee.test.tsx apps/web/src/fieldeditstate.test.ts apps/web/src/pendingvalues.ts`: each must be ≤ ~300 lines.
 - [ ] **Step 5: Commit** `feat: hint edited and erased pending values and confirm a blank fee with the default-fee formula`.
 
 ---

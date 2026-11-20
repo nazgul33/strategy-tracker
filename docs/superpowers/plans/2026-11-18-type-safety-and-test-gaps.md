@@ -4,13 +4,13 @@
 
 **Goal:** Check every in-memory repo fake against the real repo surface at compile time, type the two remaining `any` seams in the vision-review path, and pin the behaviour that is correct today but has no test.
 
-**Architecture:** No product behaviour changes and no new production modules. `bun run typecheck` already covers `apps/server/test`. `apps/server/tsconfig.json` includes `["src", "test"]`, and the root `tsc -b` builds that project. This was verified on `main` on 2026-11-18: deleting a method from a fake after removing `as any` fails with TS2741. Only the casts stop the check from catching drift, so no new tsconfig is needed. The fakes are typed with slot annotations (`HttpRepoSurface['x']`) or with `satisfies RepoSurface`. Both keep the literal's own type for test call sites and reject a missing or extra method. Test files that would pass ~300 lines are split by topic instead of grown.
+**Architecture:** No product behaviour changes and no new production modules. `bun run typecheck` already covers `apps/server/test`. `apps/server/tsconfig.json` includes `["src", "test"]`, and the root `tsc -b` builds that project. This was verified on `main` on 2026-11-18: deleting a method from a fake after removing `as any` fails with TS2741. Only the casts stop the check from catching drift, so no new tsconfig is needed. The fakes are typed with slot annotations (`HttpRepoSurface['x']`) or with `satisfies RepoSurface`. Slot annotations reject a missing or extra method. `satisfies` on the assembled object (`booking-fakes.ts`, `day.test.ts`) rejects only a missing slot or method, because its slots are shorthand references rather than fresh literals; it keeps the literal's own type for test call sites. Test files that would pass ~300 lines are split by topic instead of grown.
 
 **Tech Stack:** Bun, TypeScript (`tsc -b`), Hono, Drizzle (MariaDB), React + happy-dom, `bun:test`.
 
 **Spec:** No design spec. Sources: GitHub #48 (`gh issue view 48`, sections "Type safety / drift" and "Test coverage gaps"), and `docs/superpowers/followups/2026-11-17-pending-vision-review-followups.md` (sections "Code hygiene" and "Test gaps"). Each task cites its bullets.
 
-**Models (operator ruling 2026-11-18):** implementer subagents run on `anthropic/claude-sonnet-5-5`; per-task reviewers, the whole-branch reviewer and any plan amendments run on `anthropic/claude-opus-5-5`. Pass these as the subagent `model` parameter.
+**Models (operator ruling 2026-11-20):** implementer subagents run on `anthropic/claude-sonnet-5-5`; per-task reviewers, the whole-branch reviewer and any plan amendments run on `anthropic/claude-fable-5-2`. Pass these as the subagent `model` parameter.
 
 Branch: `test/type-safety-and-gaps` in a dedicated worktree, cut from `main` after waves A and B have merged. Wave A is `docs/superpowers/plans/2026-11-18-sell-attribution.md` and wave B is `2026-11-18-server-hardening.md`. This plan assumes their results:
 
@@ -26,7 +26,10 @@ Branch: `test/type-safety-and-gaps` in a dedicated worktree, cut from `main` aft
   - `apps/server/test/http-pending-routes.test.ts` and `apps/server/test/db-sim-list.test.ts` exist.
   - `scripts/e2e-vision-review.ts` asserts `archived === true` on `confirmA`.
   - The stale `replaceDays` line in the cut-loss spec is already fixed (its Task 3).
-- Wave D (`2026-11-18-web-polish-a11y.md`) may land before or after this wave. Its Task 8 replaces the review tab's failed-delete test and may create `apps/web/src/pages/VisionReviewDelete.test.tsx`. Task 8 below adapts to either order.
+- Wave D (`2026-11-18-web-polish-a11y.md`) has merged before this wave (the order is A, B, D, C). From wave D:
+  - Its Task 8 replaced the review tab's failed-delete test and may have created `apps/web/src/pages/VisionReviewDelete.test.tsx`. Task 8 below therefore skips its own failed-delete test.
+  - Confirming a pending row with a blank fee opens a `DefaultFeePrompt` popup first; edited and erased fields carry `data-edit`.
+  - `PendingRow.test.tsx`, `PendingDefaultFee.test.tsx` and `fieldeditstate.test.ts` exist.
 
 Before starting, re-read every line number below against the merged tree, because A and B move code.
 
@@ -65,7 +68,7 @@ Before starting, re-read every line number below against the merged tree, becaus
   - Keep the internal store arrays (`runs: any[]` …) as they are.
   - Remove `as any` from the `repos` literal.
 - [ ] **Step 2: Run `bun run typecheck`.** Expected: exit 0. A trial on `main` compiled cleanly. If waves A or B left drift, tsc reports it here. Fix the **fake** to match the real repo, never the reverse.
-- [ ] **Step 3: Prove the check bites.** Temporarily delete `existingIds` from the `captureImageRepo` fake and run `bun run typecheck`. Expected: TS2741 `Property 'existingIds' is missing`. Restore it and re-run. Expected: exit 0.
+- [ ] **Step 3: Prove the check bites.** Temporarily delete `existingIds` from the `captureImageRepo` fake and run `bun run typecheck`. Expected: TS2322 whose message says `Property 'existingIds' is missing` (the slot type is an intersection, so it is not TS2741). Restore it and re-run. Expected: exit 0.
 - [ ] **Step 4: Put the sim route tests on the shared fakes.** In `sim.test.ts` `describe('routes')`:
   - Import `makeFakes as makeHttpFakes`, `makeDeps` and `loginAs` from `./http-fakes`.
   - Build deps as `{ ...makeDeps(fakes), fetchDailyBars: async () => bars }`.
@@ -88,9 +91,10 @@ Before starting, re-read every line number below against the merged tree, becaus
 
 - [ ] **Step 1: Make the omission a compile error.**
   - In `booking-fakes.ts`, write the returned `repos` literal as `{ … } satisfies RepoSurface`. Add the missing slot as `notificationRepo: { async insert(_n: unknown) {} }`, because `RepoSurface` requires it and the fake lacks it today.
-  - In `day.test.ts`, change `const repos: any` to `const repos: RepoSurface` (import the type from `../src/domain/booking`). Fix the two drifts tsc reports on `main`:
+  - In `day.test.ts`, change `const repos: any` to `const repos: RepoSurface` (import the type from `../src/domain/booking`). Fix the three drifts tsc reports on `main` (it reports the third only after the first two are fixed):
     - `orderRepo` lacks `get`. Add `async get(id: number) { return orders.find((x) => x.id === id) ?? null }`.
     - The inline `pendingRepo.decide` returns `void`. Make it `async () => false`.
+    - `correctionRepo` is missing. Add `correctionRepo: fakeCorrectionRepo().repo`, imported from `./fake-corrections`.
   - tsc will also report the slots waves A and B added that these two fakes never received, for example wave B's `captureImageRepo.discard`. Give each one a minimal in-memory implementation in the fake.
 - [ ] **Step 2: Run `bun run typecheck`, then prove it bites.** Expected: exit 0. Then temporarily remove `visionReviewRepo` from the `day.test.ts` literal. Expected: TS2741 naming `visionReviewRepo`. Restore it.
 - [ ] **Step 3: Write the pinning test** in `capture-image.test.ts`. Also rename `ingestCapture stores no image when the extract produced no pending fills` to `an unparseable extract stores no image (it returns before the store gate)`, keeping its body. Add `type CaptureConflict` to the existing `../src/domain/booking` import.
@@ -133,7 +137,7 @@ Before starting, re-read every line number below against the merged tree, becaus
 - Produces, in `booking.ts`: `export interface PendingDecisionPatch { side: 'buy' | 'sell'; shares: number; price: bigint; fee: number; filledOn: ISODate; bucketIdx: number }`, and `RepoSurface.pendingRepo.decide(id: number, status: 'confirmed' | 'rejected', edited?: PendingDecisionPatch): Promise<boolean>`.
 
 - [ ] **Step 1: Write the type pin and update the legacy case.**
-  - In `vision-review.test.ts`, add `import type { pendingFills } from '../src/db/schema'` and the line below. `getRepos(db: any)` erases the real repo's types, so the schema row is the strongest thing tsc can check against.
+  - In `vision-review.test.ts`, add `import type { pendingFills } from '../src/db/schema'` and the line below. The real repo's row types come back as `any` (its `db` is `any`), so the schema row is the strongest thing tsc can check against.
     ```ts
     // A pending_fills row must carry every column resolveReview reads; a rename fails tsc here.
     const asReviewed = (r: typeof pendingFills.$inferSelect): ReviewedPendingRow => r
@@ -189,7 +193,7 @@ Before starting, re-read every line number below against the merged tree, becaus
   - `boot-sweeps.test.ts`:
     - `the draft window keeps 6 d and 7 d − 1 s, and sweeps 7 d + 1 s and 8 d`:
       - Use `simRepo` from `makeFakes()` (`./http-fakes`) with `now = new Date('2026-11-18T17:00:00Z')`.
-      - Insert four drafts with `insertRun`. Set their `simRuns[i].createdAt` to ISO strings for `now` minus 6 d, 7 d − 1 s, 7 d + 1 s and 8 d.
+      - Insert four drafts with `insertRun`, passing a full `SimConfig` as `http-sim-drafts.test.ts` does (after Task 1 the fake's parameter is typed). Then overwrite their `simRuns[i].createdAt` with ISO strings for `now` minus 6 d, 7 d − 1 s, 7 d + 1 s and 8 d.
       - Call `runBootSweeps(…, now)`.
       - Expect the surviving `simRuns` ids to equal the first two ids.
     - `the window is 168 elapsed hours even across the fall-back change`:
@@ -217,7 +221,7 @@ Before starting, re-read every line number below against the merged tree, becaus
 - Modify: `apps/web/src/cutloss.test.ts`, `apps/web/src/catalog.test.ts:36-50`
 
 - [ ] **Step 1: Write the tests.** Both import `computeOrders` from `@st/strategies` and `emptyState`/`type Run` from `@st/core`. Use the run `{ id: 0, name: 'x', ticker: 'T', strategyKey: 'mean-reversion', costPpm: 0, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm, poolCents, status: 'active' }`.
-  - `cutloss.test.ts`, `describe('agrees with the stops the planner places')`:
+  - `cutloss.test.ts`, `describe('agrees with the stops the planner places')`, nested inside the existing `describe('underwaterStopCount')` so it can use that block's `held` helper:
     - Loop over `[['1000100', 30_000, 970000n], ['999999', 35_000, 964900n], ['1234567', 500_000, 617200n]]`.
     - Hold bucket 0 of `emptyState(2)` with 10 shares at `BigInt(buy)` and call `computeOrders(run, state, { lastClose: BigInt(buy) })`.
     - Take the `stop_sell` for bucket 0 and expect its `limitPrice` to be the third value.
@@ -236,7 +240,7 @@ Before starting, re-read every line number below against the merged tree, becaus
 **Files:**
 - Create: `apps/web/src/testing/pendingRow.ts`. It exports `PENDING_ROW: PendingFillDto` (the `ROW` fixture from `PendingTable.test.tsx:24-40`) and `setInputValue(el: HTMLInputElement, value: string)` (`:70-76`). Both are DOM-free at import time.
 - Modify: `apps/web/src/components/forms/PendingTable.test.tsx` (681 lines). Import those two instead of declaring them, and add nothing else.
-- Create: `apps/web/src/components/forms/PendingTable.edge.test.tsx`. Use the same happy-dom and `act` preamble as `PendingTable.test.tsx:1-21` and copy its local `flush`, `renderWithConfirmCalls`, `control`, `pressButton`, `clickConfirm` and `promptOpen` helpers, as each web test file does today.
+- Create: `apps/web/src/components/forms/PendingTable.edge.test.tsx`. Use the same happy-dom and `act` preamble as `PendingTable.test.tsx:1-21` and copy its local `flush`, `renderTable`, `renderWithConfirmCalls`, `cells`, `control`, `pressButton`, `confirmButton`, `clickConfirm` and `promptOpen` helpers, as each web test file does today. The vanished-row test installs its own `installFetchStub(routes)` and calls `renderTable`, because `renderWithConfirmCalls` hard-codes a 200 POST.
 - Modify: `apps/web/src/api.test.ts` (~:340), `apps/web/src/components/forms/KeepImagePrompt.test.tsx`, `apps/web/src/components/forms/PendingReviewDialog.test.tsx`
 
 - [ ] **Step 1: Write the tests.** Cells are numbered 0 date, 3 qty, 4 price, 5 fee.
@@ -258,14 +262,14 @@ Before starting, re-read every line number below against the merged tree, becaus
       - The Side select's option values are `['', 'buy', 'sell']` and its value is `''`.
       - Pick `'sell'`. The options are now `['buy', 'sell']`.
       - Press Done. `done[0].side` is `'sell'`.
-- [ ] **Step 2: Run `bun test apps/web/src/components/forms apps/web/src/api.test.ts` and `bun run typecheck`.** Expected: PASS, exit 0. These pin current behaviour. If one fails, stop and report. Each new or changed test file must be ≤ 300 lines, except `PendingTable.test.tsx`, which shrinks.
+- [ ] **Step 2: Run `bun test apps/web/src/components/forms apps/web/src/api.test.ts` and `bun run typecheck`.** Expected: PASS, exit 0. These pin current behaviour. If one fails, stop and report. Each new or changed test file must be ≤ 300 lines, except `PendingTable.test.tsx` (it shrinks) and `api.test.ts` (already 376 lines on `main`; add the one test and do not split it here).
 - [ ] **Step 3: Commit** `test: pin pending-row invalid inputs, keep-prompt re-entry, vanished rows and modal widths`.
 
 ### Task 8: Vision review tab gaps (followups "Test gaps" bullet 6, review side)
 
 **Files:**
 - Create: `apps/web/src/testing/visionReview.ts`. Move the DOM-free fixtures `READ`, `EDITED`, `UNEDITED`, `REJECTED`, `FEELESS`, `TYPED_FEE` and `entry()` here from `pages/VisionReview.test.tsx:23-58`.
-- Modify: `apps/web/src/pages/VisionReview.test.tsx`, which keeps the display tests (283 lines today, so the new tests must not land here).
+- Modify: `apps/web/src/pages/VisionReview.test.tsx`, which keeps the display tests. Only the delete tests move out; the one new display test stays here.
 - Create: `apps/web/src/pages/VisionReviewDelete.test.tsx`, the name wave D's Task 8 uses for the same split. Move the delete tests (`:217-282` on `main`, or wave D's replacements) here verbatim with the `render`/`button`/`cards` helpers, and add the new delete tests. If wave D already created the file, add to it.
 
 - [ ] **Step 1: Move the fixtures and delete tests, then add:**
@@ -280,8 +284,8 @@ Before starting, re-read every line number below against the merged tree, becaus
       - Card 1's buttons are `['Delete']` and its text does not contain `'This cannot be undone'`.
       - Press `'Delete for real'`. The calls are `['DELETE /api/vision-reviews/3']`.
       - The remaining card is `data-capture="5"`, still holds `[data-fill="13"]`, and its buttons are `['Delete']`.
-    - `a failed delete shows the server error text and leaves the entry armed`: with the 500 `{ error: 'boom' }` stub of the existing failure test, `[role=alert]` text contains `'boom'`, the card's text contains `'This cannot be undone'`, and `button('Delete for real', cards()[0]!)` exists. **Skip this test if wave D's Task 8 has merged.** Its `shows a failed delete inside the armed entry, not at page level` already pins the same text and armed state, and wave D asks for this one to be dropped. Then the expected count in Step 2 is plus 2.
-- [ ] **Step 2: Check that nothing was dropped.** The `it(` count across both files must equal the count before this task plus 3. Run `bun test apps/web/src/pages/VisionReview.test.tsx apps/web/src/pages/VisionReviewDelete.test.tsx` and `bun run typecheck`. Expected: PASS, exit 0, both files ≤ 300 lines.
+    - `a failed delete shows the server error text and leaves the entry armed`: with the 500 `{ error: 'boom' }` stub of the existing failure test, `[role=alert]` text contains `'boom'`, the card's text contains `'This cannot be undone'`, and `button('Delete for real', cards()[0]!)` exists. **Skip this test: wave D's Task 8 has merged.** Its `shows a failed delete inside the armed entry, not at page level` already pins the same text and armed state. The expected count in Step 2 is therefore plus 2. Write this test only if that wave D test is absent from the tree.
+- [ ] **Step 2: Check that nothing was dropped.** The `it(` count across both files must equal the count before this task plus 2 (plus 3 if the failed-delete test was written). Run `bun test apps/web/src/pages/VisionReview.test.tsx apps/web/src/pages/VisionReviewDelete.test.tsx` and `bun run typecheck`. Expected: PASS, exit 0, both files ≤ 300 lines.
 - [ ] **Step 3: Commit** `test: pin review-tab null fields, sibling-card isolation and failed-delete state`.
 
 ### Task 9: E2E proves the unkept `vision_reviews` row is swept (followups "Test gaps" bullet 4)
@@ -306,12 +310,13 @@ Before starting, re-read every line number below against the merged tree, becaus
 **Files:**
 - Modify: `AGENTS.md` (Repo map and Commands)
 
-- [ ] **Step 1: Diff the map against the tree.** Run `git ls-files | grep -v '^docs/\|^resources/'` and compare it with the map. On `main` the map is missing:
+- [ ] **Step 1: Diff the map against the tree.** Run `git ls-files | grep -v '^docs/'` and compare it with the map. On `main` the map is missing:
   - root `tsconfig.json`, `bun.lock` and `.dockerignore`
   - `prod_helpers/` (`build_and_push.sh`, `run_prod_container.sh`) and `resources/trade_images/` (sample broker screenshots)
   - `docs/superpowers/{specs,plans,followups}/`
   - `apps/server/{package.json,tsconfig.json}` and `apps/server/db/README.md`
-  - `apps/web/{index.html,vite.config.ts,tailwind.config.ts,postcss.config.js,tsconfig.json}`, `apps/web/src/style.css`, and `apps/web/src/testing/{fetchStub,pendingRow,visionReview}.ts`
+  - `packages/*/{package.json,tsconfig.json}`, `apps/web/package.json` and `apps/web/.gitignore`
+  - `apps/web/{index.html,vite.config.ts,tailwind.config.ts,postcss.config.js,tsconfig.json}`, `apps/web/src/style.css`, and `apps/web/src/testing/{fetchStub,pendingRow,visionReview}.ts` (plus `fetchStub.test.ts`)
 
   Also add `booking-fakes.ts` to the `test/` helper list, and every file waves A and B added that their own map edits missed. In Commands, change the typecheck note to `(packages + apps/server incl. test/ via tsc -b; apps/web + scripts directly)`.
 - [ ] **Step 2: Full verification.** Run `bun test`, `bun run typecheck`, `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun test`, and `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun scripts/e2e.ts`. Expected: all green, exit 0.
@@ -329,6 +334,6 @@ Before starting, re-read every line number below against the merged tree, becaus
 **Not in this wave:**
 - The unreachable `invalid-side` / `invalid-fee` Telegram catalog entries stay as they are. Removing them saves nothing, and they become live the moment `onConfirm` forwards overrides.
 - `samePrice` comma handling belongs to wave D.
-- Other test files already over 300 lines (`booking.test.ts`, `wire.test.ts`, `db.test.ts`, `sim.test.ts`, `http-runs.test.ts`, `rebooking.test.ts`, `vision-review.test.ts`, `http-fills.test.ts`, `PendingTable.test.tsx`, `scripts/e2e.ts`) are not split here.
+- Other test files already over 300 lines (`booking.test.ts`, `wire.test.ts`, `db.test.ts`, `sim.test.ts`, `http-runs.test.ts`, `rebooking.test.ts`, `vision-review.test.ts`, `http-fills.test.ts`, `PendingTable.test.tsx`, `apps/web/src/api.test.ts`, `scripts/e2e.ts`) are not split here.
 - `getRepos(db: any)` leaves the real repos untyped, so Task 3 pins against the schema row, not the query projection.
 - The remaining call-site `f.repos as any` casts in `booking.test.ts` are harmless once the fake `satisfies RepoSurface`.
