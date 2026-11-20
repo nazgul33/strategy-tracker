@@ -187,7 +187,7 @@ export function makeFakes() {
       }
       return n
     },
-    async listRuns() { return simRuns },
+    async listRuns() { return [...simRuns].sort((a, b) => b.id - a.id) },
     async getRun(id: number) { return simRuns.find((x) => x.id === id) ?? null },
     async listDays(id: number) { return simDays.filter((d) => d.simRunId === id).sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1)) },
   }

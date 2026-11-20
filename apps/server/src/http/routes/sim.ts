@@ -75,7 +75,7 @@ export function simRouter(deps: HttpDeps): Hono {
   })
   r.get('/', async (c) => {
     const rows = await sim().listRuns()
-    return c.json(jsonBig([...rows].sort((a, b) => b.id - a.id)))
+    return c.json(jsonBig(rows))
   })
   r.get('/:id', async (c) => {
     const id = parseId(c.req.param('id'))

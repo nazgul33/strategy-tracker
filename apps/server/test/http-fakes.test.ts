@@ -15,10 +15,10 @@ describe('http fakes mirror the real repos', () => {
     expect(await sim.deleteRun(b)).toBe(true)
     const d = await sim.insertRun(input)
     expect(d).toBe(4)
-    expect((await sim.listRuns()).map((r: any) => r.id)).toEqual([1, 3, 4])
+    expect((await sim.listRuns()).map((r: any) => r.id)).toEqual([4, 3, 1])
     expect(await sim.getRun(3)).toMatchObject({ id: 3 })
     expect(await sim.deleteRun(3)).toBe(true)
-    expect((await sim.listRuns()).map((r: any) => r.id)).toEqual([1, 4])
+    expect((await sim.listRuns()).map((r: any) => r.id)).toEqual([4, 1])
     expect(await sim.getRun(b)).toBeNull()
   })
 
