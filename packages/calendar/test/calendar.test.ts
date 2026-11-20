@@ -1,5 +1,12 @@
 import { test, expect } from 'bun:test';
-import { dayInfo, isTradingDay, prevTradingDay, nextTradingDay, calendarCrossCheck } from '@st/calendar';
+import { addDays, dayInfo, isTradingDay, prevTradingDay, nextTradingDay, calendarCrossCheck } from '@st/calendar';
+
+test('addDays crosses month, leap-day and year boundaries', () => {
+  expect(addDays('2026-02-28', 1)).toBe('2026-03-01');
+  expect(addDays('2024-02-28', 1)).toBe('2024-02-29');
+  expect(addDays('2026-01-01', -1)).toBe('2025-12-31');
+  expect(addDays('2026-03-08', 1)).toBe('2026-03-09');
+});
 
 test('sat closed no name', () => {
   const d = dayInfo('2026-11-07');

@@ -41,7 +41,7 @@ export function isTradingDay(d: ISODate): boolean {
   return dayInfo(d).open;
 }
 
-function addDays(d: ISODate, n: number): ISODate {
+export function addDays(d: ISODate, n: number): ISODate {
   const dt = new Date(d + 'T12:00:00Z');
   dt.setUTCDate(dt.getUTCDate() + n);
   const y = dt.getUTCFullYear();

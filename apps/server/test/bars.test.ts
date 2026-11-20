@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'bun:test'
+import { describe, test, expect, beforeEach, spyOn } from 'bun:test'
 import { isTradingDay } from '@st/calendar'
 import { MarketDataError, type OHLCBar } from '@st/market-data'
 import { makeCachedBarReader } from '../src/market/bars'
@@ -181,12 +181,15 @@ describe('makeCachedBarReader', () => {
   test('a no-data historical gap is covered and answered from the tail instead of failing', async () => {
     today = '2026-01-09'
     up.state.missing = new Set(['2026-01-05', '2026-01-06', '2026-01-07', '2026-01-08'])
-    const bars = await read('AAPL', '2026-01-05', '2026-01-09')
-    expect(bars.map((b) => b.date)).toEqual(['2026-01-09'])
-    expect(await f.repos.barCoverageRepo.list('AAPL')).toEqual([{ fromDate: '2026-01-05', toDate: '2026-01-08' }])
-    up.state.reset()
-    await read('AAPL', '2026-01-05', '2026-01-09')
-    expect(up.state.ranges).toEqual([['2026-01-09', '2026-01-09']]) // the empty history is not asked again
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const bars = await read('AAPL', '2026-01-05', '2026-01-09')
+      expect(bars.map((b) => b.date)).toEqual(['2026-01-09'])
+      expect(await f.repos.barCoverageRepo.list('AAPL')).toEqual([{ fromDate: '2026-01-05', toDate: '2026-01-08' }])
+      up.state.reset()
+      await read('AAPL', '2026-01-05', '2026-01-09')
+      expect(up.state.ranges).toEqual([['2026-01-09', '2026-01-09']]) // the empty history is not asked again
+    } finally { warn.mockRestore() }
   })
 
   // dayInfo degrades to weekends-only outside NYSE_YEARS, so a pre-2025 holiday
@@ -194,15 +197,18 @@ describe('makeCachedBarReader', () => {
   // that gap was never covered and every retry of the range failed identically.
   test('a single no-data day inside a covered range self-heals and is not re-queried', async () => {
     up.state.missing.add('2024-01-01') // New Year's Day: the calendar table does not know 2024
-    await read('AAPL', '2024-01-02', '2024-01-31')
-    up.state.reset()
-    const bars = await read('AAPL', '2024-01-01', '2024-01-31')
-    expect(up.state.ranges).toEqual([['2024-01-01', '2024-01-01']])
-    expect(bars[0]!.date).toBe('2024-01-02')
-    up.state.reset()
-    const again = await read('AAPL', '2024-01-01', '2024-01-31')
-    expect(up.state.calls).toBe(0)
-    expect(again).toEqual(bars)
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await read('AAPL', '2024-01-02', '2024-01-31')
+      up.state.reset()
+      const bars = await read('AAPL', '2024-01-01', '2024-01-31')
+      expect(up.state.ranges).toEqual([['2024-01-01', '2024-01-01']])
+      expect(bars[0]!.date).toBe('2024-01-02')
+      up.state.reset()
+      const again = await read('AAPL', '2024-01-01', '2024-01-31')
+      expect(up.state.calls).toBe(0)
+      expect(again).toEqual(bars)
+    } finally { warn.mockRestore() }
   })
 
   test('a tail with no trading day makes no upstream call', async () => {
@@ -246,13 +252,17 @@ describe('makeCachedBarReader', () => {
 
   test('a range with no data anywhere propagates, is not marked covered, and keeps failing', async () => {
     up.state.missing = new Set(['2026-01-05', '2026-01-06', '2026-01-07', '2026-01-08', '2026-01-09'])
-    let err: unknown
-    await read('AAPL', '2026-01-05', '2026-01-09').catch((e) => { err = e })
-    expect(err).toBeInstanceOf(MarketDataError)
-    expect((err as MarketDataError).kind).toBe('no-data')
-    expect(f.coverage.length).toBe(0)
-    // a pre-IPO range must stay visibly broken, not fall silent on the retry
-    await expect(read('AAPL', '2026-01-05', '2026-01-09')).rejects.toMatchObject({ kind: 'no-data' })
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      let err: unknown
+      await read('AAPL', '2026-01-05', '2026-01-09').catch((e) => { err = e })
+      expect(err).toBeInstanceOf(MarketDataError)
+      expect((err as MarketDataError).kind).toBe('no-data')
+      expect(f.coverage.length).toBe(0)
+      // a pre-IPO range must stay visibly broken, not fall silent on the retry
+      await expect(read('AAPL', '2026-01-05', '2026-01-09')).rejects.toMatchObject({ kind: 'no-data' })
+      expect(warn).toHaveBeenCalledTimes(0)
+    } finally { warn.mockRestore() }
   })
 
   test('tickers are normalized — aapl and AAPL share one cache', async () => {

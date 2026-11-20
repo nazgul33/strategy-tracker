@@ -1,4 +1,4 @@
-import { dayInfo, prevTradingDay, type ISODate } from '@st/calendar'
+import { addDays, dayInfo, prevTradingDay, type ISODate } from '@st/calendar'
 import { MarketDataError, type OHLCBar } from '@st/market-data'
 import type { BarRow } from '../db/repos-bars'
 
@@ -14,12 +14,6 @@ export interface BarCacheRepos {
 }
 
 type Range = [from: ISODate, to: ISODate]
-
-function addDays(d: ISODate, n: number): ISODate {
-  const dt = new Date(`${d}T12:00:00Z`)
-  dt.setUTCDate(dt.getUTCDate() + n)
-  return dt.toISOString().slice(0, 10)
-}
 
 // Outside the committed NYSE years dayInfo is weekends-only, so an uncovered
 // holiday there still counts as a trading day. It is then fetched, upstream has
@@ -55,6 +49,18 @@ function uncovered(from: ISODate, to: ISODate, covered: { fromDate: string; toDa
   return gaps
 }
 
+// [from, to] cut at calendar-year boundaries, ascending, each piece inclusive.
+function splitByYear(from: ISODate, to: ISODate): Range[] {
+  const pieces: Range[] = []
+  let start = from
+  while (start.slice(0, 4) < to.slice(0, 4)) {
+    pieces.push([start, `${start.slice(0, 4)}-12-31`])
+    start = `${Number(start.slice(0, 4)) + 1}-01-01`
+  }
+  pieces.push([start, to])
+  return pieces
+}
+
 function inRange(bars: OHLCBar[], from: ISODate, to: ISODate): OHLCBar[] {
   const byDate = new Map<string, OHLCBar>()
   for (const b of bars) if (b.date >= from && b.date <= to && !byDate.has(b.date)) byDate.set(b.date, b)
@@ -79,12 +85,14 @@ export function makeCachedBarReader(deps: {
     // a pre-IPO stretch) is covered too, so the range stops failing on every retry.
     // Its coverage is written only once the assembled answer is non-empty: a range
     // with no data anywhere stays visibly broken instead of silently returning [].
+    // Gaps go upstream one calendar year at a time, so one no-data answer covers at
+    // most a year, and each such empty cover is logged because it can hide real bars.
     let noData: MarketDataError | null = null
     const emptyGaps: Range[] = []
 
     if (from <= horizon) {
       const covered = await repos.barCoverageRepo.list(ticker)
-      for (const [gFrom, gTo] of uncovered(from, horizon, covered)) {
+      for (const [gFrom, gTo] of uncovered(from, horizon, covered).flatMap(([a, b]) => splitByYear(a, b))) {
         // Weekend/holiday edges never hold data: ask only for the trading span,
         // and skip the call entirely (upstream throws 'no-data') when there is none.
         const first = firstOpen(gFrom, gTo)
@@ -128,7 +136,10 @@ export function makeCachedBarReader(deps: {
 
     const out = [...cached, ...tail].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
     if (noData !== null && out.length === 0) throw noData
-    for (const [gFrom, gTo] of emptyGaps) await repos.barCoverageRepo.add(ticker, gFrom, gTo)
+    for (const [gFrom, gTo] of emptyGaps) {
+      await repos.barCoverageRepo.add(ticker, gFrom, gTo)
+      console.warn(`[bars] ${ticker} ${gFrom}..${gTo}: provider returned no data; recorded as covered. If bars exist there, delete this ticker's bar_coverage rows to refetch.`)
+    }
     return out
   }
 }
