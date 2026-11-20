@@ -58,6 +58,7 @@ export interface RepoSurface {
     isKept(captureId: number): Promise<boolean>
     setKeep(captureId: number): Promise<void>
     deleteFor(captureId: number): Promise<void>
+    discard(captureId: number): Promise<void>
     listKept(limit: number): Promise<CaptureImageListing[]>
   }
   visionReviewRepo: {

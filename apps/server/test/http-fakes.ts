@@ -108,6 +108,11 @@ export function makeFakes() {
       const i = captureImages.findIndex((x) => x.captureId === captureId)
       if (i >= 0) captureImages.splice(i, 1)
     },
+    async discard(captureId: number) {
+      const i = captureImages.findIndex((x) => x.captureId === captureId)
+      if (i >= 0) captureImages.splice(i, 1)
+      for (let j = visionReviews.length - 1; j >= 0; j--) if (visionReviews[j]!.captureId === captureId) visionReviews.splice(j, 1)
+    },
     async listKept(limit: number) {
       // newest first, ties by capture id, like the real repo
       const newestFirst = (a: any, b: any) => ((b.createdAt ?? '') < (a.createdAt ?? '') ? -1 : (b.createdAt ?? '') > (a.createdAt ?? '') ? 1 : b.captureId - a.captureId)
