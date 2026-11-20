@@ -26,14 +26,24 @@ describe('http price-history', async () => {
     expect(miss.status).toBe(404)
   })
 
-  test('?start backfills once from Yahoo, persists, and second call reuses DB', async () => {
+  test('?start backfills once through the cached reader, which alone persists the bars', async () => {
     const f = makeFakes()
     f.runs.push({ id: 1, ticker: 'AAPL', name: 'r1', status: 'active' } as any)
     const calls: [string, string][] = []
-    const deps = makeDeps(f)
-    deps.fetchDailyBars = async (_ticker: string, from: string, to: string) => {
+    const upstream = async (_t: string, from: string, to: string) => {
       calls.push([from, to])
-      return ALL_BARS.filter((d) => d >= from && d <= to).map((d) => ({ tradeDate: d, close: BigInt(d.slice(8)) * 100n }))
+      return ALL_BARS.filter((d) => d >= from && d <= to).map((d) => {
+        const c = BigInt(d.slice(8)) * 100n
+        return { date: d, open: c, high: c + 1n, low: c - 1n, close: c }
+      })
+    }
+    const deps = makeDeps(f)
+    deps.fetchDailyBars = makeCachedBarReader({ upstream, repos: f.repos as any, today: deps.today })
+    const upsertMany = f.repos.priceHistoryRepo.upsertMany
+    let closeWrites = 0
+    f.repos.priceHistoryRepo.upsertMany = async (rows: any) => {
+      closeWrites += 1
+      return upsertMany(rows)
     }
     const app = createApp(deps)
     const auth = await loginAs(app)
@@ -46,6 +56,8 @@ describe('http price-history', async () => {
     expect(body.bars.length).toBe(6)
     expect(body.start).toBe('2026-11-02')
     expect(f.priceHistory.length).toBe(6) // persisted for reuse
+    expect(closeWrites).toBe(0)
+    expect(f.priceHistory.every((r) => r.open !== undefined)).toBe(true)
 
     calls.length = 0
     const res2 = await app.request('/api/runs/1/price-history?start=2026-11-02', { headers: auth })
