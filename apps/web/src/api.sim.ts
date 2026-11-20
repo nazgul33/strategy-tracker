@@ -2,9 +2,8 @@
 import type { SimUpdateInput } from './api.types';
 
 /** Body shared by POST (create) and PUT (Apply): every config field but the ticker. */
-export function simConfigBody(name: string, input: SimUpdateInput): Record<string, unknown> {
+export function simConfigBody(input: SimUpdateInput): Record<string, unknown> {
   const body: Record<string, unknown> = {
-    name: name.trim(),
     from: input.from,
     to: input.to,
     poolCents: input.poolCents,

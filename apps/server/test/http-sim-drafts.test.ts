@@ -113,7 +113,6 @@ describe('http sim drafts', () => {
       [{ buyGapPpm: -1 }, 'invalid buyGapPpm'],
       [{ costPpm: 15 }, 'invalid costPpm'],
       [{ poolCents: 0 }, 'invalid poolCents'],
-      [{ name: ' ' }, 'invalid name'],
       [{ from: '2026-11-06', to: '2026-11-02' }, 'invalid range'],
       [{ params: { bucketCount: 51 } }, 'invalid bucketCount'],
     ]
@@ -126,6 +125,29 @@ describe('http sim drafts', () => {
     expect(unknownKey.status).toBe(422)
     expect((await unknownKey.json()).error).toBe('invalid-params')
     expect(await detail(id)).toEqual(before)
+  })
+
+  test('non-canonical ids never reach a sim', async () => {
+    const { call, create } = await setup()
+    const { id } = await create()
+    expect(id).toBe(1)
+    for (const raw of ['0x1', '1e0', '+1', '01']) expect((await call('GET', `/${raw}`)).status).toBe(404)
+  })
+
+  test('PUT needs no name and ignores one that is sent', async () => {
+    const { call, create, edit } = await setup()
+    const { id } = await create()
+    const { name: _n, ...noName } = edit
+    expect((await call('PUT', `/${id}`, noName)).status).toBe(200)
+    expect((await call('PUT', `/${id}`, { ...noName, name: 42 })).status).toBe(200)
+  })
+
+  test('POST still requires a name', async () => {
+    const { f, call } = await setup()
+    const res = await call('POST', '', { ...base, name: ' ' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('invalid name')
+    expect(f.simRuns).toHaveLength(0)
   })
 
   test('PUT omitting costPpm uses the env default, like POST', async () => {

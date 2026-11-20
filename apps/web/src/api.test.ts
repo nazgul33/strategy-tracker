@@ -96,12 +96,13 @@ describe('sim draft endpoints', () => {
     const body = JSON.parse(String(calls[0]!.init?.body));
     expect(body).toMatchObject({ ...config, params: { bucketCount: 6 } });
     expect('ticker' in body).toBe(false);
+    expect('name' in body).toBe(false);
   });
 
   test('runSim carries cutLossPpm when set', async () => {
     const { calls, api } = recorder();
-    await api.runSim({ ...config, name: 'S', ticker: 'qqq' });
-    expect(JSON.parse(String(calls[0]!.init?.body))).toMatchObject({ ticker: 'QQQ', cutLossPpm: 35_000 });
+    await api.runSim({ ...config, name: ' S ', ticker: 'qqq' });
+    expect(JSON.parse(String(calls[0]!.init?.body))).toMatchObject({ ticker: 'QQQ', name: 'S', cutLossPpm: 35_000 });
   });
 
   test('saveSimRun POSTs /save and deleteSimRun DELETEs, both resolving on 204', async () => {

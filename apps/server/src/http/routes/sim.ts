@@ -4,19 +4,18 @@ import { MarketDataError } from '@st/market-data'
 import { runSim, updateSimRun } from '../../sim/sim'
 import { isValidPpm, isValidCostPpm, isValidCutLossPpm } from '../../domain/ppm'
 import { jsonBig, type HttpDeps } from '../app'
+import { parseId } from '../params'
 
 const ISO_RE = /^\d{4}-\d{2}-\d{2}$/
 
 type Validated = { ok: true; input: any } | { ok: false; error: string }
 
-// Everything a simulation takes except the ticker: POST adds it from the body, PUT from the stored draft.
+// Everything a simulation takes except the ticker and name: POST adds those from the body, PUT takes the ticker from the stored draft.
 function validateConfig(body: any, defaultCostPpm: number): Validated {
-  const name = body?.name
   const from = body?.from
   const to = body?.to
   const poolCents = body?.poolCents
   const costPpm = body?.costPpm === undefined ? defaultCostPpm : body.costPpm
-  if (typeof name !== 'string' || name.trim() === '') return { ok: false, error: 'invalid name' }
   if (typeof from !== 'string' || !ISO_RE.test(from)) return { ok: false, error: 'invalid from' }
   if (typeof to !== 'string' || !ISO_RE.test(to)) return { ok: false, error: 'invalid to' }
   if (from > to) return { ok: false, error: 'invalid range' }
@@ -35,19 +34,16 @@ function validateConfig(body: any, defaultCostPpm: number): Validated {
       if (!Number.isInteger(params.bucketCount) || params.bucketCount < 1 || params.bucketCount > 50) return { ok: false, error: 'invalid bucketCount' }
     }
   }
-  return { ok: true, input: { name, from, to, poolCents, costPpm, buyGapPpm, sellGapPpm, cutLossPpm, params } }
+  return { ok: true, input: { from, to, poolCents, costPpm, buyGapPpm, sellGapPpm, cutLossPpm, params } }
 }
 
 function validateCreate(body: any, defaultCostPpm: number): Validated {
   const ticker = body?.ticker
   if (typeof ticker !== 'string' || ticker.trim() === '') return { ok: false, error: 'invalid ticker' }
+  const name = body?.name
+  if (typeof name !== 'string' || name.trim() === '') return { ok: false, error: 'invalid name' }
   const v = validateConfig(body, defaultCostPpm)
-  return v.ok ? { ok: true, input: { ...v.input, ticker } } : v
-}
-
-function parseId(raw: string): number | null {
-  const id = Number(raw)
-  return Number.isInteger(id) && id > 0 ? id : null
+  return v.ok ? { ok: true, input: { ...v.input, name, ticker } } : v
 }
 
 export function simRouter(deps: HttpDeps): Hono {

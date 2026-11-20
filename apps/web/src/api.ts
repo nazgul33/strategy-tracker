@@ -279,12 +279,10 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
     runSim: (input) =>
       send<{ id: number; dayCount: number }>('POST', '/api/sim', {
         ticker: input.ticker.trim().toUpperCase(),
-        ...simConfigBody(input.name, input),
+        name: input.name.trim(),
+        ...simConfigBody(input),
       }),
-    // The server keeps no sim name (it only labels the in-memory run), so Apply
-    // sends a stable placeholder when the caller has none.
-    updateSimRun: (id, input) =>
-      send<{ id: number; dayCount: number }>('PUT', `/api/sim/${id}`, simConfigBody(input.name || `Sim #${id}`, input)),
+    updateSimRun: (id, input) => send<{ id: number; dayCount: number }>('PUT', `/api/sim/${id}`, simConfigBody(input)),
     saveSimRun: (id) => send<unknown>('POST', `/api/sim/${id}/save`).then(() => undefined),
     deleteSimRun: (id) => send<unknown>('DELETE', `/api/sim/${id}`).then(() => undefined),
     listSimRuns: () => get<SimRunDto[]>('/api/sim'),

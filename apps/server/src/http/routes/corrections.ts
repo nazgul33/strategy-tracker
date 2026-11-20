@@ -3,6 +3,7 @@ import { DomainError, type ISODate } from '@st/core'
 import type { BookingDeps } from '../../domain/booking'
 import { applyCorrection, dismissCorrection, listOpenCorrections } from '../../domain/corrections'
 import { jsonBig, type HttpDeps } from '../app'
+import { parseId } from '../params'
 
 // Review of capture-proposed fill corrections. Auth is handled by the app-level middleware.
 export function correctionsRouter(deps: HttpDeps): Hono {
@@ -14,8 +15,6 @@ export function correctionsRouter(deps: HttpDeps): Hono {
     if (e.kind === 'correction-not-open' || e.kind === 'correction-stale') return c.json({ error: e.kind }, 409)
     return c.json({ error: e.kind }, 422)
   }
-  // a non-numeric id can never name a correction
-  const parseId = (raw: string) => (/^\d+$/.test(raw) ? Number(raw) : null)
 
   r.get('/corrections', async (c) => c.json(jsonBig(await listOpenCorrections(bookingDeps()))))
 
