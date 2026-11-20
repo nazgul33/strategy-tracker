@@ -27,13 +27,13 @@ apps/server/       drizzle.config.ts
     main.ts
     db/schema.ts db/client.ts db/repos.ts db/repos-bars.ts db/repos-sim.ts db/repos-vision.ts
     domain/booking.ts domain/confirm-pending.ts domain/capture-claim.ts domain/capture-corrections.ts domain/capture-dedup.ts domain/booking-notify.ts domain/capture-image.ts domain/correction-types.ts domain/corrections.ts domain/order-ops.ts domain/ppm.ts domain/recompute.ts domain/run-lock.ts domain/sell-match.ts domain/vision-review.ts
-    wire/deps.ts wire/capture.ts wire/booking-notifier.ts
+    wire/deps.ts wire/capture.ts wire/booking-notifier.ts wire/boot-sweeps.ts
     pipeline/day.ts pipeline/wire.ts
     market/bars.ts
     sim/sim.ts sim/serialize.ts
-    http/app.ts http/auth.ts http/booking-deps.ts http/routes/{runs,fills,pending,corrections,sim,settings,vision-review}.ts
+    http/app.ts http/auth.ts http/booking-deps.ts http/params.ts http/routes/{runs,fills,pending,corrections,sim,settings,vision-review}.ts
   db/migrations/   0000_fantastic_thunderbolts.sql … 0008_material_blue_marvel.sql (+ meta/)
-  test/            *.test.ts per area (booking, sell-attribution, booking-notifier, vision-review, capture-image, http-*, db*, sim, wire, …) + fake-corrections.ts http-fakes.ts booking-fakes.ts
+  test/            *.test.ts per area (booking, sell-attribution, booking-notifier, vision-review, capture-image, bars-chunking, boot-sweeps, http-*, http-params, http-pending-routes, db*, db-bar-coverage-lock, db-sim-list, db-vision-janitor, sim, wire, …) + fake-corrections.ts http-fakes.ts booking-fakes.ts
 apps/web/src/      main.tsx App.tsx api.ts api.sim.ts api.types.ts autofee.ts format.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts priceHistory.ts simconfig.ts simview.ts (+ colocated *.test.ts)
   components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,PriceChart,RecalcSummary,RunPanels,RunHistory,ScreenshotLink,VisionReviewEntry,hooks,ui,forms/*}
   components/forms/{CorrectionList,CreateRunForm,EditRunModal,FillDialog,KeepImagePrompt,PendingReviewDialog,PendingRow,PendingTable,SimConfigFields,SimConfigPanel}
@@ -62,7 +62,7 @@ scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-sim-drafts.ts e2e-vision
 | DB integration | yes | `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun test` |
 | Operator E2E smoke | yes | `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun scripts/e2e.ts` (run from repo root) |
 
-`scripts/e2e.ts` never touches the `st_test` tables: it creates a fresh `st_e2e_*` scratch DB, runs migrations on it, drives the real HTTP app + capture pipeline against it (fake vision endpoint on 127.0.0.1), and always drops the scratch DB — including on failure. Bars, closes and the calendar cross-check are injected, so it works offline.
+`scripts/e2e.ts` never touches the `st_test` tables: it creates a fresh `st_e2e_*` scratch DB, runs migrations on it, drives the real HTTP app + capture pipeline against it (fake vision endpoint on 127.0.0.1), and always drops the scratch DB — including on failure. (The DB suite likewise creates and drops its own `st_janitor_*` scratch database in `apps/server/test/db-vision-janitor.test.ts`.) Bars, closes and the calendar cross-check are injected, so it works offline.
 
 - Test DB: `docker run -d --name st-mariadb-test -e MARIADB_ROOT_PASSWORD=test -e MARIADB_DATABASE=st_test -p 127.0.0.1:3307:3306 mariadb:11`
 
