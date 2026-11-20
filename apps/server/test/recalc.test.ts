@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { emptyState, type ISODate, type RunState } from '@st/core'
-import { manualFill, type BookingDeps } from '../src/domain/booking'
+import { manualFill, type FillBookingDeps } from '../src/domain/booking'
 import { recalcRunState } from '../src/domain/recompute'
-import { fakeRepos } from './booking.test'
+import { fakeRepos, silentNotifier } from './booking-fakes'
 
 const TODAY: ISODate = '2026-11-10'
 type F = ReturnType<typeof fakeRepos>
 
-const deps = (f: F): BookingDeps => ({ repos: f.repos as any, today: TODAY })
+const deps = (f: F): FillBookingDeps => ({ repos: f.repos as any, today: TODAY, notify: silentNotifier })
 const getState = (f: F, runId: number): Promise<RunState> => f.repos.bucketRepo.loadState(runId)
 const ledgerForRun = (f: F, runId: number) => f._stores.ledger.filter((l: any) => l.runId === runId)
 const adjustRows = (f: F) => f._stores.ledger.filter((l: any) => l.kind === 'adjust')

@@ -73,6 +73,31 @@ describe('sibling-cancel notification over HTTP', () => {
     } finally { errors.mockRestore() }
   })
 
+  test('an ambiguous manual sell records and sends the attribution notice before the sibling notice', async () => {
+    const f = makeFakes()
+    const deps = makeDeps(f)
+    deps.allowedChatIds = ['42']
+    const app = createApp(deps)
+    const auth = await loginAs(app)
+    const id = await createRun(app, auth, {
+      name: 'r2', ticker: 'AAPL', costPpm: 0, poolCents: 100000,
+      seed: { cashCents: 50000, buckets: [{ shares: 10, buyPrice: '100.0000', filledOn: '2026-11-02' }, { shares: 10, buyPrice: '88.0000', filledOn: '2026-11-02' }] },
+    })
+    await f.repos.orderRepo.insertMany([
+      { runId: id, tradeDate: D, kind: 'sell_loc', bucketIdx: 0, limitPrice: 1030000n, shares: 10, status: 'open' },
+      { runId: id, tradeDate: D, kind: 'stop_sell', bucketIdx: 0, limitPrice: 970000n, shares: 10, status: 'open' },
+      { runId: id, tradeDate: D, kind: 'sell_loc', bucketIdx: 1, limitPrice: 910000n, shares: 10, status: 'open' },
+      { runId: id, tradeDate: D, kind: 'stop_sell', bucketIdx: 1, limitPrice: 854000n, shares: 10, status: 'open' },
+    ])
+    expect((await postSell(app, auth, id, 10, '96.50')).status).toBe(200)
+    const attributed = 'ℹ️ Sell 10 sh @ $96.50 was booked to bucket 0 stop ($97.00, $0.50 away). Also possible: bucket 1 target ($91.00, $5.50 away). A target fills at or above its limit and a stop at or below its trigger, so more than one order fit this price; the order whose price is nearest the fill wins.'
+    const cancel = '⚠️ Cancel sell_loc bucket 0 (103.00) at your broker — the other leg already filled, so this order is no longer needed.'
+    expect(f.sent).toEqual([{ chatId: '42', text: attributed }, { chatId: '42', text: cancel }])
+    expect(f.notifications.map((n) => ({ runId: n.runId, chatId: n.chatId, text: n.text }))).toEqual([
+      { runId: id, chatId: '42', text: attributed }, { runId: id, chatId: '42', text: cancel },
+    ])
+  })
+
   test('confirming a pending sell over HTTP notifies as well', async () => {
     const { f, app, auth, id } = await setup()
     const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: 965000n, fee: null, filledOn: D, status: 'pending' })
