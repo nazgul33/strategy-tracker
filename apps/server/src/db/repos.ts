@@ -111,6 +111,9 @@ export function getRepos(db: any) {
       if (date) return db.select().from(s.orders).where(and(eq(s.orders.runId, runId), sql`${s.orders.tradeDate} = ${date}`))
       return db.select().from(s.orders).where(eq(s.orders.runId, runId))
     },
+    async listForRunFrom(runId: number, fromDate: string) {
+      return db.select().from(s.orders).where(and(eq(s.orders.runId, runId), sql`${s.orders.tradeDate} >= ${fromDate}`)).orderBy(s.orders.id)
+    },
   }
 
   const fillRepo = {

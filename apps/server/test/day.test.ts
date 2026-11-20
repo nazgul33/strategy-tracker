@@ -40,6 +40,7 @@ function makeRepos() {
     async insertMany(os: any[]) { for (const o of os) orders.push({ id: orderSeq++, ...o }) },
     async listForDate(d: string) { return orders.filter((o) => o.tradeDate === d) },
     async listForRun(runId: number, d?: string) { return orders.filter((o) => o.runId === runId && (d === undefined || o.tradeDate === d)) },
+    async listForRunFrom(runId: number, fromDate: string) { return orders.filter((o) => o.runId === runId && o.tradeDate >= fromDate).sort((a, b) => a.id - b.id) },
     async markStale(d: string) { let c = 0; for (const o of orders) if (o.status === 'open' && o.tradeDate < d) { o.status = 'stale'; c++ } return c },
     async setStatus(id: number, s: string) { const o = orders.find((x) => x.id === id); if (o) o.status = s },
     async listOpenBefore(d: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < d) },

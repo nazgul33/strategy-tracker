@@ -60,6 +60,9 @@ export function makeFakes() {
       if (date) out = out.filter((o) => o.tradeDate === date)
       return out
     },
+    async listForRunFrom(runId: number, fromDate: string) {
+      return orders.filter((o) => o.runId === runId && o.tradeDate >= fromDate).sort((a, b) => a.id - b.id)
+    },
   }
   const fillRepo = {
     async insert(f: any) { fills.push({ id: fills.length + 1, ...f }) },

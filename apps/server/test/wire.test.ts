@@ -163,6 +163,7 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
     insertMany: async () => {},
     listForDate: async (_date: string) => [] as FakeRow[],
     listForRun: async (_runId: number, _date?: string) => [] as FakeRow[],
+    listForRunFrom: async (_runId: number, _fromDate: string) => [] as FakeRow[],
     markStale: async () => [],
     setStatus: async () => {},
     listOpenBefore: async () => [],
@@ -580,9 +581,11 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
       const { h, p } = await capturedPending(lang);
       p.side = 'sell';
       // an exact-price target on a bucket nothing is held in: the sell match is loud, not silent
-      h.repos.orderRepo.listForRun = async () => [
+      const orders = [
         { id: 1, runId: 1, tradeDate: '2026-11-10', kind: 'sell_loc', bucketIdx: 0, limitPrice: parseUsd('180.50'), shares: 10, status: 'open' },
       ];
+      h.repos.orderRepo.listForRun = async () => orders;
+      h.repos.orderRepo.listForRunFrom = async () => orders;
       await h.handlers.onConfirm(`yes:${p.id}`, true);
       expect(h.sent.at(-1)!.text).toBe(text);
       expect(h.fills.length).toBe(0);
@@ -779,6 +782,7 @@ describe('capture confirm — sibling leg cancelled by a bucket-emptying sell', 
     Object.assign(fakes.repos.orderRepo, {
       listForDate: async () => orders,
       listForRun: async () => orders,
+      listForRunFrom: async () => orders,
       get: async (id: number) => orders.find((o) => o.id === id) ?? null,
       setStatus: async (id: number, status: string, reason?: string) => {
         const o = orders.find((x) => x.id === id)!;

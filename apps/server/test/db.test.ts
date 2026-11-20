@@ -175,6 +175,20 @@ describeIf('db integration', () => {
     expect((await repos.orderRepo.get(open.id))!.cancelReason).toBe('stale-price')
   })
 
+  test('orderRepo.listForRunFrom bounds by trade date and run', async () => {
+    const uniq = Date.now()
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'LF' + uniq, name: 'from-' + uniq, poolCents: 1000, costPpm: 10 })
+    const otherId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'LG' + uniq, name: 'from-other-' + uniq, poolCents: 1000, costPpm: 10 })
+    const mk = (id: number, tradeDate: string, status: string) => ({ runId: id, tradeDate, kind: 'sell_loc', bucketIdx: 0, limitPrice: 35000000n, shares: 5, status })
+    await repos.orderRepo.insertMany([
+      mk(runId, '2026-11-09', 'open'), mk(runId, '2026-11-10', 'cancelled'), mk(runId, '2026-11-11', 'open'), mk(otherId, '2026-11-10', 'open'),
+    ])
+    const rows = await repos.orderRepo.listForRunFrom(runId, '2026-11-10')
+    expect(rows.map((o: any) => o.tradeDate)).toEqual(['2026-11-10', '2026-11-11'])
+    expect(rows.every((o: any) => o.runId === runId)).toBe(true)
+    expect(rows.map((o: any) => o.id)).toEqual([...rows.map((o: any) => o.id)].sort((a, b) => a - b))
+  })
+
   test('fillRepo: update is run-scoped, listForRun is id-ascending, deleteById is run-scoped', async () => {
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'FE' + Date.now(), name: 'fill-edit-' + Date.now(), poolCents: 1000, costPpm: 10 })
     const otherId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'FX' + Date.now(), name: 'fill-edit-other-' + Date.now(), poolCents: 1000, costPpm: 10 })

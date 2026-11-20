@@ -1080,6 +1080,8 @@ describe('sell matching with target and stop legs', () => {
   const lastFill = (f: ReturnType<typeof fakeRepos>) => f._stores.fills[f._stores.fills.length - 1]
   const bookInput = (runId: number, shares: number, priceStr: string) =>
     ({ runId, side: 'sell' as const, shares, priceStr, feeCents: null, filledOn: D, pendingId: null, source: 'manual' as const })
+  const pair: Ord[] = [{ idx: 1, kind: 'sell_loc', price: '103.00' }, { idx: 1, kind: 'stop_sell', price: '97.00' }]
+  const held1: Held[] = [{ idx: 1, shares: 10, buy: '100.00' }]
 
   test('exact target match still wins', async () => {
     const { f, deps, runId } = await setup(
@@ -1385,14 +1387,26 @@ describe('sell matching with target and stop legs', () => {
     expect(f._stores.orders.map((o: any) => o.status)).toEqual(['open', 'open'])
   })
 
+  test('a sell reads only the orders from its fill date onwards', async () => {
+    const { f, deps, runId } = await setup(held1, pair)
+    const calls: [number, string][] = []
+    const orderRepo = f.repos.orderRepo
+    f.repos.orderRepo = {
+      ...orderRepo,
+      listForRun: async () => { throw new Error('unbounded-read') },
+      listForRunFrom: async (id: number, fromDate: string) => { calls.push([id, fromDate]); return orderRepo.listForRunFrom(id, fromDate) },
+    }
+    await sell(runId, 10, '96.50', deps)
+    expect(calls).toEqual([[runId, D]])
+    expect(lastFill(f).bucketIdx).toBe(1)
+  })
+
   describe('notifying the operator of the cancelled leg', () => {
     type Notified = { runId: number; order: OrderRow }
     const withNotifier = (deps: BookingDeps, notified: Notified[]): BookingDeps => ({
       ...deps,
       notifySiblingCancelled: async (runId, order) => { notified.push({ runId, order: { ...order } }) },
     })
-    const pair: Ord[] = [{ idx: 1, kind: 'sell_loc', price: '103.00' }, { idx: 1, kind: 'stop_sell', price: '97.00' }]
-    const held1: Held[] = [{ idx: 1, shares: 10, buy: '100.00' }]
 
     test('a bucket-emptying stop fill notifies once, naming the pulled leg', async () => {
       const { f, deps, runId } = await setup(held1, pair)

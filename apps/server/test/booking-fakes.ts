@@ -56,6 +56,9 @@ export function fakeRepos() {
     async listForRun(runId: number, date?: string) {
       return orders.filter((o) => o.runId === runId && (date === undefined || o.tradeDate === date))
     },
+    async listForRunFrom(runId: number, fromDate: string) {
+      return orders.filter((o) => o.runId === runId && o.tradeDate >= fromDate).sort((a, b) => a.id - b.id)
+    },
     async get(id: number) { return orders.find((x) => x.id === id) ?? null },
     async markStale(date: string) {
       let cnt = 0
