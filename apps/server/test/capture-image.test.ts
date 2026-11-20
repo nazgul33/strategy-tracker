@@ -4,7 +4,7 @@ import { parseUsd } from '@st/core/money'
 import type { ExtractResult } from '@st/ingest'
 import { ingestCapture, type BookingDeps, type PendingFillRow } from '../src/domain/booking'
 import { MAX_IMAGE_BYTES, storeCaptureImage } from '../src/domain/capture-image'
-import { fakeRepos } from './booking.test'
+import { fakeRepos } from './booking-fakes'
 
 const TODAY = '2026-11-06'
 const PNG = { base64: Buffer.from('fake-png-bytes').toString('base64'), mime: 'image/png' }

@@ -3,7 +3,7 @@ import { applyBuyFill, DomainError, emptyState, parseUsd, roundDiv, type ISODate
 import { ageBuckets, progressView } from '@st/strategies'
 import { manualFill, type BookingDeps, type FillRow } from '../src/domain/booking'
 import { deleteFill, rebookFill, rebuildState } from '../src/domain/recompute'
-import { fakeRepos } from './booking.test'
+import { fakeRepos } from './booking-fakes'
 
 const TODAY: ISODate = '2026-01-15'
 type F = ReturnType<typeof fakeRepos>

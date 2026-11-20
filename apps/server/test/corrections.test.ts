@@ -3,7 +3,7 @@ import { DomainError, emptyState, parseUsd, type ISODate } from '@st/core'
 import { manualFill, type BookingDeps } from '../src/domain/booking'
 import { applyCorrection, dismissCorrection, listOpenCorrections } from '../src/domain/corrections'
 import { deleteFill, rebookFill } from '../src/domain/recompute'
-import { fakeRepos } from './booking.test'
+import { fakeRepos } from './booking-fakes'
 
 const TODAY: ISODate = '2026-11-15'
 type F = ReturnType<typeof fakeRepos>

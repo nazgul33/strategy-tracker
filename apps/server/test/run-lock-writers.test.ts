@@ -4,7 +4,7 @@ import { manualFill, seedRun, type BookingDeps } from '../src/domain/booking'
 import { applyCorrection } from '../src/domain/corrections'
 import { deleteFill, rebookFill, recalcRunState } from '../src/domain/recompute'
 import { withRunLock } from '../src/domain/run-lock'
-import { fakeRepos } from './booking.test'
+import { fakeRepos } from './booking-fakes'
 
 const TODAY: ISODate = '2026-11-15'
 type F = ReturnType<typeof fakeRepos>

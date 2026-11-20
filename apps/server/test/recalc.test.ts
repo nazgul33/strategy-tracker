@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { emptyState, type ISODate, type RunState } from '@st/core'
 import { manualFill, type BookingDeps } from '../src/domain/booking'
 import { recalcRunState } from '../src/domain/recompute'
-import { fakeRepos } from './booking.test'
+import { fakeRepos } from './booking-fakes'
 
 const TODAY: ISODate = '2026-11-10'
 type F = ReturnType<typeof fakeRepos>

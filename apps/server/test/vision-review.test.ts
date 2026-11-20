@@ -7,7 +7,7 @@ import { isEdited, resolveReview, type DetectedValues, type FinalValues } from '
 import { createApp } from '../src/http/app'
 import { makeCaptureHandlers } from '../src/wire/capture'
 import { t } from '@st/telegram/i18n'
-import { fakeRepos } from './booking.test'
+import { fakeRepos } from './booking-fakes'
 import { makeFakes, makeDeps, loginAs, createRun } from './http-fakes'
 
 const TODAY = '2026-11-06'
