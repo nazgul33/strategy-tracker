@@ -160,8 +160,8 @@ export interface Api {
   triggerMorning(): Promise<string>;
   listPending(): Promise<PendingFillDto[]>;
   /** `keepImage` archives the screenshot as evidence; it is sent only when true. */
-  confirmPending(id: number, overrides?: PendingOverrides, keepImage?: boolean): Promise<void>;
-  rejectPending(id: number, keepImage?: boolean): Promise<void>;
+  confirmPending(id: number, overrides?: PendingOverrides, keepImage?: boolean): Promise<{ archived: boolean }>;
+  rejectPending(id: number, keepImage?: boolean): Promise<{ archived: boolean }>;
   /** Kept screenshots with the fills resolved from them, newest first. */
   listVisionReviews(): Promise<VisionReviewEntryDto[]>;
   /** Discards a kept screenshot and its review rows; 404 `not-found` when not kept. */
@@ -254,12 +254,14 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
     triggerMorning: () => send<{ result: string }>('POST', '/api/trigger/morning').then((r) => r.result),
     listPending: () => get<PendingFillDto[]>('/api/pending'),
     confirmPending: (id, overrides, keepImage) =>
-      send<{ ok: true }>('POST', `/api/pending/${id}/confirm`, {
+      send<{ ok: true; archived?: boolean }>('POST', `/api/pending/${id}/confirm`, {
         ...(overrides ? { overrides } : {}),
         ...(keepImage ? { keepImage: true } : {}),
-      }).then(() => undefined),
+      }).then((r) => ({ archived: r.archived !== false })),
     rejectPending: (id, keepImage) =>
-      send<{ ok: true }>('POST', `/api/pending/${id}/reject`, keepImage ? { keepImage: true } : {}).then(() => undefined),
+      send<{ ok: true; archived?: boolean }>('POST', `/api/pending/${id}/reject`, keepImage ? { keepImage: true } : {}).then(
+        (r) => ({ archived: r.archived !== false }),
+      ),
     listVisionReviews: () => get<{ entries: VisionReviewEntryDto[] }>('/api/vision-reviews').then((r) => r.entries),
     deleteVisionReview: (captureId) =>
       send<{ ok: true }>('DELETE', `/api/vision-reviews/${captureId}`).then(() => undefined),

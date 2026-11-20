@@ -353,6 +353,20 @@ describe('pending review wire contract', () => {
     expect(body(calls[1]!)).toEqual({ keepImage: true });
   });
 
+  test('confirmPending resolves archived from the body, defaulting to true', async () => {
+    const failed = record(() => Response.json({ ok: true, archived: false }));
+    await expect(failed.api.confirmPending(3, undefined, true)).resolves.toEqual({ archived: false });
+    const bare = record(() => Response.json({ ok: true }));
+    await expect(bare.api.confirmPending(3)).resolves.toEqual({ archived: true });
+  });
+
+  test('rejectPending resolves archived from the body, defaulting to true', async () => {
+    const failed = record(() => Response.json({ ok: true, archived: false }));
+    await expect(failed.api.rejectPending(3, true)).resolves.toEqual({ archived: false });
+    const bare = record(() => Response.json({ ok: true }));
+    await expect(bare.api.rejectPending(3)).resolves.toEqual({ archived: true });
+  });
+
   test('listVisionReviews unwraps entries', async () => {
     const entry = { captureId: 5, runId: 1, ticker: 'AAPL', createdAt: '2026-11-02T14:00:00Z', mime: 'image/png', byteLen: 9, fills: [] };
     const { calls, api } = record(() => Response.json({ entries: [entry] }));

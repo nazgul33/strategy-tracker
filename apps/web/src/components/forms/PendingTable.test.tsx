@@ -191,9 +191,9 @@ describe('PendingTable', () => {
   const cells = () => Array.from(container.querySelectorAll('tbody tr td'));
   const control = <T extends HTMLElement>(idx: number, selector: string) => cells()[idx]!.querySelector(selector) as T;
 
-  async function renderWithConfirmCalls(row: PendingFillDto) {
+  async function renderWithConfirmCalls(row: PendingFillDto, postJson: unknown = { ok: true }) {
     const calls = installFetchStub([
-      { method: 'POST', url: '/api/pending', json: { ok: true } },
+      { method: 'POST', url: '/api/pending', json: postJson },
       { url: '/api/pending', json: [row] },
     ]);
     await renderTable(root);
@@ -372,6 +372,35 @@ describe('PendingTable', () => {
 
       expect(calls.length).toBe(1);
       expect(calls[0]!.body).toEqual({ overrides: { shares: 11 } });
+    });
+
+    const NOT_KEPT = 'the screenshot could not be kept for review';
+
+    it('a keep that did not stick says so', async () => {
+      await renderWithConfirmCalls(ROW, { ok: true, archived: false });
+      await editQty();
+      await clickConfirm();
+      await pressButton('Keep for review');
+
+      expect(container.textContent).toContain(NOT_KEPT);
+    });
+
+    it('a keep that stuck shows no note', async () => {
+      await renderWithConfirmCalls(ROW, { ok: true, archived: true });
+      await editQty();
+      await clickConfirm();
+      await pressButton('Keep for review');
+
+      expect(container.textContent).not.toContain(NOT_KEPT);
+    });
+
+    it('Discard never shows the note', async () => {
+      await renderWithConfirmCalls(ROW, { ok: true, archived: false });
+      await editQty();
+      await clickConfirm();
+      await pressButton('Discard');
+
+      expect(container.textContent).not.toContain(NOT_KEPT);
     });
 
     it('dismissing the prompt posts nothing and leaves the edit in place', async () => {

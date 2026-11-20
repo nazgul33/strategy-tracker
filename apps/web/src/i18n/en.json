@@ -119,6 +119,7 @@
   "keepImageEditedBody": "You changed this fill before confirming, so vision may have misread the screenshot. Keep the screenshot for review?",
   "keepImageEditedTitle": "Values were edited",
   "keepImageKeep": "Keep for review",
+  "keepImageNotKept": "Done, but the screenshot could not be kept for review.",
   "keepImageRejectBody": "Vision may have misread the screenshot. Keep the screenshot for review?",
   "keepImageRejectTitle": "Rejecting this fill",
   "langEn": "English",
