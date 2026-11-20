@@ -58,7 +58,7 @@ scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-sim-drafts.ts e2e-vision
 
 | What | Needs DB | Command |
 | --- | --- | --- |
-| Unit suites (`packages/*/test`, `apps/server/test/*` except `db.test.ts`, `apps/web`) | no | `bun test` — `apps/server/test/db.test.ts` self-skips without `TEST_DATABASE_URL` (all of its tests skip) |
+| Unit suites (`packages/*/test`, `apps/server/test/*` except `apps/server/test/db*.test.ts` and `bars-db.test.ts`, `apps/web`) | no | `bun test` — the DB-gated files (`apps/server/test/db*.test.ts` and `bars-db.test.ts`) each self-skip without `TEST_DATABASE_URL` (their DB tests skip) |
 | DB integration | yes | `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun test` |
 | Operator E2E smoke | yes | `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun scripts/e2e.ts` (run from repo root) |
 

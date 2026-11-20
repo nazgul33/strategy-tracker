@@ -386,21 +386,33 @@ describe('PendingTable', () => {
     });
 
     it('a keep that stuck shows no note', async () => {
-      await renderWithConfirmCalls(ROW, { ok: true, archived: true });
+      const calls = await renderWithConfirmCalls(ROW, { ok: true, archived: true });
       await editQty();
       await clickConfirm();
       await pressButton('Keep for review');
 
+      expect(calls.length).toBe(1);
       expect(container.textContent).not.toContain(NOT_KEPT);
     });
 
     it('Discard never shows the note', async () => {
-      await renderWithConfirmCalls(ROW, { ok: true, archived: false });
+      const calls = await renderWithConfirmCalls(ROW, { ok: true, archived: false });
       await editQty();
       await clickConfirm();
       await pressButton('Discard');
 
+      expect(calls.length).toBe(1);
       expect(container.textContent).not.toContain(NOT_KEPT);
+    });
+
+    it('a reject kept for review that did not stick says so', async () => {
+      const calls = await renderWithConfirmCalls(ROW, { ok: true, archived: false });
+      await pressButton('Reject');
+      await pressButton('Keep for review');
+
+      expect(calls.length).toBe(1);
+      expect(calls[0]).toMatchObject({ method: 'POST', url: '/api/pending/9/reject' });
+      expect(container.textContent).toContain(NOT_KEPT);
     });
 
     it('dismissing the prompt posts nothing and leaves the edit in place', async () => {

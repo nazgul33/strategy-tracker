@@ -107,6 +107,10 @@ export function getBarRepos(db: any) {
         } catch (e) {
           // With no rows to lock, InnoDB takes only (compatible) gap locks, so
           // first writers for a ticker can deadlock on insert; one always wins.
+          // First writers for two different fresh tickers that land in the same
+          // index gap can deadlock each other too. `add` must own its transaction:
+          // called with a transaction handle, a deadlock would roll back the outer
+          // transaction and the retry would run outside it.
           if (!isDeadlock(e) || attempt >= 5) throw e
         }
       }

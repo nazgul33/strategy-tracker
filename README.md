@@ -194,6 +194,8 @@ DELETE FROM bar_coverage WHERE ticker = 'NVDA';
 DELETE FROM price_history WHERE ticker = 'NVDA';  -- optional; stale rows are overwritten in place
 ```
 
+Each time the server records a gap the provider had no data for, it logs a `[bars] <ticker> <from>..<to>: provider returned no data; recorded as covered` warning; that line names the ticker and range to clear.
+
 ## Testing
 
 ```sh

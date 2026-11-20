@@ -7,18 +7,18 @@ const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 // sweepOrphans deletes globally, so this suite runs on its own scratch database
 // (like scripts/e2e.ts) and never touches the tables other suites share in st_test.
 describeIf('vision janitor (db)', () => {
-  const SCRATCH = `st_janitor_${Date.now().toString(36)}`
+  const SCRATCH = `st_janitor_${Date.now().toString(36)}_${process.pid.toString(36)}`
   let repos: any
   let parent: Awaited<ReturnType<typeof getDb>> | undefined
   let scratch: Awaited<ReturnType<typeof getDb>> | undefined
   let created = false
 
   beforeAll(async () => {
-    if (!/^st_janitor_[a-z0-9]+$/.test(SCRATCH)) throw new Error(`unexpected scratch db name '${SCRATCH}'`)
+    if (!/^st_janitor_[a-z0-9]+_[a-z0-9]+$/.test(SCRATCH)) throw new Error(`unexpected scratch db name '${SCRATCH}'`)
     const url = new URL(process.env.TEST_DATABASE_URL!)
     parent = await getDb(url.toString())
-    created = true
     await parent.$client.query(`CREATE DATABASE \`${SCRATCH}\``)
+    created = true
     url.pathname = `/${SCRATCH}`
     scratch = await getDb(url.toString())
     await applyMigrations(scratch)
@@ -98,6 +98,18 @@ describeIf('vision janitor (db)', () => {
     expect(await repos.visionReviewRepo.listForCaptures([sibling.captureId])).toHaveLength(1)
     expect([...swept].sort((a, b) => a - b)).toEqual(swept)
     expect(new Set(swept).size).toBe(swept.length)
+  })
+
+  test('sweepOrphans leaves a half-reviewed capture alone', async () => {
+    const { runId, captureId } = await newCapture()
+    await image(captureId)
+    await pending(runId, captureId, 'pending')
+    const resolved = await pending(runId, captureId, 'confirmed')
+    await repos.visionReviewRepo.insertIgnore(review(runId, captureId, resolved))
+    const swept: number[] = await repos.captureImageRepo.sweepOrphans()
+    expect(swept).not.toContain(captureId)
+    expect(await repos.captureImageRepo.getBytes(captureId)).not.toBeNull()
+    expect(await repos.visionReviewRepo.listForCaptures([captureId])).toHaveLength(1)
   })
 
   test('discard removes one capture\'s image and frozen rows and leaves another capture alone', async () => {

@@ -285,4 +285,4 @@ export interface SimInput {
 }
 
 /** PUT body for Apply: the draft's ticker is its identity, so it is never sent. */
-export type SimUpdateInput = Omit<SimInput, 'ticker' | 'name'> & { name?: string };
+export type SimUpdateInput = Omit<SimInput, 'ticker' | 'name'>;

@@ -38,8 +38,9 @@ export type VisionReviewInsert = {
   finalFee: number | null
   edited: boolean
   // True whenever the confirm carried a fee override, `null` (cleared: the server books the default
-  // fee) included; the review tab highlights the fee for either (operator ruling 2026-11-20).
-  // Always false for a reject.
+  // fee) included (operator ruling 2026-11-20). Without it, a final fee that differs from the
+  // detected one could be the system-derived fee, so the review tab highlights the fee only when
+  // this is true and the final fee differs from the detected one. Always false for a reject.
   feeOverridden: boolean
 }
 export type VisionReviewRow = VisionReviewInsert & { id: number; createdAt: string }
@@ -80,9 +81,8 @@ export async function resolveReview(
     final: FinalValues | null
     keepImage: boolean
     /**
-     * The confirm's `feeCents` override (undefined when it carried none, and for a reject); see `isEdited`.
-     * `feeOverridden` is true whenever the confirm carried a fee override, `null` (cleared: the server
-     * books the default fee) included; the review tab highlights the fee for either (operator ruling 2026-11-20).
+     * The confirm's `feeCents` override (undefined when it carried none, and for a reject); see `isEdited`
+     * and the `feeOverridden` field comment above.
      */
     feeOverride?: number | null
   },

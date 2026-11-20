@@ -16,7 +16,9 @@ export interface ConfirmOverrides {
 }
 
 // archived is false when the vision-review bookkeeping failed after the fill was
-// booked; the confirm itself still succeeded.
+// booked; the confirm itself still succeeded. archived: true only means the
+// bookkeeping did not throw: it is also true for a row with no capture or image,
+// so it is not a promise that a screenshot is kept.
 export async function confirmPendingFill(pendingId: number, overrides: ConfirmOverrides | null, deps: FillBookingDeps, opts?: { keepImage?: boolean }): Promise<{ archived: boolean }> {
   const repos = deps.repos
   // Only a peek to learn which run this pending belongs to; everything that
@@ -78,7 +80,9 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
 // the duplicate message). Under the run lock so two siblings resolving at once
 // cannot both see "no pending left" and race the sweep. The reject has taken
 // effect once decide succeeds, so an archive failure is logged and contained,
-// exactly as on the confirm path, and reported as archived: false.
+// exactly as on the confirm path, and reported as archived: false. As there,
+// archived: true only means the bookkeeping did not throw; it is also true for a
+// row with no capture or image, so it is not a promise that a screenshot is kept.
 export async function rejectPendingFill(pendingId: number, deps: Pick<BookingDeps, 'repos'>, opts?: { keepImage?: boolean }): Promise<{ archived: boolean } | null> {
   const repos = deps.repos
   // Only a peek to learn the run; the row is re-read inside the lock.

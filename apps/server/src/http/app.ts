@@ -28,6 +28,7 @@ export interface HttpDeps {
   today: () => string
   defaultSettings: { visionBaseUrl: string; visionModel: string; digestLang: 'en' | 'ko'; defaultCostPpm: number }
   triggerMorning: () => Promise<string>
+  // The price-history route relies on this reader persisting the bars it returns (production wires the cached reader); each bar carries `date`.
   fetchDailyBars: (ticker: string, from: string, to: string) => Promise<any[]>
   allowedChatIds: string[]
   send: (chatId: string, text: string) => Promise<void>

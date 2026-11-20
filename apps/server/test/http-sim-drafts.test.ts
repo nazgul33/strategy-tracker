@@ -132,6 +132,8 @@ describe('http sim drafts', () => {
     const { id } = await create()
     expect(id).toBe(1)
     for (const raw of ['0x1', '1e0', '+1', '01']) expect((await call('GET', `/${raw}`)).status).toBe(404)
+    expect((await call('DELETE', '/0x1')).status).toBe(404)
+    expect((await call('GET', `/${id}`)).status).toBe(200)
   })
 
   test('a from before 1970-01-01 is invalid on POST and PUT; 1970-01-01 itself is not', async () => {

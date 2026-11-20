@@ -20,6 +20,7 @@ async function main(): Promise<void> {
   await applyMigrations(db)
   const repos = getRepos(db)
 
+  // Must stay ahead of the bot, the cron jobs and the HTTP server: the screenshot sweep is only safe while no confirm can be in flight.
   await runBootSweeps(repos, new Date())
 
   // vision/digest config: DB settings override env (api key re-read on every capture)
