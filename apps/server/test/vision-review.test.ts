@@ -264,6 +264,7 @@ describe('freeze, keep, sweep', () => {
     expect(row.detectedFee).toBe(5)
     expect(row.finalFee).not.toBe(5)
     expect(row.edited).toBe(true)
+    expect(row.feeOverridden).toBe(true)
   })
 
   test('a feeless capture confirmed with an explicit differing fee is edited', async () => {
