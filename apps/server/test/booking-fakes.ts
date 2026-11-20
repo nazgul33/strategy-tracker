@@ -1,5 +1,18 @@
 import type { RunState } from '@st/core'
+import type { BookingNotifier, OrderRow, SellAttribution } from '../src/domain/booking'
 import { fakeCorrectionRepo } from './fake-corrections'
+
+export const silentNotifier: BookingNotifier = { siblingCancelled: async () => {}, sellAttributed: async () => {} }
+
+export function recordingNotifier() {
+  const siblings: Array<{ runId: number; order: OrderRow }> = []
+  const attributions: Array<{ runId: number; attribution: SellAttribution }> = []
+  const notify: BookingNotifier = {
+    siblingCancelled: async (runId, order) => { siblings.push({ runId, order: { ...order } }) },
+    sellAttributed: async (runId, attribution) => { attributions.push({ runId, attribution }) },
+  }
+  return { notify, siblings, attributions }
+}
 
 export function serializeState(state: RunState): string {
   return JSON.stringify(state, (_, v) => typeof v === 'bigint' ? v.toString() : v)

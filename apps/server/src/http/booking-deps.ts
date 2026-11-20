@@ -1,14 +1,14 @@
-import type { BookingDeps } from '../domain/booking'
-import { makeSiblingNotifier } from '../wire/sibling-notifier'
+import type { BookingDeps, FillBookingDeps } from '../domain/booking'
+import { makeBookingNotifier } from '../wire/booking-notifier'
 import type { HttpDeps } from './app'
 
-// The BookingDeps for routes that book fills (manual fill, pending confirm). Built per
+// The FillBookingDeps for routes that book fills (manual fill, pending confirm). Built per
 // request so the settings and send hook are read when the fill arrives.
-export function fillBookingDeps(deps: HttpDeps): BookingDeps {
+export function fillBookingDeps(deps: HttpDeps): FillBookingDeps {
   return {
     repos: deps.repos,
     today: deps.today() as BookingDeps['today'],
-    notifySiblingCancelled: makeSiblingNotifier({
+    notify: makeBookingNotifier({
       repos: deps.repos,
       allowedChatIds: deps.allowedChatIds,
       send: deps.send,

@@ -1,8 +1,8 @@
 import { parseUsd, type ISODate } from '@st/core'
 import { formatUsd } from '@st/core/money'
-import { bookUnlocked, finalFeeCents, type BookingDeps } from './booking'
+import { bookUnlocked, finalFeeCents, type BookingDeps, type FillBookingDeps } from './booking'
 import { withRunLock } from './run-lock'
-import { notifySiblingsCancelled } from './sibling-notify'
+import { notifyBookingOutcome } from './booking-notify'
 import { resolveReview } from './vision-review'
 
 // Operator corrections to what the vision model read. feeCents: null recomputes the
@@ -15,7 +15,7 @@ export interface ConfirmOverrides {
   feeCents?: number | null
 }
 
-export async function confirmPendingFill(pendingId: number, overrides: ConfirmOverrides | null, deps: BookingDeps, opts?: { keepImage?: boolean }): Promise<void> {
+export async function confirmPendingFill(pendingId: number, overrides: ConfirmOverrides | null, deps: FillBookingDeps, opts?: { keepImage?: boolean }): Promise<void> {
   const repos = deps.repos
   if (overrides?.side !== undefined && overrides.side !== 'buy' && overrides.side !== 'sell') throw new Error('invalid-side')
   const feeOverride = overrides?.feeCents
@@ -26,7 +26,7 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
   if (!known) throw new Error('pending-not-found-or-not-pending')
 
   // bookUnlocked, not runBooking: the lock is not reentrant.
-  const cancelled = await withRunLock(known.runId, async () => {
+  const outcome = await withRunLock(known.runId, async () => {
     const pendingList = await repos.pendingRepo.listPending()
     const pending = pendingList.find((p: any) => p.id === pendingId)
     if (!pending) throw new Error('pending-not-found-or-not-pending')
@@ -53,7 +53,7 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
     // After booking, inside the lock: a late no-empty-bucket / no-bucket-for-sell
     // leaves the fill pending for a retry and must not leave a 'confirmed' record
     // behind. Once booked, archive bookkeeping must not fail the confirm or skip
-    // the sibling-cancel notification, so a failure here is logged and swallowed.
+    // the booking notifications, so a failure here is logged and swallowed.
     const price = parseUsd(priceStr)
     try {
       await resolveReview(repos, {
@@ -66,7 +66,7 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
     }
     return booked
   })
-  await notifySiblingsCancelled(known.runId, cancelled, deps)
+  await notifyBookingOutcome(known.runId, outcome, deps)
 }
 
 // Resolves false when the row is missing or already handled (callers answer 409 /

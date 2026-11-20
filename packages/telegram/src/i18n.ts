@@ -59,6 +59,13 @@ export const CATALOG: Record<string, MsgEntry> = {
   'vision-not-configured': { en: 'Vision is not configured — set VISION_BASE_URL and VISION_MODEL.', ko: '비전 설정이 없습니다 — VISION_BASE_URL과 VISION_MODEL을 설정하세요.' },
   'order-cancelled': { en: '🚫 Cancelled: {kind} bucket {bucket} — {reason} ({price})', ko: '🚫 취소: {kind} 버킷 {bucket} — {reason} ({price})' },
   'sibling-cancelled': { en: '⚠️ Cancel {kind} bucket {bucket} ({price}) at your broker — the other leg already filled, so this order is no longer needed.', ko: '⚠️ 증권사에서 {kind} 버킷 {bucket} ({price}) 주문을 취소하세요 — 반대편 주문이 이미 체결되어 이 주문은 더 이상 필요하지 않습니다.' },
+  'leg-sell_loc': { en: 'target', ko: '목표가 매도' },
+  'leg-stop_sell': { en: 'stop', ko: '손절 매도' },
+  'sell-attributed-alt': { en: 'bucket {bucket} {leg} (${limit}, ${distance} away)', ko: '버킷 {bucket} {leg} (${limit}, ${distance} 차이)' },
+  'sell-attributed': {
+    en: 'ℹ️ Sell {shares} sh @ ${price} was booked to bucket {bucket} {leg} (${limit}, ${distance} away). Also possible: {alts}. A target fills at or above its limit and a stop at or below its trigger, so more than one order fit this price; the order whose price is nearest the fill wins.',
+    ko: 'ℹ️ 매도 {shares}주 @ ${price} 체결을 버킷 {bucket} {leg} (${limit}, ${distance} 차이)에 기록했습니다. 다른 후보: {alts}. 목표가 매도는 지정가 이상에서, 손절 매도는 발동가 이하에서 체결되므로 이 가격에 해당하는 주문이 여러 개였고, 체결가에 가장 가까운 주문을 선택했습니다.',
+  },
   'cut-loss-immediate': { en: '⚠️ {n} stop trigger(s) already at or above the last close — the stop may fire as soon as it is placed', ko: '⚠️ 손절 발동가 {n}건이 이미 최근 종가 이상입니다 — 주문하자마자 체결될 수 있습니다' },
   'stop-verb': { en: 'Sell', ko: '매도' },
   'stop-label': { en: 'trigger', ko: '발동가' },

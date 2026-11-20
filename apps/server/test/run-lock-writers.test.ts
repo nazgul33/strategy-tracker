@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { emptyState, parseUsd, type ISODate } from '@st/core'
-import { manualFill, seedRun, type BookingDeps } from '../src/domain/booking'
+import { manualFill, seedRun, type FillBookingDeps } from '../src/domain/booking'
 import { applyCorrection } from '../src/domain/corrections'
 import { deleteFill, rebookFill, recalcRunState } from '../src/domain/recompute'
 import { withRunLock } from '../src/domain/run-lock'
-import { fakeRepos } from './booking-fakes'
+import { fakeRepos, silentNotifier } from './booking-fakes'
 
 const TODAY: ISODate = '2026-11-15'
 type F = ReturnType<typeof fakeRepos>
@@ -19,7 +19,7 @@ function deferred() {
 
 async function setup() {
   const f = fakeRepos()
-  const deps: BookingDeps = { repos: f.repos as any, today: TODAY }
+  const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: silentNotifier }
   const runId = await f.repos.runRepo.create({
     strategyKey: 'mean-reversion', ticker: 'SPY', name: 'r', poolCents: 1_000_000, costPpm: 0,
     initialRunState: { buckets: emptyState(10).buckets, cashCents: 1_000_000, closed: [], ages: {} },
@@ -78,7 +78,7 @@ describe('run-state writers hold the per-run lock', () => {
 
   test('seedRun waits for a held lock, then seeds', async () => {
     const f = fakeRepos()
-    const deps: BookingDeps = { repos: f.repos as any, today: TODAY }
+    const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: silentNotifier }
     const runId = await f.repos.runRepo.create({
       strategyKey: 'mean-reversion', ticker: 'SPY', name: 'r', poolCents: 1_000_000, costPpm: 0,
       initialRunState: { buckets: emptyState(10).buckets, cashCents: 1_000_000, closed: [], ages: {} },

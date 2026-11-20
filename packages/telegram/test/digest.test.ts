@@ -157,6 +157,16 @@ describe('digest', () => {
     expect(t('sibling-cancelled', 'ko', params))
       .toBe('⚠️ 증권사에서 stop_sell 버킷 3 (97.00) 주문을 취소하세요 — 반대편 주문이 이미 체결되어 이 주문은 더 이상 필요하지 않습니다.')
   })
+  test('sell-attributed explains the nearest-price choice in both languages', () => {
+    const render = (lang: 'en' | 'ko') => t('sell-attributed', lang, {
+      shares: 10, price: '96.50', bucket: 0, leg: t('leg-stop_sell', lang), limit: '97.00', distance: '0.50',
+      alts: t('sell-attributed-alt', lang, { bucket: 9, leg: t('leg-sell_loc', lang), limit: '91.00', distance: '5.50' }),
+    })
+    expect(render('en')).toBe('ℹ️ Sell 10 sh @ $96.50 was booked to bucket 0 stop ($97.00, $0.50 away). Also possible: bucket 9 target ($91.00, $5.50 away). A target fills at or above its limit and a stop at or below its trigger, so more than one order fit this price; the order whose price is nearest the fill wins.')
+    expect(render('ko')).toBe('ℹ️ 매도 10주 @ $96.50 체결을 버킷 0 손절 매도 ($97.00, $0.50 차이)에 기록했습니다. 다른 후보: 버킷 9 목표가 매도 ($91.00, $5.50 차이). 목표가 매도는 지정가 이상에서, 손절 매도는 발동가 이하에서 체결되므로 이 가격에 해당하는 주문이 여러 개였고, 체결가에 가장 가까운 주문을 선택했습니다.')
+    expect(t('sell-attributed-alt', 'en', { bucket: 9, leg: t('leg-sell_loc', 'en'), limit: '91.00', distance: '5.50' })).toBe('bucket 9 target ($91.00, $5.50 away)')
+    expect(t('sell-attributed-alt', 'ko', { bucket: 9, leg: t('leg-sell_loc', 'ko'), limit: '91.00', distance: '5.50' })).toBe('버킷 9 목표가 매도 ($91.00, $5.50 차이)')
+  })
 })
 
 describe('digest stop line', () => {

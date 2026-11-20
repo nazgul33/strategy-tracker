@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { DomainError, emptyState, parseUsd, type ISODate } from '@st/core'
-import { manualFill, type BookingDeps } from '../src/domain/booking'
+import { manualFill, type FillBookingDeps } from '../src/domain/booking'
 import { applyCorrection, dismissCorrection, listOpenCorrections } from '../src/domain/corrections'
 import { deleteFill, rebookFill } from '../src/domain/recompute'
-import { fakeRepos } from './booking-fakes'
+import { fakeRepos, silentNotifier } from './booking-fakes'
 
 const TODAY: ISODate = '2026-11-15'
 type F = ReturnType<typeof fakeRepos>
@@ -25,7 +25,7 @@ async function kindOf(fn: () => Promise<unknown>): Promise<string> {
 // Run with a buy 44 @ 60.00 (bucket 0) and a manual sell 44 @ 66.03 fee 2.03.
 async function setup() {
   const f = fakeRepos()
-  const deps: BookingDeps = { repos: f.repos as any, today: TODAY }
+  const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: silentNotifier }
   const runId = await f.repos.runRepo.create({
     strategyKey: 'mean-reversion', ticker: 'SOXL', name: 'r', poolCents: 1_000_000, costPpm: 0,
     initialRunState: { buckets: emptyState(10).buckets, cashCents: 1_000_000, closed: [], ages: {} },
