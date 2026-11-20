@@ -223,21 +223,45 @@ chain is therefore ordered so the two interpretations can never collide:
 | # | Candidate | Admissibility | Tie-break |
 |---|---|---|---|
 | 1a | open `sell_loc` | `price === limitPrice` (unchanged) | existing |
-| 1b | open `sell_loc` | `price >= limitPrice` | **highest** qualifying `limitPrice` |
-| 1c | open `stop_sell` | `price <= limitPrice` (the trigger) | **lowest** qualifying trigger (closest to the fill) |
-| 1d | open `market_sell` | any price (unchanged) | lowest non-empty bucket with enough shares |
-| — | fallback | unchanged | unchanged |
+| 1b | **nearest**: open `sell_loc` and open `stop_sell`, together | `sell_loc`: `price >= limitPrice`; `stop_sell`: `price <= limitPrice` (the trigger) | smallest `abs(price - limitPrice)`; on an equal distance `sell_loc` before `stop_sell`, then the lowest `bucketIdx` |
+| 1c | open `market_sell` | any price (unchanged) | lowest `bucketIdx` |
+| — | fallback | unchanged | lowest non-empty bucket with enough shares |
 
-Every candidate additionally requires a non-empty bucket with
-`shares >= fill.shares`, as 1d already does.
+Every candidate on 1b and 1c additionally requires a non-empty bucket with
+`shares >= fill.shares`. Rung 1a reads the open `sell_loc` orders without that
+gate (unchanged), so an exact-price sell with impossible shares still matches and
+fails as `too-many-shares` instead of landing in another bucket.
 
-This is safe because for any single bucket
-`trigger < buyPrice < sellLimit`, so 1b's test (`price >= limit`) and 1c's
-(`price <= trigger`) can never both admit the same bucket, and a fill at or above
-*some* bucket's target is always read as a target before it is read as anyone's
-stop. 1b is new behaviour for fills that have nothing to do with cut-loss, and it
-is a strict improvement: those fills currently miss 1a and land in the
-"lowest non-empty bucket" guess.
+For any single bucket `trigger < buyPrice < sellLimit`, so 1b's two tests
+(`price >= limit` and `price <= trigger`) can never both admit the same bucket.
+Across buckets they can, and 1b therefore ranks target and stop legs together by
+price distance instead of giving every target precedence over every stop. 1b is
+new behaviour for fills that have nothing to do with cut-loss, and it is a strict
+improvement: those fills used to miss 1a and land in the "lowest non-empty bucket"
+guess.
+
+**Amended 2026-11-18 (#43).** The original chain tried the **highest** qualifying
+`sell_loc` (`price >= limitPrice`) before any `stop_sell`, on the argument that a
+fill at or above some bucket's target is always a target fill. That holds inside
+one bucket but not across buckets. Bucket 0 bought at 100.00 (target 103.00, stop
+97.00) and bucket 9 bought at 88.00 (target 91.00, stop 85.40). Bucket 0's stop
+fills at 96.50. The old chain admitted bucket 9's 91.00 target because
+96.50 >= 91.00 and booked the fill there, although bucket 0's 97.00 stop is only
+0.50 away and bucket 9's target 5.50. The sell was booked to the wrong bucket, and
+the sibling cancel then pulled that bucket's orders. Rung 1b now picks the leg
+nearest to the fill price, which books this fill to bucket 0's stop.
+
+- **Tie-break (operator ruling, 2026-11-18).** Price distance only; there is no
+  preference by kind or bucket age. On an equal distance the target wins, then the
+  lowest `bucketIdx`.
+- **Attribution notice.** When a fill matched on 1a or 1b and a leg on *another*
+  bucket was also admissible, the booking is a judgement call, so the operator is
+  told. A `notifications` row (Notifications tab) is written and a Telegram
+  message goes to every allowed chat. They are sent after the run lock is released
+  and before any sibling-cancel message. The copy keys in
+  `packages/telegram/src/i18n.ts` are `sell-attributed`, `sell-attributed-alt`,
+  `leg-sell_loc` and `leg-stop_sell`. An unambiguous fill (no other bucket's leg
+  admissible), a `market_sell` match and the fallback send nothing.
 
 **Sibling cancel.** Both legs sit live at the broker, so when one fires the other
 must stop looking live in the tracker *and* the operator must pull it by hand.
@@ -509,13 +533,22 @@ cachedFetchDailyBars(ticker, from, to):
 - `packages/telegram/test/digest.test.ts`: stop line rendered in en + ko, placed
   after that bucket's sell line.
 - `apps/server/test/booking.test.ts`: the full match chain — exact target still
-  wins; a target fill above its limit books to the **highest** qualifying target,
-  not to a loose stop (the reviewer's scenario: bucket 0 stop 97, bucket 9 target
-  91, fill at 91.50 ⇒ bucket 9); a stop fill books to the **closest** trigger at
-  or above it; a bucket-emptying stop fill cancels the sibling `sell_loc` with
+  wins; a fill books to the **nearest** leg by price distance, target or stop (the
+  reviewer's scenario, fill at 91.50 with bucket 0 stop 97.00 and bucket 9 target
+  91.00 ⇒ bucket 9, 0.50 away versus 5.50); a stop fill books to the **closest**
+  trigger at or above it; on an equal distance the target wins, then the lowest
+  bucket; a bucket-emptying stop fill cancels the sibling `sell_loc` with
   `broker-filled` and writes a notification; a bucket-emptying target fill cancels
-  the sibling `stop_sell`; a **partial** stop fill cancels nothing; a sell below
-  every trigger and above every limit still reaches the old fallback.
+  the sibling `stop_sell`; a **partial** stop fill cancels nothing; `market_sell`
+  ties go to the lowest bucket; a sell below every trigger and above every limit
+  still reaches the old fallback.
+- `apps/server/test/sell-attribution.test.ts` (helper `booking-fakes.ts`): the #43
+  collision — bucket 0 target 103.00 / stop 97.00, bucket 9 target 91.00 / stop
+  85.40, stop fill at 96.50 ⇒ bucket 0's stop, not bucket 9's target; the equal
+  distance tie-break (target, then lowest bucket); the attribution notice
+  (notification row plus one Telegram message per allowed chat, sent before the
+  sibling-cancel message) only when another bucket's leg was admissible, and none
+  for an unambiguous fill.
 - `apps/server/test/day.test.ts`: planned `stop_sell` rows persisted to `orders`
   with the new kind.
 - `apps/server/test/sim.test.ts`: gap-down open fills at the open; intraday touch
