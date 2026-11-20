@@ -161,7 +161,10 @@ async function main(): Promise<void> {
     }
     const ctx: E2eCtx = { ok, req, token, photo }
     await capture.onPhoto('chat-1', IMG, 'NVDA 11/9 broker fill') // no run id in caption -> ticker auto-route
-    ok(captureMsgs.some((m) => m === 'Booked NVDA buy 30 sh @ $179.50 on 2026-11-09 — confirm?'), 'capture-booked message verbatim')
+    ok(
+      captureMsgs.some((m) => m === 'Booked NVDA buy 30 sh @ $179.50 on 2026-11-09 — confirm?\n⚠️ The screenshot showed no trade date, so the capture date 2026-11-09 was used. If the trade was on another day, fix the date in the web app\'s Pending view instead of confirming here.'),
+      'capture-booked prompt and capture-date notice verbatim',
+    )
     const pend = await repos.pendingRepo.listPending()
     ok(pend.length === 1 && pend[0]!.side === 'buy' && pend[0]!.shares === 30 &&
       pend[0]!.price === 1795000n && pend[0]!.fee === 50, 'pending row: buy 30 sh, price 1795000n (bigint), fee 50c')
