@@ -1,17 +1,37 @@
-import { describe, test, expect, beforeAll } from 'bun:test'
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { getDb, applyMigrations } from '../src/db/client'
 import { getRepos } from '../src/db/repos'
 
 const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 
-// The database is shared with other suites: every case seeds its own captures and
-// asserts by its own ids, never on the total swept.
+// sweepOrphans deletes globally, so this suite runs on its own scratch database
+// (like scripts/e2e.ts) and never touches the tables other suites share in st_test.
 describeIf('vision janitor (db)', () => {
+  const SCRATCH = `st_janitor_${Date.now().toString(36)}`
   let repos: any
+  let parent: Awaited<ReturnType<typeof getDb>> | undefined
+  let scratch: Awaited<ReturnType<typeof getDb>> | undefined
+  let created = false
+
   beforeAll(async () => {
-    const db = await getDb(process.env.TEST_DATABASE_URL!)
-    await applyMigrations(db)
-    repos = getRepos(db)
+    if (!/^st_janitor_[a-z0-9]+$/.test(SCRATCH)) throw new Error(`unexpected scratch db name '${SCRATCH}'`)
+    const url = new URL(process.env.TEST_DATABASE_URL!)
+    parent = await getDb(url.toString())
+    created = true
+    await parent.$client.query(`CREATE DATABASE \`${SCRATCH}\``)
+    url.pathname = `/${SCRATCH}`
+    scratch = await getDb(url.toString())
+    await applyMigrations(scratch)
+    repos = getRepos(scratch)
+  })
+
+  afterAll(async () => {
+    try {
+      if (created) await parent!.$client.query(`DROP DATABASE IF EXISTS \`${SCRATCH}\``)
+    } finally {
+      await scratch?.$client.end()
+      await parent?.$client.end()
+    }
   })
 
   async function newCapture(): Promise<{ runId: number; captureId: number }> {
