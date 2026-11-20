@@ -134,6 +134,20 @@ describe('http sim drafts', () => {
     for (const raw of ['0x1', '1e0', '+1', '01']) expect((await call('GET', `/${raw}`)).status).toBe(404)
   })
 
+  test('a from before 1970-01-01 is invalid on POST and PUT; 1970-01-01 itself is not', async () => {
+    const { f, call, create, edit } = await setup()
+    const post = await call('POST', '', { ...base, from: '1969-12-31', to: '1970-01-09' })
+    expect(post.status).toBe(400)
+    expect((await post.json()).error).toBe('invalid from')
+    expect(f.simRuns).toHaveLength(0)
+    const { id } = await create()
+    const put = await call('PUT', `/${id}`, { ...edit, from: '1969-12-31', to: '1970-01-09' })
+    expect(put.status).toBe(400)
+    expect((await put.json()).error).toBe('invalid from')
+    const edge = await call('POST', '', { ...base, from: '1970-01-01', to: '1970-01-09' })
+    expect((await edge.json()).error).not.toBe('invalid from')
+  })
+
   test('PUT needs no name and ignores one that is sent', async () => {
     const { call, create, edit } = await setup()
     const { id } = await create()

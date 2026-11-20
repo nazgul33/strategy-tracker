@@ -16,7 +16,7 @@ function validateConfig(body: any, defaultCostPpm: number): Validated {
   const to = body?.to
   const poolCents = body?.poolCents
   const costPpm = body?.costPpm === undefined ? defaultCostPpm : body.costPpm
-  if (typeof from !== 'string' || !ISO_RE.test(from)) return { ok: false, error: 'invalid from' }
+  if (typeof from !== 'string' || !ISO_RE.test(from) || from < '1970-01-01') return { ok: false, error: 'invalid from' }
   if (typeof to !== 'string' || !ISO_RE.test(to)) return { ok: false, error: 'invalid to' }
   if (from > to) return { ok: false, error: 'invalid range' }
   if (!Number.isInteger(poolCents) || poolCents <= 0) return { ok: false, error: 'invalid poolCents' }

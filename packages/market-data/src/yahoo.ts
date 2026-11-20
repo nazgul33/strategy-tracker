@@ -55,7 +55,15 @@ export async function fetchDailyBars(
   const period2 = Math.floor(toDate.getTime() / 1000);
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${period1}&period2=${period2}&interval=1d`;
   const res = await fetchImpl(url);
-  if (!res.ok) throw new MarketDataError('http');
+  if (!res.ok) {
+    // A range wholly before the ticker's listing date answers 400 with this body.
+    const body: any = await res.json().catch(() => null);
+    const description = body?.chart?.error?.description;
+    if (res.status === 400 && typeof description === 'string' && description.startsWith("Data doesn't exist")) {
+      throw new MarketDataError('no-data');
+    }
+    throw new MarketDataError('http');
+  }
   const json = await res.json();
   if (json?.chart?.error) throw new MarketDataError('no-data');
   const parsed = parseBars(json);

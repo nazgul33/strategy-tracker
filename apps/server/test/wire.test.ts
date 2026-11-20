@@ -268,7 +268,7 @@ const multiVisionFetch = (async () => {
 const NOTICE_EN = 'ℹ️ Fills from this image were already confirmed earlier — the rows below may be duplicates. Check before confirming.';
 
 const DATE_NOTICE_EN =
-  '⚠️ The screenshot showed no trade date, so the capture date 2026-11-10 was used. If the trade was on another day, fix the date in the web app\'s Pending view instead of confirming here.';
+  '⚠️ No usable trade date was read from the screenshot, so the capture date 2026-11-10 was used. If the trade was on another day, fix the date in the web app\'s Pending view instead of confirming here.';
 
 const PNG_B64 = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64');
 
@@ -538,9 +538,7 @@ describe('capture prompt — trade date vision could not read', () => {
   test('a fill with no date carries the substitution notice', async () => {
     const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: fetchWith() });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
-    expect(h.sent[0]!.text).toBe(
-      'Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?\n⚠️ The screenshot showed no trade date, so the capture date 2026-11-10 was used. If the trade was on another day, fix the date in the web app\'s Pending view instead of confirming here.',
-    );
+    expect(h.sent[0]!.text).toBe(`Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?\n${DATE_NOTICE_EN}`);
     expect(h.sent[0]!.extra).toEqual({ reply_markup: buildPendingKeyboard(String(h.pending[0]!.id)) });
   });
 

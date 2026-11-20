@@ -75,4 +75,26 @@ describe('makeCachedBarReader gap chunking', () => {
       expect(text).toContain('bar_coverage')
     } finally { warn.mockRestore() }
   })
+
+  test("a year before the ticker's first bar is covered as empty and the later years are still fetched", async () => {
+    const missing = new Set<string>()
+    for (let d = '2024-01-01'; d <= '2024-12-31'; d = day(d)) missing.add(d)
+    up.state.missing = missing
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const bars = await read('AAPL', '2024-06-03', '2026-03-31')
+      expect(bars.length).toBeGreaterThan(0)
+      expect(bars.every((b) => b.date >= '2025-01-01')).toBe(true)
+      expect(up.state.ranges).toEqual([['2024-06-03', '2024-12-31'], ['2025-01-02', '2025-12-31'], ['2026-01-02', '2026-03-31']])
+      expect(await f.repos.barCoverageRepo.list('AAPL')).toEqual([{ fromDate: '2024-06-03', toDate: '2026-03-31' }])
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]!.join(' '))).toContain('2024-06-03..2024-12-31')
+    } finally { warn.mockRestore() }
+  })
+
+  test('a chunk that ends on a closed day is trimmed, and a chunk with no open day makes no upstream call', async () => {
+    today = '2027-02-01'
+    await read('AAPL', '2026-12-28', '2027-01-01')
+    expect(up.state.ranges).toEqual([['2026-12-28', '2026-12-31']])
+  })
 })
