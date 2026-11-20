@@ -13,6 +13,14 @@ function dayNumber(iso: string): number {
   return Math.floor(Date.parse(`${iso}T00:00:00Z`) / DAY_MS)
 }
 
+// errno 1213 / ER_LOCK_DEADLOCK, either raw or wrapped by drizzle (error on `.cause`).
+export function isDeadlock(e: unknown): boolean {
+  for (const err of [e, (e as any)?.cause]) {
+    if (err && ((err as any).errno === 1213 || (err as any).code === 'ER_LOCK_DEADLOCK')) return true
+  }
+  return false
+}
+
 export type BarRow = { ticker: string; tradeDate: string; open: bigint; high: bigint; low: bigint; close: bigint }
 
 export function getBarRepos(db: any) {
@@ -69,28 +77,39 @@ export function getBarRepos(db: any) {
     async add(ticker: string, fromDate: string, toDate: string): Promise<void> {
       if (fromDate > toDate) throw new Error(`bar coverage: inverted range ${fromDate}..${toDate} (from is after to)`)
       const t = normTicker(ticker)
-      await db.transaction(async (tx: any) => {
-        const rows: { id: number; fromDate: string; toDate: string }[] =
-          await tx.select().from(s.barCoverage).where(eq(s.barCoverage.ticker, t))
-        let from = fromDate
-        let to = toDate
-        const absorbed: number[] = []
-        for (const r of rows) {
-          // Test against the ORIGINAL [fromDate, toDate], not the widening from/to.
-          // This is only correct because stored ranges are kept pairwise
-          // non-overlapping and non-adjacent (every add merges its neighbours): a
-          // stored range that touches the widened union must already touch the
-          // original bounds, or it would have been merged into a range we absorb.
-          // Testing against the widened bounds would be order-dependent.
-          if (dayNumber(r.fromDate) <= dayNumber(toDate) + 1 && dayNumber(r.toDate) >= dayNumber(fromDate) - 1) {
-            absorbed.push(r.id)
-            if (r.fromDate < from) from = r.fromDate
-            if (r.toDate > to) to = r.toDate
-          }
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await db.transaction(async (tx: any) => {
+            const rows: { id: number; fromDate: string; toDate: string }[] =
+              await tx.select().from(s.barCoverage).where(eq(s.barCoverage.ticker, t)).for('update')
+            let from = fromDate
+            let to = toDate
+            const absorbed: number[] = []
+            for (const r of rows) {
+              // Test against the ORIGINAL [fromDate, toDate], not the widening from/to.
+              // This is only correct because stored ranges are kept pairwise
+              // non-overlapping and non-adjacent (every add merges its neighbours): a
+              // stored range that touches the widened union must already touch the
+              // original bounds, or it would have been merged into a range we absorb.
+              // Testing against the widened bounds would be order-dependent.
+              // The FOR UPDATE read is what makes "pairwise non-overlapping and
+              // non-adjacent" hold under concurrent writers.
+              if (dayNumber(r.fromDate) <= dayNumber(toDate) + 1 && dayNumber(r.toDate) >= dayNumber(fromDate) - 1) {
+                absorbed.push(r.id)
+                if (r.fromDate < from) from = r.fromDate
+                if (r.toDate > to) to = r.toDate
+              }
+            }
+            if (absorbed.length) await tx.delete(s.barCoverage).where(inArray(s.barCoverage.id, absorbed))
+            await tx.insert(s.barCoverage).values({ ticker: t, fromDate: from, toDate: to })
+          })
+          return
+        } catch (e) {
+          // With no rows to lock, InnoDB takes only (compatible) gap locks, so
+          // first writers for a ticker can deadlock on insert; one always wins.
+          if (!isDeadlock(e) || attempt >= 5) throw e
         }
-        if (absorbed.length) await tx.delete(s.barCoverage).where(inArray(s.barCoverage.id, absorbed))
-        await tx.insert(s.barCoverage).values({ ticker: t, fromDate: from, toDate: to })
-      })
+      }
     },
   }
 
