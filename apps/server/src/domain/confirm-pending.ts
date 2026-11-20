@@ -15,18 +15,20 @@ export interface ConfirmOverrides {
   feeCents?: number | null
 }
 
-export async function confirmPendingFill(pendingId: number, overrides: ConfirmOverrides | null, deps: FillBookingDeps, opts?: { keepImage?: boolean }): Promise<void> {
+// archived is false when the vision-review bookkeeping failed after the fill was
+// booked; the confirm itself still succeeded.
+export async function confirmPendingFill(pendingId: number, overrides: ConfirmOverrides | null, deps: FillBookingDeps, opts?: { keepImage?: boolean }): Promise<{ archived: boolean }> {
   const repos = deps.repos
-  if (overrides?.side !== undefined && overrides.side !== 'buy' && overrides.side !== 'sell') throw new Error('invalid-side')
-  const feeOverride = overrides?.feeCents
-  if (feeOverride !== undefined && feeOverride !== null && !(Number.isInteger(feeOverride) && feeOverride >= 0)) throw new Error('invalid-fee')
   // Only a peek to learn which run this pending belongs to; everything that
   // reads and writes state happens inside the lock, where the row is re-read.
   const known = (await repos.pendingRepo.listPending()).find((p: any) => p.id === pendingId)
   if (!known) throw new Error('pending-not-found-or-not-pending')
+  if (overrides?.side !== undefined && overrides.side !== 'buy' && overrides.side !== 'sell') throw new Error('invalid-side')
+  const feeOverride = overrides?.feeCents
+  if (feeOverride !== undefined && feeOverride !== null && !(Number.isInteger(feeOverride) && feeOverride >= 0)) throw new Error('invalid-fee')
 
   // bookUnlocked, not runBooking: the lock is not reentrant.
-  const outcome = await withRunLock(known.runId, async () => {
+  const { outcome, archived } = await withRunLock(known.runId, async () => {
     const pendingList = await repos.pendingRepo.listPending()
     const pending = pendingList.find((p: any) => p.id === pendingId)
     if (!pending) throw new Error('pending-not-found-or-not-pending')
@@ -55,6 +57,7 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
     // behind. Once booked, archive bookkeeping must not fail the confirm or skip
     // the booking notifications, so a failure here is logged and swallowed.
     const price = parseUsd(priceStr)
+    let archived = true
     try {
       await resolveReview(repos, {
         pendingRow: pending, captureId: pending.captureId ?? null, outcome: 'confirmed',
@@ -62,28 +65,30 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
         keepImage: opts?.keepImage === true, feeOverride,
       })
     } catch (e) {
+      archived = false
       console.error('vision review archive failed:', pendingId, String(e))
     }
-    return booked
+    return { outcome: booked, archived }
   })
   await notifyBookingOutcome(known.runId, outcome, deps)
+  return { archived }
 }
 
-// Resolves false when the row is missing or already handled (callers answer 409 /
+// Resolves null when the row is missing or already handled (callers answer 409 /
 // the duplicate message). Under the run lock so two siblings resolving at once
 // cannot both see "no pending left" and race the sweep. The reject has taken
 // effect once decide succeeds, so an archive failure is logged and contained,
-// exactly as on the confirm path.
-export async function rejectPendingFill(pendingId: number, deps: Pick<BookingDeps, 'repos'>, opts?: { keepImage?: boolean }): Promise<boolean> {
+// exactly as on the confirm path, and reported as archived: false.
+export async function rejectPendingFill(pendingId: number, deps: Pick<BookingDeps, 'repos'>, opts?: { keepImage?: boolean }): Promise<{ archived: boolean } | null> {
   const repos = deps.repos
   // Only a peek to learn the run; the row is re-read inside the lock.
   const known = (await repos.pendingRepo.listPending()).find((p: any) => p.id === pendingId)
-  if (!known) return false
+  if (!known) return null
 
   return withRunLock(known.runId, async () => {
     const pending = (await repos.pendingRepo.listPending()).find((p: any) => p.id === pendingId)
-    if (!pending) return false
-    if ((await repos.pendingRepo.decide(pendingId, 'rejected')) === false) return false
+    if (!pending) return null
+    if ((await repos.pendingRepo.decide(pendingId, 'rejected')) === false) return null
     try {
       await resolveReview(repos, {
         pendingRow: pending, captureId: pending.captureId ?? null, outcome: 'rejected',
@@ -91,7 +96,8 @@ export async function rejectPendingFill(pendingId: number, deps: Pick<BookingDep
       })
     } catch (e) {
       console.error('vision review archive failed:', pendingId, String(e))
+      return { archived: false }
     }
-    return true
+    return { archived: true }
   })
 }

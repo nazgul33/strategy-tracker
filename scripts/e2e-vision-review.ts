@@ -49,6 +49,7 @@ export async function runVisionReview(c: E2eCtx): Promise<void> {
 
   const confirmA = await c.req('POST', `/pending/${rowA.id}/confirm`, { overrides: { price: '175.25' }, keepImage: true }, c.token)
   c.ok(confirmA.status === 200, 'confirm with an edited price and keepImage -> 200')
+  c.ok((await jsonOf(confirmA)).archived === true, 'confirm with keepImage reports archived')
   const keptA = await entriesOf(c)
   c.ok(keptA.length === 1 && keptA[0].captureId === captureA && keptA[0].mime === 'image/png' && keptA[0].fills.length === 1,
     `vision-reviews lists exactly the kept capture: ${JSON.stringify(keptA.map((e) => [e.captureId, e.fills.length]))}`)

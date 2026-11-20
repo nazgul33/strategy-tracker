@@ -301,7 +301,7 @@ describe('freeze, keep, sweep', () => {
 
   test('the sibling-cancel notification still fires after the archive write', async () => {
     const { f, deps, notified, sellId } = await sellEmptyingBucket()
-    await confirmPendingFill(sellId, null, deps, { keepImage: true })
+    expect(await confirmPendingFill(sellId, null, deps, { keepImage: true })).toEqual({ archived: true })
     expect(f._stores.orders.map((o: any) => o.status)).toEqual(['filled', 'cancelled'])
     expect(notified).toEqual([f._stores.orders[1]!.id])
     expect(f._stores.visionReviews).toHaveLength(2)
@@ -312,7 +312,7 @@ describe('freeze, keep, sweep', () => {
     f.repos.visionReviewRepo.insertIgnore = async () => { throw new Error('archive-down') }
     const err = spyOn(console, 'error').mockImplementation(() => {})
     try {
-      await confirmPendingFill(sellId, null, deps, { keepImage: true })
+      expect(await confirmPendingFill(sellId, null, deps, { keepImage: true })).toEqual({ archived: false })
       expect(err).toHaveBeenCalledTimes(1)
       expect(String(err.mock.calls[0]!.join(' '))).toContain('archive-down')
     } finally {
@@ -326,11 +326,11 @@ describe('freeze, keep, sweep', () => {
 })
 
 describe('rejectPendingFill', () => {
-  test('resolves false for a missing or already handled row and writes nothing', async () => {
+  test('resolves null for a missing or already handled row and writes nothing', async () => {
     const { f, deps, ids } = await setup(2)
-    expect(await rejectPendingFill(999, deps)).toBe(false)
-    expect(await rejectPendingFill(ids[0]!, deps)).toBe(true)
-    expect(await rejectPendingFill(ids[0]!, deps)).toBe(false)
+    expect(await rejectPendingFill(999, deps)).toBeNull()
+    expect(await rejectPendingFill(ids[0]!, deps)).toEqual({ archived: true })
+    expect(await rejectPendingFill(ids[0]!, deps)).toBeNull()
     expect(f._stores.visionReviews).toHaveLength(1)
   })
 
@@ -339,12 +339,21 @@ describe('rejectPendingFill', () => {
     f.repos.visionReviewRepo.insertIgnore = async () => { throw new Error('archive-down') }
     const err = spyOn(console, 'error').mockImplementation(() => {})
     try {
-      expect(await rejectPendingFill(ids[0]!, deps)).toBe(true)
+      expect(await rejectPendingFill(ids[0]!, deps)).toEqual({ archived: false })
       expect(String(err.mock.calls[0]!.join(' '))).toContain('archive-down')
     } finally {
       err.mockRestore()
     }
     expect(f._stores.pending.find((p: any) => p.id === ids[0])!.status).toBe('rejected')
+  })
+})
+
+describe('confirmPendingFill validation order', () => {
+  test('a malformed override on an already handled row answers not-pending first', async () => {
+    const { deps, ids } = await setup(1)
+    await rejectPendingFill(ids[0]!, deps)
+    await expect(confirmPendingFill(ids[0]!, { side: 'hold' as any }, deps)).rejects.toThrow('pending-not-found-or-not-pending')
+    await expect(confirmPendingFill(ids[0]!, { feeCents: -1 }, deps)).rejects.toThrow('pending-not-found-or-not-pending')
   })
 })
 
