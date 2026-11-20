@@ -152,13 +152,14 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       await deps.send(chatId, t('capture-booked-earlier', lang));
     }
     for (const row of pending) {
-      const text = t('capture-booked', lang, {
+      let text = t('capture-booked', lang, {
         ticker: row.ticker,
         side: row.side,
         shares: row.shares,
         price: row.price,
         date: row.filledOn,
       });
+      if (row.detectedFilledOn === null) text += '\n' + t('capture-date-substituted', lang, { date: row.filledOn });
       await deps.send(chatId, text, { reply_markup: buildPendingKeyboard(String(row.id)) });
     }
   }
