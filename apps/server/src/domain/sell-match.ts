@@ -9,10 +9,9 @@ const SELL_SIDE_KINDS: readonly string[] = ['sell_loc', 'stop_sell', 'market_sel
 // lowest id first, minus `exceptId` (the order a fill matched). Open is load-bearing:
 // a leg an earlier partial fill already flipped to filled must not be reported again.
 //
-// `>= fromTradeDate`, not `===`, is a deliberate deviation from the spec, which scoped
-// the sibling cancel to the fill's own trade date: a fill captured for an earlier day
-// and confirmed after the morning re-plan would otherwise leave today's freshly planned
-// target and stop open — two live broker orders against shares already sold.
+// `>= fromTradeDate`, not `===` (the spec records this): a fill captured for an earlier
+// day and confirmed after the morning re-plan would otherwise leave today's freshly
+// planned target and stop open — two live broker orders against shares already sold.
 export function openSellLegs(orders: OrderRow[], key: { runId: number; bucketIdx: number; fromTradeDate: string }, exceptId: number | null): OrderRow[] {
   return orders
     .filter((o) => o.runId === key.runId && o.bucketIdx === key.bucketIdx && o.tradeDate >= key.fromTradeDate && o.status === 'open' && o.id !== exceptId && SELL_SIDE_KINDS.includes(o.kind))
@@ -55,7 +54,9 @@ function toLeg(o: OrderRow, price: bigint): SellLeg {
 //   1c  market_sell, lowest bucketIdx
 // null leaves the caller's fallback. On 1a and 1b the result also carries the
 // admissible legs of OTHER buckets (nearest first) so the operator can be told the
-// attribution was a judgement call; 1c and the fallback are never ambiguous.
+// attribution was a judgement call. It lists only target and stop legs; market_sell
+// legs on other buckets are not listed, and a fill matched on 1c or by the fallback
+// carries no attribution (see the spec's known limitations).
 export function matchSellOrder(orders: OrderRow[], state: RunState, input: SellFillKey): SellMatch | null {
   const onDay = orders.filter((o) => o.status === 'open' && o.runId === input.runId && o.tradeDate === input.filledOn)
   const live = onDay.filter((o) => {
@@ -67,8 +68,8 @@ export function matchSellOrder(orders: OrderRow[], state: RunState, input: SellF
     .map((o) => toLeg(o, input.price))
     .sort((a, b) => cmp(a.distance, b.distance) || kindRank(a.kind) - kindRank(b.kind) || a.bucketIdx - b.bucketIdx)
 
-  // Exact price is read from `onDay`, not `live`: a deliberate, recorded deviation
-  // from the spec's uniform "non-empty bucket with shares >= fill.shares" gate.
+  // Exact price is read from `onDay`, not `live`, so it skips the uniform
+  // "non-empty bucket with shares >= fill.shares" gate (the spec records this).
   // Under the gate an exact-price sell with impossible shares is filtered out, the
   // chain falls through, and the fill is booked into a DIFFERENT bucket while the
   // sibling cancel pulls that bucket's legs — leaving the bucket that really sold

@@ -11,7 +11,7 @@ export interface BookingNotifierDeps {
   lang: Lang
 }
 
-// BookingDeps' notifier for the real server: one message per allowed chat, recorded
+// FillBookingDeps.notify for the real server: one message per allowed chat, recorded
 // in the notifications table first (the same order as the manual order-cancel
 // route). A chat that fails is logged and must not hide the rest.
 export function makeBookingNotifier(deps: BookingNotifierDeps): BookingNotifier {

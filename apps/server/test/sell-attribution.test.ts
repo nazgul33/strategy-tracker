@@ -86,7 +86,29 @@ describe('sell attribution to the nearest order price', () => {
     expect(rec.siblings).toHaveLength(1)
   })
 
-  test('alternatives list every other admissible bucket, nearest first', async () => {
+  test('two other admissible buckets are listed nearest first, whatever the insertion order', async () => {
+    const { f, deps, rec, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 1, shares: 10, buy: '90.00' }, { idx: 2, shares: 10, buy: '105.00' }],
+      [
+        { idx: 2, kind: 'sell_loc', price: '108.00' }, { idx: 2, kind: 'stop_sell', price: '102.00' },
+        { idx: 1, kind: 'sell_loc', price: '92.00' }, { idx: 1, kind: 'stop_sell', price: '87.00' },
+        { idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' },
+      ],
+    )
+    await sell(runId, 10, '96.50', deps)
+    expect(lastFill(f).bucketIdx).toBe(0)
+    expect(order(f, 0, 'stop_sell').status).toBe('filled')
+    expect(rec.attributions).toHaveLength(1)
+    const a = rec.attributions[0]!.attribution
+    expect(a.chosen).toMatchObject({ bucketIdx: 0, kind: 'stop_sell', limitPrice: parseUsd('97.00'), distance: parseUsd('0.50') })
+    expect(a.alternatives).toHaveLength(2)
+    expect(a.alternatives).toMatchObject([
+      { bucketIdx: 1, kind: 'sell_loc', limitPrice: parseUsd('92.00'), distance: parseUsd('4.50') },
+      { bucketIdx: 2, kind: 'stop_sell', limitPrice: parseUsd('102.00'), distance: parseUsd('5.50') },
+    ])
+  })
+
+  test('a bucket whose legs do not fit the price is not an alternative', async () => {
     // Bucket 0 needs >= 103.00 for its target and <= 97.00 for its stop, so a 100.00 print is not admissible there.
     const { f, deps, rec, runId } = await setup(
       [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 1, shares: 10, buy: '96.00' }, { idx: 2, shares: 10, buy: '110.00' }],

@@ -227,14 +227,15 @@ fallback. These are the rungs of the table:
 
 | # | Candidate | Admissibility | Tie-break |
 |---|---|---|---|
-| 1a | open `sell_loc` | `price === limitPrice` (unchanged) | existing |
+| 1a | open `sell_loc` | `price === limitPrice` (unchanged) | lowest `bucketIdx` |
 | 1b | **nearest**: open `sell_loc` and open `stop_sell`, together | `sell_loc`: `price >= limitPrice`; `stop_sell`: `price <= limitPrice` (the trigger) | smallest `abs(price - limitPrice)`; on an equal distance `sell_loc` before `stop_sell`, then the lowest `bucketIdx` |
 | 1c | open `market_sell` | any price (unchanged) | lowest `bucketIdx` |
 | — | fallback | unchanged | lowest non-empty bucket with enough shares |
 
 Every candidate on 1b and 1c additionally requires a non-empty bucket with
 `shares >= fill.shares`. Rung 1a reads the open `sell_loc` orders without that
-gate (unchanged), so an exact-price sell with impossible shares still matches and
+gate: the code has always read the exact-price rung that way and the spec now
+records it. An exact-price sell with impossible shares therefore still matches and
 fails as `too-many-shares` instead of landing in another bucket.
 
 For any single bucket `trigger < buyPrice < sellLimit`, so 1b's two tests
@@ -256,24 +257,45 @@ fills at 96.50. The old chain admitted bucket 9's 91.00 target because
 the sibling cancel then pulled that bucket's orders. Rung 1b now picks the leg
 nearest to the fill price, which books this fill to bucket 0's stop.
 
-- **Tie-break (operator ruling, 2026-11-18).** Price distance only; there is no
-  preference by kind or bucket age. On an equal distance the target wins, then the
-  lowest `bucketIdx`.
+- **Tie-break (operator ruling, 2026-11-18).** Candidates are ranked by price
+  distance alone; kind (target before stop) and then bucket index only break exact
+  ties.
 - **Attribution notice.** When a fill matched on 1a or 1b and a leg on *another*
   bucket was also admissible, the booking is a judgement call, so the operator is
-  told. A `notifications` row (Notifications tab) is written and a Telegram
-  message goes to every allowed chat. They are sent after the run lock is released
-  and before any sibling-cancel message. The copy keys in
-  `packages/telegram/src/i18n.ts` are `sell-attributed`, `sell-attributed-alt`,
-  `leg-sell_loc` and `leg-stop_sell`. An unambiguous fill (no other bucket's leg
-  admissible), a `market_sell` match and the fallback send nothing.
+  told: one `notifications` row (Notifications tab) and one Telegram message per
+  allowed chat; with no allowed chats nothing is written or sent. They are sent
+  after the run lock is released and before any sibling-cancel message. The copy
+  keys in `packages/telegram/src/i18n.ts` are `sell-attributed`,
+  `sell-attributed-alt`, `leg-sell_loc` and `leg-stop_sell`. An unambiguous fill
+  (no other bucket's leg admissible) sends nothing; a fill matched by `market_sell`
+  or by the fallback carries no notice, and `market_sell` legs on other buckets are
+  not listed as alternatives.
+
+**Known limitations (whole-branch review, 2026-11-20) — not addressed here, awaiting an operator decision:**
+
+1. A second partial fill of the same leg: the first partial flips the matched
+   order to `filled`, so the rest of that leg is no longer a candidate and can book
+   to another bucket, with no notice.
+2. A `market_sell` on another bucket is never listed as an alternative, and a
+   target or stop on another bucket outranks it.
+3. A fill dated on an earlier day and confirmed after the morning roll: that day's
+   legs are `stale`, so none is a candidate; the fill falls to the lowest-bucket
+   fallback, and the sibling cancel then pulls that bucket's legs for today.
+4. Several buckets' targets filling at the same close with different share counts:
+   price distance cannot tell the fills apart, so a fill can land in a bucket that
+   holds more shares, and a later, larger fill can then fail with
+   `no-bucket-for-sell`.
+5. With no allowed chats no notice reaches the operator, not even in the
+   Notifications tab (`notifications.chat_id` is NOT NULL).
 
 **Sibling cancel.** Both legs sit live at the broker, so when one fires the other
 must stop looking live in the tracker *and* the operator must pull it by hand.
 
 - Booking a `stop_sell` fill that **empties the bucket** cancels that
-  run/bucket/trade-date's open `sell_loc` with
-  `cancelReason: 'broker-filled'` (already in `CANCEL_REASONS`); symmetrically, a
+  run/bucket's open `sell_loc` from the fill's trade date **onwards**
+  (`tradeDate >= filledOn`) with `cancelReason: 'broker-filled'` (already in
+  `CANCEL_REASONS`). A fill captured for an earlier day and confirmed after the
+  morning re-plan must also cancel that day's freshly planned legs. Symmetrically, a
   bucket-emptying `sell_loc` or `market_sell` fill cancels the open `stop_sell`.
 - A **partial** fill cancels nothing — the remaining shares still need both legs,
   and the next morning's plan re-sizes them. The matched order itself still flips
@@ -555,11 +577,17 @@ cachedFetchDailyBars(ticker, from, to):
   85.40, stop fill at 96.50 ⇒ bucket 0's stop, not bucket 9's target; on an equal
   distance the target wins; a target near the fill beats a loose stop on another
   bucket; `market_sell` ties go to the lowest bucket whatever the insertion order;
-  an unambiguous fill produces no attribution notice; the alternatives list every
-  other admissible bucket, nearest first; an exact 1a hit still reports another
+  an unambiguous fill produces no attribution notice; two other admissible buckets
+  are listed nearest first whatever the insertion order (bucket 0 stop 97.00,
+  bucket 1 target 92.00, bucket 2 stop 102.00, fill 96.50); a bucket whose legs do
+  not fit the price is not an alternative; an exact 1a hit still reports another
   admissible bucket; a failing attribution notice does not block the sibling
   notices; the attribution notice runs after the run lock is released; confirming a
   pending sell sends it too.
+- `apps/server/test/booking-notifier.test.ts` (in-memory fakes, no DB): the
+  rendered multi-alternative text, joined with "; ", a `notifications` row and a
+  message per chat, nothing with no allowed chats, and a failing chat does not stop
+  the next.
 - `apps/server/test/http-sibling-notify.test.ts`: over HTTP with the real notifier,
   an ambiguous manual sell (the 96.50 case) writes a `notifications` row and sends
   a Telegram message to the allowed chat for the attribution notice, followed by
