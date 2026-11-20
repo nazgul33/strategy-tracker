@@ -211,14 +211,19 @@ keeps a fat-fingered `99.9` from being indistinguishable from a market sell.
 
 ### Booking a stop fill
 
-`apps/server/src/domain/booking.ts`, sell path. Today the chain is:
-(1a) open `sell_loc` with **exact** `limitPrice === price`, (1b) open `market_sell`
-for the date ignoring price, (fallback) lowest non-empty bucket with enough shares.
+`apps/server/src/domain/booking.ts`, sell path. Before cut-loss the chain was:
+an open `sell_loc` with **exact** `limitPrice === price`, then an open
+`market_sell` for the date ignoring price, then the fallback (lowest non-empty
+bucket with enough shares).
 
 A naive "stop whose trigger ≥ fill price" rule would hijack ordinary target-sell
-fills: a LOC sell prints at the close, not at the limit, so 1a misses routinely,
-and the loosest (highest) trigger in the book would then swallow the fill. The
-chain is therefore ordered so the two interpretations can never collide:
+fills: a LOC sell prints at the close, not at the limit, so the exact match misses
+routinely, and the loosest (highest) trigger in the book would then swallow the
+fill. Within one bucket the target test (`price >= limit`) and the stop test
+(`price <= trigger`) are disjoint, but across buckets both can admit the same fill.
+The chain is therefore: exact target, then the nearest order price among targets
+and stops together (see the amendment below), then `market_sell`, then the
+fallback. These are the rungs of the table:
 
 | # | Candidate | Admissibility | Tie-break |
 |---|---|---|---|
@@ -532,23 +537,35 @@ cachedFetchDailyBars(ticker, from, to):
   `force_sell`, none when the percent is 0; order of `orders` pinned.
 - `packages/telegram/test/digest.test.ts`: stop line rendered in en + ko, placed
   after that bucket's sell line.
-- `apps/server/test/booking.test.ts`: the full match chain — exact target still
-  wins; a fill books to the **nearest** leg by price distance, target or stop (the
+- `apps/server/test/booking.test.ts`: the match chain — exact target still wins; a
+  fill books to the **nearest** leg by price distance, target or stop (the
   reviewer's scenario, fill at 91.50 with bucket 0 stop 97.00 and bucket 9 target
-  91.00 ⇒ bucket 9, 0.50 away versus 5.50); a stop fill books to the **closest**
-  trigger at or above it; on an equal distance the target wins, then the lowest
-  bucket; a bucket-emptying stop fill cancels the sibling `sell_loc` with
-  `broker-filled` and writes a notification; a bucket-emptying target fill cancels
-  the sibling `stop_sell`; a **partial** stop fill cancels nothing; `market_sell`
-  ties go to the lowest bucket; a sell below every trigger and above every limit
-  still reaches the old fallback.
-- `apps/server/test/sell-attribution.test.ts` (helper `booking-fakes.ts`): the #43
+  91.00 ⇒ bucket 9, 0.50 away versus 5.50); with several targets at or below the
+  fill the nearest (highest) limit wins; a stop fill books to the **closest**
+  trigger at or above it; identical triggers and identical target limits resolve to
+  the lowest bucket index; `market_sell` still matches at any price; a
+  bucket-emptying stop fill cancels the sibling `sell_loc` with `broker-filled` and
+  hands the cancelled leg to the notifier; a bucket-emptying target fill cancels the sibling
+  `stop_sell`; a **partial** stop fill cancels nothing; a sell strictly between
+  every trigger and every limit (admissible to no leg) still reaches the old
+  fallback.
+- `apps/server/test/sell-attribution.test.ts` (fakes in `booking-fakes.ts`, which
+  record the notices in memory; no DB, no `notifications` table): the #43
   collision — bucket 0 target 103.00 / stop 97.00, bucket 9 target 91.00 / stop
-  85.40, stop fill at 96.50 ⇒ bucket 0's stop, not bucket 9's target; the equal
-  distance tie-break (target, then lowest bucket); the attribution notice
-  (notification row plus one Telegram message per allowed chat, sent before the
-  sibling-cancel message) only when another bucket's leg was admissible, and none
-  for an unambiguous fill.
+  85.40, stop fill at 96.50 ⇒ bucket 0's stop, not bucket 9's target; on an equal
+  distance the target wins; a target near the fill beats a loose stop on another
+  bucket; `market_sell` ties go to the lowest bucket whatever the insertion order;
+  an unambiguous fill produces no attribution notice; the alternatives list every
+  other admissible bucket, nearest first; an exact 1a hit still reports another
+  admissible bucket; a failing attribution notice does not block the sibling
+  notices; the attribution notice runs after the run lock is released; confirming a
+  pending sell sends it too.
+- `apps/server/test/http-sibling-notify.test.ts`: over HTTP with the real notifier,
+  an ambiguous manual sell (the 96.50 case) writes a `notifications` row and sends
+  a Telegram message to the allowed chat for the attribution notice, followed by
+  the sibling-cancel notice, in that order and with the exact text.
+- `packages/telegram/test/digest.test.ts`: the rendered `sell-attributed`,
+  `sell-attributed-alt` and `leg-sell_loc` copy in en and ko.
 - `apps/server/test/day.test.ts`: planned `stop_sell` rows persisted to `orders`
   with the new kind.
 - `apps/server/test/sim.test.ts`: gap-down open fills at the open; intraday touch
