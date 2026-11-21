@@ -39,6 +39,7 @@
   "correctionFill": "체결 #{id}",
   "correctionStale": "스크린샷 이후 체결이 변경되었습니다 — 이 수정 제안을 무시하세요.",
   "correctionsTitle": "수정 제안 (스크린샷)",
+  "costDefaultFailed": "기본 비용을 불러오지 못했습니다. 직접 입력하세요.",
   "create": "생성",
   "dialog.add": "체결 추가",
   "dialog.addFill": "체결 추가",

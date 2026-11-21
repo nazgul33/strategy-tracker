@@ -11,6 +11,7 @@ const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { act } = await import('react');
 const { SimPage } = await import('./Sim');
+const { resetDefaultCostMemo } = await import('../defaultcost');
 
 const d = React.createElement;
 
@@ -92,11 +93,18 @@ async function submitForm() {
 describe('SimPage gap fields', () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
+  let settingsRoute: { url: string; status: number; json: unknown };
 
   beforeEach(() => {
+    resetDefaultCostMemo();
     calls = [];
+    settingsRoute = {
+      url: '/api/settings',
+      status: 200,
+      json: { visionBaseUrl: '', visionModel: '', digestLang: 'en', hasVisionApiKey: false, defaultCostPpm: 700 },
+    };
     stub = installFetchStub([
-      { url: '/api/settings', json: { visionBaseUrl: '', visionModel: '', digestLang: 'en', hasVisionApiKey: false, defaultCostPpm: 700 } },
+      settingsRoute,
       { method: 'POST', url: '/api/sim', status: 201, json: { id: 3, dayCount: 5 } },
     ]);
     container = document.createElement('div');
@@ -174,6 +182,19 @@ describe('SimPage gap fields', () => {
 
     expect(calls.length).toBe(1);
     expect(calls[0]!.body.costPpm).toBe(700);
+  });
+
+  it('a failed settings load says so by the cost field', async () => {
+    settingsRoute.status = 500;
+    await act(async () => {
+      root.render(d(SimPage));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const note = document.querySelector('[data-testid="costDefaultFailed"]');
+    expect(note?.textContent).toBe("Couldn't load the default cost. Enter one.");
+    expect(inputByTestId('costInput').value).toBe('');
   });
 
   it('sends cut-loss as ppm', async () => {

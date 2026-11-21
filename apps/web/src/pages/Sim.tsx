@@ -76,7 +76,7 @@ export function SimPage() {
     bucketCount: '',
     maxAge: '',
   });
-  const [cost, setCost] = useDefaultCostText();
+  const [cost, setCost, costLoadFailed] = useDefaultCostText();
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -149,6 +149,7 @@ export function SimPage() {
           <SimConfigFields
             form={form}
             onChange={(field, value) => (field === 'cost' ? setCost(value) : setRest((r) => ({ ...r, [field]: value })))}
+            costNote={costLoadFailed ? t('costDefaultFailed') : undefined}
           />
           <div className="flex items-center gap-3">
             <Button type="submit" variant="primary" busy={busy} disabled={!percentsValid}>

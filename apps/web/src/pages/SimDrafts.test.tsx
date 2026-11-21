@@ -11,6 +11,7 @@ const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { act } = await import('react');
 const { SimPage } = await import('./Sim');
+const { resetDefaultCostMemo } = await import('../defaultcost');
 
 const d = React.createElement;
 
@@ -50,6 +51,7 @@ describe('SimPage drafts', () => {
   let deleteRoute: { method: 'DELETE'; url: string; status: number; json: unknown };
 
   beforeEach(() => {
+    resetDefaultCostMemo();
     listRoute = {
       url: '/api/sim',
       json: [simRow(7, 'NVDA', true), simRow(6, 'QQQ', false), simRow(5, 'TSLA', true), simRow(4, 'AAPL', false)],

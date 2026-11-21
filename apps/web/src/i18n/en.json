@@ -39,6 +39,7 @@
   "correctionFill": "Fill #{id}",
   "correctionStale": "This fill changed since the screenshot — dismiss this correction.",
   "correctionsTitle": "Corrections (from screenshots)",
+  "costDefaultFailed": "Couldn't load the default cost. Enter one.",
   "create": "Create",
   "dialog.add": "Add fill",
   "dialog.addFill": "Add fill",
