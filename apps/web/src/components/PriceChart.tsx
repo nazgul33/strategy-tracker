@@ -44,8 +44,7 @@ export function PriceChart({
   const latestClose = state.data?.bars[state.data.bars.length - 1]?.close ?? null;
   useEffect(() => {
     onLatestClose?.(latestClose);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestClose]);
+  }, [latestClose, onLatestClose]);
 
   if (state.loading && !state.data) return <Spinner />;
   if (state.error !== undefined) return <ErrorNote message={state.error} />;
