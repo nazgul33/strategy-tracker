@@ -171,7 +171,7 @@ describe('http sim drafts', () => {
     const { id } = await create({ costPpm: 30 })
     const { costPpm: _c, ...noCost } = edit
     expect((await call('PUT', `/${id}`, noCost)).status).toBe(200)
-    expect(f.simRuns.find((r) => r.id === id).costPpm).toBe(700)
+    expect(f.simRuns.find((r) => r.id === id)!.costPpm).toBe(700)
   })
 
   test('a failed re-run leaves the draft days and config intact', async () => {

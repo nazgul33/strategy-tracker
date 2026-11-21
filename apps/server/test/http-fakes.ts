@@ -1,6 +1,9 @@
 import { expect } from 'bun:test'
 import type { RunState } from '@st/core'
 import type { HttpDeps, HttpRepoSurface, createApp } from '../src/http/app'
+import type { FillRow } from '../src/domain/booking'
+import type { VisionReviewRow } from '../src/domain/vision-review'
+import type { SimRunRow, SimDayRow } from '../src/sim/sim'
 import { fakeCorrectionRepo } from './fake-corrections'
 import { normTicker } from '../src/db/repos-bars'
 
@@ -8,7 +11,7 @@ export function makeFakes() {
   let runIdSeq = 1
   const runs: any[] = []
   const poolEdits: any[] = []
-  const fills: any[] = []
+  const fills: FillRow[] = []
   const ledger: any[] = []
   const orders: any[] = []
   const pending: any[] = []
@@ -64,7 +67,7 @@ export function makeFakes() {
       return orders.filter((o) => o.runId === runId && o.tradeDate >= fromDate).sort((a, b) => a.id - b.id)
     },
   }
-  const fillRepo: HttpRepoSurface['fillRepo'] = {
+  const fillRepo: Required<HttpRepoSurface['fillRepo']> = {
     async insert(f) { fills.push({ id: fills.length + 1, ...f }) },
     async listForRun(runId: number) { return fills.filter((f) => f.runId === runId) },
     async update(runId, fillId, patch) {
@@ -120,7 +123,7 @@ export function makeFakes() {
     },
     async existingIds(captureIds: number[]) { return new Set<number>(captureImages.filter((x) => captureIds.includes(x.captureId)).map((x) => x.captureId)) },
   }
-  const visionReviews: any[] = []
+  const visionReviews: VisionReviewRow[] = []
   const visionReviewRepo: HttpRepoSurface['visionReviewRepo'] = {
     async insertIgnore(row) {
       if (visionReviews.some((x) => x.pendingFillId === row.pendingFillId)) return
@@ -150,8 +153,8 @@ export function makeFakes() {
   // monotonic like AUTO_INCREMENT: ids are never reused after a delete
   let simRunIdSeq = 1
   let simDayIdSeq = 1
-  const simRuns: any[] = []
-  const simDays: any[] = []
+  const simRuns: SimRunRow[] = []
+  const simDays: SimDayRow[] = []
   const simRepo: HttpRepoSurface['simRepo'] = {
     async insertRun(i) {
       const id = simRunIdSeq++
