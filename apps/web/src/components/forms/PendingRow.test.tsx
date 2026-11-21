@@ -134,6 +134,20 @@ describe('PendingTable header', () => {
     expect(label.textContent).toBe('Screenshot');
     expect(lookup('ko', 'pendingColScreenshot')).toBe('스크린샷');
   });
+
+  // A class-name pin: the test DOM has no layout, so the pinning cannot be measured.
+  it('keeps the actions column pinned while the table scrolls', async () => {
+    installFetchStub([{ url: '/api/pending', json: [ROW] }]);
+    await act(async () => {
+      root.render(d(PendingTable, { runId: 7 }));
+    });
+    await flush();
+    const th = Array.from(container.querySelectorAll('thead th')).at(-1)!;
+    const td = Array.from(container.querySelectorAll('tbody tr:first-child td')).at(-1)!;
+    for (const cell of [th, td]) {
+      for (const cls of ['sticky', 'right-0', 'bg-card']) expect(cell.classList.contains(cls)).toBe(true);
+    }
+  });
 });
 
 describe('PendingRow blank fee', () => {

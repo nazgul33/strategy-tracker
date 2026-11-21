@@ -149,7 +149,7 @@ export function PendingTable({ runId }: { runId?: number }) {
                 <span className="sr-only">{t('pendingColScreenshot')}</span>
               </Th>
               <Th>{t('pendingColDetected')}</Th>
-              <Th>{t('pendingColActions')}</Th>
+              <Th className="sticky right-0 bg-card">{t('pendingColActions')}</Th>
             </tr>
           </thead>
           <tbody>
