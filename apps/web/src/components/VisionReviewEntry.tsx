@@ -111,12 +111,14 @@ export function VisionReviewEntry({
   entry,
   onDelete,
   busy = false,
+  deleteDisabled = false,
   error = null,
   onCancel,
 }: {
   entry: VisionReviewEntryDto;
   onDelete: () => void;
   busy?: boolean;
+  deleteDisabled?: boolean;
   error?: string | null;
   onCancel?: () => void;
 }) {
@@ -152,7 +154,7 @@ export function VisionReviewEntry({
                 >
                   {t('cancel')}
                 </Button>
-                <Button variant="danger" busy={busy} onClick={onDelete}>
+                <Button variant="danger" busy={busy} disabled={deleteDisabled} onClick={onDelete}>
                   {t('dialog.deleteConfirm')}
                 </Button>
               </div>

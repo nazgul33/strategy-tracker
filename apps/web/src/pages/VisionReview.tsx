@@ -10,44 +10,44 @@ export function VisionReviewPage() {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.listVisionReviews(), []);
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
   const [lastDeleteId, setLastDeleteId] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<{ id: number; message: string } | null>(null);
 
-  const remove = async (captureId: number) => {
-    setBusyId(captureId);
-    setLastDeleteId(captureId);
+  const remove = async (id: number) => {
+    setBusyId(id);
+    setLastDeleteId(id);
     setDeleteError(null);
     try {
-      await api.deleteVisionReview(captureId);
+      await api.deleteVisionReview(id);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : String(err));
+      setDeleteError({ id, message: err instanceof Error ? err.message : String(err) });
     } finally {
       await reload();
       setBusyId(null);
     }
   };
 
-  const cancel = () => {
-    setLastDeleteId(null);
-    setDeleteError(null);
+  const cancel = (id: number) => {
+    setDeleteError((current) => (current?.id === id ? null : current));
+    setLastDeleteId((current) => (current === id ? null : current));
   };
 
-  // Every reload on this page follows a delete, so a list error while entries are on screen
-  // belongs to the entry whose delete triggered it.
-  const entryError = (captureId: number): string | null =>
-    captureId === lastDeleteId ? (deleteError ?? (data ? (error ?? null) : null)) : null;
-  // When the armed entry is no longer listed, its error has no card to sit in and stays at page
-  // level. After Cancel a list error with entries on screen is dismissed with the armed state.
-  const inCard = lastDeleteId !== null && !!data?.some((e) => e.captureId === lastDeleteId);
-  const pageError = !data || (lastDeleteId !== null && !inCard) ? error : undefined;
+  // Every error is visible exactly once: in the card that owns it when that card is listed and
+  // idle, otherwise at page level. Every reload on this page follows a delete, so a list error
+  // belongs to the card of the last delete, except while that card's own request is in flight.
+  const listed = (id: number | null) => id !== null && !!data?.some((e) => e.captureId === id);
+  const cardListError = !!data && listed(lastDeleteId) && busyId !== lastDeleteId && deleteError?.id !== lastDeleteId;
+  const entryError = (id: number): string | null =>
+    deleteError?.id === id ? deleteError.message : cardListError && id === lastDeleteId ? (error ?? null) : null;
+  const pageListError = cardListError ? undefined : error;
+  const pageDeleteError = deleteError && !listed(deleteError.id) ? deleteError.message : null;
 
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">{t('visionReviewTitle')}</h1>
       <p className="text-sm text-muted-foreground">{t('visionReviewIntro')}</p>
-      {pageError && <ErrorNote message={pageError} />}
-      {!inCard && deleteError && <ErrorNote message={deleteError} />}
+      {pageListError && <ErrorNote message={pageListError} />}
+      {pageDeleteError && <ErrorNote message={pageDeleteError} />}
       {loading && !data && <Spinner />}
       {data && data.length === 0 && <EmptyNote>{t('visionReviewEmpty')}</EmptyNote>}
       {data?.map((entry) => (
@@ -55,9 +55,10 @@ export function VisionReviewPage() {
           key={entry.captureId}
           entry={entry}
           busy={busyId === entry.captureId}
+          deleteDisabled={busyId !== null}
           error={entryError(entry.captureId)}
           onDelete={() => void remove(entry.captureId)}
-          onCancel={cancel}
+          onCancel={() => cancel(entry.captureId)}
         />
       ))}
     </div>

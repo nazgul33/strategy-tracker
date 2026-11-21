@@ -66,6 +66,7 @@ describe('VisionReviewPage delete errors', () => {
   });
 
   const two = () => [entry(3, [EDITED], 'AAPL'), entry(5, [REJECTED], 'SOXL')];
+  const DELETE_OK = (id: number): Route => ({ method: 'DELETE', url: `/api/vision-reviews/${id}`, json: { ok: true } });
 
   async function render(routes: Route[]) {
     installFetchStub(routes);
@@ -81,9 +82,10 @@ describe('VisionReviewPage delete errors', () => {
     return b as HTMLButtonElement;
   };
   const cards = () => Array.from(container.querySelectorAll('[data-capture]'));
-  const click = async (text: string) => {
+  const alerts = () => Array.from(container.querySelectorAll('[role=alert]'));
+  const click = async (text: string, card = 0) => {
     await act(async () => {
-      button(text, cards()[0]!).click();
+      button(text, cards()[card]!).click();
     });
     await flush();
   };
@@ -92,16 +94,41 @@ describe('VisionReviewPage delete errors', () => {
       { method: 'DELETE', url: '/api/vision-reviews/3', status: 500, json: { error: 'boom' } },
       { url: '/api/vision-reviews', json: { entries: two() } },
     ]);
+  // Delete 3 succeeds, then the list reload fails: `list-down` is shown for card 0.
+  async function failedReload(extra: Route[] = []): Promise<void> {
+    const list: Route = { url: '/api/vision-reviews', json: { entries: two() } };
+    await render([DELETE_OK(3), ...extra, list]);
+    list.status = 500;
+    list.json = { error: 'list-down' };
+    await click('Delete');
+    await click('Delete for real');
+  }
+  // Keeps the DELETE for `id` pending until the returned release is called.
+  function holdDelete(id: number): () => Promise<void> {
+    const inner = globalThis.fetch;
+    let open = () => {};
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).includes(`/api/vision-reviews/${id}`) && init?.method === 'DELETE'
+        ? gate.then(() => inner(input, init))
+        : inner(input, init)) as typeof fetch;
+    return async () => {
+      open();
+      await flush();
+    };
+  }
 
   it('shows a failed delete inside the armed entry, not at page level', async () => {
     await failedDelete();
     await click('Delete');
     await click('Delete for real');
 
-    const alerts = container.querySelectorAll('[role=alert]');
-    expect(alerts.length).toBe(1);
-    expect(cards()[0]!.contains(alerts[0]!)).toBe(true);
-    expect(alerts[0]!.textContent).toBe('boom');
+    const found = alerts();
+    expect(found.length).toBe(1);
+    expect(cards()[0]!.contains(found[0]!)).toBe(true);
+    expect(found[0]!.textContent).toBe('boom');
     expect(button('Delete for real', cards()[0]!)).toBeTruthy();
     expect(cards()[1]!.querySelector('[role=alert]')).toBeNull();
   });
@@ -117,28 +144,75 @@ describe('VisionReviewPage delete errors', () => {
   });
 
   it('a reload that fails after a delete shows next to that entry', async () => {
-    const list: Route = { url: '/api/vision-reviews', json: { entries: two() } };
-    await render([{ method: 'DELETE', url: '/api/vision-reviews/3', json: { ok: true } }, list]);
-    list.status = 500;
-    list.json = { error: 'list-down' };
-    await click('Delete');
-    await click('Delete for real');
+    await failedReload();
 
-    const alerts = container.querySelectorAll('[role=alert]');
-    expect(alerts.length).toBe(1);
-    expect(cards()[0]!.contains(alerts[0]!)).toBe(true);
-    expect(alerts[0]!.textContent).toBe('list-down');
+    const found = alerts();
+    expect(found.length).toBe(1);
+    expect(cards()[0]!.contains(found[0]!)).toBe(true);
+    expect(found[0]!.textContent).toBe('list-down');
   });
 
-  it('Cancel after a failed reload does not move the error to page level', async () => {
-    const list: Route = { url: '/api/vision-reviews', json: { entries: two() } };
-    await render([{ method: 'DELETE', url: '/api/vision-reviews/3', json: { ok: true } }, list]);
-    list.status = 500;
-    list.json = { error: 'list-down' };
+  it("Cancel on another card leaves the failed card's error", async () => {
+    await failedDelete();
     await click('Delete');
     await click('Delete for real');
+    await click('Delete', 1);
+    await click('Cancel', 1);
+
+    const found = alerts();
+    expect(found.length).toBe(1);
+    expect(cards()[0]!.contains(found[0]!)).toBe(true);
+    expect(found[0]!.textContent).toBe('boom');
+    expect(button('Delete for real', cards()[0]!)).toBeTruthy();
+  });
+
+  it('a list error from an earlier delete is not shown inside the next card while its delete is in flight', async () => {
+    await failedReload([DELETE_OK(5)]);
+    const release = holdDelete(5);
+    await click('Delete', 1);
+    await click('Delete for real', 1);
+
+    expect(cards()[1]!.querySelector('[role=alert]')).toBeNull();
+    const found = alerts();
+    expect(found.length).toBe(1);
+    expect(cards().some((c) => c.contains(found[0]!))).toBe(false);
+    expect(found[0]!.textContent).toBe('list-down');
+    await release();
+  });
+
+  it('while a delete is in flight no other card can be deleted', async () => {
+    await render([DELETE_OK(3), DELETE_OK(5), { url: '/api/vision-reviews', json: { entries: two() } }]);
+    const release = holdDelete(3);
+    await click('Delete', 0);
+    await click('Delete', 1);
+    await click('Delete for real', 0);
+
+    expect(button('Delete for real', cards()[1]!).disabled).toBe(true);
+    await release();
+  });
+
+  it('Cancel after a failed reload moves the list error to page level', async () => {
+    await failedReload();
     await click('Cancel');
 
-    expect(container.querySelector('[role=alert]')).toBeNull();
+    const found = alerts();
+    expect(found.length).toBe(1);
+    expect(cards().some((c) => c.contains(found[0]!))).toBe(false);
+    expect(found[0]!.textContent).toBe('list-down');
+    expect(Array.from(cards()[0]!.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['Delete']);
+  });
+
+  it('a failed delete whose entry is gone from the reloaded list shows at page level', async () => {
+    const list: Route = { url: '/api/vision-reviews', json: { entries: two() } };
+    await render([{ method: 'DELETE', url: '/api/vision-reviews/3', status: 500, json: { error: 'boom' } }, list]);
+    list.json = { entries: [entry(5, [REJECTED], 'SOXL')] };
+    await click('Delete');
+    await click('Delete for real');
+
+    expect(cards().length).toBe(1);
+    const found = alerts();
+    expect(found.length).toBe(1);
+    expect(cards().some((c) => c.contains(found[0]!))).toBe(false);
+    expect(found[0]!.textContent).toBe('boom');
   });
 });

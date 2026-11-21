@@ -260,4 +260,17 @@ describe('VisionReviewPage', () => {
     expect(cards()[0]!.textContent).not.toContain('This cannot be undone');
     expect(Array.from(cards()[0]!.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['Delete']);
   });
+
+  it('a failed initial load shows once at page level', async () => {
+    installFetchStub([{ url: '/api/vision-reviews', status: 500, json: { error: 'list-down' } }]);
+    await act(async () => {
+      root.render(d(VisionReviewPage));
+    });
+    await flush();
+
+    const alerts = container.querySelectorAll('[role=alert]');
+    expect(alerts.length).toBe(1);
+    expect(alerts[0]!.textContent).toBe('list-down');
+    expect(cards().length).toBe(0);
+  });
 });
