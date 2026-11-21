@@ -13,16 +13,19 @@ Self-hosted stock trade strategy tracker (Bun + TypeScript monorepo). Tracks mea
 ## Repo map
 
 ```
-package.json  tsconfig.base.json  .env.example  .gitignore  AGENTS.md  README.md
+package.json  bun.lock  tsconfig.json  tsconfig.base.json  .env.example  .gitignore  .dockerignore  AGENTS.md  README.md
 Dockerfile  docker-compose.yml
-packages/
+prod_helpers/      build_and_push.sh run_prod_container.sh
+resources/trade_images/   sample broker screenshots (mpop/)
+docs/superpowers/  specs/ plans/ followups/  (design specs, implementation plans, followup lists)
+packages/          each package also has package.json tsconfig.json
   core/src/        money.ts domain.ts fills.ts index.ts      (+ core/test/*)
   calendar/src/    index.ts nyse-data.ts crosscheck.ts       (+ calendar/test/*)
   market-data/src/ yahoo.ts                                  (+ market-data/test/*)
   strategies/src/  index.ts mean-reversion.ts                (+ strategies/test/*)
   ingest/src/      extract.ts prompt.ts                      (+ ingest/test/*)
   telegram/src/    digest.ts bot.ts i18n.ts                  (+ telegram/test/*)
-apps/server/       drizzle.config.ts
+apps/server/       drizzle.config.ts package.json tsconfig.json
   src/
     main.ts
     db/schema.ts db/client.ts db/repos.ts db/repos-bars.ts db/repos-sim.ts db/repos-vision.ts
@@ -32,11 +35,14 @@ apps/server/       drizzle.config.ts
     market/bars.ts
     sim/sim.ts sim/serialize.ts
     http/app.ts http/auth.ts http/booking-deps.ts http/params.ts http/routes/{runs,fills,pending,corrections,sim,settings,vision-review}.ts
+  db/              README.md
   db/migrations/   0000_fantastic_thunderbolts.sql … 0008_material_blue_marvel.sql (+ meta/)
-  test/            *.test.ts per area (booking, sell-attribution, booking-notifier, vision-review, capture-image, bars-chunking, boot-sweeps, http-*, http-params, http-pending-routes, db*, db-bar-coverage-lock, db-sim-list, db-vision-janitor, sim, wire, …) + fake-corrections.ts http-fakes.ts booking-fakes.ts
-apps/web/src/      main.tsx App.tsx api.ts api.sim.ts api.types.ts autofee.ts format.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts priceHistory.ts simconfig.ts simview.ts (+ colocated *.test.ts)
+  test/            *.test.ts per area (booking, rebooking, sell-attribution, booking-notifier, vision-review, capture-claim, capture-image, corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, calendar-2028, day, migration-sql, sim, wire, http-*, db*) + fake-corrections.ts http-fakes.ts booking-fakes.ts
+apps/web/          package.json tsconfig.json index.html vite.config.ts tailwind.config.ts postcss.config.js .gitignore
+apps/web/src/      main.tsx App.tsx style.css api.ts api.sim.ts api.types.ts autofee.ts defaultcost.ts format.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts priceHistory.ts simconfig.ts simerrors.ts simview.ts (+ colocated *.test.ts(x))
+  testing/{fetchStub,pendingRow,visionReview}.ts   (shared DOM-free test fixtures; fetchStub.test.ts)
   components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,PriceChart,RecalcSummary,RunPanels,RunHistory,ScreenshotLink,VisionReviewEntry,hooks,ui,forms/*}
-  components/forms/{CorrectionList,CreateRunForm,EditRunModal,FillDialog,KeepImagePrompt,PendingReviewDialog,PendingRow,PendingTable,SimConfigFields,SimConfigPanel}
+  components/forms/{CorrectionList,CreateRunForm,DefaultFeePrompt,EditRunModal,FillDialog,KeepImagePrompt,PendingReviewDialog,PendingRow,PendingTable,SimConfigFields,SimConfigPanel}
   pages/{RunsList,RunDetail,Sim,SimRun,Settings,Login,Pending,VisionReview}.tsx
   i18n/catalog.ts i18n/index.tsx i18n/en.json i18n/ko.json
 scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-sim-drafts.ts e2e-vision-review.ts tsconfig.json
@@ -48,7 +54,7 @@ scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-sim-drafts.ts e2e-vision
 
 - `bun install`
 - `bun test`
-- `bun run typecheck` (packages via `tsc -b`, apps/web + scripts directly)
+- `bun run typecheck` (packages + apps/server incl. test/ via `tsc -b`; apps/web + scripts directly)
 - `bun run dev` is a pointer, not a server — run `bun run --cwd apps/server dev` (or `bun run --cwd apps/web dev`)
 - `docker compose up` (app listens on 127.0.0.1:8080 by default)
 - E2E smoke (see Test matrix for the scratch DB): `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun scripts/e2e.ts`
@@ -68,7 +74,7 @@ scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-sim-drafts.ts e2e-vision
 
 ## Calendar data maintenance
 
-The NYSE calendar is committed static data (`NYSE_YEARS` in `packages/calendar/src/nyse-data.ts`, currently 2025–2027; add the next year as plain entries — holidays carry `en`/`ko` names, early closes carry ET times). Outside the covered years `dayInfo()` degrades to weekends-only, so every weekday looks open. There is no regen script; edit the table by hand and extend `packages/calendar/test/calendar.test.ts`. The app nudges allowed chats every Dec 1 (cron in `apps/server/src/pipeline/wire.ts`), and the morning pipeline cross-checks against `howmanytradingdays.com` (`packages/calendar/src/crosscheck.ts`) as a second line of defense.
+The NYSE calendar is committed static data (`NYSE_YEARS` in `packages/calendar/src/nyse-data.ts`, currently 2025–2028; add the next year as plain entries — holidays carry `en`/`ko` names, early closes carry ET times). Outside the covered years `dayInfo()` degrades to weekends-only, so every weekday looks open. There is no regen script; edit the table by hand and extend `packages/calendar/test/calendar.test.ts`. The app nudges allowed chats every Dec 1 (cron in `apps/server/src/pipeline/wire.ts`), and the morning pipeline cross-checks against `howmanytradingdays.com` (`packages/calendar/src/crosscheck.ts`) as a second line of defense.
 
 ## Conventions
 
