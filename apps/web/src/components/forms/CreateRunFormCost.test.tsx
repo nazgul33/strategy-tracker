@@ -161,6 +161,35 @@ describe('CreateRunForm cost field', () => {
     expect(inputByLabel('Cost (%)').value).toBe('0.2');
   });
 
+  it('a cost typed before the default fails to load shows no note', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const stubbed = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/api/settings')) await gate;
+      return stubbed(input, init);
+    }) as typeof fetch;
+
+    await act(async () => {
+      root.render(d(CreateRunForm));
+    });
+    await act(async () => {
+      setInputValue(inputByLabel('Cost (%)'), '0.2');
+    });
+    settingsRoute.status = 500;
+    await act(async () => {
+      release();
+      await gate;
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(failedNote()).toBeNull();
+    expect(inputByLabel('Cost (%)').value).toBe('0.2');
+  });
+
   it('rejects a four-decimal cost', async () => {
     await renderForm();
     await act(async () => {

@@ -36,7 +36,7 @@ export function VisionReviewPage() {
   // idle, otherwise at page level. Every reload on this page follows a delete, so a list error
   // belongs to the card of the last delete, except while that card's own request is in flight.
   const listed = (id: number | null) => id !== null && !!data?.some((e) => e.captureId === id);
-  const cardListError = !!data && listed(lastDeleteId) && busyId !== lastDeleteId && deleteError?.id !== lastDeleteId;
+  const cardListError = listed(lastDeleteId) && busyId !== lastDeleteId && deleteError?.id !== lastDeleteId;
   const entryError = (id: number): string | null =>
     deleteError?.id === id ? deleteError.message : cardListError && id === lastDeleteId ? (error ?? null) : null;
   const pageListError = cardListError ? undefined : error;

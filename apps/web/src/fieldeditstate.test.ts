@@ -70,7 +70,7 @@ describe('fieldEditState', () => {
     expect(fieldEditState(legacy, { ...same, shares: '11' }, 'shares')).toBe('changed');
   });
 
-  test('a field vision missed has no hint, blank or filled, while the standing issue owns it', () => {
+  test('a field vision missed has no hint while blank, while the standing issue owns it', () => {
     const missed = row({ ...detected, filledOn: null });
     expect(fieldEditState(missed, { ...same, filledOn: '' }, 'filledOn')).toBeNull();
   });

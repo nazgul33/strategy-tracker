@@ -10,6 +10,7 @@ const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { act } = await import('react');
 const { PendingTable } = await import('./PendingTable');
+const { lookup } = await import('../../i18n/catalog');
 
 const d = React.createElement;
 
@@ -87,9 +88,9 @@ describe('default fee popup', () => {
     await flush();
   }
 
-  async function renderWithConfirmCalls(row: PendingFillDto) {
+  async function renderWithConfirmCalls(row: PendingFillDto, postJson: unknown = { ok: true }) {
     const calls = installFetchStub([
-      { method: 'POST', url: '/api/pending', json: { ok: true } },
+      { method: 'POST', url: '/api/pending', json: postJson },
       { url: '/api/pending', json: [row] },
     ]);
     await act(async () => {
@@ -166,7 +167,59 @@ describe('default fee popup', () => {
     await pressButton('Use default fee');
     expect(calls.length).toBe(1);
     expect(calls[0]).toMatchObject({ method: 'POST', url: '/api/pending/9/confirm', body: { overrides: { feeCents: null } } });
-    expect(calls[0]!.body).toEqual({ overrides: { feeCents: null } });
+  });
+
+  it('validation runs before the popup', async () => {
+    const calls = await renderWithConfirmCalls(FEELESS);
+    await type('Price', 'abc');
+    await type('Fee', '');
+    await pressButton('Confirm');
+    expect(container.textContent).toContain(lookup('en', 'pendingInvalidOverride'));
+    expect(container.querySelector('[role=dialog]')).toBeNull();
+    expect(calls.length).toBe(0);
+  });
+
+  it('a missed date is asked for before the popup', async () => {
+    const missed = { ...FEELESS, filledOn: '', detected: { ...FEELESS.detected!, filledOn: null } };
+    const calls = await renderWithConfirmCalls(missed);
+    await type('Fee', '');
+    await pressButton('Confirm');
+    expect(container.textContent).toContain(lookup('en', 'pendingNeedsOverride'));
+    expect(container.querySelector('[role=dialog]')).toBeNull();
+    expect(calls.length).toBe(0);
+  });
+
+  it('the keep choice survives the popup and follows the snapshot', async () => {
+    const calls = await renderWithConfirmCalls(ROW);
+    await type('Fee', '');
+    await pressButton('Confirm');
+    await type('Qty', '20');
+    await pressButton('Use default fee');
+    expect(calls.length).toBe(0);
+
+    await pressButton('Keep for review');
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.body).toEqual({ overrides: { feeCents: null }, keepImage: true });
+  });
+
+  it('a kept image the server could not archive is reported after the popup path too', async () => {
+    await renderWithConfirmCalls(ROW, { ok: true, archived: false });
+    await type('Fee', '');
+    await pressButton('Confirm');
+    await pressButton('Use default fee');
+    await pressButton('Keep for review');
+    expect(container.textContent).toContain(lookup('en', 'keepImageNotKept'));
+  });
+
+  it('Compare, clear the fee, Done, then Confirm still meets the popup', async () => {
+    const calls = await renderWithConfirmCalls(ROW);
+    await pressButton('Compare');
+    const fee = container.querySelectorAll('[role=dialog] input[inputmode=decimal]')[1] as HTMLInputElement;
+    await act(async () => setInputValue(fee, ''));
+    await pressButton('Done');
+    await pressButton('Confirm');
+    expect(dialog(TITLE)).toBeTruthy();
+    expect(calls.length).toBe(0);
   });
 
   it('the popup shows the quantity trimmed', async () => {

@@ -26,7 +26,10 @@ export function PriceChart({
   onLatestClose,
 }: {
   runId: number;
-  /** Reports the latest bar's close (myriadths string), or null when there is none. */
+  /**
+   * Reports the latest bar's close (myriadths string), or null when there is none.
+   * Pass a stable function: a new identity is told the current latest close again.
+   */
   onLatestClose?: (close: string | null) => void;
 }) {
   const t = useT();

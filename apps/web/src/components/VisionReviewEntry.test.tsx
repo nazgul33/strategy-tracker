@@ -79,6 +79,13 @@ describe('VisionReviewEntry accessibility', () => {
     }
   });
 
+  it('keeps the marker out of a text selection, after the value it marks', () => {
+    render([EDITED]);
+    const mark = container.querySelector('[role="img"][aria-label="changed"]')!;
+    expect(mark.className).toContain('select-none');
+    expect(mark.previousElementSibling!.hasAttribute('data-field')).toBe(true);
+  });
+
   it('an unchanged fill carries no marker', () => {
     render([UNEDITED]);
     expect(container.querySelector('[role="img"]')).toBeNull();

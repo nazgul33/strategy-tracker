@@ -82,7 +82,7 @@ function FillRows({ fill }: { fill: VisionReviewFillDto }) {
               {values ? show(field, values) : '—'}
             </span>
             {isChanged && (
-              <span role="img" aria-label={t('visionReviewChangedMark')} className="ml-1 text-warning">
+              <span role="img" aria-label={t('visionReviewChangedMark')} className="ml-1 select-none text-warning">
                 ✎
               </span>
             )}
