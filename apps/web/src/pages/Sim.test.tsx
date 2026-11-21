@@ -217,6 +217,21 @@ describe('SimPage gap fields', () => {
     expect(calls[0]!.body.cutLossPpm).toBe(0);
   });
 
+  it('a market-data failure on run reads in words, not as the code', async () => {
+    restoreFetch();
+    stub = installFetchStub([
+      settingsRoute,
+      { method: 'POST', url: '/api/sim', status: 502, json: { error: 'market-data:http' } },
+    ]);
+    await act(async () => {
+      root.render(d(SimPage));
+    });
+    await fillBaseFields();
+    await submitForm();
+    expect(document.body.textContent).toContain("Couldn't reach the market data provider.");
+    expect(document.body.textContent).not.toContain('market-data:http');
+  });
+
   it('marks 3.55 invalid with the shared rule and disables submit', async () => {
     await act(async () => {
       root.render(d(SimPage));
