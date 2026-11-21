@@ -228,8 +228,9 @@ describe('SimPage gap fields', () => {
     });
     await fillBaseFields();
     await submitForm();
-    expect(document.body.textContent).toContain("Couldn't reach the market data provider.");
+    expect(document.body.textContent).toContain('The market data provider returned an error. Check the ticker');
     expect(document.body.textContent).not.toContain('market-data:http');
+    expect(document.body.textContent).not.toContain('The request failed');
   });
 
   it('marks 3.55 invalid with the shared rule and disables submit', async () => {

@@ -89,6 +89,8 @@ function sameShares(detected: number | null, value: string): boolean {
 }
 
 // Compared as myriadths, never as display strings: "178.4" and "178.40" are one price.
+// A well-formed grouped price ("1,178.40") is read as its plain number here and in
+// `buildOverrides`, which sends it ungrouped.
 function samePrice(detected: string | null, value: string): boolean {
   const s = ungroupUsd(value);
   if (detected === null || s === '') return detected === null && s === '';

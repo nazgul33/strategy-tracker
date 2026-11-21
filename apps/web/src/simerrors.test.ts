@@ -10,7 +10,10 @@ const ko = (k: string, p?: Record<string, string | number>) => lookup('ko', k, p
 
 describe('simErrorText', () => {
   test.each([
-    ['market-data:http', "Couldn't reach the market data provider. Try again in a moment."],
+    [
+      'market-data:http',
+      'The market data provider returned an error. Check the ticker, or try again in a moment.',
+    ],
     ['market-data:no-data', 'The market data provider has no prices for this ticker and date range.'],
     ['not-enough-bars', 'This date range has fewer than two trading days to simulate. Widen it.'],
     ['not-found', 'This simulation no longer exists.'],
@@ -51,7 +54,7 @@ describe('simErrorText', () => {
 
   test('ko copy', () => {
     expect(simErrorText(new ApiError(502, 'market-data:http' as ApiErrorCode), ko)).toBe(
-      '시세 데이터 제공처에 연결하지 못했습니다. 잠시 후 다시 시도하세요.',
+      '시세 데이터 제공처가 오류를 반환했습니다. 티커를 확인하거나 잠시 후 다시 시도하세요.',
     );
     expect(simErrorText(new ApiError(502, 'market-data:no-data' as ApiErrorCode), ko)).toBe(
       '시세 데이터 제공처에 이 티커와 기간의 가격이 없습니다.',

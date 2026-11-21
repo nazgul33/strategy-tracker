@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ApiError, api, usdFeeOrNull, usdOrNull, usdToCents, type PendingFillDto, type PendingOverrides } from '../../api';
+import { ApiError, api, ungroupUsd, usdFeeOrNull, usdOrNull, usdToCents, type PendingFillDto, type PendingOverrides } from '../../api';
 import { autoFeeUsd } from '../../autofee';
 import { costPercentText } from '../../format';
 import { useT } from '../../i18n';
@@ -61,7 +61,7 @@ export function PendingTable({ runId }: { runId?: number }) {
         if (!Number.isInteger(n) || n <= 0) throw invalid();
         body.shares = n;
       } else if (field === 'price') {
-        const price = usdOrNull(v.price);
+        const price = usdOrNull(ungroupUsd(v.price));
         if (price === null) throw invalid();
         body.price = price;
       } else if (field === 'filledOn') {
@@ -167,7 +167,7 @@ export function PendingTable({ runId }: { runId?: number }) {
                 <span className="sr-only">{t('pendingColScreenshot')}</span>
               </Th>
               <Th>{t('pendingColDetected')}</Th>
-              <Th className="sticky right-0 bg-card">{t('pendingColActions')}</Th>
+              <Th className="sticky right-0 bg-card pl-3">{t('pendingColActions')}</Th>
             </tr>
           </thead>
           <tbody>
@@ -189,8 +189,8 @@ export function PendingTable({ runId }: { runId?: number }) {
       {decision?.stage === 'fee' && (
         <DefaultFeePrompt
           rate={costPercentText(decision.row.costPpm)}
-          price={decision.values.price}
-          shares={decision.values.shares}
+          price={decision.values.price.trim()}
+          shares={decision.values.shares.trim()}
           fee={autoFeeUsd(decision.values.shares, decision.values.price, decision.row.costPpm)}
           onUse={() => acceptDefaultFee(decision)}
           onBack={() => setDecision(null)}

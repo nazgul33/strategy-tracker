@@ -94,8 +94,7 @@ describe('edit hints', () => {
     await type('Qty', '11');
     expect(field('Qty').getAttribute('data-edit')).toBe('changed');
     expect(field('Qty').title).toBe('Changed from what vision read');
-    expect(field('Qty').classList.contains('ring-1')).toBe(true);
-    expect(field('Qty').classList.contains('ring-primary')).toBe(true);
+    for (const cls of ['ring-1', 'ring-inset', 'ring-primary']) expect(field('Qty').className).toContain(cls);
     expect(container.querySelectorAll('[data-edit]').length).toBe(1);
   });
 

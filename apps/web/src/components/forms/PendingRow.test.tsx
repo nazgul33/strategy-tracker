@@ -100,8 +100,17 @@ describe('PendingTable comma-grouped price', () => {
     expect(calls[0]!.body).toEqual({});
   });
 
-  it('a grouped price that differs is refused and nothing is posted', async () => {
+  it('a grouped price that differs is posted without its commas', async () => {
     const calls = await typePriceAndConfirm('12,345.50');
+    const discard = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Discard')!;
+    await act(async () => discard.click());
+    await flush();
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.body).toEqual({ overrides: { price: '12345.50' } });
+  });
+
+  it('a malformed grouping is refused and nothing is posted', async () => {
+    const calls = await typePriceAndConfirm('12,34.00');
     expect(container.textContent).toContain('Check the values: qty and price must be positive');
     expect(calls.length).toBe(0);
   });
@@ -145,7 +154,7 @@ describe('PendingTable header', () => {
     const th = Array.from(container.querySelectorAll('thead th')).at(-1)!;
     const td = Array.from(container.querySelectorAll('tbody tr:first-child td')).at(-1)!;
     for (const cell of [th, td]) {
-      for (const cls of ['sticky', 'right-0', 'bg-card']) expect(cell.classList.contains(cls)).toBe(true);
+      for (const cls of ['sticky', 'right-0', 'bg-card', 'pl-3']) expect(cell.className).toContain(cls);
     }
   });
 });

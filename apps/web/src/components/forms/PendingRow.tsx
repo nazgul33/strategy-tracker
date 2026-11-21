@@ -59,7 +59,7 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
     const className = `${base} ${missing(f)}`.trim();
     if (state === null) return { className };
     const title = state === 'changed' ? t('pendingFieldChanged') : t(f === 'fee' ? 'pendingFeeErased' : 'pendingFieldErased');
-    const look = state === 'changed' ? 'ring-1 ring-primary' : 'border-dashed border-warning';
+    const look = state === 'changed' ? 'ring-1 ring-inset ring-primary' : 'border-dashed border-warning';
     return { className: `${className} ${look}`, 'data-edit': state, title };
   };
   const needsInput = issue !== null;
@@ -138,7 +138,7 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
         )}
       </Td>
       <Td className="whitespace-nowrap text-muted-foreground tabular-nums">{isoDate(row.createdAt)}</Td>
-      <Td className="sticky right-0 bg-card">
+      <Td className="sticky right-0 bg-card pl-3">
         {needsInput && <div className="mb-1 max-w-48 text-xs text-warning">{needsMsg}</div>}
         <div className="flex gap-2">
           <Button variant="primary" busy={busy} onClick={onConfirm}>

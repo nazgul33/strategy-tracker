@@ -169,6 +169,15 @@ describe('default fee popup', () => {
     expect(calls[0]!.body).toEqual({ overrides: { feeCents: null } });
   });
 
+  it('the popup shows the quantity trimmed', async () => {
+    await renderWithConfirmCalls(FEELESS);
+    await type('Qty', ' 10 ');
+    await type('Fee', '');
+    await pressButton('Confirm');
+    expect(dialog(TITLE)!.textContent).toContain('× 10 sh');
+    expect(dialog(TITLE)!.textContent).not.toContain('×  10');
+  });
+
   it('a comma-grouped price still gets the popup', async () => {
     const calls = await renderWithConfirmCalls(FEELESS);
     await type('Price', '12,345.00');

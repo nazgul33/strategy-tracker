@@ -65,6 +65,7 @@ export function validateSimConfig(form: SimConfigForm, t: Translate): SimConfigR
   const fail = (key: string): SimConfigResult => ({ ok: false, error: t(key) });
 
   if (!DATE_RE.test(form.from) || !DATE_RE.test(form.to)) return fail('simInvalidDate');
+  if (form.from < '1970-01-01') return fail('simFromTooEarly');
   if (form.from >= form.to) return fail('simInvalidRange');
   const poolCents = usdToCents(form.pool);
   if (poolCents === null || poolCents <= 0) return fail('simInvalidPool');

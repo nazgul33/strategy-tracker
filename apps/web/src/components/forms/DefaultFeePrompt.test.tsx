@@ -75,6 +75,13 @@ describe('DefaultFeePrompt', () => {
     );
   });
 
+  it('opens with focus on Go back, so a second Enter cannot book', async () => {
+    await show();
+    const back = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Go back');
+    expect(back).toBeTruthy();
+    expect(document.activeElement).toBe(back!);
+  });
+
   it('Use default fee calls onUse once and nothing else', async () => {
     await show();
     await click('Use default fee');
