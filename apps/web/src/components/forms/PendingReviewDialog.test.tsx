@@ -120,6 +120,33 @@ describe('PendingReviewDialog', () => {
     expect(container.textContent).toContain('AAPL');
   });
 
+  it('the compare dialog uses the wide modal', async () => {
+    await show();
+    const panel = container.querySelector('[role=dialog] > div')!;
+    expect(panel.className).toContain('max-w-4xl');
+    expect(panel.className).not.toContain('max-w-md');
+  });
+
+  it('a side vision missed offers an empty option until one is picked', async () => {
+    await show({ ...ROW, side: '', detected: { ...ROW.detected!, side: null } }, { ...VALUES, side: '' });
+    const select = input('Side') as unknown as HTMLSelectElement;
+    const optionValues = () => Array.from(select.options).map((o) => o.value);
+    expect(optionValues()).toEqual(['', 'buy', 'sell']);
+    expect(select.value).toBe('');
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!;
+      setter.call(select, 'sell');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(optionValues()).toEqual(['buy', 'sell']);
+
+    await act(async () => {
+      button('Done').click();
+    });
+    expect(done[0]!.side).toBe('sell');
+  });
+
   it('the screenshot opens at full size in a new tab', async () => {
     await show();
     const link = container.querySelector('a[href="/api/captures/3/image"]') as HTMLAnchorElement;

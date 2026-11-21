@@ -62,6 +62,13 @@ describe('KeepImagePrompt', () => {
     await act(async () => (btn as HTMLButtonElement).click());
   };
 
+  it('renders in the default narrow modal', async () => {
+    await show('confirm');
+    const panel = container.querySelector('[role=dialog] > div')!;
+    expect(panel.className).toContain('max-w-md');
+    expect(panel.className).not.toContain('max-w-4xl');
+  });
+
   it('the confirm variant asks about the edited values', async () => {
     await show('confirm');
     expect(container.querySelector('[role=dialog]')).toBeTruthy();
