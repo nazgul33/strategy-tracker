@@ -1,7 +1,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import type { VisionReviewEntryDto, VisionReviewFillDto } from '../api.types';
 import { installFetchStub, restoreFetch, type Route } from '../testing/fetchStub';
+import { EDITED, entry, REJECTED } from '../testing/visionReview';
 
 GlobalRegistrator.register();
 
@@ -19,22 +19,6 @@ declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined;
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-
-const READ = { side: 'buy', shares: 10, price: '1234500', filledOn: '2026-11-10', fee: 100 };
-
-const EDITED: VisionReviewFillDto = {
-  id: 11,
-  outcome: 'confirmed',
-  edited: true,
-  feeOverridden: false,
-  detected: { ...READ, fee: null },
-  final: { ...READ, price: '1255000', fee: 100 },
-};
-const REJECTED: VisionReviewFillDto = { id: 13, outcome: 'rejected', edited: false, feeOverridden: false, detected: READ, final: null };
-
-function entry(captureId: number, fills: VisionReviewFillDto[], ticker = 'AAPL'): VisionReviewEntryDto {
-  return { captureId, runId: 7, ticker, createdAt: '2026-11-10 14:30:00', mime: 'image/png', byteLen: 20480, fills };
-}
 
 async function flush() {
   for (let i = 0; i < 5; i += 1) {
@@ -119,6 +103,28 @@ describe('VisionReviewPage delete errors', () => {
       await flush();
     };
   }
+
+  it('arming and deleting one card leaves its sibling untouched', async () => {
+    const list: Route = { url: '/api/vision-reviews', json: { entries: two() } };
+    const calls = installFetchStub([DELETE_OK(3), list]);
+    await act(async () => {
+      root.render(d(VisionReviewPage));
+    });
+    await flush();
+
+    await click('Delete');
+    expect(Array.from(cards()[1]!.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['Delete']);
+    expect(cards()[1]!.textContent).not.toContain('This cannot be undone');
+
+    list.json = { entries: [entry(5, [REJECTED], 'SOXL')] };
+    await click('Delete for real');
+
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['DELETE /api/vision-reviews/3']);
+    expect(cards().length).toBe(1);
+    expect(cards()[0]!.getAttribute('data-capture')).toBe('5');
+    expect(cards()[0]!.querySelector('[data-fill="13"]')).toBeTruthy();
+    expect(Array.from(cards()[0]!.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['Delete']);
+  });
 
   it('shows a failed delete inside the armed entry, not at page level', async () => {
     await failedDelete();

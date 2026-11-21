@@ -1,6 +1,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { VisionReviewEntryDto, VisionReviewFillDto } from '../api.types';
+import { EDITED, UNEDITED } from '../testing/visionReview';
 
 GlobalRegistrator.register();
 
@@ -18,20 +19,6 @@ declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined;
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-
-const READ = { side: 'buy', shares: 10, price: '1234500', filledOn: '2026-11-10', fee: 100 };
-
-// Vision read the price as $123.45 and missed the fee; the operator corrected the price to
-// $125.50 and left the fee alone, so the $1.00 booked is the one the system derived.
-const EDITED: VisionReviewFillDto = {
-  id: 11,
-  outcome: 'confirmed',
-  edited: true,
-  feeOverridden: false,
-  detected: { ...READ, fee: null },
-  final: { ...READ, price: '1255000', fee: 100 },
-};
-const UNEDITED: VisionReviewFillDto = { id: 12, outcome: 'confirmed', edited: false, feeOverridden: false, detected: READ, final: READ };
 
 function entry(fills: VisionReviewFillDto[]): VisionReviewEntryDto {
   return { captureId: 3, runId: 7, ticker: 'AAPL', createdAt: '2026-11-10 14:30:00', mime: 'image/png', byteLen: 20480, fills };
