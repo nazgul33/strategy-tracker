@@ -57,17 +57,22 @@ describe('runBootSweeps', () => {
   })
 
   test('the window is 168 elapsed hours even across the fall-back change', async () => {
-    // 2026-11-03 12:00 EST; 2026-10-27 12:00 EDT is seven New York calendar days earlier but 169 h
+    // 2026-11-03 12:00 EST minus seven New York calendar days is 2026-10-27 12:00 EDT, 169 h back: a draft 168.5 h old
+    // is past the real 168 h window (swept) but inside a calendar-day window (it would be kept)
     // the test process runs in UTC, which has no fall-back change; calendar-day arithmetic only differs in a zone that does
     const prevTz = process.env.TZ
     process.env.TZ = 'America/New_York'
     try {
-      const { ids, survivors } = await sweepDraftsAged(new Date('2026-11-03T17:00:00Z'), [169 * 3_600_000, 167.5 * 3_600_000])
+      const { ids, survivors } = await sweepDraftsAged(new Date('2026-11-03T17:00:00Z'), [168.5 * 3_600_000, 167.5 * 3_600_000])
       expect(survivors).toEqual([ids[1]!])
     } finally {
-      if (prevTz === undefined) delete process.env.TZ
-      else process.env.TZ = prevTz
+      // the runner defaults to UTC without setting TZ, so deleting the variable would fall back to the machine's zone
+      process.env.TZ = prevTz ?? 'Etc/UTC'
     }
+  })
+
+  test('the DST test leaves the process in UTC', () => {
+    expect(new Date('2026-07-01T12:00:00Z').getTimezoneOffset()).toBe(0)
   })
 
   test('both sweeps run; the draft cutoff is exactly seven days before now', async () => {
