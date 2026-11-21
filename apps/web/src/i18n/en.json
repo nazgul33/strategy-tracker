@@ -415,6 +415,8 @@
   "triggerMorningResult": "Morning run: {result}",
   "updateButton": "Update",
   "visionReviewAsRead": "As read",
+  "visionReviewChangedMark": "changed",
+  "visionReviewColSource": "Source",
   "visionReviewDelete": "Delete",
   "visionReviewDeleteWarning": "Delete this screenshot and its detected-vs-corrected record? This cannot be undone.",
   "visionReviewEdited": "Edited",

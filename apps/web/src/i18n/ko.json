@@ -415,6 +415,8 @@
   "triggerMorningResult": "아침 실행: {result}",
   "updateButton": "갱신",
   "visionReviewAsRead": "인식 그대로",
+  "visionReviewChangedMark": "변경됨",
+  "visionReviewColSource": "출처",
   "visionReviewDelete": "삭제",
   "visionReviewDeleteWarning": "이 스크린샷과 인식값·수정값 기록을 삭제할까요? 되돌릴 수 없습니다.",
   "visionReviewEdited": "수정됨",

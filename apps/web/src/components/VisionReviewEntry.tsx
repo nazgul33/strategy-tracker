@@ -81,6 +81,11 @@ function FillRows({ fill }: { fill: VisionReviewFillDto }) {
             >
               {values ? show(field, values) : '—'}
             </span>
+            {isChanged && (
+              <span role="img" aria-label={t('visionReviewChangedMark')} className="ml-1 text-warning">
+                ✎
+              </span>
+            )}
             {field === 'fee' && kind === 'final' && derivedFee && (
               <span data-auto-fee className="ml-1 text-xs text-muted-foreground">
                 {t('visionReviewFeeAuto')}
@@ -150,7 +155,9 @@ export function VisionReviewEntry({
             <thead>
               <tr>
                 <Th>{t('tabFills')}</Th>
-                <Th />
+                <Th>
+                  <span className="sr-only">{t('visionReviewColSource')}</span>
+                </Th>
                 {FIELDS.map((f) => (
                   <Th key={f}>{t(FIELD_LABEL[f])}</Th>
                 ))}
