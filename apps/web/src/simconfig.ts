@@ -4,7 +4,7 @@
 // wire carries integer ppm, converted with integer math (see gaps.ts).
 import { usdToCents } from './api';
 import type { SimInput, SimRunDto } from './api';
-import { costPercentText, isoDate } from './format';
+import { costInputText, isoDate } from './format';
 import { cutLossToPpm, gapToPpm, isCutLossText, isGapText, isPercentText, percentTextToPpm, ppmToPercentText } from './gaps';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -65,6 +65,7 @@ export function validateSimConfig(form: SimConfigForm, t: Translate): SimConfigR
   const fail = (key: string): SimConfigResult => ({ ok: false, error: t(key) });
 
   if (!DATE_RE.test(form.from) || !DATE_RE.test(form.to)) return fail('simInvalidDate');
+  if (form.from < '1970-01-01') return fail('simFromTooEarly');
   if (form.from >= form.to) return fail('simInvalidRange');
   const poolCents = usdToCents(form.pool);
   if (poolCents === null || poolCents <= 0) return fail('simInvalidPool');
@@ -134,7 +135,7 @@ export function formFromRun(run: StoredConfig, params: SimParams): SimConfigForm
     from: isoDate(run.fromDate),
     to: isoDate(run.toDate),
     pool: centsToUsdText(run.poolCents),
-    cost: costPercentText(run.costPpm),
+    cost: costInputText(run.costPpm),
     buyGap: ppmToPercentText(run.buyGapPpm),
     sellGap: ppmToPercentText(run.sellGapPpm),
     cutLoss: ppmToPercentText(run.cutLossPpm, 1),

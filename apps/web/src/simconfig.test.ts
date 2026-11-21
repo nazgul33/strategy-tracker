@@ -9,6 +9,7 @@ import {
   validateSimConfig,
 } from './simconfig';
 import type { SimConfigForm } from './simconfig';
+import { lookup } from './i18n/catalog';
 
 // Identity translator: the returned error is the catalog key, so the tests pin
 // which rule fired without depending on copy.
@@ -97,6 +98,25 @@ describe('validateSimConfig', () => {
     const res = validateSimConfig({ ...good, ...patch }, t);
     expect(res).toEqual({ ok: false, error: key });
     expect('input' in res).toBe(false);
+  });
+
+  describe('start dates before 1970', () => {
+    const real = (key: string) => lookup('en', key);
+
+    test('1969-12-31 is refused in words', () => {
+      expect(validateSimConfig({ ...good, from: '1969-12-31' }, real)).toEqual({
+        ok: false,
+        error: 'The start date must be 1970-01-01 or later.',
+      });
+    });
+
+    test('1970-01-01 is not refused for being too early', () => {
+      expect(validateSimConfig({ ...good, from: '1970-01-01' }, t)).toMatchObject({ ok: true });
+    });
+
+    test('ko copy', () => {
+      expect(lookup('ko', 'simFromTooEarly')).toBe('시작일은 1970-01-01 이후여야 합니다.');
+    });
   });
 
   test('trims whitespace around numeric text', () => {

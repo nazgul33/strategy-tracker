@@ -1,5 +1,5 @@
 import { parseUsd } from '@st/core/money';
-import { usdToCents, type DetectedDto, type PendingFillDto } from './api';
+import { ungroupUsd, usdToCents, type DetectedDto, type PendingFillDto } from './api';
 import { autoFeeUsd } from './autofee';
 
 export interface PendingIssue {
@@ -89,8 +89,10 @@ function sameShares(detected: number | null, value: string): boolean {
 }
 
 // Compared as myriadths, never as display strings: "178.4" and "178.40" are one price.
+// A well-formed grouped price ("1,178.40") is read as its plain number here and in
+// `buildOverrides`, which sends it ungrouped.
 function samePrice(detected: string | null, value: string): boolean {
-  const s = value.trim();
+  const s = ungroupUsd(value);
   if (detected === null || s === '') return detected === null && s === '';
   try {
     return parseUsd(s) === BigInt(detected);
@@ -110,6 +112,19 @@ function sameFee(detected: number | null, value: string, derivedCents: number | 
   return s !== '' && usdToCents(s) === detected;
 }
 
+// What each field is compared against; a row that predates the snapshot stands in for itself.
+function detectedFor(row: PendingFillDto): DetectedDto {
+  return (
+    row.detected ?? {
+      side: row.side || null,
+      shares: row.shares > 0 ? row.shares : null,
+      price: row.price || null,
+      filledOn: row.filledOn || null,
+      fee: row.fee,
+    }
+  );
+}
+
 /**
  * Fields whose current value differs from what vision detected, in `RowValues`
  * order. Only these belong in a confirm's overrides, so an unchanged field is
@@ -121,13 +136,7 @@ function sameFee(detected: number | null, value: string, derivedCents: number | 
  * (except a fee equal to the one the server derives for the current qty and price).
  */
 export function pendingEdits(row: PendingFillDto, values: RowValues): RowField[] {
-  const d: DetectedDto = row.detected ?? {
-    side: row.side || null,
-    shares: row.shares > 0 ? row.shares : null,
-    price: row.price || null,
-    filledOn: row.filledOn || null,
-    fee: row.fee,
-  };
+  const d = detectedFor(row);
   const edited: RowField[] = [];
   const text = (detected: string | null, value: string) => (detected ?? '') === value.trim();
   if (!text(d.filledOn, values.filledOn)) edited.push('filledOn');
@@ -136,4 +145,20 @@ export function pendingEdits(row: PendingFillDto, values: RowValues): RowField[]
   if (!samePrice(d.price, values.price)) edited.push('price');
   if (!sameFee(d.fee, values.fee, derivedFeeCents(row, values))) edited.push('fee');
   return edited;
+}
+
+/**
+ * How a control differs from what vision read, for the hint on it. `erased`: the
+ * field is blank though a value was read (or, for the fee, one is derivable, which
+ * covers a feeless row whose prefilled derived fee was cleared). `changed`: any
+ * other edit. A field the standing issue names gets no hint; its own warning
+ * border stands until it is filled in.
+ */
+export function fieldEditState(row: PendingFillDto, values: RowValues, field: RowField): 'changed' | 'erased' | null {
+  if (standingIssue(row, values) === field) return null;
+  if (values[field].trim() === '') {
+    const derivable = field === 'fee' && autoFeeUsd(values.shares, values.price, row.costPpm) !== '';
+    if (detectedFor(row)[field] !== null || derivable) return 'erased';
+  }
+  return pendingEdits(row, values).includes(field) ? 'changed' : null;
 }

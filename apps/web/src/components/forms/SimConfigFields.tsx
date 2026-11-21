@@ -10,10 +10,12 @@ export function SimConfigFields({
   form,
   onChange,
   disabled = false,
+  costNote,
 }: {
   form: SimConfigForm;
   onChange: (field: keyof SimConfigForm, value: string) => void;
   disabled?: boolean;
+  costNote?: string;
 }) {
   const t = useT();
   const flags = simFieldFlags(form);
@@ -36,6 +38,11 @@ export function SimConfigFields({
       </Field>
       <Field label={t('simCostPpm')} hint={t('runForm.costHint')}>
         <Input data-testid="costInput" inputMode="decimal" placeholder="0.070" required invalid={flags.cost} {...bind('cost')} />
+        {costNote !== undefined && (
+          <span data-testid="costDefaultFailed" role="status" className="mt-1 block text-[11px] text-warning">
+            {costNote}
+          </span>
+        )}
       </Field>
       <Field label={t('simForm.buyGapLabel')}>
         <Input data-testid="buyGapInput" inputMode="decimal" placeholder="0" invalid={flags.buyGap} {...bind('buyGap')} />

@@ -123,6 +123,34 @@ describe('PriceChart', () => {
     expect(byTestId('priceChartLine')).toBeNull();
     expect(byTestId('priceChartEmpty')!.textContent).toContain('No price history yet');
   });
+
+  it('reports the latest close once per value and not again on a re-render with the same callback', async () => {
+    stubFetch(BARS);
+    const seen: (string | null)[] = [];
+    const report = (c: string | null) => seen.push(c);
+
+    await act(async () => root.render(d(PriceChart, { runId: 1, onLatestClose: report })));
+    await flush();
+    expect(seen).toEqual([null, '465000']);
+
+    await act(async () => root.render(d(PriceChart, { runId: 1, onLatestClose: report })));
+    await flush();
+    expect(seen).toEqual([null, '465000']);
+  });
+
+  it('a new callback identity is told the current latest close once', async () => {
+    stubFetch(BARS);
+    const first: (string | null)[] = [];
+    const second: (string | null)[] = [];
+
+    await act(async () => root.render(d(PriceChart, { runId: 1, onLatestClose: (c: string | null) => first.push(c) })));
+    await flush();
+    await act(async () => root.render(d(PriceChart, { runId: 1, onLatestClose: (c: string | null) => second.push(c) })));
+    await flush();
+
+    expect(first).toEqual([null, '465000']);
+    expect(second).toEqual(['465000']);
+  });
 });
 
 afterAll(() => {

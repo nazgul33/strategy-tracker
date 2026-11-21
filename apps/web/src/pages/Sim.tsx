@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 
-import { api, ApiError } from '../api';
+import { api } from '../api';
 import type { SimRunDto } from '../api';
 import { SimConfigFields } from '../components/forms/SimConfigFields';
 import { useAsync, useDefaultCostText } from '../components/hooks';
@@ -12,6 +12,7 @@ import { centsUsd, costPercentText, isoDate, isoDateTime, todayIso } from '../fo
 import { useT } from '../i18n';
 import { parseSimTicker, simFieldFlags, validateSimConfig } from '../simconfig';
 import type { SimConfigForm } from '../simconfig';
+import { simErrorText } from '../simerrors';
 
 type ConfigRest = Omit<SimConfigForm, 'cost'>;
 
@@ -44,7 +45,7 @@ function SimTable({ rows, onDiscard }: { rows: SimRunDto[]; onDiscard?: (id: num
               {isoDate(sim.fromDate)} → {isoDate(sim.toDate)}
             </Td>
             <Td className="text-right tabular-nums">{centsUsd(sim.poolCents)}</Td>
-            <Td className="text-right tabular-nums">{costPercentText(sim.costPpm)} %</Td>
+            <Td className="text-right tabular-nums">{costPercentText(sim.costPpm)}</Td>
             <Td className="whitespace-nowrap tabular-nums text-muted-foreground">{isoDateTime(sim.createdAt)}</Td>
             {onDiscard && (
               <Td className="text-right">
@@ -76,7 +77,7 @@ export function SimPage() {
     bucketCount: '',
     maxAge: '',
   });
-  const [cost, setCost] = useDefaultCostText();
+  const [cost, setCost, costLoadFailed] = useDefaultCostText();
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -104,7 +105,7 @@ export function SimPage() {
       const res = await api.runSim({ name: name.trim(), ticker: tid, ...result.input });
       window.location.hash = `#/sim/${res.id}`;
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : String(err));
+      setSubmitError(simErrorText(err, t));
       setBusy(false);
     }
   };
@@ -116,11 +117,7 @@ export function SimPage() {
       setSubmitError(null);
     } catch (err) {
       // Same wording as the config panel: a draft saved elsewhere reads as "already saved".
-      if (err instanceof ApiError) {
-        setSubmitError(err.code === 'sim-finalized' ? t('simErr.sim-finalized') : t('simActionFailed', { code: err.code }));
-      } else {
-        setSubmitError(err instanceof Error ? err.message : String(err));
-      }
+      setSubmitError(simErrorText(err, t));
     }
     setDiscardBusy(false);
     setDiscarding(null);
@@ -149,6 +146,7 @@ export function SimPage() {
           <SimConfigFields
             form={form}
             onChange={(field, value) => (field === 'cost' ? setCost(value) : setRest((r) => ({ ...r, [field]: value })))}
+            costNote={costLoadFailed ? t('costDefaultFailed') : undefined}
           />
           <div className="flex items-center gap-3">
             <Button type="submit" variant="primary" busy={busy} disabled={!percentsValid}>

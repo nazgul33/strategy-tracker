@@ -29,7 +29,7 @@ export function CreateRunForm({
   const [name, setName] = useState('');
   const [ticker, setTicker] = useState('');
   const [pool, setPool] = useState('');
-  const [cost, setCost] = useDefaultCostText();
+  const [cost, setCost, costLoadFailed] = useDefaultCostText();
   const [bucketCount, setBucketCount] = useState('');
   const [buyGap, setBuyGap] = useState('');
   const [sellGap, setSellGap] = useState('');
@@ -175,6 +175,11 @@ export function CreateRunForm({
             placeholder="0.070"
             invalid={cost !== '' && !isPercentText(cost.trim(), 3)}
           />
+          {costLoadFailed && (
+            <span data-testid="costDefaultFailed" role="status" className="mt-1 block text-[11px] text-warning">
+              {t('costDefaultFailed')}
+            </span>
+          )}
         </Field>
         <Field label={t('runForm.buyGapLabel')} hint={t('runForm.buyGapHint')}>
           <Input

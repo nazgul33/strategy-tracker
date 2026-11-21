@@ -1,18 +1,25 @@
 import { useState } from 'react';
-import { ApiError, api, usdFeeOrNull, usdOrNull, usdToCents, type PendingFillDto, type PendingOverrides } from '../../api';
+import { ApiError, api, ungroupUsd, usdFeeOrNull, usdOrNull, usdToCents, type PendingFillDto, type PendingOverrides } from '../../api';
+import { autoFeeUsd } from '../../autofee';
+import { costPercentText } from '../../format';
 import { useT } from '../../i18n';
 import { patchRowValues, pendingEdits, standingIssue, type RowValues } from '../../pendingvalues';
 import { useAsync } from '../hooks';
 import { EmptyNote, TableWrap, Th } from '../ui';
+import { DefaultFeePrompt } from './DefaultFeePrompt';
 import { KeepImagePrompt } from './KeepImagePrompt';
 import { PendingReviewDialog } from './PendingReviewDialog';
 import { PendingRow, initialRowValues } from './PendingRow';
 
-// An action waiting on the keep/discard prompt, with its overrides already built.
+// An action waiting on a prompt: first the default-fee popup (a blank fee on
+// confirm), then the keep/discard prompt. `values` is what the row held when the
+// button was pressed; the overrides, both prompts and the post all follow it.
 interface Decision {
   row: PendingFillDto;
+  values: RowValues;
   action: 'confirm' | 'reject';
   overrides: PendingOverrides | undefined;
+  stage: 'fee' | 'keep';
 }
 
 // Unrecognized screenshot fills. Every field is one control pre-filled with what
@@ -38,8 +45,7 @@ export function PendingTable({ runId }: { runId?: number }) {
     setEdited((prev) => ({ ...prev, [r.id]: patchRowValues(r, prev[r.id] ?? initialRowValues(r), patch) }));
   const setValues = (r: PendingFillDto, values: RowValues) => setEdited((prev) => ({ ...prev, [r.id]: values }));
 
-  const buildOverrides = (r: PendingFillDto): PendingOverrides | undefined => {
-    const v = valuesFor(r);
+  const buildOverrides = (r: PendingFillDto, v: RowValues): PendingOverrides | undefined => {
     const invalid = () => new Error(t('pendingInvalidOverride'));
     // A field vision missed stays unbooked until it is filled in: left blank it reads as
     // unedited, and the server would substitute its own value (the capture date for a date).
@@ -55,7 +61,7 @@ export function PendingTable({ runId }: { runId?: number }) {
         if (!Number.isInteger(n) || n <= 0) throw invalid();
         body.shares = n;
       } else if (field === 'price') {
-        const price = usdOrNull(v.price);
+        const price = usdOrNull(ungroupUsd(v.price));
         if (price === null) throw invalid();
         body.price = price;
       } else if (field === 'filledOn') {
@@ -111,21 +117,33 @@ export function PendingTable({ runId }: { runId?: number }) {
   // A vision misread is only plausible when there is a screenshot to keep, the
   // row really was a vision reading (a legacy row has no snapshot to be wrong
   // against), and the operator either corrected it or threw it out.
-  const asksAboutImage = (r: PendingFillDto, action: 'confirm' | 'reject') =>
-    r.hasImage && r.detected !== null && (action === 'reject' || pendingEdits(r, valuesFor(r)).length > 0);
+  const asksAboutImage = ({ row, values, action }: Decision) =>
+    row.hasImage && row.detected !== null && (action === 'reject' || pendingEdits(row, values).length > 0);
 
   const act = async (r: PendingFillDto, action: 'confirm' | 'reject') => {
     setActionError(null);
+    const values = valuesFor(r);
     let overrides: PendingOverrides | undefined;
     try {
-      if (action === 'confirm') overrides = buildOverrides(r);
+      if (action === 'confirm') overrides = buildOverrides(r, values);
     } catch (err) {
       await reportError(err);
       return;
     }
-    const next: Decision = { row: r, action, overrides };
-    if (asksAboutImage(r, action)) setDecision(next);
+    const next: Decision = { row: r, values, action, overrides, stage: 'keep' };
+    if (action === 'confirm' && values.fee.trim() === '' && autoFeeUsd(values.shares, values.price, r.costPpm) !== '') {
+      setDecision({ ...next, stage: 'fee' });
+    } else if (asksAboutImage(next)) setDecision(next);
     else await submit(next);
+  };
+
+  const acceptDefaultFee = (current: Decision) => {
+    if (asksAboutImage(current)) {
+      setDecision({ ...current, stage: 'keep' });
+    } else {
+      setDecision(null);
+      void submit(current);
+    }
   };
 
   if (loading) return <p className="text-sm text-muted-foreground">{t('loading')}</p>;
@@ -145,9 +163,11 @@ export function PendingTable({ runId }: { runId?: number }) {
               <Th className="text-right">{t('pendingColQty')}</Th>
               <Th className="text-right">{t('pendingColPrice')}</Th>
               <Th className="text-right">{t('pendingColFee')}</Th>
-              <Th />
+              <Th>
+                <span className="sr-only">{t('pendingColScreenshot')}</span>
+              </Th>
               <Th>{t('pendingColDetected')}</Th>
-              <Th>{t('pendingColActions')}</Th>
+              <Th className="sticky right-0 bg-card pl-3">{t('pendingColActions')}</Th>
             </tr>
           </thead>
           <tbody>
@@ -166,7 +186,17 @@ export function PendingTable({ runId }: { runId?: number }) {
           </tbody>
         </TableWrap>
       )}
-      {decision && (
+      {decision?.stage === 'fee' && (
+        <DefaultFeePrompt
+          rate={costPercentText(decision.row.costPpm)}
+          price={decision.values.price.trim()}
+          shares={decision.values.shares.trim()}
+          fee={autoFeeUsd(decision.values.shares, decision.values.price, decision.row.costPpm)}
+          onUse={() => acceptDefaultFee(decision)}
+          onBack={() => setDecision(null)}
+        />
+      )}
+      {decision?.stage === 'keep' && (
         <KeepImagePrompt
           action={decision.action}
           onDecide={(keep) => {

@@ -9,6 +9,7 @@ import type { SimRunDto } from '../../api';
 import { useT } from '../../i18n';
 import { formFromRun, simFieldFlags, validateSimConfig } from '../../simconfig';
 import type { SimConfigForm, SimParams } from '../../simconfig';
+import { simErrorText } from '../../simerrors';
 import { Badge, Button, Card, ErrorNote, Modal } from '../ui';
 import { SimConfigFields } from './SimConfigFields';
 
@@ -37,14 +38,8 @@ export function SimConfigPanel({
   const percentsValid = !Object.values(simFieldFlags(form)).some(Boolean);
 
   const fail = (err: unknown) => {
-    if (err instanceof ApiError && err.code === 'sim-finalized') {
-      setError(t('simErr.sim-finalized'));
-      onApplied();
-    } else if (err instanceof ApiError) {
-      setError(t('simActionFailed', { code: err.code }));
-    } else {
-      setError(err instanceof Error ? err.message : String(err));
-    }
+    setError(simErrorText(err, t));
+    if (err instanceof ApiError && err.code === 'sim-finalized') onApplied();
   };
 
   const apply = async () => {

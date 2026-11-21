@@ -26,7 +26,10 @@ export function PriceChart({
   onLatestClose,
 }: {
   runId: number;
-  /** Reports the latest bar's close (myriadths string), or null when there is none. */
+  /**
+   * Reports the latest bar's close (myriadths string), or null when there is none.
+   * Pass a stable function: a new identity is told the current latest close again.
+   */
   onLatestClose?: (close: string | null) => void;
 }) {
   const t = useT();
@@ -44,8 +47,7 @@ export function PriceChart({
   const latestClose = state.data?.bars[state.data.bars.length - 1]?.close ?? null;
   useEffect(() => {
     onLatestClose?.(latestClose);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestClose]);
+  }, [latestClose, onLatestClose]);
 
   if (state.loading && !state.data) return <Spinner />;
   if (state.error !== undefined) return <ErrorNote message={state.error} />;

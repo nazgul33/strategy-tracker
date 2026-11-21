@@ -1,8 +1,8 @@
 // Tiny data + routing hooks (no external router/data libraries).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { ApiError, api, getToken, setToken } from '../api';
-import { costPercentText } from '../format';
+import { ApiError, getToken, setToken } from '../api';
+import { loadDefaultCostText, peekDefaultCostText } from '../defaultcost';
 
 export interface AsyncData<T> {
   data: T | undefined;
@@ -50,23 +50,25 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): Asy
 }
 
 /**
- * Cost percent text state, prefilled once from the server default. A value
- * the operator typed before the settings arrived is never overwritten; if the
- * settings call fails the field stays blank and submit asks for a cost.
+ * Cost percent text state, prefilled from the server default (fetched once per
+ * page, see `defaultcost.ts`). A value the operator typed before the default
+ * arrived is never overwritten. `loadFailed` is true when the default could not
+ * be loaded, until the operator types a cost.
  */
-export function useDefaultCostText(): [string, (v: string) => void] {
-  const [text, setText] = useState('');
+export function useDefaultCostText(): [text: string, setText: (v: string) => void, loadFailed: boolean] {
+  const [text, setText] = useState(() => peekDefaultCostText() ?? '');
+  const [failed, setFailed] = useState(false);
   const touched = useRef(false);
   useEffect(() => {
     let live = true;
-    api
-      .getSettings()
-      .then((s) => {
-        if (live && !touched.current && Number.isFinite(s.defaultCostPpm)) {
-          setText(costPercentText(s.defaultCostPpm));
-        }
-      })
-      .catch(() => undefined);
+    loadDefaultCostText().then(
+      (loaded) => {
+        if (live && !touched.current) setText(loaded);
+      },
+      () => {
+        if (live && !touched.current) setFailed(true);
+      },
+    );
     return () => {
       live = false;
     };
@@ -75,8 +77,10 @@ export function useDefaultCostText(): [string, (v: string) => void] {
     text,
     (v) => {
       touched.current = true;
+      setFailed(false);
       setText(v);
     },
+    failed,
   ];
 }
 
