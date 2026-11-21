@@ -3,7 +3,7 @@ import type { DetectedDto, VisionReviewEntryDto, VisionReviewFillDto } from '../
 import { centsUsd, isoDate, isoDateTime, priceUsd } from '../format';
 import { useT } from '../i18n';
 import { ScreenshotLink } from './ScreenshotLink';
-import { Badge, Button, Card, TableWrap, Td, Th } from './ui';
+import { Badge, Button, Card, ErrorNote, TableWrap, Td, Th } from './ui';
 
 type Field = keyof DetectedDto;
 const FIELDS: readonly Field[] = ['side', 'shares', 'filledOn', 'price', 'fee'];
@@ -111,10 +111,14 @@ export function VisionReviewEntry({
   entry,
   onDelete,
   busy = false,
+  error = null,
+  onCancel,
 }: {
   entry: VisionReviewEntryDto;
   onDelete: () => void;
   busy?: boolean;
+  error?: string | null;
+  onCancel?: () => void;
 }) {
   const t = useT();
   const [armed, setArmed] = useState(false);
@@ -135,16 +139,25 @@ export function VisionReviewEntry({
           )}
         </div>
         {armed && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2">
-            <span className="text-sm text-destructive">{t('visionReviewDeleteWarning')}</span>
-            <div className="ml-auto flex gap-2">
-              <Button disabled={busy} onClick={() => setArmed(false)}>
-                {t('cancel')}
-              </Button>
-              <Button variant="danger" busy={busy} onClick={onDelete}>
-                {t('dialog.deleteConfirm')}
-              </Button>
+          <div className="space-y-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <span className="text-sm text-destructive">{t('visionReviewDeleteWarning')}</span>
+              <div className="ml-auto flex gap-2">
+                <Button
+                  disabled={busy}
+                  onClick={() => {
+                    setArmed(false);
+                    onCancel?.();
+                  }}
+                >
+                  {t('cancel')}
+                </Button>
+                <Button variant="danger" busy={busy} onClick={onDelete}>
+                  {t('dialog.deleteConfirm')}
+                </Button>
+              </div>
             </div>
+            {error && <ErrorNote message={error} />}
           </div>
         )}
         <div className="grid gap-4 md:grid-cols-[16rem_minmax(0,1fr)]">

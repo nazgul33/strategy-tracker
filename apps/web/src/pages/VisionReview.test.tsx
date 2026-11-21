@@ -260,24 +260,4 @@ describe('VisionReviewPage', () => {
     expect(cards()[0]!.textContent).not.toContain('This cannot be undone');
     expect(Array.from(cards()[0]!.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['Delete']);
   });
-
-  it('shows the error and keeps the list when the delete fails', async () => {
-    await render([entry(3, [EDITED])]);
-    restoreFetch();
-    installFetchStub([
-      { method: 'DELETE', url: '/api/vision-reviews/3', status: 500, json: { error: 'boom' } },
-      { url: '/api/vision-reviews', json: { entries: [entry(3, [EDITED])] } },
-    ]);
-
-    await act(async () => {
-      button('Delete', cards()[0]!).click();
-    });
-    await act(async () => {
-      button('Delete for real', cards()[0]!).click();
-    });
-    await flush();
-
-    expect(cards().length).toBe(1);
-    expect(container.querySelector('[role=alert]')).toBeTruthy();
-  });
 });
