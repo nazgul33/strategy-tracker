@@ -1,5 +1,5 @@
 import { parseUsd } from '@st/core/money';
-import { usdToCents, type DetectedDto, type PendingFillDto } from './api';
+import { ungroupUsd, usdToCents, type DetectedDto, type PendingFillDto } from './api';
 import { autoFeeUsd } from './autofee';
 
 export interface PendingIssue {
@@ -90,7 +90,7 @@ function sameShares(detected: number | null, value: string): boolean {
 
 // Compared as myriadths, never as display strings: "178.4" and "178.40" are one price.
 function samePrice(detected: string | null, value: string): boolean {
-  const s = value.trim();
+  const s = ungroupUsd(value);
   if (detected === null || s === '') return detected === null && s === '';
   try {
     return parseUsd(s) === BigInt(detected);

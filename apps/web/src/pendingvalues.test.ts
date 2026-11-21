@@ -188,6 +188,12 @@ describe('pendingEdits', () => {
     expect(pendingEdits(row(), { ...same, price: '178.401' })).toEqual(['price']);
   });
 
+  test('treats comma-grouped "12,345.00" as the same price as 12345.00', () => {
+    const d = { ...detected, price: '123450000' };
+    expect(pendingEdits(row(d), { ...same, price: '12,345.00' })).toEqual([]);
+    expect(pendingEdits(row(d), { ...same, price: '12,34.00' })).toEqual(['price']);
+  });
+
   test('treats a fee of "0.00" against detected fee 0 as unedited', () => {
     const zero = row({ ...detected, fee: 0 });
     expect(pendingEdits(zero, { ...same, fee: '0.00' })).toEqual([]);

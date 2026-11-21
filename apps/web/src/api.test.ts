@@ -1,7 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 
-import { ApiError, createApi, usdToCents } from './api';
+import { ApiError, createApi, ungroupUsd, usdToCents } from './api';
 import type { ApiErrorCode, Http } from './api';
+
+describe('ungroupUsd', () => {
+  test('strips only well-formed grouping', () => {
+    expect(ungroupUsd(' 12,345,678.90 ')).toBe('12345678.90');
+    expect(ungroupUsd('1,000.00')).toBe('1000.00');
+    expect(ungroupUsd('1,00')).toBe('1,00');
+    expect(ungroupUsd('12,34.00')).toBe('12,34.00');
+  });
+});
 
 // Users naturally type comma-grouped amounts ("1,000"); core's parseUsd
 // rejects commas, so the web layer strips standard grouping before parsing.
