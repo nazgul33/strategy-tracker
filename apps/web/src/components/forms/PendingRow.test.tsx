@@ -211,6 +211,13 @@ describe('PendingRow blank fee', () => {
     expect((await feeInput(FEELESS, { shares: 'x' })).getAttribute('placeholder')).toBeNull();
   });
 
+  // A class-name pin: the test DOM has no layout, so clipping cannot be measured.
+  it('the fee field is wide enough for the placeholder', async () => {
+    const input = await feeInput(FEELESS, {});
+    expect(input.classList.contains('w-28')).toBe(true);
+    expect(input.classList.contains('w-20')).toBe(false);
+  });
+
   it('ko copy', () => {
     expect(lookup('ko', 'pendingFeeAutoPlaceholder', { fee: '4.94' })).toBe('자동 $4.94');
   });

@@ -101,7 +101,7 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
       </Td>
       <Td className="text-right tabular-nums">
         <Input
-          className="w-20 text-right"
+          className="w-28 text-right"
           inputMode="decimal"
           value={values.fee}
           placeholder={blankFee ? t('pendingFeeAutoPlaceholder', { fee: blankFee }) : undefined}
