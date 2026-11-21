@@ -269,6 +269,13 @@ describe('cut-loss stops', () => {
     expect(r.events).toEqual([expect.objectContaining({ type: 'fill', side: 'sell', kind: 'market_sell', price: parseUsd('99') })])
   })
 
+  test('a market sell that empties the bucket leaves no stop-preempted, even with the stop and the target in range', () => {
+    const market = { kind: 'market_sell', bucketIndex: 0, limitPrice: 0n, shares: 3 }
+    const r = resolveDay(heldState(), planOf(market, targetOrder, stopOrder), barOf('99', '102', '96'), 30)
+    expect(r.events).toEqual([{ type: 'fill', side: 'sell', kind: 'market_sell', bucketIndex: 0, shares: 3, price: parseUsd('99'), feeCents: feeCents(parseUsd('99'), 3, 30) }])
+    expect(r.state.buckets[0]!.state).toBe('empty')
+  })
+
   test('a buy fill carries kind buy_loc', () => {
     const buy = { kind: 'buy_loc', bucketIndex: 1, limitPrice: parseUsd('98'), shares: 2 }
     const r = resolveDay(heldState((st) => { st.cashCents = 1_000_000 }), planOf(buy), barOf('99', '99.5', '97'), 30)

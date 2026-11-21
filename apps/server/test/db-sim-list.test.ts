@@ -2,6 +2,7 @@ import { describe, test, expect, beforeAll, spyOn } from 'bun:test'
 import { sql } from 'drizzle-orm'
 import { getDb, applyMigrations } from '../src/db/client'
 import { getRepos } from '../src/db/repos'
+import { runBootSweeps } from '../src/wire/boot-sweeps'
 
 const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 
@@ -52,5 +53,27 @@ describeIf('simRepo.listRuns / sweepDrafts', () => {
 
   test('sweepDrafts returns 0 when no draft is old enough', async () => {
     expect(await repos.simRepo.sweepDrafts(new Date(0))).toBe(0)
+  })
+
+  test('the boot sweep honours the 7-day window to the minute, whatever the session time zone', async () => {
+    const DAY_S = 86_400
+    const nowSec = Math.floor(Date.now() / 1000)
+    const mk = async (ageSec: number, finalize = false) => {
+      const id: number = await repos.simRepo.insertRun(input())
+      if (finalize) await repos.simRepo.finalize(id)
+      await db.execute(sql.raw(`UPDATE sim_runs SET created_at = FROM_UNIXTIME(${nowSec - ageSec}) WHERE id = ${id}`))
+      return id
+    }
+    const keep6d = await mk(6 * DAY_S)
+    const keepJustInside = await mk(7 * DAY_S - 60)
+    const dropJustOutside = await mk(7 * DAY_S + 60)
+    const drop8d = await mk(8 * DAY_S)
+    const keepFinalized = await mk(8 * DAY_S, true)
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      await runBootSweeps({ simRepo: repos.simRepo, captureImageRepo: { sweepOrphans: async () => [] } }, new Date())
+    } finally { log.mockRestore() }
+    for (const id of [keep6d, keepJustInside, keepFinalized]) expect(await repos.simRepo.getRun(id)).not.toBeNull()
+    for (const id of [dropJustOutside, drop8d]) expect(await repos.simRepo.getRun(id)).toBeNull()
   })
 })

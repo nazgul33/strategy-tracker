@@ -363,6 +363,20 @@ describe('http runs', () => {
       }
     })
 
+    test('POST /runs with an explicit cutLossPpm null stores 0; costPpm null is rejected', async () => {
+      const f = makeFakes()
+      const app = createApp(makeDeps(f))
+      const auth = await loginAs(app)
+      const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ ...base, cutLossPpm: null }), headers: { ...json, ...auth } })
+      expect(cr.status).toBe(201)
+      const { id } = await cr.json()
+      expect(f.runs.find((x) => x.id === id)!.cutLossPpm).toBe(0)
+      const bad = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ ...base, costPpm: null }), headers: { ...json, ...auth } })
+      expect(bad.status).toBe(400)
+      expect((await bad.json()).error).toBe('invalid costPpm')
+      expect(f.runs.length).toBe(1)
+    })
+
     test.each([35_001, -1_000, 600_000, 500_001, 1.5, '35000'])('POST /runs rejects %p', async (v) => {
       const f = makeFakes()
       const app = createApp(makeDeps(f))
