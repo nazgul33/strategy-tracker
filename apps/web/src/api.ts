@@ -160,8 +160,8 @@ export interface Api {
   triggerMorning(): Promise<string>;
   listPending(): Promise<PendingFillDto[]>;
   /** `keepImage` archives the screenshot as evidence; it is sent only when true. */
-  confirmPending(id: number, overrides?: PendingOverrides, keepImage?: boolean): Promise<void>;
-  rejectPending(id: number, keepImage?: boolean): Promise<void>;
+  confirmPending(id: number, overrides?: PendingOverrides, keepImage?: boolean): Promise<{ archived: boolean }>;
+  rejectPending(id: number, keepImage?: boolean): Promise<{ archived: boolean }>;
   /** Kept screenshots with the fills resolved from them, newest first. */
   listVisionReviews(): Promise<VisionReviewEntryDto[]>;
   /** Discards a kept screenshot and its review rows; 404 `not-found` when not kept. */
@@ -254,12 +254,14 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
     triggerMorning: () => send<{ result: string }>('POST', '/api/trigger/morning').then((r) => r.result),
     listPending: () => get<PendingFillDto[]>('/api/pending'),
     confirmPending: (id, overrides, keepImage) =>
-      send<{ ok: true }>('POST', `/api/pending/${id}/confirm`, {
+      send<{ ok: true; archived?: boolean }>('POST', `/api/pending/${id}/confirm`, {
         ...(overrides ? { overrides } : {}),
         ...(keepImage ? { keepImage: true } : {}),
-      }).then(() => undefined),
+      }).then((r) => ({ archived: r.archived !== false })),
     rejectPending: (id, keepImage) =>
-      send<{ ok: true }>('POST', `/api/pending/${id}/reject`, keepImage ? { keepImage: true } : {}).then(() => undefined),
+      send<{ ok: true; archived?: boolean }>('POST', `/api/pending/${id}/reject`, keepImage ? { keepImage: true } : {}).then(
+        (r) => ({ archived: r.archived !== false }),
+      ),
     listVisionReviews: () => get<{ entries: VisionReviewEntryDto[] }>('/api/vision-reviews').then((r) => r.entries),
     deleteVisionReview: (captureId) =>
       send<{ ok: true }>('DELETE', `/api/vision-reviews/${captureId}`).then(() => undefined),
@@ -279,12 +281,10 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
     runSim: (input) =>
       send<{ id: number; dayCount: number }>('POST', '/api/sim', {
         ticker: input.ticker.trim().toUpperCase(),
-        ...simConfigBody(input.name, input),
+        name: input.name.trim(),
+        ...simConfigBody(input),
       }),
-    // The server keeps no sim name (it only labels the in-memory run), so Apply
-    // sends a stable placeholder when the caller has none.
-    updateSimRun: (id, input) =>
-      send<{ id: number; dayCount: number }>('PUT', `/api/sim/${id}`, simConfigBody(input.name || `Sim #${id}`, input)),
+    updateSimRun: (id, input) => send<{ id: number; dayCount: number }>('PUT', `/api/sim/${id}`, simConfigBody(input)),
     saveSimRun: (id) => send<unknown>('POST', `/api/sim/${id}/save`).then(() => undefined),
     deleteSimRun: (id) => send<unknown>('DELETE', `/api/sim/${id}`).then(() => undefined),
     listSimRuns: () => get<SimRunDto[]>('/api/sim'),

@@ -1,4 +1,4 @@
-import { eq, and, lt, sql } from 'drizzle-orm'
+import { eq, and, lt, sql, inArray, desc } from 'drizzle-orm'
 import * as s from './schema'
 
 type DayRow = { simRunId: number; tradeDate: string; planJson: string; stateJson: string; eventsJson: string }
@@ -68,18 +68,18 @@ export function getSimRepo(db: any) {
       return db.transaction(async (tx: any) => {
         const stale = await tx.select({ id: s.simRuns.id }).from(s.simRuns)
           .where(and(eq(s.simRuns.draft, true), lt(s.simRuns.createdAt, sql`FROM_UNIXTIME(${Math.floor(createdBefore.getTime() / 1000)})`)))
+          .for('update')
         const ids: number[] = stale.map((r: any) => r.id)
-        for (const id of ids) {
-          await tx.delete(s.simDays).where(eq(s.simDays.simRunId, id))
-          await tx.delete(s.simRuns).where(and(eq(s.simRuns.id, id), eq(s.simRuns.draft, true)))
-        }
+        if (ids.length === 0) return 0
+        await tx.delete(s.simDays).where(inArray(s.simDays.simRunId, ids))
+        const res = await tx.delete(s.simRuns).where(and(inArray(s.simRuns.id, ids), eq(s.simRuns.draft, true)))
         // The ids, not just the count: this deletes rows nothing else can restore,
         // so an unexpected sweep must be reconstructible from the log.
-        if (ids.length > 0) console.log(`[simRepo] swept draft sim run ids: ${ids.join(', ')}`)
-        return ids.length
+        console.log(`[simRepo] swept draft sim run ids: ${ids.join(', ')}`)
+        return affected(res)
       })
     },
-    async listRuns() { return db.select().from(s.simRuns) },
+    async listRuns() { return db.select().from(s.simRuns).orderBy(desc(s.simRuns.id)) },
     async getRun(id: number) {
       const rows = await db.select().from(s.simRuns).where(eq(s.simRuns.id, id))
       return rows[0] ?? null

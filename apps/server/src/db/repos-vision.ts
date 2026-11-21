@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, notExists, sql } from 'drizzle-orm'
 import * as s from './schema'
 import type { VisionReviewInsert, VisionReviewRow } from '../domain/vision-review'
 
@@ -37,6 +37,38 @@ export function getVisionRepos(db: any) {
     },
     async deleteFor(captureId: number): Promise<void> {
       await db.delete(s.captureImages).where(eq(s.captureImages.captureId, captureId))
+    },
+    // The image and its frozen rows go together or not at all.
+    async discard(captureId: number): Promise<void> {
+      await db.transaction(async (tx: any) => {
+        await tx.delete(s.visionReviews).where(eq(s.visionReviews.captureId, captureId))
+        await tx.delete(s.captureImages).where(eq(s.captureImages.captureId, captureId))
+      })
+    },
+    // Boot-time janitor for bytes and frozen rows stranded by a swallowed archive failure.
+    // Run it only while nothing else is writing: a pass between a confirm's decide and its
+    // setKeep would delete the image that confirm is about to keep.
+    async sweepOrphans(): Promise<number[]> {
+      return db.transaction(async (tx: any) => {
+        const liveFor = (captureId: any) => tx.select({ one: sql`1` }).from(s.pendingFills)
+          .where(and(eq(s.pendingFills.captureId, captureId), eq(s.pendingFills.status, 'pending')))
+        const unkept = await tx.select({ captureId: s.captureImages.captureId }).from(s.captureImages)
+          .where(and(eq(s.captureImages.keep, false), notExists(liveFor(s.captureImages.captureId))))
+          .for('update')
+        const imageIds: number[] = unkept.map((r: { captureId: number }) => r.captureId)
+        if (imageIds.length) {
+          await tx.delete(s.visionReviews).where(inArray(s.visionReviews.captureId, imageIds))
+          await tx.delete(s.captureImages).where(inArray(s.captureImages.captureId, imageIds))
+        }
+        const imageFor = (captureId: any) => tx.select({ one: sql`1` }).from(s.captureImages)
+          .where(eq(s.captureImages.captureId, captureId))
+        const frozen = await tx.selectDistinct({ captureId: s.visionReviews.captureId }).from(s.visionReviews)
+          .where(and(notExists(imageFor(s.visionReviews.captureId)), notExists(liveFor(s.visionReviews.captureId))))
+          .for('update')
+        const frozenIds: number[] = frozen.map((r: { captureId: number }) => r.captureId)
+        if (frozenIds.length) await tx.delete(s.visionReviews).where(inArray(s.visionReviews.captureId, frozenIds))
+        return [...new Set([...imageIds, ...frozenIds])].sort((a, b) => a - b)
+      })
     },
     async listKept(limit: number): Promise<CaptureImageListing[]> {
       return db.select({

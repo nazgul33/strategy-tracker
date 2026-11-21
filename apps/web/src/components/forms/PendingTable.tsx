@@ -95,9 +95,12 @@ export function PendingTable({ runId }: { runId?: number }) {
   const submit = async ({ row, action, overrides }: Decision, keepImage?: boolean) => {
     setBusyId(row.id);
     try {
-      if (action === 'confirm') await api.confirmPending(row.id, overrides, keepImage);
-      else await api.rejectPending(row.id, keepImage);
+      const res =
+        action === 'confirm'
+          ? await api.confirmPending(row.id, overrides, keepImage)
+          : await api.rejectPending(row.id, keepImage);
       await reload();
+      if (keepImage === true && !res.archived) setActionError(t('keepImageNotKept'));
     } catch (err) {
       await reportError(err);
     } finally {

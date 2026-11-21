@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { jsonBig, type HttpDeps } from '../app'
 import type { VisionReviewRow } from '../../domain/vision-review'
+import { parseId } from '../params'
 
 // The repo lists newest first, so the cap drops the oldest entries; far above
 // what one operator keeps by hand.
@@ -46,16 +47,15 @@ export function visionReviewRouter(deps: HttpDeps): Hono {
   // Only a kept image can be discarded here: an unkept one is still the evidence
   // for a pending row and is swept by the review lifecycle, not by the operator.
   r.delete('/vision-reviews/:captureId', async (c) => {
-    const captureId = Number(c.req.param('captureId'))
-    if (!Number.isInteger(captureId) || !(await captureImageRepo.isKept(captureId))) return c.json({ error: 'not-found' }, 404)
-    await captureImageRepo.deleteFor(captureId)
-    await visionReviewRepo.deleteFor(captureId)
+    const captureId = parseId(c.req.param('captureId'))
+    if (captureId === null || !(await captureImageRepo.isKept(captureId))) return c.json({ error: 'not-found' }, 404)
+    await captureImageRepo.discard(captureId)
     return c.json({ ok: true })
   })
 
   r.get('/captures/:id/image', async (c) => {
-    const id = Number(c.req.param('id'))
-    const image = Number.isInteger(id) && id > 0 ? await captureImageRepo.getBytes(id) : null
+    const id = parseId(c.req.param('id'))
+    const image = id !== null ? await captureImageRepo.getBytes(id) : null
     if (!image) return c.json({ error: 'not-found' }, 404)
     return new Response(new Uint8Array(image.bytes), {
       headers: {

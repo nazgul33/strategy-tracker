@@ -108,6 +108,11 @@ export function makeFakes() {
       const i = captureImages.findIndex((x) => x.captureId === captureId)
       if (i >= 0) captureImages.splice(i, 1)
     },
+    async discard(captureId: number) {
+      const i = captureImages.findIndex((x) => x.captureId === captureId)
+      if (i >= 0) captureImages.splice(i, 1)
+      for (let j = visionReviews.length - 1; j >= 0; j--) if (visionReviews[j]!.captureId === captureId) visionReviews.splice(j, 1)
+    },
     async listKept(limit: number) {
       // newest first, ties by capture id, like the real repo
       const newestFirst = (a: any, b: any) => ((b.createdAt ?? '') < (a.createdAt ?? '') ? -1 : (b.createdAt ?? '') > (a.createdAt ?? '') ? 1 : b.captureId - a.captureId)
@@ -187,7 +192,7 @@ export function makeFakes() {
       }
       return n
     },
-    async listRuns() { return simRuns },
+    async listRuns() { return [...simRuns].sort((a, b) => b.id - a.id) },
     async getRun(id: number) { return simRuns.find((x) => x.id === id) ?? null },
     async listDays(id: number) { return simDays.filter((d) => d.simRunId === id).sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1)) },
   }

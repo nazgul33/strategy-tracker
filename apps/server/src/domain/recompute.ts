@@ -34,6 +34,10 @@ export interface RebookEdit { fillId: number; shares: number; priceStr: string; 
 // `audit` labels the adjust row's ref; the correction id is omitted when absent.
 // Runs under the per-run lock. Callers already inside withRunLock(runId) must
 // use rebookFillUnlocked instead: the lock is not reentrant.
+// Rebuilding state does not reopen orders (applies to deleteFill too): a sell
+// fill's sibling-cancelled leg stays cancelled after that sell is edited away or
+// deleted, so a re-held bucket has no live protection until the next morning's
+// re-plan places its legs again.
 export function rebookFill(
   runId: number,
   edit: RebookEdit,

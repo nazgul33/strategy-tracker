@@ -147,6 +147,7 @@ export function runsRouter(deps: HttpDeps): Hono {
   // The pipeline only collects from the first morning run on, so the caller
   // can ask to backfill a start date (the day before the first buy); collected
   // days are served from the DB and never refetched — settled closes are final.
+  // Persistence belongs to the cached bar reader; this route does not write.
   r.get('/runs/:id/price-history', async (c) => {
     const id = Number(c.req.param('id'))
     const run = await deps.repos.runRepo.get(id)
@@ -164,7 +165,6 @@ export function runsRouter(deps: HttpDeps): Hono {
       // backfill only ever fills gaps before the collected range (or seeds it)
       const fetched = await backfillPriceHistory(deps, run.ticker, want, today)
       if (fetched.length > 0) {
-        await deps.repos.priceHistoryRepo.upsertMany(fetched.map((b) => ({ ticker: run.ticker, ...b })))
         const have = new Map(rows.map((r) => [r.tradeDate, r.close]))
         for (const b of fetched) have.set(b.tradeDate, b.close)
         rows.length = 0
@@ -182,8 +182,8 @@ export function runsRouter(deps: HttpDeps): Hono {
 
   // one ranged read through the injected (cached) bar reader over
   // [start, prevTradingDay(today)]; the reader fetches only what it has never
-  // fetched before. Compatibility shim: the real fetchDailyBars/cached reader emit
-  // OHLCBar keyed `date`; older test fakes (and the old route code) used `tradeDate`.
+  // fetched before. The cached reader also persists the full OHLC rows, so the
+  // route only reads closes from the result and never writes them itself.
   async function backfillPriceHistory(
     deps: HttpDeps,
     ticker: string,
@@ -201,7 +201,7 @@ export function runsRouter(deps: HttpDeps): Hono {
     }
     const byDate = new Map<string, bigint>()
     for (const b of bars) {
-      const tradeDate: string = b.tradeDate ?? b.date
+      const tradeDate: string = b.date
       if (tradeDate >= start && tradeDate <= to && !byDate.has(tradeDate)) byDate.set(tradeDate, b.close)
     }
     return [...byDate].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([tradeDate, close]) => ({ tradeDate, close }))

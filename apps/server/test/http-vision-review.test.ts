@@ -109,6 +109,27 @@ describe('http vision reviews', () => {
     expect(f.captureImages).toHaveLength(1)
   })
 
+  test('DELETE /api/vision-reviews/:captureId goes through one discard call', async () => {
+    const { f, app, auth, keep } = await setup()
+    await keep(1, '2026-11-10 09:00:00')
+    await f.repos.visionReviewRepo.insertIgnore(review(1, 10) as any)
+    f.repos.captureImageRepo.deleteFor = async () => { throw new Error('two-step delete used') }
+    f.repos.visionReviewRepo.deleteFor = async () => { throw new Error('two-step delete used') }
+    const res = await app.request('/api/vision-reviews/1', { method: 'DELETE', headers: auth })
+    expect(res.status).toBe(200)
+    expect(f.captureImages).toHaveLength(0)
+    expect(f.visionReviews).toHaveLength(0)
+  })
+
+  test('DELETE and image GET reject non-canonical capture ids', async () => {
+    const { f, app, auth, keep } = await setup()
+    await keep(1, '2026-11-10 09:00:00')
+    const del = await app.request('/api/vision-reviews/0x1', { method: 'DELETE', headers: auth })
+    expect(del.status).toBe(404)
+    expect(f.captureImages.find((x) => x.captureId === 1)?.keep).toBe(true)
+    expect((await app.request('/api/captures/1e0/image', { headers: auth })).status).toBe(404)
+  })
+
   test('vision review routes require credentials', async () => {
     const { app } = await setup()
     expect((await app.request('/api/vision-reviews')).status).toBe(401)

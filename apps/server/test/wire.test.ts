@@ -229,7 +229,7 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
 }
 
 const visionFetch = (async (url: string) => {
-  const content = JSON.stringify({ fills: [{ side: 'buy', ticker: 'NVDA', shares: 10, price: '180.50' }] });
+  const content = JSON.stringify({ fills: [{ side: 'buy', ticker: 'NVDA', shares: 10, price: '180.50', date: '2026-11-10' }] });
   return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as unknown as Response;
 }) as unknown as typeof fetch;
 
@@ -258,14 +258,17 @@ function makeCapture(opts: FakeOpts & { today?: string; fetchImpl?: typeof fetch
 const multiVisionFetch = (async () => {
   const content = JSON.stringify({
     fills: [
-      { side: 'buy', ticker: 'NVDA', shares: 10, price: '180.50' },
-      { side: 'buy', ticker: 'AAPL', shares: 5, price: '210.25' },
+      { side: 'buy', ticker: 'NVDA', shares: 10, price: '180.50', date: '2026-11-10' },
+      { side: 'buy', ticker: 'AAPL', shares: 5, price: '210.25', date: '2026-11-10' },
     ],
   });
   return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as unknown as Response;
 }) as unknown as typeof fetch;
 
 const NOTICE_EN = 'ℹ️ Fills from this image were already confirmed earlier — the rows below may be duplicates. Check before confirming.';
+
+const DATE_NOTICE_EN =
+  '⚠️ No usable trade date was read from the screenshot, so the capture date 2026-11-10 was used. If the trade was on another day, fix the date in the web app\'s Pending view instead of confirming here.';
 
 const PNG_B64 = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64');
 
@@ -459,7 +462,7 @@ describe('capture onPhoto — dedup and failures', () => {
     h.sent.length = 0;
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     expect(h.captures.length).toBe(1);
-    expect(h.sent.map((s) => s.text)).toEqual([NOTICE_EN, 'Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?']);
+    expect(h.sent.map((s) => s.text)).toEqual([NOTICE_EN, `Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?\n${DATE_NOTICE_EN}`]);
     expect(h.sent[0]!.extra).toBeUndefined();
     expect(h.sent[1]!.extra).toEqual({ reply_markup: buildPendingKeyboard(String(h.pending[1]!.id)) });
   });
@@ -522,6 +525,39 @@ describe('capture onPhoto — dedup and failures', () => {
       '⚠️ 2026-11-10 NVDA buy 10주 — 추출 가격 $180.50, 예약된 체결 #1이(가) 더 이상 없습니다. 수정할 항목이 없습니다.',
     );
     expect(h.corrections.length).toBe(0);
+  });
+});
+
+describe('capture prompt — trade date vision could not read', () => {
+  const fetchWith = (date?: string) =>
+    (async () => {
+      const content = JSON.stringify({ fills: [{ side: 'buy', ticker: 'NVDA', shares: 10, price: '180.50', ...(date ? { date } : {}) }] });
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+  test('a fill with no date carries the substitution notice', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: fetchWith() });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(h.sent[0]!.text).toBe(`Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?\n${DATE_NOTICE_EN}`);
+    expect(h.sent[0]!.extra).toEqual({ reply_markup: buildPendingKeyboard(String(h.pending[0]!.id)) });
+  });
+
+  test('a date the extractor dropped as too far from today gets the same notice', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: fetchWith('2026-01-02') });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(h.sent[0]!.text).toContain('capture date 2026-11-10 was used');
+  });
+
+  test('the notice is rendered in ko', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: fetchWith(), lang: 'ko' });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(h.sent[0]!.text).toContain('캡처한 날짜 2026-11-10');
+  });
+
+  test('a readable date carries no notice', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: fetchWith('2026-11-10') });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(h.sent[0]!.text).not.toContain('\n');
   });
 });
 

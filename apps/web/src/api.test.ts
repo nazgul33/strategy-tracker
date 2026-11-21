@@ -96,12 +96,13 @@ describe('sim draft endpoints', () => {
     const body = JSON.parse(String(calls[0]!.init?.body));
     expect(body).toMatchObject({ ...config, params: { bucketCount: 6 } });
     expect('ticker' in body).toBe(false);
+    expect('name' in body).toBe(false);
   });
 
   test('runSim carries cutLossPpm when set', async () => {
     const { calls, api } = recorder();
-    await api.runSim({ ...config, name: 'S', ticker: 'qqq' });
-    expect(JSON.parse(String(calls[0]!.init?.body))).toMatchObject({ ticker: 'QQQ', cutLossPpm: 35_000 });
+    await api.runSim({ ...config, name: ' S ', ticker: 'qqq' });
+    expect(JSON.parse(String(calls[0]!.init?.body))).toMatchObject({ ticker: 'QQQ', name: 'S', cutLossPpm: 35_000 });
   });
 
   test('saveSimRun POSTs /save and deleteSimRun DELETEs, both resolving on 204', async () => {
@@ -350,6 +351,20 @@ describe('pending review wire contract', () => {
     expect(calls.map((c) => c.url)).toEqual(['/api/pending/3/reject', '/api/pending/3/reject']);
     expect(body(calls[0]!)).toEqual({});
     expect(body(calls[1]!)).toEqual({ keepImage: true });
+  });
+
+  test('confirmPending resolves archived from the body, defaulting to true', async () => {
+    const failed = record(() => Response.json({ ok: true, archived: false }));
+    await expect(failed.api.confirmPending(3, undefined, true)).resolves.toEqual({ archived: false });
+    const bare = record(() => Response.json({ ok: true }));
+    await expect(bare.api.confirmPending(3)).resolves.toEqual({ archived: true });
+  });
+
+  test('rejectPending resolves archived from the body, defaulting to true', async () => {
+    const failed = record(() => Response.json({ ok: true, archived: false }));
+    await expect(failed.api.rejectPending(3, true)).resolves.toEqual({ archived: false });
+    const bare = record(() => Response.json({ ok: true }));
+    await expect(bare.api.rejectPending(3)).resolves.toEqual({ archived: true });
   });
 
   test('listVisionReviews unwraps entries', async () => {

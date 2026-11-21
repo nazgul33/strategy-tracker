@@ -58,6 +58,7 @@ export interface RepoSurface {
     isKept(captureId: number): Promise<boolean>
     setKeep(captureId: number): Promise<void>
     deleteFor(captureId: number): Promise<void>
+    discard(captureId: number): Promise<void>
     listKept(limit: number): Promise<CaptureImageListing[]>
   }
   visionReviewRepo: {
@@ -80,7 +81,7 @@ export type CaptureOutcome =
   | { pending: PendingFillRow[]; conflicts: CaptureConflict[]; bookedEarlier?: true }
   | { conflicts: CaptureConflict[] }
 
-export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; status: string }
+export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; detectedFilledOn: ISODate | null; status: string }
 
 export interface FillRow { id: number; runId: number; bucketIdx: number; side: 'buy' | 'sell'; ticker: string; shares: number; price: bigint; fee: number; filledOn: ISODate; source: string }
 
@@ -222,7 +223,7 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
         id: pendingId, runId, captureId, side: f.side, ticker: f.ticker, shares: f.shares,
         price: formatUsd(parseUsd(f.price)),
         fee: feeCentsVal === null ? null : formatUsd(BigInt(feeCentsVal) * 100n),
-        filledOn, status: 'pending',
+        filledOn, detectedFilledOn: f.date ?? null, status: 'pending',
       })
     }
     if (pendingRows.length > 0) await storeCaptureImage(repos, captureId, image)

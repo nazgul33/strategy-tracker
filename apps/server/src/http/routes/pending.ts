@@ -16,10 +16,9 @@ export function pendingRouter(deps: HttpDeps): Hono {
   r.get('/pending', async (c) => {
     const rows = await deps.repos.pendingRepo.listPending()
     const withImage = await deps.repos.captureImageRepo.existingIds(rows.map((p: any) => p.captureId).filter((id: number | null) => id != null) as number[])
-    const costPpm = new Map<number, number>()
-    for (const runId of new Set<number>(rows.map((p: any) => p.runId))) {
-      costPpm.set(runId, (await deps.repos.runRepo.get(runId))?.costPpm ?? deps.defaultSettings.defaultCostPpm)
-    }
+    const costPpm = new Map<number, number>(await Promise.all(
+      [...new Set<number>(rows.map((p: any) => p.runId))].map(async (runId) => [runId, (await deps.repos.runRepo.get(runId))?.costPpm ?? deps.defaultSettings.defaultCostPpm] as const),
+    ))
     return c.json(jsonBig(rows.map((p: any) => {
       const { detectedSide, detectedShares, detectedPrice, detectedFilledOn, detectedFee, detectedAt, ...row } = p
       return {
@@ -34,21 +33,23 @@ export function pendingRouter(deps: HttpDeps): Hono {
     const id = Number(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
     const overrides = body?.overrides ?? null
+    let archived: boolean
     try {
-      await confirmPendingFill(id, overrides, fillBookingDeps(deps), { keepImage: body?.keepImage === true })
+      ({ archived } = await confirmPendingFill(id, overrides, fillBookingDeps(deps), { keepImage: body?.keepImage === true }))
     } catch (e: any) {
       if (e?.message === 'ticker-mismatch') return c.json({ error: 'ticker-mismatch' }, 409)
       if (e?.message === 'pending-not-pending' || e?.message === 'pending-not-found-or-not-pending') return c.json({ error: 'not-pending' }, 409)
       if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
       return c.json({ error: e?.message ?? 'error' }, 422)
     }
-    return c.json({ ok: true })
+    return c.json({ ok: true, archived })
   })
   r.post('/pending/:id/reject', async (c) => {
     const id = Number(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
-    if (!(await rejectPendingFill(id, fillBookingDeps(deps), { keepImage: body?.keepImage === true }))) return c.json({ error: 'not-pending' }, 409)
-    return c.json({ ok: true })
+    const rejected = await rejectPendingFill(id, fillBookingDeps(deps), { keepImage: body?.keepImage === true })
+    if (!rejected) return c.json({ error: 'not-pending' }, 409)
+    return c.json({ ok: true, archived: rejected.archived })
   })
   return r
 }

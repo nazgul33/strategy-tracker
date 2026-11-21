@@ -91,6 +91,15 @@ describe('http corrections', () => {
     }
   })
 
+  test('a non-canonical id never reaches a correction', async () => {
+    const { f, id, call } = await seed()
+    expect(id).toBe(1)
+    const res = await call('POST', '/corrections/01/apply')
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: 'correction-not-found' })
+    expect(f.corrections.find((c) => c.id === id)!.status).toBe('open')
+  })
+
   test('dismiss -> 200 {ok}; again -> 409 correction-not-open', async () => {
     const { f, sell, id, call } = await seed()
     const res = await call('POST', `/corrections/${id}/dismiss`)

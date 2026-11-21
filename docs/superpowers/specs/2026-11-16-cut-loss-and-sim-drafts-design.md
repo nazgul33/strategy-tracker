@@ -614,8 +614,8 @@ cachedFetchDailyBars(ticker, from, to):
   `409 sim-finalized` cases; `GET /api/sim` marks drafts.
 - `apps/server/test/wire.test.ts`: `DEFAULT_COST_PERCENT` parsing — unset ⇒ 700,
   `0.125` ⇒ 1250, malformed ⇒ startup error.
-- `apps/server/test/db.test.ts` (DB-gated): draft flag defaults, `replaceDays`
-  swaps the day set atomically, `sweepDrafts` deletes only old drafts and never a
+- `apps/server/test/db.test.ts` (DB-gated): draft flag defaults,
+  `rewriteDraft` swaps config and day set atomically and refuses a non-draft, `sweepDrafts` deletes only old drafts and never a
   finalized run; `price_history` OHLC upsert overwrites in place and tolerates
   legacy close-only rows; `bar_coverage` merge.
 - `apps/web`: `gaps.ts` percent⇄ppm at 1 and 3 decimals; `costPercentText`;
