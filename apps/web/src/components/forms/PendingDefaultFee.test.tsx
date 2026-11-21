@@ -116,6 +116,7 @@ describe('default fee popup', () => {
     expect(calls.length).toBe(0);
 
     await pressButton('Discard');
+    expect(calls.length).toBe(1);
     expect(calls[0]!.body).toEqual({ overrides: { feeCents: null } });
   });
 
@@ -148,7 +149,24 @@ describe('default fee popup', () => {
     expect(calls.length).toBe(0);
 
     await pressButton('Use default fee');
+    expect(calls.length).toBe(1);
     expect(calls[0]!.body).toEqual({});
+  });
+
+  it('the popup keeps showing the values Confirm was pressed with', async () => {
+    const calls = await renderWithConfirmCalls({ ...ROW, hasImage: false });
+    await type('Fee', '');
+    await pressButton('Confirm');
+    expect(dialog(TITLE)!.textContent).toContain('× 10 sh = $4.94');
+
+    await type('Qty', '20');
+    expect(dialog(TITLE)!.textContent).toContain('× 10 sh = $4.94');
+    expect(dialog(TITLE)!.textContent).not.toContain('20 sh');
+
+    await pressButton('Use default fee');
+    expect(calls.length).toBe(1);
+    expect(calls[0]).toMatchObject({ method: 'POST', url: '/api/pending/9/confirm', body: { overrides: { feeCents: null } } });
+    expect(calls[0]!.body).toEqual({ overrides: { feeCents: null } });
   });
 
   it('a comma-grouped price still gets the popup', async () => {

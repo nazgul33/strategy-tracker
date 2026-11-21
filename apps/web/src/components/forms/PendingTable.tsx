@@ -11,10 +11,12 @@ import { KeepImagePrompt } from './KeepImagePrompt';
 import { PendingReviewDialog } from './PendingReviewDialog';
 import { PendingRow, initialRowValues } from './PendingRow';
 
-// An action waiting on a prompt, with its overrides already built: first the
-// default-fee popup (a blank fee on confirm), then the keep/discard prompt.
+// An action waiting on a prompt: first the default-fee popup (a blank fee on
+// confirm), then the keep/discard prompt. `values` is what the row held when the
+// button was pressed; the overrides, both prompts and the post all follow it.
 interface Decision {
   row: PendingFillDto;
+  values: RowValues;
   action: 'confirm' | 'reject';
   overrides: PendingOverrides | undefined;
   stage: 'fee' | 'keep';
@@ -43,8 +45,7 @@ export function PendingTable({ runId }: { runId?: number }) {
     setEdited((prev) => ({ ...prev, [r.id]: patchRowValues(r, prev[r.id] ?? initialRowValues(r), patch) }));
   const setValues = (r: PendingFillDto, values: RowValues) => setEdited((prev) => ({ ...prev, [r.id]: values }));
 
-  const buildOverrides = (r: PendingFillDto): PendingOverrides | undefined => {
-    const v = valuesFor(r);
+  const buildOverrides = (r: PendingFillDto, v: RowValues): PendingOverrides | undefined => {
     const invalid = () => new Error(t('pendingInvalidOverride'));
     // A field vision missed stays unbooked until it is filled in: left blank it reads as
     // unedited, and the server would substitute its own value (the capture date for a date).
@@ -116,28 +117,28 @@ export function PendingTable({ runId }: { runId?: number }) {
   // A vision misread is only plausible when there is a screenshot to keep, the
   // row really was a vision reading (a legacy row has no snapshot to be wrong
   // against), and the operator either corrected it or threw it out.
-  const asksAboutImage = (r: PendingFillDto, action: 'confirm' | 'reject') =>
-    r.hasImage && r.detected !== null && (action === 'reject' || pendingEdits(r, valuesFor(r)).length > 0);
+  const asksAboutImage = ({ row, values, action }: Decision) =>
+    row.hasImage && row.detected !== null && (action === 'reject' || pendingEdits(row, values).length > 0);
 
   const act = async (r: PendingFillDto, action: 'confirm' | 'reject') => {
     setActionError(null);
+    const values = valuesFor(r);
     let overrides: PendingOverrides | undefined;
     try {
-      if (action === 'confirm') overrides = buildOverrides(r);
+      if (action === 'confirm') overrides = buildOverrides(r, values);
     } catch (err) {
       await reportError(err);
       return;
     }
-    const v = valuesFor(r);
-    const next: Decision = { row: r, action, overrides, stage: 'keep' };
-    if (action === 'confirm' && v.fee.trim() === '' && autoFeeUsd(v.shares, v.price, r.costPpm) !== '') {
+    const next: Decision = { row: r, values, action, overrides, stage: 'keep' };
+    if (action === 'confirm' && values.fee.trim() === '' && autoFeeUsd(values.shares, values.price, r.costPpm) !== '') {
       setDecision({ ...next, stage: 'fee' });
-    } else if (asksAboutImage(r, action)) setDecision(next);
+    } else if (asksAboutImage(next)) setDecision(next);
     else await submit(next);
   };
 
-  const useDefaultFee = (current: Decision) => {
-    if (asksAboutImage(current.row, current.action)) {
+  const acceptDefaultFee = (current: Decision) => {
+    if (asksAboutImage(current)) {
       setDecision({ ...current, stage: 'keep' });
     } else {
       setDecision(null);
@@ -145,7 +146,6 @@ export function PendingTable({ runId }: { runId?: number }) {
     }
   };
 
-  const feeValues = decision?.stage === 'fee' ? valuesFor(decision.row) : null;
   if (loading) return <p className="text-sm text-muted-foreground">{t('loading')}</p>;
   return (
     <div className="space-y-3">
@@ -186,13 +186,13 @@ export function PendingTable({ runId }: { runId?: number }) {
           </tbody>
         </TableWrap>
       )}
-      {decision && feeValues && (
+      {decision?.stage === 'fee' && (
         <DefaultFeePrompt
           rate={costPercentText(decision.row.costPpm)}
-          price={feeValues.price}
-          shares={feeValues.shares}
-          fee={autoFeeUsd(feeValues.shares, feeValues.price, decision.row.costPpm)}
-          onUse={() => useDefaultFee(decision)}
+          price={decision.values.price}
+          shares={decision.values.shares}
+          fee={autoFeeUsd(decision.values.shares, decision.values.price, decision.row.costPpm)}
+          onUse={() => acceptDefaultFee(decision)}
           onBack={() => setDecision(null)}
         />
       )}
