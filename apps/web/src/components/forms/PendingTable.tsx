@@ -1,18 +1,23 @@
 import { useState } from 'react';
 import { ApiError, api, usdFeeOrNull, usdOrNull, usdToCents, type PendingFillDto, type PendingOverrides } from '../../api';
+import { autoFeeUsd } from '../../autofee';
+import { costPercentText } from '../../format';
 import { useT } from '../../i18n';
 import { patchRowValues, pendingEdits, standingIssue, type RowValues } from '../../pendingvalues';
 import { useAsync } from '../hooks';
 import { EmptyNote, TableWrap, Th } from '../ui';
+import { DefaultFeePrompt } from './DefaultFeePrompt';
 import { KeepImagePrompt } from './KeepImagePrompt';
 import { PendingReviewDialog } from './PendingReviewDialog';
 import { PendingRow, initialRowValues } from './PendingRow';
 
-// An action waiting on the keep/discard prompt, with its overrides already built.
+// An action waiting on a prompt, with its overrides already built: first the
+// default-fee popup (a blank fee on confirm), then the keep/discard prompt.
 interface Decision {
   row: PendingFillDto;
   action: 'confirm' | 'reject';
   overrides: PendingOverrides | undefined;
+  stage: 'fee' | 'keep';
 }
 
 // Unrecognized screenshot fills. Every field is one control pre-filled with what
@@ -123,11 +128,24 @@ export function PendingTable({ runId }: { runId?: number }) {
       await reportError(err);
       return;
     }
-    const next: Decision = { row: r, action, overrides };
-    if (asksAboutImage(r, action)) setDecision(next);
+    const v = valuesFor(r);
+    const next: Decision = { row: r, action, overrides, stage: 'keep' };
+    if (action === 'confirm' && v.fee.trim() === '' && autoFeeUsd(v.shares, v.price, r.costPpm) !== '') {
+      setDecision({ ...next, stage: 'fee' });
+    } else if (asksAboutImage(r, action)) setDecision(next);
     else await submit(next);
   };
 
+  const useDefaultFee = (current: Decision) => {
+    if (asksAboutImage(current.row, current.action)) {
+      setDecision({ ...current, stage: 'keep' });
+    } else {
+      setDecision(null);
+      void submit(current);
+    }
+  };
+
+  const feeValues = decision?.stage === 'fee' ? valuesFor(decision.row) : null;
   if (loading) return <p className="text-sm text-muted-foreground">{t('loading')}</p>;
   return (
     <div className="space-y-3">
@@ -168,7 +186,17 @@ export function PendingTable({ runId }: { runId?: number }) {
           </tbody>
         </TableWrap>
       )}
-      {decision && (
+      {decision && feeValues && (
+        <DefaultFeePrompt
+          rate={costPercentText(decision.row.costPpm)}
+          price={feeValues.price}
+          shares={feeValues.shares}
+          fee={autoFeeUsd(feeValues.shares, feeValues.price, decision.row.costPpm)}
+          onUse={() => useDefaultFee(decision)}
+          onBack={() => setDecision(null)}
+        />
+      )}
+      {decision?.stage === 'keep' && (
         <KeepImagePrompt
           action={decision.action}
           onDecide={(keep) => {

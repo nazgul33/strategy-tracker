@@ -2,7 +2,7 @@ import { api, type PendingFillDto } from '../../api';
 import { useT } from '../../i18n';
 import { isoDate, priceInputValue } from '../../format';
 import { autoFeeUsd } from '../../autofee';
-import { feeIsDerived, standingIssue, type RowField, type RowValues } from '../../pendingvalues';
+import { feeIsDerived, fieldEditState, standingIssue, type RowField, type RowValues } from '../../pendingvalues';
 import { Button, Input, Select, Td } from '../ui';
 
 // Myriadths → an input value: at least two decimals, more only when the price
@@ -52,6 +52,16 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
   // Flag a field the row is missing until the operator has filled it in.
   const issue = standingIssue(row, values);
   const missing = (f: RowField) => (issue === f ? 'border-warning' : '');
+  // Props for a field's control: its width classes, the standing-issue border, and the
+  // edit hint. Solid vs dashed plus the title carry the hint, so it never rests on colour.
+  const control = (f: RowField, base = '') => {
+    const state = fieldEditState(row, values, f);
+    const className = `${base} ${missing(f)}`.trim();
+    if (state === null) return { className };
+    const title = state === 'changed' ? t('pendingFieldChanged') : t(f === 'fee' ? 'pendingFeeErased' : 'pendingFieldErased');
+    const look = state === 'changed' ? 'ring-1 ring-primary' : 'border-dashed border-warning';
+    return { className: `${className} ${look}`, 'data-edit': state, title };
+  };
   const needsInput = issue !== null;
   const needsMsg = t(issue === 'ticker' ? 'pendingNeedsTicker' : 'pendingNeedsOverride');
   const captureId = row.hasImage ? row.captureId : null;
@@ -62,7 +72,7 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
       <Td className="whitespace-nowrap tabular-nums">
         <Input
           type="date"
-          className={`w-36 ${missing('filledOn')}`}
+          {...control('filledOn', 'w-36')}
           value={values.filledOn}
           aria-label={t('pendingColDate')}
           onChange={(e) => onChange({ filledOn: e.target.value })}
@@ -71,7 +81,7 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
       <Td className="font-medium">{row.ticker || '?'}</Td>
       <Td>
         <Select
-          className={missing('side')}
+          {...control('side')}
           value={values.side}
           aria-label={t('pendingColSide')}
           onChange={(e) => onChange({ side: e.target.value })}
@@ -83,7 +93,7 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
       </Td>
       <Td className="text-right tabular-nums">
         <Input
-          className={`w-20 text-right ${missing('shares')}`}
+          {...control('shares', 'w-20 text-right')}
           inputMode="numeric"
           value={values.shares}
           aria-label={t('pendingColQty')}
@@ -92,7 +102,7 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
       </Td>
       <Td className="text-right tabular-nums">
         <Input
-          className={`w-28 text-right ${missing('price')}`}
+          {...control('price', 'w-28 text-right')}
           inputMode="decimal"
           value={values.price}
           aria-label={t('pendingColPrice')}
@@ -101,7 +111,7 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
       </Td>
       <Td className="text-right tabular-nums">
         <Input
-          className="w-28 text-right"
+          {...control('fee', 'w-28 text-right')}
           inputMode="decimal"
           value={values.fee}
           placeholder={blankFee ? t('pendingFeeAutoPlaceholder', { fee: blankFee }) : undefined}
