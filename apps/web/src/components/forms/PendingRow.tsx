@@ -55,6 +55,8 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
   const needsInput = issue !== null;
   const needsMsg = t(issue === 'ticker' ? 'pendingNeedsTicker' : 'pendingNeedsOverride');
   const captureId = row.hasImage ? row.captureId : null;
+  // A blank fee books the derived one on the server, so say which amount.
+  const blankFee = values.fee.trim() === '' ? autoFeeUsd(values.shares, values.price, row.costPpm) : '';
   return (
     <tr>
       <Td className="whitespace-nowrap tabular-nums">
@@ -102,6 +104,7 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
           className="w-20 text-right"
           inputMode="decimal"
           value={values.fee}
+          placeholder={blankFee ? t('pendingFeeAutoPlaceholder', { fee: blankFee }) : undefined}
           aria-label={t('pendingColFee')}
           onChange={(e) => onChange({ fee: e.target.value })}
         />

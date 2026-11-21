@@ -145,7 +145,9 @@ export function PendingTable({ runId }: { runId?: number }) {
               <Th className="text-right">{t('pendingColQty')}</Th>
               <Th className="text-right">{t('pendingColPrice')}</Th>
               <Th className="text-right">{t('pendingColFee')}</Th>
-              <Th />
+              <Th>
+                <span className="sr-only">{t('pendingColScreenshot')}</span>
+              </Th>
               <Th>{t('pendingColDetected')}</Th>
               <Th>{t('pendingColActions')}</Th>
             </tr>

@@ -1,6 +1,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { PendingFillDto } from '../../api.types';
+import type { RowValues } from '../../pendingvalues';
 import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
 
 GlobalRegistrator.register();
@@ -10,6 +11,9 @@ const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { act } = await import('react');
 const { PendingTable } = await import('./PendingTable');
+const { PendingRow } = await import('./PendingRow');
+const { LangProvider } = await import('../../i18n');
+const { lookup } = await import('../../i18n/catalog');
 
 const d = React.createElement;
 
@@ -52,6 +56,11 @@ async function flush() {
   }
 }
 
+afterAll(() => {
+  GlobalRegistrator.unregister();
+  delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+});
+
 describe('PendingTable comma-grouped price', () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
@@ -66,11 +75,6 @@ describe('PendingTable comma-grouped price', () => {
     act(() => root.unmount());
     container.remove();
     restoreFetch();
-  });
-
-  afterAll(() => {
-    GlobalRegistrator.unregister();
-    delete globalThis.IS_REACT_ACT_ENVIRONMENT;
   });
 
   async function typePriceAndConfirm(price: string) {
@@ -100,5 +104,114 @@ describe('PendingTable comma-grouped price', () => {
     const calls = await typePriceAndConfirm('12,345.50');
     expect(container.textContent).toContain('Check the values: qty and price must be positive');
     expect(calls.length).toBe(0);
+  });
+});
+
+describe('PendingTable header', () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    restoreFetch();
+  });
+
+  it('names the thumbnail column for screen readers', async () => {
+    installFetchStub([{ url: '/api/pending', json: [ROW] }]);
+    await act(async () => {
+      root.render(d(PendingTable, { runId: 7 }));
+    });
+    await flush();
+    const th = Array.from(container.querySelectorAll('thead th'))[6]!;
+    const label = th.querySelector('.sr-only')!;
+    expect(label.textContent).toBe('Screenshot');
+    expect(lookup('ko', 'pendingColScreenshot')).toBe('스크린샷');
+  });
+});
+
+describe('PendingRow blank fee', () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+
+  const FEELESS: PendingFillDto = { ...ROW, fee: null, detected: { ...ROW.detected!, fee: null } };
+  const VALUES: RowValues = {
+    filledOn: '2026-11-10',
+    side: 'buy',
+    shares: '10',
+    price: '12345.00',
+    fee: '',
+    feeTouched: false,
+  };
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  async function feeInput(row: PendingFillDto, values: Partial<RowValues>) {
+    await act(async () => {
+      root.render(
+        d(
+          LangProvider,
+          null,
+          d(
+            'table',
+            null,
+            d(
+              'tbody',
+              null,
+              d(PendingRow, {
+                row,
+                values: { ...VALUES, ...values },
+                onChange: () => {},
+                onOpenSideBySide: () => {},
+                onConfirm: () => {},
+                onReject: () => {},
+                busy: false,
+              }),
+            ),
+          ),
+        ),
+      );
+    });
+    return container.querySelector('input[aria-label="Fee"]') as HTMLInputElement;
+  }
+
+  // 10 sh @ 12,345.00 at 40 ppm derives $4.94
+  it('a cleared fee on a feeless row shows the fee the server will book', async () => {
+    expect((await feeInput(FEELESS, {})).placeholder).toBe('auto $4.94');
+  });
+
+  it('a cleared fee vision did read shows the recomputed fee too', async () => {
+    expect((await feeInput(ROW, {})).placeholder).toBe('auto $4.94');
+  });
+
+  it('a comma-grouped price still derives the placeholder', async () => {
+    expect((await feeInput(FEELESS, { price: '12,345.00' })).placeholder).toBe('auto $4.94');
+  });
+
+  it('no placeholder while the field holds a fee', async () => {
+    expect((await feeInput(FEELESS, { fee: '4.94' })).getAttribute('placeholder')).toBeNull();
+  });
+
+  it('no placeholder when qty or price do not parse', async () => {
+    expect((await feeInput(FEELESS, { shares: 'x' })).getAttribute('placeholder')).toBeNull();
+  });
+
+  it('ko copy', () => {
+    expect(lookup('ko', 'pendingFeeAutoPlaceholder', { fee: '4.94' })).toBe('자동 $4.94');
   });
 });
