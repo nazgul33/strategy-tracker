@@ -6,6 +6,8 @@ import type { DayDeps } from '../src/pipeline/day'
 import { runMorningPipeline, runReminder } from '../src/pipeline/day'
 import { recalcRunState } from '../src/domain/recompute'
 import { withRunLock } from '../src/domain/run-lock'
+import type { RepoSurface } from '../src/domain/booking'
+import { fakeCorrectionRepo } from './fake-corrections'
 
 function makeRepos() {
   const runs: any[] = []
@@ -41,6 +43,7 @@ function makeRepos() {
     async listForDate(d: string) { return orders.filter((o) => o.tradeDate === d) },
     async listForRun(runId: number, d?: string) { return orders.filter((o) => o.runId === runId && (d === undefined || o.tradeDate === d)) },
     async listForRunFrom(runId: number, fromDate: string) { return orders.filter((o) => o.runId === runId && o.tradeDate >= fromDate).sort((a, b) => a.id - b.id) },
+    async get(id: number) { return orders.find((x) => x.id === id) ?? null },
     async markStale(d: string) { let c = 0; for (const o of orders) if (o.status === 'open' && o.tradeDate < d) { o.status = 'stale'; c++ } return c },
     async setStatus(id: number, s: string) { const o = orders.find((x) => x.id === id); if (o) o.status = s },
     async listOpenBefore(d: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < d) },
@@ -48,7 +51,7 @@ function makeRepos() {
   const notificationRepo = {
     async insert(n: any) { notifications.push({ ...n }) },
   }
-  const repos: any = { runRepo, bucketRepo, orderRepo, notificationRepo, fillRepo: { insert: async () => {}, async listForRun() { return [] as any[] } }, pendingRepo: { insert: async () => 1, listPending: async () => [], hasLiveForCapture: async () => false, hasConfirmedForCapture: async () => false, decide: async () => {} }, captureRepo: { findByHash: async () => null, setStatus: async () => {}, insert: async () => ({ inserted: true, id: 1 }) }, captureImageRepo: { insertIgnore: async () => true, getBytes: async () => null, isKept: async () => false, setKeep: async () => {}, deleteFor: async () => {}, listKept: async () => [] }, visionReviewRepo: { insertIgnore: async () => {}, listForCaptures: async () => [], deleteFor: async () => {} }, ledgerRepo: { insert: async () => {}, listForRun: async () => [] } }
+  const repos: RepoSurface = { runRepo, bucketRepo, orderRepo, notificationRepo, correctionRepo: fakeCorrectionRepo().repo, fillRepo: { insert: async () => {}, async listForRun() { return [] as any[] } }, pendingRepo: { insert: async () => 1, listPending: async () => [], hasLiveForCapture: async () => false, hasConfirmedForCapture: async () => false, decide: async () => false }, captureRepo: { findByHash: async () => null, setStatus: async () => {}, insert: async () => ({ inserted: true, id: 1 }) }, captureImageRepo: { insertIgnore: async () => true, getBytes: async () => null, isKept: async () => false, setKeep: async () => {}, deleteFor: async () => {}, discard: async () => {}, listKept: async () => [] }, visionReviewRepo: { insertIgnore: async () => {}, listForCaptures: async () => [], deleteFor: async () => {} }, ledgerRepo: { insert: async () => {}, listForRun: async () => [] } }
   return { repos, runs, orders, notifications }
 }
 
