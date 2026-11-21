@@ -45,6 +45,13 @@ export type VisionReviewInsert = {
 }
 export type VisionReviewRow = VisionReviewInsert & { id: number; createdAt: string }
 
+// The pending_fills columns resolveReview reads.
+export interface ReviewedPendingRow {
+  id: number; runId: number; ticker: string
+  detectedSide: string | null; detectedShares: number | null; detectedPrice: bigint | null
+  detectedFilledOn: string | null; detectedFee: number | null; detectedAt: string | null
+}
+
 export type ReviewRepos = Pick<RepoSurface, 'pendingRepo' | 'captureImageRepo' | 'visionReviewRepo'>
 
 function feeCounts(detected: DetectedValues, feeOverride: number | null | undefined): boolean {
@@ -75,7 +82,7 @@ export function isEdited(detected: DetectedValues, final: FinalValues | null, op
 export async function resolveReview(
   repos: ReviewRepos,
   args: {
-    pendingRow: any
+    pendingRow: ReviewedPendingRow
     captureId: number | null
     outcome: 'confirmed' | 'rejected'
     final: FinalValues | null

@@ -32,6 +32,8 @@ export async function sha256(buf: Uint8Array): Promise<string> {
   return hex
 }
 
+export interface PendingDecisionPatch { side: 'buy' | 'sell'; shares: number; price: bigint; fee: number; filledOn: ISODate; bucketIdx: number }
+
 export interface RepoSurface {
   runRepo: { list(): Promise<any[]>; get(id: number): Promise<any>; create(input: any): Promise<number>; updateStatus(id: number, status: string): Promise<void> }
   bucketRepo: { loadState(runId: number): Promise<RunState>; saveState(runId: number, state: RunState): Promise<void> }
@@ -48,7 +50,7 @@ export interface RepoSurface {
     listPending(): Promise<any[]>
     hasLiveForCapture(captureId: number): Promise<boolean>
     hasConfirmedForCapture(captureId: number): Promise<boolean>
-    decide(id: number, status: string, edited?: any): Promise<boolean>
+    decide(id: number, status: 'confirmed' | 'rejected', edited?: PendingDecisionPatch): Promise<boolean>
   }
   correctionRepo: CorrectionRepo
   captureRepo: { findByHash(runId: number, hash: string): Promise<{ id: number; status: string } | null>; setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
@@ -164,7 +166,7 @@ export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise
 
   // persist order: decide -> saveState -> fill -> ledger -> order flip (R15: flip last, only after ledger)
   if (input.pendingId != null) {
-    const edited: any = { side: input.side, shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, bucketIdx }
+    const edited: PendingDecisionPatch = { side: input.side, shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, bucketIdx }
     const flipped = await repos.pendingRepo.decide(input.pendingId, 'confirmed', edited)
     if (flipped === false) throw new Error('pending-not-pending')
   }

@@ -5,6 +5,7 @@ import { getSimRepo } from './repos-sim'
 import { getBarRepos } from './repos-bars'
 import { getVisionRepos } from './repos-vision'
 import type { CorrectionRepo } from '../domain/correction-types'
+import type { PendingDecisionPatch } from '../domain/booking'
 
 function serializeState(state: RunState): string {
   return JSON.stringify(state, (_, v) => typeof v === 'bigint' ? v.toString() : v)
@@ -142,9 +143,8 @@ export function getRepos(db: any) {
     async hasLiveForCapture(captureId: number): Promise<boolean> { return hasPendingWithStatus(captureId, 'pending') },
     async hasConfirmedForCapture(captureId: number): Promise<boolean> { return hasPendingWithStatus(captureId, 'confirmed') },
     async get(id: number) { const rows = await db.select().from(s.pendingFills).where(eq(s.pendingFills.id, id)); return rows[0] ?? null },
-    async decide(id: number, status: string, edited?: any): Promise<boolean> {
-      const patch: any = { status }
-      if (edited) Object.assign(patch, edited)
+    async decide(id: number, status: 'confirmed' | 'rejected', edited?: PendingDecisionPatch): Promise<boolean> {
+      const patch = { status, ...edited }
       const [res] = await db.update(s.pendingFills).set(patch).where(and(eq(s.pendingFills.id, id), eq(s.pendingFills.status, 'pending')))
       return (res as any)?.affectedRows > 0
     },

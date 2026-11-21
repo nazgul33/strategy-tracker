@@ -1,5 +1,5 @@
 import type { RunState } from '@st/core'
-import type { BookingNotifier, OrderRow, RepoSurface, SellAttribution } from '../src/domain/booking'
+import type { BookingNotifier, OrderRow, PendingDecisionPatch, RepoSurface, SellAttribution } from '../src/domain/booking'
 import { fakeCorrectionRepo } from './fake-corrections'
 
 export const silentNotifier: BookingNotifier = { siblingCancelled: async () => {}, sellAttributed: async () => {} }
@@ -103,7 +103,7 @@ export function fakeRepos() {
     async listPending() { return pending.filter((p) => p.status === 'pending') },
     async hasLiveForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'pending') },
     async hasConfirmedForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'confirmed') },
-    async decide(id: number, status: string, edited?: any): Promise<boolean> {
+    async decide(id: number, status: 'confirmed' | 'rejected', edited?: PendingDecisionPatch): Promise<boolean> {
       const p = pending.find((x) => x.id === id)
       if (!p) throw new Error('not found')
       if (p.status !== 'pending') throw new Error('not pending')
