@@ -4,7 +4,7 @@
 // wire carries integer ppm, converted with integer math (see gaps.ts).
 import { usdToCents } from './api';
 import type { SimInput, SimRunDto } from './api';
-import { costPercentText, isoDate } from './format';
+import { costInputText, isoDate } from './format';
 import { cutLossToPpm, gapToPpm, isCutLossText, isGapText, isPercentText, percentTextToPpm, ppmToPercentText } from './gaps';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -134,7 +134,7 @@ export function formFromRun(run: StoredConfig, params: SimParams): SimConfigForm
     from: isoDate(run.fromDate),
     to: isoDate(run.toDate),
     pool: centsToUsdText(run.poolCents),
-    cost: costPercentText(run.costPpm),
+    cost: costInputText(run.costPpm),
     buyGap: ppmToPercentText(run.buyGapPpm),
     sellGap: ppmToPercentText(run.sellGapPpm),
     cutLoss: ppmToPercentText(run.cutLossPpm, 1),

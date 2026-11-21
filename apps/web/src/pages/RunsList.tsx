@@ -225,7 +225,7 @@ export function RunsListPage() {
                   </Td>
                   <Td className="text-right tabular-nums">
                     {centsUsd(r.poolCents)}
-                    <div className="text-[11px] text-muted-foreground">{costPercentText(r.costPpm)} %</div>
+                    <div className="text-[11px] text-muted-foreground">{costPercentText(r.costPpm)}</div>
                   </Td>
                   <Td>
                     <Badge tone={runStatusTone(r.status)}>{t(enumLabelKey('status', r.status))}</Badge>

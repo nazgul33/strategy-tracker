@@ -119,7 +119,7 @@ export function RunDetailPage({ id }: { id: number }) {
             <Badge tone={runStatusTone(run.status)}>{t(enumLabelKey('status', run.status))}</Badge>
           </h1>
           <p className="text-sm text-muted-foreground">
-            {run.strategyKey === 'mean-reversion' ? t('runStrategyMr') : run.strategyKey} · {costPercentText(run.costPpm)} %{' '}
+            {run.strategyKey === 'mean-reversion' ? t('runStrategyMr') : run.strategyKey} · {costPercentText(run.costPpm)}{' '}
             · {centsUsd(run.poolCents)} · {isoDateTime(run.createdAt)}
           </p>
         </div>

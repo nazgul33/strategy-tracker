@@ -44,7 +44,7 @@ function SimTable({ rows, onDiscard }: { rows: SimRunDto[]; onDiscard?: (id: num
               {isoDate(sim.fromDate)} → {isoDate(sim.toDate)}
             </Td>
             <Td className="text-right tabular-nums">{centsUsd(sim.poolCents)}</Td>
-            <Td className="text-right tabular-nums">{costPercentText(sim.costPpm)} %</Td>
+            <Td className="text-right tabular-nums">{costPercentText(sim.costPpm)}</Td>
             <Td className="whitespace-nowrap tabular-nums text-muted-foreground">{isoDateTime(sim.createdAt)}</Td>
             {onDiscard && (
               <Td className="text-right">

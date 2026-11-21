@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiError, api, getToken, setToken } from '../api';
-import { costPercentText } from '../format';
+import { costInputText } from '../format';
 
 export interface AsyncData<T> {
   data: T | undefined;
@@ -63,7 +63,7 @@ export function useDefaultCostText(): [string, (v: string) => void] {
       .getSettings()
       .then((s) => {
         if (live && !touched.current && Number.isFinite(s.defaultCostPpm)) {
-          setText(costPercentText(s.defaultCostPpm));
+          setText(costInputText(s.defaultCostPpm));
         }
       })
       .catch(() => undefined);

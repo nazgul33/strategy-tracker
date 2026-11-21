@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { costPercentText, gapText, isoDate, isoDateTime } from './format';
+import { costInputText, costPercentText, gapText, isoDate, isoDateTime } from './format';
 
 // Date-only wire values must pass through untouched, and the space-separated
 // naive timestamps from MySQL DATESTRINGS must never be re-rendered through
@@ -69,17 +69,28 @@ describe('gapText', () => {
 });
 
 describe('costPercentText', () => {
-  test('always shows three decimals', () => {
-    expect(costPercentText(700)).toBe('0.070');
-    expect(costPercentText(0)).toBe('0.000');
-    expect(costPercentText(10)).toBe('0.001');
-    expect(costPercentText(1250)).toBe('0.125');
-    expect(costPercentText(1_000_000)).toBe('100.000');
+  test('always shows three decimals and its own percent sign, no space', () => {
+    expect(costPercentText(700)).toBe('0.070%');
+    expect(costPercentText(0)).toBe('0.000%');
+    expect(costPercentText(10)).toBe('0.001%');
+    expect(costPercentText(1250)).toBe('0.125%');
+    expect(costPercentText(1_000_000)).toBe('100.000%');
   });
 
   test('missing or non-finite values render as an em dash', () => {
     expect(costPercentText(null)).toBe('—');
     expect(costPercentText(undefined)).toBe('—');
     expect(costPercentText(Number.NaN)).toBe('—');
+  });
+});
+
+describe('costInputText', () => {
+  test('is the bare three-decimal number an input holds', () => {
+    expect(costInputText(700)).toBe('0.070');
+    expect(costInputText(0)).toBe('0.000');
+  });
+
+  test('non-finite is blank', () => {
+    expect(costInputText(Number.NaN)).toBe('');
   });
 });

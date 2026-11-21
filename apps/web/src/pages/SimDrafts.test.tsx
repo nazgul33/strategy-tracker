@@ -104,6 +104,12 @@ describe('SimPage drafts', () => {
     expect(drafts.join('')).not.toContain('QQQ');
   });
 
+  it('shows the cost with its percent sign and no space', async () => {
+    await renderList();
+    expect(rowsIn('simDrafts')[0]).toContain('0.070%');
+    expect(rowsIn('simDrafts')[0]).not.toContain('0.070 %');
+  });
+
   it('shows no drafts card when there are no drafts', async () => {
     listRoute.json = [simRow(6, 'QQQ', false)];
     await renderList();
