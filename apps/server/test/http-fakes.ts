@@ -16,21 +16,21 @@ export function makeFakes() {
   const notifications: any[] = []
   const settings: Record<string, string> = {}
   const states = new Map<number, RunState>()
-  const bucketRepo = {
+  const bucketRepo: HttpRepoSurface['bucketRepo'] = {
     async loadState(runId: number) { return states.get(runId)! },
     async saveState(runId: number, state: RunState) { states.set(runId, state) },
   }
-  const runRepo = {
+  const runRepo: HttpRepoSurface['runRepo'] = {
     async list() { return [...runs] },
     async get(id: number) { return runs.find((r) => r.id === id) ?? null },
-    async create(input: any) {
+    async create(input) {
       const id = runIdSeq++
       const state = input.initialRunState
       if (state) states.set(id, state)
       runs.push({ id, strategyKey: input.strategyKey, ticker: input.ticker, name: input.name, poolCents: input.poolCents, costPpm: input.costPpm, buyGapPpm: input.buyGapPpm ?? 0, sellGapPpm: input.sellGapPpm ?? 0, cutLossPpm: input.cutLossPpm ?? 0, status: 'active', stateJson: JSON.stringify(state, (_k, v) => typeof v === 'bigint' ? v.toString() : v), createdAt: new Date() })
       return id
     },
-    async updateStatus(id: number, status: string) {
+    async updateStatus(id, status) {
       const r = runs.find((x) => x.id === id); if (r) r.status = status
     },
     async updateStatusMany(ids: number[], from: string[], to: string) {
@@ -45,8 +45,8 @@ export function makeFakes() {
       const r = runs.find((x) => x.id === id); if (r) { r.buyGapPpm = v.buyGapPpm; r.sellGapPpm = v.sellGapPpm; r.cutLossPpm = v.cutLossPpm }
     },
   }
-  const orderRepo = {
-    async insertMany(os: any[]) { for (const o of os) orders.push({ id: orders.length + 1, ...o }) },
+  const orderRepo: HttpRepoSurface['orderRepo'] = {
+    async insertMany(os) { for (const o of os) orders.push({ id: orders.length + 1, ...o }) },
     async listForDate(date: string) { return orders.filter((o) => o.tradeDate === date) },
     async markStale() { return 0 },
     async get(id: number) { return orders.find((x) => x.id === id) ?? null },
@@ -64,10 +64,10 @@ export function makeFakes() {
       return orders.filter((o) => o.runId === runId && o.tradeDate >= fromDate).sort((a, b) => a.id - b.id)
     },
   }
-  const fillRepo = {
-    async insert(f: any) { fills.push({ id: fills.length + 1, ...f }) },
+  const fillRepo: HttpRepoSurface['fillRepo'] = {
+    async insert(f) { fills.push({ id: fills.length + 1, ...f }) },
     async listForRun(runId: number) { return fills.filter((f) => f.runId === runId) },
-    async update(runId: number, fillId: number, patch: any) {
+    async update(runId, fillId, patch) {
       const gi = fills.findIndex((x) => x.runId === runId && x.id === fillId)
       if (gi < 0) throw new Error('no fill')
       fills[gi] = { ...fills[gi], ...patch }
@@ -77,12 +77,12 @@ export function makeFakes() {
       if (gi >= 0) fills.splice(gi, 1)
     },
   }
-  const pendingRepo = {
-    async insert(p: any) { const id = pending.length + 1; pending.push({ id, ...p }); return id },
+  const pendingRepo: HttpRepoSurface['pendingRepo'] = {
+    async insert(p) { const id = pending.length + 1; pending.push({ id, ...p }); return id },
     async listPending() { return pending.filter((p) => p.status === 'pending') },
     async hasLiveForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'pending') },
     async hasConfirmedForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'confirmed') },
-    async decide(id: number, status: string, edited?: any): Promise<boolean> {
+    async decide(id, status, edited) {
       const p = pending.find((x) => x.id === id); if (!p || p.status !== 'pending') return false
       p.status = status
       if (edited) Object.assign(p, edited)
@@ -90,10 +90,10 @@ export function makeFakes() {
     },
     async get(id: number) { return pending.find((x) => x.id === id) ?? null },
   }
-  const captureRepo = { async findByHash() { return null }, async setStatus() {}, async insert(c: any) { return { inserted: true, id: 1 } } }
+  const captureRepo: HttpRepoSurface['captureRepo'] = { async findByHash() { return null }, async setStatus() {}, async insert(c) { return { inserted: true, id: 1 } } }
   const captureImages: any[] = []
-  const captureImageRepo = {
-    async insertIgnore(row: any): Promise<boolean> {
+  const captureImageRepo: HttpRepoSurface['captureImageRepo'] = {
+    async insertIgnore(row) {
       if (captureImages.some((x) => x.captureId === row.captureId)) return false
       captureImages.push({ ...row, keep: false })
       return true
@@ -121,8 +121,8 @@ export function makeFakes() {
     async existingIds(captureIds: number[]) { return new Set<number>(captureImages.filter((x) => captureIds.includes(x.captureId)).map((x) => x.captureId)) },
   }
   const visionReviews: any[] = []
-  const visionReviewRepo = {
-    async insertIgnore(row: any): Promise<void> {
+  const visionReviewRepo: HttpRepoSurface['visionReviewRepo'] = {
+    async insertIgnore(row) {
       if (visionReviews.some((x) => x.pendingFillId === row.pendingFillId)) return
       visionReviews.push({ id: visionReviews.length + 1, createdAt: '', ...row })
     },
@@ -131,20 +131,20 @@ export function makeFakes() {
       for (let i = visionReviews.length - 1; i >= 0; i--) if (visionReviews[i]!.captureId === captureId) visionReviews.splice(i, 1)
     },
   }
-  const ledgerRepo = {
-    async insert(l: any) { ledger.push({ id: ledger.length + 1, ...l }) },
+  const ledgerRepo: HttpRepoSurface['ledgerRepo'] = {
+    async insert(l) { ledger.push({ id: ledger.length + 1, ...l }) },
     async listForRun(runId: number) { return ledger.filter((l) => l.runId === runId) },
   }
-  const notificationRepo = {
-    async insert(n: any) { notifications.push({ id: notifications.length + 1, ...n }) },
+  const notificationRepo: HttpRepoSurface['notificationRepo'] = {
+    async insert(n) { notifications.push({ id: notifications.length + 1, ...n }) },
     async listForRun(runId: number) { return notifications.filter((n) => n.runId === runId) },
   }
   const sent: { chatId: string; text: string }[] = []
-  const settingsRepo = {
+  const settingsRepo: HttpRepoSurface['settingsRepo'] = {
     async getAll() { return { ...settings } },
     async set(key: string, value: string) { settings[key] = value },
   }
-  const poolEditRepo = {
+  const poolEditRepo: HttpRepoSurface['poolEditRepo'] = {
     async insert(input: { runId: number; poolCents: number }) { poolEdits.push({ id: poolEdits.length + 1, ...input }) },
   }
   // monotonic like AUTO_INCREMENT: ids are never reused after a delete
@@ -152,15 +152,15 @@ export function makeFakes() {
   let simDayIdSeq = 1
   const simRuns: any[] = []
   const simDays: any[] = []
-  const simRepo = {
-    async insertRun(i: any) {
+  const simRepo: HttpRepoSurface['simRepo'] = {
+    async insertRun(i) {
       const id = simRunIdSeq++
       simRuns.push({ id, createdAt: '2026-11-10T00:00:00Z', ...i, draft: true })
       return id
     },
-    async insertDays(rows: any[]) { for (const r of rows) simDays.push({ id: simDayIdSeq++, ...r }) },
+    async insertDays(rows) { for (const r of rows) simDays.push({ id: simDayIdSeq++, ...r }) },
     // guarded like the real one: nothing is touched unless the run is still a draft
-    async rewriteDraft(id: number, v: any, rows: any[]): Promise<boolean> {
+    async rewriteDraft(id, v, rows) {
       const r = simRuns.find((x) => x.id === id)
       if (!r || !r.draft) return false
       Object.assign(r, v)
@@ -198,7 +198,7 @@ export function makeFakes() {
   }
   type FakeBar = { ticker: string; tradeDate: string; open?: bigint; high?: bigint; low?: bigint; close: bigint }
   const priceHistory: FakeBar[] = []
-  const priceHistoryRepo = {
+  const priceHistoryRepo: HttpRepoSurface['priceHistoryRepo'] = {
     async upsertMany(rows: { ticker: string; tradeDate: string; close: bigint }[]) {
       for (const r of rows) {
         const ticker = normTicker(r.ticker)
@@ -233,7 +233,7 @@ export function makeFakes() {
   }
   const coverage: { ticker: string; fromDate: string; toDate: string }[] = []
   const dayNum = (iso: string) => Math.floor(Date.parse(`${iso}T00:00:00Z`) / 86_400_000)
-  const barCoverageRepo = {
+  const barCoverageRepo: HttpRepoSurface['barCoverageRepo'] = {
     async list(ticker: string) {
       const t = normTicker(ticker)
       return coverage.filter((c) => c.ticker === t).sort((a, b) => (a.fromDate < b.fromDate ? -1 : 1)).map((c) => ({ fromDate: c.fromDate, toDate: c.toDate }))
@@ -256,7 +256,7 @@ export function makeFakes() {
   const repos: HttpRepoSurface = {
     runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, captureImageRepo, visionReviewRepo, ledgerRepo, notificationRepo,
     settingsRepo, poolEditRepo, simRepo, priceHistoryRepo, barCoverageRepo,
-  } as any
+  }
   return { repos, corrections: correctionFake.store, runs, poolEdits, fills, ledger, orders, pending, captureImages, visionReviews, notifications, sent, settings, states, simRuns, simDays, priceHistory, coverage }
 }
 
