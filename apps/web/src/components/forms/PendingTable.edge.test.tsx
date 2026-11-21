@@ -127,6 +127,7 @@ describe('PendingTable edge cases', () => {
     await type(3, 'input', '11');
     await clickConfirm();
     await pressButton('✕');
+    expect(promptOpen()).toBe(false);
     await clickConfirm();
 
     expect(promptOpen()).toBe(true);

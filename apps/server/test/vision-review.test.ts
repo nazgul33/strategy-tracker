@@ -2,7 +2,7 @@ import { describe, test, expect, spyOn } from 'bun:test'
 import { emptyState } from '@st/core'
 import { parseUsd } from '@st/core/money'
 import type { ExtractResult } from '@st/ingest'
-import { ingestCapture, confirmPendingFill, rejectPendingFill, type FillBookingDeps, type PendingFillRow } from '../src/domain/booking'
+import { ingestCapture, confirmPendingFill, rejectPendingFill, type FillBookingDeps, type PendingDecisionPatch, type PendingFillRow } from '../src/domain/booking'
 import { isEdited, resolveReview, type DetectedValues, type FinalValues, type ReviewedPendingRow } from '../src/domain/vision-review'
 import type { pendingFills } from '../src/db/schema'
 import { createApp } from '../src/http/app'
@@ -23,6 +23,9 @@ const final = (over: Partial<FinalValues> = {}): FinalValues => ({
 
 // A pending_fills row must carry every column resolveReview reads; a rename fails tsc here.
 const asReviewed = (r: typeof pendingFills.$inferSelect): ReviewedPendingRow => r
+
+// Every key the confirm patch writes must be a pending_fills column; a rename fails tsc here.
+const asPatch = (p: PendingDecisionPatch): Pick<typeof pendingFills.$inferInsert, keyof PendingDecisionPatch> => p
 
 const legacyRow = (): ReviewedPendingRow => ({
   id: 1, runId: 1, ticker: 'AAPL', detectedSide: null, detectedShares: null, detectedPrice: null,

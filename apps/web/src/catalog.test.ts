@@ -39,8 +39,9 @@ describe('i18n catalogs', () => {
   // Key *parity* cannot see a notice code that is missing from both files, and
   // `lookup` renders the bare key when it is absent — which is how
   // `digest.cut-loss-immediate` reached the sim replay as literal text. The
-  // codes come from running the planner itself, so a non-literal code is still
-  // seen; the push-site count below fails when a new notice has no scenario.
+  // codes come from running the planner itself, so a non-literal code is seen
+  // when a scenario reaches it; the push-site count below (within
+  // `mean-reversion.ts` only) flags a notice that no scenario covers.
   test('every notice code computeOrders emits resolves in both catalogs', async () => {
     const run: Run = {
       id: 0,

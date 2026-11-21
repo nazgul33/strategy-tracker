@@ -58,8 +58,16 @@ describe('runBootSweeps', () => {
 
   test('the window is 168 elapsed hours even across the fall-back change', async () => {
     // 2026-11-03 12:00 EST; 2026-10-27 12:00 EDT is seven New York calendar days earlier but 169 h
-    const { ids, survivors } = await sweepDraftsAged(new Date('2026-11-03T17:00:00Z'), [169 * 3_600_000, 167.5 * 3_600_000])
-    expect(survivors).toEqual([ids[1]!])
+    // the test process runs in UTC, which has no fall-back change; calendar-day arithmetic only differs in a zone that does
+    const prevTz = process.env.TZ
+    process.env.TZ = 'America/New_York'
+    try {
+      const { ids, survivors } = await sweepDraftsAged(new Date('2026-11-03T17:00:00Z'), [169 * 3_600_000, 167.5 * 3_600_000])
+      expect(survivors).toEqual([ids[1]!])
+    } finally {
+      if (prevTz === undefined) delete process.env.TZ
+      else process.env.TZ = prevTz
+    }
   })
 
   test('both sweeps run; the draft cutoff is exactly seven days before now', async () => {

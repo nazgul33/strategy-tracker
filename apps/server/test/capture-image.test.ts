@@ -43,7 +43,7 @@ describe('capture image storage at ingest', () => {
     const out = await ingestCapture(runId, PNG, ext, deps) as { conflicts: CaptureConflict[] }
     expect(out.conflicts.length).toBe(1)
     expect('pending' in out).toBe(false)
-    expect(f._stores.captures.length).toBe(1)
+    expect(f._stores.captures.length).toBe(1) // the claim ran, so the extract did not return early
     expect(f._stores.pending.length).toBe(0)
     expect(f._stores.captureImages.length).toBe(0)
   })

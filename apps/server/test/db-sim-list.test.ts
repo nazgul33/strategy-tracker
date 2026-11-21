@@ -55,7 +55,7 @@ describeIf('simRepo.listRuns / sweepDrafts', () => {
     expect(await repos.simRepo.sweepDrafts(new Date(0))).toBe(0)
   })
 
-  test('the boot sweep honours the 7-day window to the minute, whatever the session time zone', async () => {
+  test('the boot sweep honours the 7-day window to the minute', async () => {
     const DAY_S = 86_400
     const nowSec = Math.floor(Date.now() / 1000)
     const mk = async (ageSec: number, finalize = false) => {

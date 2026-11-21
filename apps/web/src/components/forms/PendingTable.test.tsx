@@ -13,6 +13,7 @@ const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { act } = await import('react');
 const { PendingTable } = await import('./PendingTable');
+const { lookup } = await import('../../i18n/catalog');
 
 const d = React.createElement;
 
@@ -677,7 +678,7 @@ describe('PendingTable', () => {
       await clickConfirm();
       expect(calls.length).toBe(0);
       expect(promptOpen()).toBe(false);
-      expect(container.textContent).toContain('fill in the highlighted field');
+      expect(container.querySelector('p.text-destructive')!.textContent).toBe(lookup('en', 'pendingNeedsOverride'));
     });
 
     it('once filled in the warning clears and the date is posted as an override', async () => {
