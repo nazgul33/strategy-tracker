@@ -2,6 +2,7 @@ import { eq, and, lt, sql, inArray, desc } from 'drizzle-orm'
 import type { ResultSetHeader } from 'mysql2'
 import * as s from './schema'
 import type { Db } from './db-type'
+import type { SimRunRow } from '../sim/sim'
 
 type DayRow = { simRunId: number; tradeDate: string; planJson: string; stateJson: string; eventsJson: string }
 
@@ -81,7 +82,7 @@ export function getSimRepo(db: Db) {
       })
     },
     async listRuns() { return db.select().from(s.simRuns).orderBy(desc(s.simRuns.id)) },
-    async getRun(id: number) {
+    async getRun(id: number): Promise<SimRunRow | null> {
       const rows = await db.select().from(s.simRuns).where(eq(s.simRuns.id, id))
       return rows[0] ?? null
     },

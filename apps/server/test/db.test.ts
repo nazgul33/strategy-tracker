@@ -596,7 +596,7 @@ describeIf('db integration', () => {
       const row = await find(id)
       expect(row.draft).toBe(true)
       expect(row.cutLossPpm).toBe(100_000)
-      expect((await repos.simRepo.getRun(id)).draft).toBe(true)
+      expect((await repos.simRepo.getRun(id))!.draft).toBe(true)
     })
 
     test('finalize is once-only', async () => {

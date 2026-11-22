@@ -112,9 +112,9 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       await deps.send(chatId, t('capture-bad-extract', lang, { detail: 'no fills recognized' }));
       return;
     }
-    const active = (await deps.repos.runRepo.list()).filter((r: { status: string }) => r.status === 'active');
+    const active = (await deps.repos.runRepo.list()).filter((r) => r.status === 'active');
     for (const [ticker, fills] of groups) {
-      const matches = active.filter((r: { ticker: string }) => r.ticker === ticker);
+      const matches = active.filter((r) => r.ticker === ticker);
       if (matches.length === 0) {
         await deps.send(chatId, t('capture-no-run', lang, { ticker }));
         continue;
@@ -228,7 +228,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
   }
 
   async function onStatus(chatId: string): Promise<void> {
-    const runs = (await deps.repos.runRepo.list()).filter((r: { status: string }) => r.status === 'active');
+    const runs = (await deps.repos.runRepo.list()).filter((r) => r.status === 'active');
     if (runs.length === 0) {
       await deps.send(chatId, t('no-runs', lang));
       return;
