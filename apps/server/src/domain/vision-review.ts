@@ -155,6 +155,8 @@ export type UnfrozenPendingRow = ReviewedPendingRow & {
 // lists only kept images that have one. Rebuilds each missing record from the pending row and
 // returns the pending ids it froze, ascending. Known loss: the confirm's fee override is not
 // stored on the row, so a rebuilt record has feeOverridden false and its `edited` ignores the fee.
+// Its createdAt is the boot time, so a rebuilt record lists after siblings frozen later than
+// the original would have been.
 export async function refreezeKept(
   repos: { visionReviewRepo: Pick<ReviewRepos['visionReviewRepo'], 'insertIgnore'> & { listUnfrozenKept(): Promise<UnfrozenPendingRow[]> } },
 ): Promise<number[]> {
