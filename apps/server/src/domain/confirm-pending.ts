@@ -7,12 +7,14 @@ import { resolveReview } from './vision-review'
 
 // Operator corrections to what the vision model read. feeCents: null recomputes the
 // fee from the run's costPpm; undefined keeps the fee captured on the pending row.
+// bucketIdx forces the sell's bucket (sell only; null/undefined = automatic).
 export interface ConfirmOverrides {
   shares?: number
   price?: string
   filledOn?: ISODate
   side?: 'buy' | 'sell'
   feeCents?: number | null
+  bucketIdx?: number | null
 }
 
 // archived is false when the vision-review bookkeeping failed after the fill was
@@ -52,6 +54,7 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
       filledOn,
       pendingId,
       source: 'capture',
+      bucketIdx: overrides?.bucketIdx ?? null,
     }, deps)
 
     // After booking, inside the lock: a late no-empty-bucket / no-bucket-for-sell

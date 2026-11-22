@@ -96,6 +96,7 @@ export interface BookInput {
   filledOn: ISODate
   pendingId?: number | null
   source: 'capture' | 'manual' | 'seed'
+  bucketIdx?: number | null  // sell only: the operator's bucket; null/undefined = automatic
 }
 
 // The whole decide→write span (read state → pick bucket → flip pending → saveState
@@ -119,6 +120,7 @@ export function finalFeeCents(run: { costPpm: number }, price: bigint, shares: n
 }
 
 export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<BookedOutcome> {
+  if (input.bucketIdx != null && (input.side !== 'sell' || !Number.isInteger(input.bucketIdx) || input.bucketIdx < 0)) throw new Error('invalid-bucket')
   const repos = deps.repos
   const run = await repos.runRepo.get(input.runId)
   const state: RunState = await repos.bucketRepo.loadState(input.runId)
@@ -144,7 +146,7 @@ export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise
   } else {
     // From the fill date onwards: matching narrows to filledOn, the cancel below needs later dates too.
     sellOrders = await repos.orderRepo.listForRunFrom(input.runId, input.filledOn)
-    const pick = pickSellBucket(sellOrders, state, { runId: input.runId, filledOn: input.filledOn, shares: input.shares, price: priceBigInt })
+    const pick = pickSellBucket(sellOrders, state, { runId: input.runId, filledOn: input.filledOn, shares: input.shares, price: priceBigInt, bucketIdx: input.bucketIdx })
     bucketIdx = pick.bucketIdx
     matchedOrderId = pick.orderId
     attribution = pick.attribution
@@ -228,7 +230,7 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
   })
 }
 
-export async function manualFill(runId: number, fill: Omit<RawFill, 'ticker' | 'date'> & { filledOn: ISODate }, deps: FillBookingDeps): Promise<void> {
+export async function manualFill(runId: number, fill: Omit<RawFill, 'ticker' | 'date'> & { filledOn: ISODate; bucketIdx?: number | null }, deps: FillBookingDeps): Promise<void> {
   await runBooking({
     runId,
     side: fill.side,
@@ -238,6 +240,7 @@ export async function manualFill(runId: number, fill: Omit<RawFill, 'ticker' | '
     filledOn: fill.filledOn,
     pendingId: null,
     source: 'manual',
+    bucketIdx: fill.bucketIdx,
   }, deps)
 }
 

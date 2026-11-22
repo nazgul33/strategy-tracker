@@ -54,6 +54,17 @@ const isPrice = (p: Pair): p is PricePair => p.leg.kind !== 'market_sell'
 const byBucket = (a: Pair, b: Pair): number => a.order.bucketIdx - b.order.bucketIdx || a.order.id - b.order.id
 const nearestFirst = (a: PricePair, b: PricePair): number => cmp(a.leg.distance, b.leg.distance) || kindRank(a.leg.kind) - kindRank(b.leg.kind) || byBucket(a, b)
 
+function poolOf(orders: OrderRow[], input: SellFillKey): Pair[] {
+  const pool: Pair[] = []
+  for (const order of orders) {
+    if (order.runId !== input.runId || order.tradeDate !== input.filledOn || (order.status !== 'open' && order.status !== 'stale')) continue
+    const leg = legOf(order, input.price)
+    if (leg) pool.push({ order, leg })
+  }
+  return pool
+}
+const fits = (p: Pair, price: bigint): boolean => p.leg.kind === 'market_sell' || (p.leg.kind === 'sell_loc' ? price >= p.leg.limitPrice : price <= p.leg.limitPrice)
+
 // Which sell-side order does a sell fill belong to?
 //   Pool        orders of this run dated on the fill's trade date, of a sell-side kind
 //               (sell_loc, stop_sell, market_sell), open or stale. A stale order is one whose
@@ -89,19 +100,14 @@ const nearestFirst = (a: PricePair, b: PricePair): number => cmp(a.leg.distance,
 // attribution was a judgement call; a rung-2 pick carries none (a normal multi-target exit
 // would otherwise notify for every fill but the last). The caller flips the order to filled
 // only when the fill empties its bucket, so a partial fill leaves the rest a candidate.
+// An operator-chosen bucket skips all of this: see matchForcedLeg.
 export function matchSellOrder(orders: OrderRow[], state: RunState, input: SellFillKey): SellMatch | null {
-  const pool: Pair[] = []
-  for (const order of orders) {
-    if (order.runId !== input.runId || order.tradeDate !== input.filledOn || (order.status !== 'open' && order.status !== 'stale')) continue
-    const leg = legOf(order, input.price)
-    if (leg) pool.push({ order, leg })
-  }
+  const pool = poolOf(orders, input)
   const covers = (p: Pair): boolean => {
     const b = state.buckets.find((x: Bucket) => x.index === p.order.bucketIdx)
     return !!b && b.state !== 'empty' && b.shares >= input.shares
   }
-  const fits = (p: Pair): boolean => p.leg.kind === 'market_sell' || (p.leg.kind === 'sell_loc' ? input.price >= p.leg.limitPrice : input.price <= p.leg.limitPrice)
-  const admissible = pool.filter((p) => covers(p) && fits(p))
+  const admissible = pool.filter((p) => covers(p) && fits(p, input.price))
 
   const pick = (chosen: Pair, rule: AttributionRule): SellMatch => {
     const others = admissible.filter((p) => p.order.bucketIdx !== chosen.order.bucketIdx)
@@ -126,11 +132,26 @@ export function matchSellOrder(orders: OrderRow[], state: RunState, input: SellF
   return market ? pick(market, 'market') : null
 }
 
+// The fill's bucket is the operator's: which of that bucket's orders on the fill day (open or
+// stale, sell-side, fitting the price) did it take? First exactly one with shares === fill.shares,
+// then the nearest price leg (sell_loc before stop_sell on a tie), then a market_sell; null when
+// none fits. No gate: applySellFill validates the bucket.
+export function matchForcedLeg(orders: OrderRow[], input: SellFillKey & { bucketIdx: number }): OrderRow | null {
+  const fitting = poolOf(orders, input).filter((p) => p.order.bucketIdx === input.bucketIdx && fits(p, input.price))
+  const sized = fitting.filter((p) => p.order.shares === input.shares)
+  if (sized.length === 1) return sized[0]!.order
+  const nearest = fitting.filter(isPrice).sort(nearestFirst)[0]
+  if (nearest) return nearest.order
+  return fitting.filter((p) => !isPrice(p)).sort(byBucket)[0]?.order ?? null
+}
+
 export interface SellPick { bucketIdx: number; orderId: number | null; attribution: SellAttribution | null }
 
-// The whole sell-side choice: the matched order's bucket, else the lowest non-empty
-// bucket holding enough shares (no order flipped, no attribution).
-export function pickSellBucket(orders: OrderRow[], state: RunState, input: SellFillKey): SellPick {
+// The whole sell-side choice: the operator's bucket when given (never attributed), else the
+// matched order's bucket, else the lowest non-empty bucket holding enough shares (no order
+// flipped, no attribution).
+export function pickSellBucket(orders: OrderRow[], state: RunState, input: SellFillKey & { bucketIdx?: number | null }): SellPick {
+  if (input.bucketIdx != null) return { bucketIdx: input.bucketIdx, orderId: matchForcedLeg(orders, { ...input, bucketIdx: input.bucketIdx })?.id ?? null, attribution: null }
   const match = matchSellOrder(orders, state, input)
   if (match) return { bucketIdx: match.order.bucketIdx, orderId: match.order.id, attribution: match.attribution }
   const candidates = state.buckets
