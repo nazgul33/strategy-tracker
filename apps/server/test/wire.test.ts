@@ -842,7 +842,7 @@ describe('capture confirm — sibling leg cancelled by a bucket-emptying sell', 
   test('confirming the sell tells every allowed chat to pull the cancelled leg and records the notifications', async () => {
     const { fakes, orders, pid, sent, handlers } = await setupSell();
     await handlers.onConfirm(`yes:${pid}`, true);
-    const text = '⚠️ Cancel sell_loc bucket 0 (103.00) at your broker — the other leg already filled, so this order is no longer needed.';
+    const text = '⚠️ Run #1 NVDA: cancel bucket 0 target ($103.00) at your broker — the other leg already filled, so this order is no longer needed.';
     expect(sent.filter((s) => s.text === text).map((s) => s.chatId)).toEqual(['111', '222']);
     expect(fakes.notifications).toEqual([
       { runId: 1, chatId: '111', text },
@@ -856,7 +856,7 @@ describe('capture confirm — sibling leg cancelled by a bucket-emptying sell', 
     const sent: string[] = [];
     const { fakes, orders, pid, handlers } = await setupSell({
       send: async (_chatId, text) => {
-        if (text.startsWith('⚠️ Cancel')) throw new Error('telegram-down');
+        if (text.startsWith('⚠️ Run #1 NVDA: cancel')) throw new Error('telegram-down');
         sent.push(text);
       },
     });

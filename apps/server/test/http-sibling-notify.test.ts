@@ -30,7 +30,7 @@ describe('sibling-cancel notification over HTTP', () => {
     const { f, app, auth, id } = await setup(['42', '43'])
     const res = await postSell(app, auth, id, 10, '96.50')
     expect(res.status).toBe(200)
-    const text = '⚠️ Cancel sell_loc bucket 0 (103.00) at your broker — the other leg already filled, so this order is no longer needed.'
+    const text = `⚠️ Run #${id} AAPL: cancel bucket 0 target ($103.00) at your broker — the other leg already filled, so this order is no longer needed.`
     expect(f.sent).toEqual([{ chatId: '42', text }, { chatId: '43', text }])
     expect(f.notifications.map((n) => ({ runId: n.runId, chatId: n.chatId, text: n.text }))).toEqual([
       { runId: id, chatId: '42', text }, { runId: id, chatId: '43', text },
@@ -42,7 +42,7 @@ describe('sibling-cancel notification over HTTP', () => {
     deps.defaultSettings.digestLang = 'ko'
     await postSell(app, auth, id, 10, '96.50')
     expect(f.sent).toHaveLength(1)
-    expect(f.sent[0]!.text).toBe('⚠️ 증권사에서 sell_loc 버킷 0 (103.00) 주문을 취소하세요 — 반대편 주문이 이미 체결되어 이 주문은 더 이상 필요하지 않습니다.')
+    expect(f.sent[0]!.text).toBe(`⚠️ 런 #${id} AAPL: 증권사에서 버킷 0 목표가 매도 ($103.00) 주문을 취소하세요 — 반대편 주문이 이미 체결되어 이 주문은 더 이상 필요하지 않습니다.`)
   })
 
   test('a partial manual fill sends nothing', async () => {
@@ -91,8 +91,8 @@ describe('sibling-cancel notification over HTTP', () => {
       { runId: id, tradeDate: D, kind: 'stop_sell', bucketIdx: 1, limitPrice: 854000n, shares: 10, status: 'open' },
     ])
     expect((await postSell(app, auth, id, 10, '96.50')).status).toBe(200)
-    const attributed = `ℹ️ Sell 10 sh @ $96.50 was booked to bucket 0 stop ($97.00, $0.50 away). Also possible: bucket 1 target ($91.00, $5.50 away). ${WHY_PRICE_10}`
-    const cancel = '⚠️ Cancel sell_loc bucket 0 (103.00) at your broker — the other leg already filled, so this order is no longer needed.'
+    const attributed = `ℹ️ Run #${id} AAPL: sell 10 sh @ $96.50 was booked to bucket 0 stop ($97.00, $0.50 away). Also possible: bucket 1 target ($91.00, $5.50 away). ${WHY_PRICE_10}`
+    const cancel = `⚠️ Run #${id} AAPL: cancel bucket 0 target ($103.00) at your broker — the other leg already filled, so this order is no longer needed.`
     expect(f.sent).toEqual([{ chatId: '42', text: attributed }, { chatId: '42', text: cancel }])
     expect(f.notifications.map((n) => ({ runId: n.runId, chatId: n.chatId, text: n.text }))).toEqual([
       { runId: id, chatId: '42', text: attributed }, { runId: id, chatId: '42', text: cancel },
@@ -106,7 +106,7 @@ describe('sibling-cancel notification over HTTP', () => {
     expect(res.status).toBe(200)
     expect(f.sent).toHaveLength(1)
     expect(f.sent[0]).toMatchObject({ chatId: '42' })
-    expect(f.sent[0]!.text).toContain('sell_loc bucket 0')
+    expect(f.sent[0]!.text).toContain('bucket 0 target ($103.00)')
     expect(f.notifications).toHaveLength(1)
   })
 

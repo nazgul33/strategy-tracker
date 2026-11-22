@@ -5,7 +5,10 @@ import type { BookingNotifier } from '../domain/booking'
 import type { SellLeg } from '../domain/sell-match'
 
 export interface BookingNotifierDeps {
-  repos: { notificationRepo: { insert(n: { runId: number; chatId: string; text: string }): Promise<unknown> } }
+  repos: {
+    notificationRepo: { insert(n: { runId: number; chatId: string; text: string }): Promise<unknown> }
+    runRepo: { get(id: number): Promise<{ ticker: string } | null> }
+  }
   allowedChatIds: string[]
   send: (chatId: string, text: string) => Promise<void>
   lang: Lang
@@ -36,11 +39,22 @@ export function makeBookingNotifier(deps: BookingNotifierDeps): BookingNotifier 
           distance: formatUsd(leg.distance),
         })
 
+  async function runParams(runId: number): Promise<{ id: number; ticker: string }> {
+    const run = await deps.repos.runRepo.get(runId)
+    return { id: runId, ticker: run?.ticker ?? '?' }
+  }
+
   return {
-    siblingCancelled: (runId, order) =>
-      broadcast(runId, t('sibling-cancelled', deps.lang, { kind: order.kind, bucket: order.bucketIdx, price: formatUsd(order.limitPrice) }), `sibling-cancel order ${order.id}`),
-    sellAttributed: (runId, attribution) => {
+    siblingCancelled: async (runId, order) => {
+      const params = { ...(await runParams(runId)), bucket: order.bucketIdx, leg: t(`leg-${order.kind}`, deps.lang) }
+      const text = order.kind === 'market_sell'
+        ? t('sibling-cancelled-market', deps.lang, params)
+        : t('sibling-cancelled', deps.lang, { ...params, limit: formatUsd(order.limitPrice) })
+      await broadcast(runId, text, `sibling-cancel order ${order.id}`)
+    },
+    sellAttributed: async (runId, attribution) => {
       const text = t('sell-attributed', deps.lang, {
+        ...(await runParams(runId)),
         shares: attribution.shares,
         price: formatUsd(attribution.price),
         chosen: legText(attribution.chosen),
