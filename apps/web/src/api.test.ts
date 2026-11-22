@@ -1,7 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 
-import { ApiError, createApi } from './api';
+import { ApiError, NetworkError, createApi } from './api';
 import type { ApiErrorCode, Http } from './api';
+
+describe('call() transport failures', () => {
+  test('a fetch that throws becomes a NetworkError with its message', async () => {
+    const api = createApi(() => Promise.reject(new TypeError('Failed to fetch')), { getToken: () => null });
+    const err = await api.listRuns().then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(NetworkError);
+    expect(err).not.toBeInstanceOf(ApiError);
+    expect((err as Error).message).toBe('Failed to fetch');
+  });
+});
 
 // Per-run gaps: createRun must carry them when set and omit them entirely
 // when unset (server treats absent as 0; an explicit null would 400).

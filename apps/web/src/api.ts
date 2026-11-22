@@ -64,6 +64,9 @@ export class ApiError extends Error {
   }
 }
 
+/** The request never got an answer (server down, offline, DNS). The browser's message is kept. */
+export class NetworkError extends Error {}
+
 // ---------------------------------------------------------------- auth token
 let memoryToken: string | null = null;
 
@@ -255,7 +258,12 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
 }
 
 async function call<T>(http: Http, url: string, init?: RequestInit): Promise<T> {
-  const res = await http(url, init);
+  let res: Response;
+  try {
+    res = await http(url, init);
+  } catch (e) {
+    throw new NetworkError(e instanceof Error ? e.message : String(e));
+  }
   let body: Record<string, unknown> = {};
   try {
     body = (await res.json()) as Record<string, unknown>;

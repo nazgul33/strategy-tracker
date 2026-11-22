@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { ApiError } from './api';
+import { ApiError, NetworkError } from './api';
 import type { ApiErrorCode } from './api';
 import { lookup } from './i18n/catalog';
 import { simErrorText } from './simerrors';
@@ -12,9 +12,12 @@ describe('simErrorText', () => {
   test.each([
     [
       'market-data:http',
-      'The market data provider returned an error. Check the ticker, or try again in a moment.',
+      'The market data provider returned an error or could not be reached. Try again in a moment.',
     ],
-    ['market-data:no-data', 'The market data provider has no prices for this ticker and date range.'],
+    [
+      'market-data:no-data',
+      'The market data provider has no prices for this ticker and date range. Check the ticker spelling.',
+    ],
     ['not-enough-bars', 'This date range has fewer than two trading days to simulate. Widen it.'],
     ['not-found', 'This simulation no longer exists.'],
     ['sim-finalized', 'This simulation is already saved and can no longer be changed.'],
@@ -48,16 +51,25 @@ describe('simErrorText', () => {
     expect(simErrorText(new Error('offline'), en)).toBe('offline');
   });
 
+  test('an unreachable server reads as a connection problem', () => {
+    expect(simErrorText(new NetworkError('Failed to fetch'), en)).toBe(
+      'Could not reach the server. Check the connection and try again.',
+    );
+  });
+
   test('anything else is stringified', () => {
     expect(simErrorText('boom', en)).toBe('boom');
   });
 
   test('ko copy', () => {
     expect(simErrorText(new ApiError(502, 'market-data:http' as ApiErrorCode), ko)).toBe(
-      '시세 데이터 제공처가 오류를 반환했습니다. 티커를 확인하거나 잠시 후 다시 시도하세요.',
+      '시세 데이터 제공처가 오류를 반환했거나 연결할 수 없습니다. 잠시 후 다시 시도하세요.',
     );
     expect(simErrorText(new ApiError(502, 'market-data:no-data' as ApiErrorCode), ko)).toBe(
-      '시세 데이터 제공처에 이 티커와 기간의 가격이 없습니다.',
+      '시세 데이터 제공처에 이 티커와 기간의 가격이 없습니다. 티커 철자를 확인하세요.',
+    );
+    expect(simErrorText(new NetworkError('Failed to fetch'), ko)).toBe(
+      '서버에 연결할 수 없습니다. 연결을 확인하고 다시 시도하세요.',
     );
     expect(simErrorText(new ApiError(422, 'not-enough-bars' as ApiErrorCode), ko)).toBe(
       '이 기간에는 시뮬레이션할 거래일이 두 개 미만입니다. 기간을 넓히세요.',

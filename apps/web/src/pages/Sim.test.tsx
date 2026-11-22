@@ -241,7 +241,7 @@ describe('SimPage gap fields', () => {
     });
     await fillBaseFields();
     await submitForm();
-    expect(document.body.textContent).toContain('The market data provider returned an error. Check the ticker');
+    expect(document.body.textContent).toContain('The market data provider returned an error or could not be reached');
     expect(document.body.textContent).not.toContain('market-data:http');
     expect(document.body.textContent).not.toContain('The request failed');
   });
