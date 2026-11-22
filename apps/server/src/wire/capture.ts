@@ -212,7 +212,13 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     } else {
       // No keep prompt over Telegram: the screenshot is not kept, but the reject
       // still freezes its record and sweeps the bytes when it was the last fill.
-      const rejected = await rejectPendingFill(id, { repos: deps.repos }, { keepImage: false });
+      let rejected;
+      try {
+        rejected = await rejectPendingFill(id, { repos: deps.repos }, { keepImage: false });
+      } catch (e) {
+        await deps.send(chatId, confirmErrorText(e));
+        return;
+      }
       if (!rejected) {
         await deps.send(chatId, t('confirm-err-already-handled', lang));
         return;

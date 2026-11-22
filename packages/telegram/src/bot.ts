@@ -71,6 +71,9 @@ export function createBot(deps: BotDeps): Bot {
     await deps.onConfirm(chatId, data, data.startsWith('yes:'))
   })
 
+  // grammY's default rethrows a handler error out of long polling and ends it for good
+  bot.catch((err) => console.error('[bot] update failed:', String(err.error)))
+
   return bot
 }
 

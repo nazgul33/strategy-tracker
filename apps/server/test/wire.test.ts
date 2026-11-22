@@ -603,6 +603,31 @@ describe('capture onConfirm — reply target', () => {
     expect(h.pending[0]!.status).toBe('pending');
   });
 
+  test('a yes button whose handler says reject books nothing and answers nothing', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    const p = h.pending[0]!;
+    const sentBefore = h.sent.length;
+    await h.handlers.onConfirm('777', `yes:${p.id}`, false);
+    expect(h.sent.length).toBe(sentBefore);
+    expect(h.fills.length).toBe(0);
+    expect(p.status).toBe('pending');
+  });
+
+  test('a reject whose bookkeeping throws replies with the worded error in the pressing chat', async () => {
+    for (const lang of ['en', 'ko'] as const) {
+      const h = makeCapture({ runs: [activeRun(1, 'NVDA')], lang });
+      await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+      const id = h.pending[0]!.id;
+      h.repos.pendingRepo.decide = async () => {
+        throw new Error('boom');
+      };
+      const sentBefore = h.sent.length;
+      await h.handlers.onConfirm('888', `no:${id}`, false);
+      expect(h.sent.slice(sentBefore)).toEqual([{ chatId: '888', text: t('confirm-err-unknown', lang, { code: 'boom' }), extra: undefined }]);
+    }
+  });
+
   test('pressing a button on an already-handled row says already handled', async () => {
     const sequences: [boolean, boolean][] = [[true, true], [true, false], [false, false], [false, true]];
     for (const lang of ['en', 'ko'] as const) {

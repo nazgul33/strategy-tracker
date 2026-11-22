@@ -329,15 +329,15 @@ ruling of the follow-up decisions log:
   last). A fill booked to an operator-chosen bucket, or to the fallback bucket,
   sends no attribution notice. The notice names the rule that decided. It is one
   `notifications` row (Notifications tab) and one Telegram message per allowed
-  chat; with no allowed chats one row with chat id `web` is written (shown as "web
-  only" in the Notifications tab) and nothing is sent; the sibling-cancel notice does
-  the same. They are sent after the
-  run lock is released and before any sibling-cancel message. The alternatives are
-  listed price legs first (nearest first), then market-sell legs by bucket. The
-  copy keys in `packages/telegram/src/i18n.ts` are
-  `sell-attributed`, `sell-attributed-alt`, `sell-attributed-alt-market`,
-  `sell-attributed-why-price`, `sell-attributed-why-market`, `leg-sell_loc`,
-  `leg-stop_sell` and `leg-market_sell`.
+  chat; with no allowed chats one row with chat id `web` is written (shown as
+  "web only" in the Notifications tab) and nothing is sent; the sibling-cancel
+  notice does the same. They are sent after the run lock is released and before
+  any sibling-cancel message. The alternatives are listed price legs first
+  (nearest first), then market-sell legs by bucket. The copy keys in
+  `packages/telegram/src/i18n.ts` are `sell-attributed`, `sell-attributed-alt`,
+  `sell-attributed-alt-market`, `sell-attributed-why-price`,
+  `sell-attributed-why-market`, `leg-sell_loc`, `leg-stop_sell` and
+  `leg-market_sell`.
 
 **Known limitations (whole-branch review, 2026-11-20; item 5 is still open):**
 

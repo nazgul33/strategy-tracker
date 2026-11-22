@@ -92,6 +92,48 @@ describe('bot callback_query handler', () => {
     }
   })
 
+  test('a handler error is logged and long polling keeps handling the next update', async () => {
+    const seen: string[] = []
+    const bot = createBot({
+      token: '1:x',
+      allowedChatIds: ['111'],
+      onPhoto() {},
+      onConfirm: (_chatId, cbData) => {
+        seen.push(cbData)
+        if (cbData === 'yes:1') throw new Error('boom')
+      },
+      onStatus() {},
+      onOrders() {},
+    })
+    bot.botInfo = BOT_INFO
+    const update = (id: number, data: string) => ({
+      update_id: id,
+      callback_query: {
+        id: `cb${id}`,
+        from: { id: 5, is_bot: false, first_name: 'u' },
+        chat_instance: 'ci',
+        data,
+        message: { message_id: 3, date: 0, chat: { id: 111, type: 'private', first_name: 'u' } },
+      },
+    })
+    let polls = 0
+    bot.api.config.use(async (_prev, method) => {
+      if (method !== 'getUpdates') return { ok: true, result: true } as never
+      polls++
+      if (polls === 1) return { ok: true, result: [update(1, 'yes:1'), update(2, 'yes:2')] } as never
+      await bot.stop()
+      return { ok: true, result: [] } as never
+    })
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await bot.start()
+      expect(seen).toEqual(['yes:1', 'yes:2'])
+      expect(errors.mock.calls).toEqual([['[bot] update failed:', 'Error: boom']])
+    } finally {
+      errors.mockRestore()
+    }
+  })
+
   test('a press in a chat that is not allowed does nothing', async () => {
     const seen: string[] = []
     const h = harness((_c, cbData) => void seen.push(cbData))

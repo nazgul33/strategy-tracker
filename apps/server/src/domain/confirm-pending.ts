@@ -79,13 +79,14 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
   return { archived }
 }
 
-// Resolves null when the row is missing or already handled (the HTTP caller answers
-// 409, the Telegram caller answers "Already handled"). Under the run lock so two siblings resolving at once
-// cannot both see "no pending left" and race the sweep. The reject has taken
-// effect once decide succeeds, so an archive failure is logged and contained,
-// exactly as on the confirm path, and reported as archived: false. As there,
-// archived: true only means the bookkeeping did not throw; it is also true for a
-// row with no capture or image, so it is not a promise that a screenshot is kept.
+// Resolves null when the row is missing or already handled (the HTTP caller
+// answers 409, the Telegram caller answers "Already handled"). Under the run
+// lock so two siblings resolving at once cannot both see "no pending left" and
+// race the sweep. The reject has taken effect once decide succeeds, so an
+// archive failure is logged and contained, exactly as on the confirm path, and
+// reported as archived: false. As there, archived: true only means the
+// bookkeeping did not throw; it is also true for a row with no capture or
+// image, so it is not a promise that a screenshot is kept.
 export async function rejectPendingFill(pendingId: number, deps: Pick<BookingDeps, 'repos'>, opts?: { keepImage?: boolean }): Promise<{ archived: boolean } | null> {
   const repos = deps.repos
   // Only a peek to learn the run; the row is re-read inside the lock.

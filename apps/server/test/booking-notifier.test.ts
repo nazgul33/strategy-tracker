@@ -180,6 +180,27 @@ describe('booking notifier: sellAttributed', () => {
     } finally { errors.mockRestore() }
   })
 
+  test('a failing run lookup falls back to ? in ko too', async () => {
+    const sent: Array<{ chatId: string; text: string }> = []
+    const notifier = makeBookingNotifier({
+      repos: {
+        notificationRepo: { insert: async () => {} },
+        runRepo: { get: async () => { throw new Error('lookup-down') } },
+      },
+      allowedChatIds: ['42'],
+      send: async (chatId, t) => { sent.push({ chatId, text: t }) },
+      lang: 'ko',
+    })
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await notifier.siblingCancelled(7, order({ kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') }))
+      await notifier.sellAttributed(7, attribution)
+      expect(sent).toHaveLength(2)
+      expect(sent[0]!.text).toStartWith('⚠️ 런 #7 ?: 증권사에서 버킷 1 목표가 매도 ($103.00)')
+      expect(sent[1]!.text).toStartWith('ℹ️ 런 #7 ?: 매도 10주 @ $96.50')
+    } finally { errors.mockRestore() }
+  })
+
   test('a chat whose send fails does not stop the next chat', async () => {
     const { notifier, rows, sent } = harness(['42', '43'], '42')
     const errors = spyOn(console, 'error').mockImplementation(() => {})
