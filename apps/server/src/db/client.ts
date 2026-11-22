@@ -3,6 +3,7 @@ import { migrate } from 'drizzle-orm/mysql2/migrator'
 import mysql from 'mysql2/promise'
 import path from 'node:path'
 import * as schema from './schema'
+import type { Db } from './db-type'
 
 let activePool: mysql.Pool | null = null
 
@@ -21,7 +22,7 @@ export async function closeDb(): Promise<void> {
   if (pool) await pool.end()
 }
 
-export async function applyMigrations(db: any) {
+export async function applyMigrations(db: Db) {
   const migrationsFolder = path.resolve(process.cwd(), 'apps/server/db/migrations')
   await migrate(db, { migrationsFolder })
 }

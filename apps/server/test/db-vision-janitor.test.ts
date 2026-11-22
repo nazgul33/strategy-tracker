@@ -8,7 +8,7 @@ const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 // (like scripts/e2e.ts) and never touches the tables other suites share in st_test.
 describeIf('vision janitor (db)', () => {
   const SCRATCH = `st_janitor_${Date.now().toString(36)}_${process.pid.toString(36)}`
-  let repos: any
+  let repos: ReturnType<typeof getRepos>
   let parent: Awaited<ReturnType<typeof getDb>> | undefined
   let scratch: Awaited<ReturnType<typeof getDb>> | undefined
   let created = false
@@ -129,8 +129,8 @@ describeIf('vision janitor (db)', () => {
     await image(d.captureId); await repos.captureImageRepo.setKeep(d.captureId)
     const rejected = await pending(d.runId, d.captureId, 'rejected')
     const rows = await repos.visionReviewRepo.listUnfrozenKept()
-    const mine = rows.filter((r: any) => [a.captureId, b.captureId, c.captureId, d.captureId].includes(r.captureId))
-    expect(mine.map((r: any) => r.id)).toEqual([lost, rejected])
+    const mine = rows.filter((r) => [a.captureId, b.captureId, c.captureId, d.captureId].includes(r.captureId))
+    expect(mine.map((r) => r.id)).toEqual([lost, rejected])
     expect(mine[0]).toMatchObject({ captureId: a.captureId, status: 'confirmed', shares: 1, price: 100n })
     expect(mine[1]).toMatchObject({ captureId: d.captureId, status: 'rejected' })
   })

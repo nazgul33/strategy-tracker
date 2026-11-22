@@ -1,6 +1,7 @@
 import type { RunState } from '@st/core'
 import { eq, and, sql, inArray } from 'drizzle-orm'
 import * as s from './schema'
+import type { Db, DbOrTx } from './db-type'
 import { getSimRepo } from './repos-sim'
 import { getBarRepos } from './repos-bars'
 import { getVisionRepos } from './repos-vision'
@@ -11,8 +12,8 @@ function serializeState(state: RunState): string {
   return JSON.stringify(state, (_, v) => typeof v === 'bigint' ? v.toString() : v)
 }
 
-export function getRepos(db: any) {
-  async function saveStateWith(q: any, runId: number, state: RunState) {
+export function getRepos(db: Db) {
+  async function saveStateWith(q: DbOrTx, runId: number, state: RunState) {
     await q.update(s.strategyRuns).set({ stateJson: serializeState(state) }).where(eq(s.strategyRuns.id, runId))
     await q.delete(s.buckets).where(eq(s.buckets.runId, runId))
     if (state.buckets.length) {
@@ -32,14 +33,14 @@ export function getRepos(db: any) {
     },
     async create(input: { strategyKey: string; ticker: string; name: string; poolCents: number; costPpm: number; buyGapPpm?: number; sellGapPpm?: number; cutLossPpm?: number; initialRunState?: RunState }) {
       const state = input.initialRunState ?? { buckets: [], cashCents: input.poolCents, closed: [], ages: {} }
-      return db.transaction(async (tx: any) => {
+      return db.transaction(async (tx) => {
         const [res] = await tx.insert(s.strategyRuns).values({
           strategyKey: input.strategyKey, ticker: input.ticker, name: input.name,
           poolCents: input.poolCents, costPpm: input.costPpm, stateJson: serializeState(state),
           buyGapPpm: input.buyGapPpm ?? 0, sellGapPpm: input.sellGapPpm ?? 0,
           cutLossPpm: input.cutLossPpm ?? 0,
         })
-        const runId = (res as any).insertId
+        const runId = res.insertId
         if (input.initialRunState) {
           await saveStateWith(tx, runId, input.initialRunState)
         }
@@ -53,7 +54,7 @@ export function getRepos(db: any) {
       if (ids.length === 0 || from.length === 0) return 0
       const [res] = await db.update(s.strategyRuns).set({ status: to as any })
         .where(and(inArray(s.strategyRuns.id, ids), inArray(s.strategyRuns.status, from as any)))
-      return (res as any)?.affectedRows ?? 0
+      return res.affectedRows
     },
     async updatePool(id: number, poolCents: number) {
       await db.update(s.strategyRuns).set({ poolCents }).where(eq(s.strategyRuns.id, id))
@@ -65,7 +66,7 @@ export function getRepos(db: any) {
 
   const bucketRepo = {
     async saveState(runId: number, state: RunState) {
-      await db.transaction(async (tx: any) => saveStateWith(tx, runId, state))
+      await db.transaction(async (tx) => saveStateWith(tx, runId, state))
     },
     async loadState(runId: number): Promise<RunState> {
       const rows = await db.select().from(s.strategyRuns).where(eq(s.strategyRuns.id, runId))
@@ -96,9 +97,8 @@ export function getRepos(db: any) {
       return db.select().from(s.orders).where(sql`${s.orders.tradeDate} = ${date}`)
     },
     async markStale(date: string) {
-      const res: any = await db.update(s.orders).set({ status: 'stale' }).where(and(eq(s.orders.status, 'open'), sql`${s.orders.tradeDate} < ${date}`))
-      const header = Array.isArray(res) ? res[0] : res
-      return header?.affectedRows ?? 0
+      const [res] = await db.update(s.orders).set({ status: 'stale' }).where(and(eq(s.orders.status, 'open'), sql`${s.orders.tradeDate} < ${date}`))
+      return res.affectedRows
     },
     async setStatus(id: number, status: string, cancelReason?: string) {
       await db.update(s.orders)
@@ -138,7 +138,7 @@ export function getRepos(db: any) {
   }
 
   const pendingRepo = {
-    async insert(p: any) { const [r] = await db.insert(s.pendingFills).values(p); return (r as any).insertId },
+    async insert(p: any) { const [r] = await db.insert(s.pendingFills).values(p); return r.insertId },
     async listPending() { return db.select().from(s.pendingFills).where(eq(s.pendingFills.status, 'pending')) },
     async hasLiveForCapture(captureId: number): Promise<boolean> { return hasPendingWithStatus(captureId, 'pending') },
     async hasConfirmedForCapture(captureId: number): Promise<boolean> { return hasPendingWithStatus(captureId, 'confirmed') },
@@ -146,12 +146,12 @@ export function getRepos(db: any) {
     async decide(id: number, status: 'confirmed' | 'rejected', edited?: PendingDecisionPatch): Promise<boolean> {
       const patch = { status, ...edited }
       const [res] = await db.update(s.pendingFills).set(patch).where(and(eq(s.pendingFills.id, id), eq(s.pendingFills.status, 'pending')))
-      return (res as any)?.affectedRows > 0
+      return res.affectedRows > 0
     },
   }
 
   const correctionRepo: CorrectionRepo = {
-    async insert(c) { const [r] = await db.insert(s.fillCorrections).values(c); return (r as any).insertId },
+    async insert(c) { const [r] = await db.insert(s.fillCorrections).values(c); return r.insertId },
     async get(id) {
       const rows = await db.select().from(s.fillCorrections).where(eq(s.fillCorrections.id, id))
       return rows[0] ?? null
@@ -163,7 +163,7 @@ export function getRepos(db: any) {
     async decide(id, status) {
       const [res] = await db.update(s.fillCorrections).set({ status })
         .where(and(eq(s.fillCorrections.id, id), eq(s.fillCorrections.status, 'open')))
-      return (res as any)?.affectedRows > 0
+      return res.affectedRows > 0
     },
     // Applied corrections never block; dismissed ones stick ("I checked, the booked price is right").
     // The caller drops snapshot-stale rows.
@@ -191,7 +191,7 @@ export function getRepos(db: any) {
     async insert(c: any): Promise<{ inserted: boolean; id?: number }> {
       try {
         const [res] = await db.insert(s.captures).values(c)
-        return { inserted: true, id: (res as any).insertId }
+        return { inserted: true, id: res.insertId }
       } catch (e: any) {
         const msg = String(e) + ' ' + (e?.message ?? '') + ' ' + (e?.cause?.message ?? '')
         if (msg.includes('ER_DUP_ENTRY') || msg.toLowerCase().includes('duplicate')) return { inserted: false }

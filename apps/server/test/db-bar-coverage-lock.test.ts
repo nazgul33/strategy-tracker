@@ -1,12 +1,13 @@
 import { describe, test, expect, beforeAll } from 'bun:test'
 import { getDb, applyMigrations } from '../src/db/client'
+import type { Db } from '../src/db/db-type'
 import { getRepos } from '../src/db/repos'
 import { getBarRepos, deadlockBackoffMs, isDeadlock } from '../src/db/repos-bars'
 
 const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 
 describeIf('barCoverageRepo.add under concurrent writers', () => {
-  let repos: any
+  let repos: ReturnType<typeof getRepos>
   beforeAll(async () => {
     const db = await getDb(process.env.TEST_DATABASE_URL!)
     await applyMigrations(db)
@@ -41,7 +42,7 @@ describe('barCoverageRepo.add retry policy', () => {
         if (calls <= failures.length) throw failures[calls - 1]
       },
     }
-    const repo = getBarRepos(db as any, { sleep: async (ms: number) => { delays.push(ms) }, random: () => 0 }).barCoverageRepo
+    const repo = getBarRepos(db as unknown as Db, { sleep: async (ms: number) => { delays.push(ms) }, random: () => 0 }).barCoverageRepo
     return { repo, calls: () => calls, delays }
   }
 

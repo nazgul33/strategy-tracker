@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll, spyOn } from 'bun:test'
 import { sql } from 'drizzle-orm'
 import { getDb, applyMigrations } from '../src/db/client'
+import type { Db } from '../src/db/db-type'
 import { getRepos } from '../src/db/repos'
 import { runBootSweeps } from '../src/wire/boot-sweeps'
 
@@ -11,8 +12,8 @@ const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 // tables other suites share in st_test.
 describeIf('simRepo.listRuns / sweepDrafts', () => {
   const SCRATCH = `st_simlist_${Date.now().toString(36)}_${process.pid.toString(36)}`
-  let repos: any
-  let db: any
+  let repos: ReturnType<typeof getRepos>
+  let db: Db
   let parent: Awaited<ReturnType<typeof getDb>> | undefined
   let scratch: Awaited<ReturnType<typeof getDb>> | undefined
   let created = false
@@ -49,7 +50,7 @@ describeIf('simRepo.listRuns / sweepDrafts', () => {
   test('listRuns is newest first', async () => {
     const a = await repos.simRepo.insertRun(input())
     const b = await repos.simRepo.insertRun(input())
-    const ids = (await repos.simRepo.listRuns()).map((r: any) => r.id)
+    const ids = (await repos.simRepo.listRuns()).map((r) => r.id)
     expect(ids.indexOf(b)).toBeLessThan(ids.indexOf(a))
     expect(ids).toEqual([...ids].sort((x, y) => y - x))
   })
