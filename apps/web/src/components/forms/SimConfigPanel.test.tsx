@@ -143,6 +143,11 @@ describe('SimConfigPanel', () => {
     expect(button('simDiscardBtn')).not.toBeNull();
   });
 
+  it('a draft panel has no cost note slot', async () => {
+    await render();
+    expect(document.querySelector('[data-testid="costDefaultFailed"]')).toBeNull();
+  });
+
   it('shows blank for unset gaps and cut-loss', async () => {
     await render({ ...DRAFT, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0 });
     expect(input('buyGapInput').value).toBe('');

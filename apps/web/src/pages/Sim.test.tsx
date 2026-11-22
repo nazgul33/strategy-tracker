@@ -206,6 +206,7 @@ describe('SimPage gap fields', () => {
     });
     const note = document.querySelector('[data-testid="costDefaultFailed"]');
     expect(note?.textContent).toBe("Couldn't load the default cost. Enter one.");
+    expect(note!.closest('label')).toBeNull();
     expect(inputByTestId('costInput').value).toBe('');
   });
 

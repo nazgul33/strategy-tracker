@@ -186,7 +186,7 @@ describe('CreateRunForm cost field', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(failedNote()).toBeNull();
+    expect(failedNote()!.textContent).toBe('');
     expect(inputByLabel('Cost (%)').value).toBe('0.2');
   });
 
@@ -211,12 +211,42 @@ describe('CreateRunForm cost field', () => {
     expect(note.textContent).toBe("Couldn't load the default cost. Enter one.");
     expect(inputByLabel('Cost (%)').value).toBe('');
     await act(async () => setInputValue(inputByLabel('Cost (%)'), '0.1'));
-    expect(failedNote()).toBeNull();
+    expect(failedNote()!.textContent).toBe('');
   });
 
-  it('no note when the default loads', async () => {
+  it('no note text when the default loads', async () => {
     await renderForm();
-    expect(failedNote()).toBeNull();
+    expect(failedNote()!.textContent).toBe('');
+  });
+
+  it('the note sits outside the cost label and is mounted before the load fails', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const stubbed = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/api/settings')) await gate;
+      return stubbed(input, init);
+    }) as typeof fetch;
+
+    await act(async () => {
+      root.render(d(CreateRunForm));
+    });
+    expect(failedNote()).not.toBeNull();
+    expect(failedNote()!.textContent).toBe('');
+    expect(failedNote()!.closest('label')).toBeNull();
+
+    settingsRoute.status = 500;
+    await act(async () => {
+      release();
+      await gate;
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(failedNote()!.textContent).toBe("Couldn't load the default cost. Enter one.");
+    expect(failedNote()!.closest('label')).toBeNull();
   });
 
   it('ko copy for the note', () => {
