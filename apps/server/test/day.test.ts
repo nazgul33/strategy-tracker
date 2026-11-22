@@ -8,6 +8,7 @@ import { recalcRunState } from '../src/domain/recompute'
 import { withRunLock } from '../src/domain/run-lock'
 import type { RepoSurface } from '../src/domain/booking'
 import { fakeCorrectionRepo } from './fake-corrections'
+import type { Expect, IsNever, ArityMismatches } from './type-assert'
 
 function makeRepos() {
   const runs: any[] = []
@@ -45,15 +46,25 @@ function makeRepos() {
     async listForRunFrom(runId: number, fromDate: string) { return orders.filter((o) => o.runId === runId && o.tradeDate >= fromDate).sort((a, b) => a.id - b.id) },
     async get(id: number) { return orders.find((x) => x.id === id) ?? null },
     async markStale(d: string) { let c = 0; for (const o of orders) if (o.status === 'open' && o.tradeDate < d) { o.status = 'stale'; c++ } return c },
-    async setStatus(id: number, s: string) { const o = orders.find((x) => x.id === id); if (o) o.status = s },
+    async setStatus(id: number, s: string, _cancelReason?: string) { const o = orders.find((x) => x.id === id); if (o) o.status = s },
     async listOpenBefore(d: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < d) },
   }
   const notificationRepo = {
     async insert(n: any) { notifications.push({ ...n }) },
   }
-  const repos: RepoSurface = { runRepo, bucketRepo, orderRepo, notificationRepo, correctionRepo: fakeCorrectionRepo().repo, fillRepo: { insert: async () => {}, async listForRun() { return [] as any[] } }, pendingRepo: { insert: async () => 1, listPending: async () => [], hasLiveForCapture: async () => false, hasConfirmedForCapture: async () => false, decide: async () => false }, captureRepo: { findByHash: async () => null, setStatus: async () => {}, insert: async () => ({ inserted: true, id: 1 }) }, captureImageRepo: { insertIgnore: async () => true, getBytes: async () => null, isKept: async () => false, setKeep: async () => {}, deleteFor: async () => {}, discard: async () => {}, listKept: async () => [] }, visionReviewRepo: { insertIgnore: async () => {}, listForCaptures: async () => [], deleteFor: async () => {} }, ledgerRepo: { insert: async () => {}, listForRun: async () => [] } }
+  const repos = {
+    runRepo, bucketRepo, orderRepo, notificationRepo, correctionRepo: fakeCorrectionRepo().repo,
+    fillRepo: { insert: async (_fill) => {}, async listForRun(_runId) { return [] as any[] } },
+    pendingRepo: { insert: async (_p) => 1, listPending: async () => [], hasLiveForCapture: async (_captureId) => false, hasConfirmedForCapture: async (_captureId) => false, decide: async (_id, _status, _edited) => false },
+    captureRepo: { findByHash: async (_runId, _hash) => null, setStatus: async (_id, _status) => {}, insert: async (_c) => ({ inserted: true, id: 1 }) },
+    captureImageRepo: { insertIgnore: async (_row) => true, getBytes: async (_captureId) => null, isKept: async (_captureId) => false, setKeep: async (_captureId) => {}, deleteFor: async (_captureId) => {}, discard: async (_captureId) => {}, listKept: async (_limit) => [] },
+    visionReviewRepo: { insertIgnore: async (_row) => {}, listForCaptures: async (_captureIds) => [], deleteFor: async (_captureId) => {} },
+    ledgerRepo: { insert: async (_l) => {}, listForRun: async (_runId) => [] },
+  } satisfies RepoSurface
   return { repos, runs, orders, notifications }
 }
+
+type _day = Expect<IsNever<ArityMismatches<ReturnType<typeof makeRepos>['repos'], RepoSurface>>>
 
 describe('day pipeline', () => {
   test('(a) sat -> weekend', async () => {

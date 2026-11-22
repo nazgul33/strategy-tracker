@@ -5,7 +5,7 @@ import type { Db, DbOrTx } from './db-type'
 import { getSimRepo } from './repos-sim'
 import { getBarRepos } from './repos-bars'
 import { getVisionRepos } from './repos-vision'
-import type { CorrectionRepo } from '../domain/correction-types'
+import type { CorrectionRepo, CorrectionRow } from '../domain/correction-types'
 import type {
   CaptureRepo, CaptureStatus, FillPatch, FillRepo, LedgerRepo, NewCapture, NewFill, NewLedgerEntry, NewNotification, NewRun,
   NotificationRepo, OrderRepo, OrderRecord, PendingRepo, PendingRow, RunRepo, RunRow, RunStatus,
@@ -157,9 +157,9 @@ export function getRepos(db: Db) {
     },
   } satisfies PendingRepo
 
-  const correctionRepo: CorrectionRepo = {
+  const correctionRepo = {
     async insert(c) { const [r] = await db.insert(s.fillCorrections).values(c); return r.insertId },
-    async get(id) {
+    async get(id): Promise<CorrectionRow | null> {
       const rows = await db.select().from(s.fillCorrections).where(eq(s.fillCorrections.id, id))
       return rows[0] ?? null
     },
@@ -184,7 +184,7 @@ export function getRepos(db: Db) {
         .where(and(eq(s.fillCorrections.captureId, captureId), eq(s.fillCorrections.status, 'open'))).limit(1)
       return rows.length > 0
     },
-  }
+  } satisfies CorrectionRepo
 
   const captureRepo = {
     async findByHash(runId: number, hash: string): Promise<{ id: number; status: CaptureStatus } | null> {
