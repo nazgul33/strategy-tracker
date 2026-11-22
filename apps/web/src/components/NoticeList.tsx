@@ -20,7 +20,7 @@ export function NoticeList({ notifications }: { notifications: NotificationDto[]
           <tr key={n.id}>
             <Td className="whitespace-nowrap tabular-nums text-muted-foreground">{isoDateTime(n.sentAt)}</Td>
             <Td className="whitespace-pre-wrap">{n.text}</Td>
-            <Td className="text-right font-mono text-[11px] text-muted-foreground">{n.chatId}</Td>
+            <Td className="text-right font-mono text-[11px] text-muted-foreground">{n.chatId === 'web' ? t('notifChatWeb') : n.chatId}</Td>
           </tr>
         ))}
       </tbody>

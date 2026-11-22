@@ -329,7 +329,9 @@ ruling of the follow-up decisions log:
   last). A fill booked to an operator-chosen bucket, or to the fallback bucket,
   sends no attribution notice. The notice names the rule that decided. It is one
   `notifications` row (Notifications tab) and one Telegram message per allowed
-  chat; with no allowed chats nothing is written or sent. They are sent after the
+  chat; with no allowed chats one row with chat id `web` is written (shown as "web
+  only" in the Notifications tab) and nothing is sent; the sibling-cancel notice does
+  the same. They are sent after the
   run lock is released and before any sibling-cancel message. The alternatives are
   listed price legs first (nearest first), then market-sell legs by bucket. The
   copy keys in `packages/telegram/src/i18n.ts` are
@@ -337,15 +339,13 @@ ruling of the follow-up decisions log:
   `sell-attributed-why-price`, `sell-attributed-why-market`, `leg-sell_loc`,
   `leg-stop_sell` and `leg-market_sell`.
 
-**Known limitations (whole-branch review, 2026-11-20; item 5 is still open, awaiting an operator decision):**
+**Known limitations (whole-branch review, 2026-11-20; item 5 is still open):**
 
 1. Addressed 2026-11-22 (#54): a partial fill no longer flips its order, so the rest of that leg stays a candidate.
 2. Addressed 2026-11-22 (#55): `market_sell` legs on other buckets are listed as alternatives and take part in the share-count rung; price ranking is unchanged.
 3. Addressed 2026-11-22 (#53): a stale leg of the fill's day is a candidate; a late fill that still falls to the fallback pulls that bucket's legs for today only when it empties the fallback bucket.
 4. Addressed 2026-11-22 (#52): the share-count rung separates same-close targets of different sizes.
-5. With no allowed chats no notice reaches the operator, not even in the
-   Notifications tab (`notifications.chat_id` is NOT NULL).
-6. A fill edit or correction that turns a partial sell into a bucket-emptying one does not flip or cancel that bucket's legs: they stay `open` on an empty bucket for the rest of that day, and a later same-day fill at exactly one of their prices fails `bucket-not-held` (the operator can force the bucket).
+5. A fill edit or correction that turns a partial sell into a bucket-emptying one does not flip or cancel that bucket's legs: they stay `open` on an empty bucket for the rest of that day, and a later same-day fill at exactly one of their prices fails `bucket-not-held` (the operator can force the bucket).
 
 **Sibling cancel.** Both legs sit live at the broker, so when one fires the other
 must stop looking live in the tracker *and* the operator must pull it by hand.
@@ -725,7 +725,7 @@ cachedFetchDailyBars(ticker, from, to):
   screenshot prompt by itself, and does not leak between rows.
 - `apps/server/test/booking-notifier.test.ts` (in-memory fakes, no DB): the
   rendered multi-alternative text, joined with "; ", a `notifications` row and a
-  message per chat, nothing with no allowed chats, and a failing chat does not stop
+  message per chat, one `web` row with no allowed chats, and a failing chat does not stop
   the next.
 - `apps/server/test/http-sibling-notify.test.ts`: over HTTP against the in-memory
   fakes of `http-fakes.ts`, with the real notifier,

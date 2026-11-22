@@ -74,6 +74,23 @@ describe('booking notifier: siblingCancelled', () => {
     expect(sent[0]!.text).toStartWith('⚠️ Run #8 ?: cancel bucket 1 target ($103.00)')
     expect(rows).toEqual([{ runId: 8, chatId: '42', text: sent[0]!.text }])
   })
+
+  test('with no allowed chats the sibling notice is recorded for the web', async () => {
+    const { notifier, rows, sent } = harness([])
+    await notifier.siblingCancelled(7, order({ kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') }))
+    expect(rows).toEqual([{ runId: 7, chatId: 'web', text: `⚠️ Run #7 AAPL: cancel bucket 1 target ($103.00) ${TAIL}` }])
+    expect(sent).toEqual([])
+  })
+
+  test('a failing sibling send logs the order id as its own field', async () => {
+    const { notifier } = harness(['42'], '42')
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await notifier.siblingCancelled(7, order({ kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') }))
+      expect(errors).toHaveBeenCalledTimes(1)
+      expect(errors.mock.calls[0]).toEqual(['booking notice failed:', 'sibling-cancelled', { runId: 7, orderId: 12, chatId: '42' }, 'Error: telegram-down'])
+    } finally { errors.mockRestore() }
+  })
 })
 
 describe('booking notifier: sellAttributed', () => {
@@ -111,11 +128,56 @@ describe('booking notifier: sellAttributed', () => {
     expect(sent).toEqual([{ chatId: '42', text: 'ℹ️ Run #7 AAPL: sell 10 sh @ $50.00 was booked to bucket 2 market sell. Also possible: bucket 5 market sell. No target or stop fit this price and no single order is for exactly 10 shares, so the market sell of the lowest bucket wins.' }])
   })
 
-  test('with no allowed chats nothing is recorded or sent', async () => {
+  test('with no allowed chats one row is recorded for the web and nothing is sent', async () => {
     const { notifier, rows, sent } = harness([])
     await notifier.sellAttributed(7, attribution)
-    expect(rows).toEqual([])
+    expect(rows).toEqual([{ runId: 7, chatId: 'web', text }])
     expect(sent).toEqual([])
+  })
+
+  test('a failing web-only insert is logged, not thrown', async () => {
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const notifier = makeBookingNotifier({
+        repos: {
+          notificationRepo: { insert: async () => { throw new Error('db-down') } },
+          runRepo: { get: async () => ({ ticker: 'AAPL' }) },
+        },
+        allowedChatIds: [],
+        send: async () => {},
+        lang: 'en',
+      })
+      await notifier.sellAttributed(7, attribution)
+      expect(errors).toHaveBeenCalledTimes(1)
+      expect(errors.mock.calls[0]).toEqual(['booking notice failed:', 'sell-attributed', { runId: 7, orderId: null, chatId: 'web' }, 'Error: db-down'])
+    } finally { errors.mockRestore() }
+  })
+
+  test('a failing run lookup falls back to ? and the notice is still recorded and sent', async () => {
+    const rows: Array<{ runId: number; chatId: string; text: string }> = []
+    const sent: Array<{ chatId: string; text: string }> = []
+    const notifier = makeBookingNotifier({
+      repos: {
+        notificationRepo: { insert: async (n) => { rows.push(n) } },
+        runRepo: { get: async () => { throw new Error('lookup-down') } },
+      },
+      allowedChatIds: ['42'],
+      send: async (chatId, t) => { sent.push({ chatId, text: t }) },
+      lang: 'en',
+    })
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await notifier.siblingCancelled(7, order({ kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') }))
+      await notifier.sellAttributed(7, attribution)
+      expect(errors.mock.calls).toEqual([
+        ['booking notice run lookup failed:', 7, 'Error: lookup-down'],
+        ['booking notice run lookup failed:', 7, 'Error: lookup-down'],
+      ])
+      expect(sent).toHaveLength(2)
+      expect(sent[0]!.text).toStartWith('⚠️ Run #7 ?: cancel bucket 1 target ($103.00)')
+      expect(sent[1]!.text).toStartWith('ℹ️ Run #7 ?: sell 10 sh @ $96.50')
+      expect(rows).toEqual([{ runId: 7, chatId: '42', text: sent[0]!.text }, { runId: 7, chatId: '42', text: sent[1]!.text }])
+    } finally { errors.mockRestore() }
   })
 
   test('a chat whose send fails does not stop the next chat', async () => {
@@ -126,6 +188,7 @@ describe('booking notifier: sellAttributed', () => {
       expect(sent).toEqual([{ chatId: '43', text }])
       expect(rows).toEqual([{ runId: 7, chatId: '42', text }, { runId: 7, chatId: '43', text }])
       expect(errors).toHaveBeenCalledTimes(1)
+      expect(errors.mock.calls[0]).toEqual(['booking notice failed:', 'sell-attributed', { runId: 7, orderId: null, chatId: '42' }, 'Error: telegram-down'])
     } finally { errors.mockRestore() }
   })
 })

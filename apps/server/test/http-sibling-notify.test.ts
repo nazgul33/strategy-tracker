@@ -52,11 +52,12 @@ describe('sibling-cancel notification over HTTP', () => {
     expect(f.notifications).toEqual([])
   })
 
-  test('with no allowed chats the booking succeeds and nothing is sent', async () => {
+  test('with no allowed chats the booking succeeds, nothing is sent and the notice is recorded for the web', async () => {
     const { f, app, auth, id } = await setup([])
     expect((await postSell(app, auth, id, 10, '96.50')).status).toBe(200)
     expect(f.sent).toEqual([])
-    expect(f.notifications).toEqual([])
+    const text = `⚠️ Run #${id} AAPL: cancel bucket 0 target ($103.00) at your broker — the other leg already filled, so this order is no longer needed.`
+    expect(f.notifications.map((n) => ({ runId: n.runId, chatId: n.chatId, text: n.text }))).toEqual([{ runId: id, chatId: 'web', text }])
   })
 
   test('a Telegram outage never fails or rolls back the manual fill', async () => {

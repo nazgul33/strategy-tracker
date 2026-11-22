@@ -852,6 +852,14 @@ describe('capture confirm — sibling leg cancelled by a bucket-emptying sell', 
     expect(orders[1]!.status).toBe('filled');
   });
 
+  test('with no allowed chats the Telegram confirm records the notice for the web', async () => {
+    const { fakes, pid, sent, handlers } = await setupSell({ allowedChatIds: [] });
+    await handlers.onConfirm(`yes:${pid}`, true);
+    const text = '⚠️ Run #1 NVDA: cancel bucket 0 target ($103.00) at your broker — the other leg already filled, so this order is no longer needed.';
+    expect(fakes.notifications).toEqual([{ runId: 1, chatId: 'web', text }]);
+    expect(sent.some((s) => s.text === text)).toBe(false);
+  });
+
   test('a Telegram outage on the notice never fails the confirm', async () => {
     const sent: string[] = [];
     const { fakes, orders, pid, handlers } = await setupSell({

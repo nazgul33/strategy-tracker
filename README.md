@@ -67,7 +67,7 @@ unset.
 | `PORT` | no | `8080` | HTTP port |
 | `DIGEST_LANG` | no | `en` | `en` or `ko` |
 | `DEFAULT_COST_PERCENT` | no | `0.07` | per-side trading cost prefilled for new runs and sims, as a percent with up to 3 decimals (`0` = no cost, max `100`) |
-| `TELEGRAM_BOT_TOKEN` | no | unset | unset ⇒ bot disabled; every send falls back to a console log line |
+| `TELEGRAM_BOT_TOKEN` | no | unset | unset ⇒ bot disabled; every send falls back to a console log line; booking notices are still recorded in the run's Notifications tab (chat `web`) |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | when token set | — | comma-separated Telegram chat IDs |
 | `VISION_BASE_URL` | when token set | — | OpenAI-compatible vision endpoint base URL |
 | `VISION_MODEL` | when token set | — | model name for fill extraction |
