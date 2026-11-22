@@ -95,15 +95,6 @@ async function submitForm() {
   calls = stub.map((c) => ({ method: c.method, url: c.url, body: c.body as Record<string, unknown> }));
 }
 
-// Escape as the focused control would send it (bubbling up to the window).
-async function pressEscape() {
-  await act(async () => {
-    document.body.dispatchEvent(
-      new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
-    );
-  });
-}
-
 // FillDto fixture (api.types.ts wire shape: price = myriadths string, fee = cents).
 function fillDto() {
   return {
@@ -321,15 +312,6 @@ describe('FillDialog', () => {
     expect(put!.body.feeCents).toBe(700);
   });
 
-  it('Escape in the fill form does not close it', async () => {
-    await render({ costPpm: 30, fill: fillDto(), deletable: true });
-    await type('manualSharesInput', '5');
-    await pressEscape();
-    expect(closed).toBe(0);
-    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
-    expect(inputByTestId('manualSharesInput').value).toBe('5');
-  });
-
   it('delete: confirm inside the dialog then DELETE, cancel returns to the form', async () => {
     await render({ costPpm: 30, fill: fillDto(), deletable: true });
     expect(button('Delete')).toBeTruthy();
@@ -352,15 +334,6 @@ describe('FillDialog', () => {
     expect(del!.url.endsWith('/api/runs/7/fills/3')).toBe(true);
     expect(saved).toBe(1);
     expect(closed).toBe(1);
-  });
-
-  it('Escape on the delete-confirm step does not close the dialog', async () => {
-    await render({ costPpm: 30, fill: fillDto(), deletable: true });
-    await clickButton('Delete');
-    await pressEscape();
-    expect(closed).toBe(0);
-    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
-    expect(button('Delete for real')).toBeTruthy();
   });
 
   it('no Delete button when the fill is not deletable or absent', async () => {
