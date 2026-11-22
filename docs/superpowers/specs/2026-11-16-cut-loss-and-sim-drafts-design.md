@@ -339,13 +339,13 @@ ruling of the follow-up decisions log:
   `sell-attributed-why-market`, `leg-sell_loc`, `leg-stop_sell` and
   `leg-market_sell`.
 
-**Known limitations (whole-branch review, 2026-11-20; item 5 is still open):**
+**Known limitations (whole-branch review, 2026-11-20; item 5 is still open, tracked as #73):**
 
 1. Addressed 2026-11-22 (#54): a partial fill no longer flips its order, so the rest of that leg stays a candidate.
 2. Addressed 2026-11-22 (#55): `market_sell` legs on other buckets are listed as alternatives and take part in the share-count rung; price ranking is unchanged.
 3. Addressed 2026-11-22 (#53): a stale leg of the fill's day is a candidate; a late fill that still falls to the fallback pulls that bucket's legs for today only when it empties the fallback bucket.
 4. Addressed 2026-11-22 (#52): the share-count rung separates same-close targets of different sizes.
-5. A fill edit or correction that turns a partial sell into a bucket-emptying one does not flip or cancel that bucket's legs: they stay `open` on an empty bucket for the rest of that day, and a later same-day fill at exactly one of their prices fails `bucket-not-held` (the operator can force the bucket).
+5. A fill edit or correction that turns a partial sell into a bucket-emptying one does not flip or cancel that bucket's legs: they stay `open` on an empty bucket for the rest of that day, and a later same-day fill at exactly one of their prices fails `bucket-not-held` (the operator can force the bucket). Tracked as #73.
 
 **Sibling cancel.** Both legs sit live at the broker, so when one fires the other
 must stop looking live in the tracker *and* the operator must pull it by hand.

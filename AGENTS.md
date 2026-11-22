@@ -17,7 +17,7 @@ package.json  bun.lock  tsconfig.json  tsconfig.base.json  .env.example  .gitign
 Dockerfile  docker-compose.yml
 prod_helpers/      build_and_push.sh run_prod_container.sh
 resources/trade_images/   sample broker screenshots (mpop/)
-docs/superpowers/  specs/ plans/ followups/  (design specs, implementation plans, followup lists)
+docs/superpowers/  specs/ plans/ followups/ decisions/  (design specs, implementation plans, followup lists, decision logs)
 packages/          each package also has package.json tsconfig.json
   core/src/        money.ts domain.ts fills.ts index.ts      (+ core/test/*)
   calendar/src/    index.ts nyse-data.ts crosscheck.ts       (+ calendar/test/*)
@@ -68,7 +68,7 @@ scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-sim-drafts.ts e2e-vision
 | DB integration | yes | `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun test` |
 | Operator E2E smoke | yes | `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun scripts/e2e.ts` (run from repo root) |
 
-`scripts/e2e.ts` never touches the `st_test` tables: it creates a fresh `st_e2e_*` scratch DB, runs migrations on it, drives the real HTTP app + capture pipeline against it (fake vision endpoint on 127.0.0.1), and always drops the scratch DB — including on failure. (The DB suite likewise creates and drops its own `st_janitor_*` scratch database in `apps/server/test/db-vision-janitor.test.ts`.) Bars, closes and the calendar cross-check are injected, so it works offline.
+`scripts/e2e.ts` never touches the `st_test` tables: it creates a fresh `st_e2e_*` scratch DB, runs migrations on it, drives the real HTTP app + capture pipeline against it (fake vision endpoint on 127.0.0.1), and always drops the scratch DB — including on failure. (The DB suite likewise creates and drops its own scratch databases: `st_janitor_*` in `apps/server/test/db-vision-janitor.test.ts` and `st_simlist_*` in `apps/server/test/db-sim-list.test.ts`.) Bars, closes and the calendar cross-check are injected, so it works offline.
 
 - Test DB: `docker run -d --name st-mariadb-test -e MARIADB_ROOT_PASSWORD=test -e MARIADB_DATABASE=st_test -p 127.0.0.1:3307:3306 mariadb:11`
 

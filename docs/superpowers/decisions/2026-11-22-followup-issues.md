@@ -3,7 +3,7 @@
 Branch: `fix/followup-issues` (one branch, one PR). Started 2026-11-22 from `main` at `42795c3`.
 Scope: every open issue except #40 (multi-instance protection, deferred) and #50 (native read of Korean copy, needs a human).
 Mode: the operator asked for no approval stops. Every design decision below was made by the controller (Claude Opus 5.5)
-and is listed here so a human can review and reverse it. Plans and reviews: Opus 5.5. Implementation: Sonnet 5.5.
+and is listed here so a human can review and reverse it. Models varied over the branch; see "Model history" below.
 
 **How to read this:** each entry says what was decided, why, and what it costs if it is wrong.
 Entries marked **[REVIEW]** change behaviour an operator will notice or reverse an earlier operator ruling; read those first.
@@ -16,9 +16,15 @@ Entries marked **[REVIEW]** change behaviour an operator will notice or reverse 
 | B. Notices and Telegram | #56, #60, #58 (copy and wiring parts) | `docs/superpowers/plans/2026-11-22-notices-telegram.md` |
 | C. Server tidiness | #62, #63, #64, #72 (server parts) | `docs/superpowers/plans/2026-11-22-server-tidy.md` |
 | D. Web UX and accessibility | #61, #68 (phone width), #69, #70, #71, #72 (web parts) | `docs/superpowers/plans/2026-11-22-web-ux-a11y.md` |
-| E. Repository typing | #67, #58 (typing parts) | `docs/superpowers/plans/2026-11-22-repo-typing.md` (written after A–D are executed, against the tree they leave) |
+| E. Repository typing | #67, #58 (typing parts) | never written: #67 stays open with a comment; the one #58 typing item was done in the final fix pass |
 
-Execution order: A, B, C, D, E, on the one branch.
+Execution order: A, B, C, D, on the one branch (plan E was dropped, see above).
+
+## Model history
+
+- Plans A-C were written and reviewed on Opus 5.5 and implemented on Sonnet 5.5, as the plan files say.
+- From the user's 2026-11-22 directive (during the plan C wrap-up) through plan D Task 2, the controller and every subagent ran on `m5max/q38fn`.
+- From plan D Task 3 on (second user directive): planning on Fable 5.2 (high), review on Opus 5.5 (high), implementation on Sonnet 5.5.
 
 ## Up-front design rulings
 
@@ -110,9 +116,9 @@ Execution order: A, B, C, D, E, on the one branch.
 - Plan B Task 1: the booking notices now look up the run (for `Run #<id> <ticker>`); if the run is gone the ticker shows `?`; if the lookup itself throws, the failure is logged and the notice still goes out with `?` for the ticker (hardened in Task 2, so a "cancel the other leg" message is not lost to a failed lookup).
 - **[REVIEW] Plan B whole-plan review (Opus): the Telegram bot had no error handler.** In grammY an error thrown by any update handler ends long polling for good, so one transient failure (a Telegram 429 after a fill booked, a DB error on reject) would silently stop prompts, confirms and `/status` until a restart. This predates the branch, but plan B makes one-tap confirming live, so the fix pass adds `bot.catch` (log and keep polling) and replies with the worded error in the pressing chat when a reject fails. Cost if wrong: none (errors that used to stop the bot are now logged).
 - Plan C Task 7 consequence: a ticker with cached bars that is later delisted now answers "no data" for new date ranges, so the bar cache records those ranges as covered (empty) with a `console.warn` instead of failing; a spurious Yahoo 404 for a live ticker would do the same (the README's `bar_coverage` escape hatch clears it). Recorded, not changed.
-- **Model directive (user, 2026-11-22):** the controller and every subagent (implementers and reviewers) run on `m5max/q38fn`. This overrides the `anthropic/...` model lines written into the plan files. **[REVIEW]**
+- **Model directive (user, 2026-11-22):** for a stretch of the branch every agent ran on `m5max/q38fn`, overriding the plan files' model lines; superseded from plan D Task 3. See "Model history" at the top.
 - **Plan C wrap-up reconciliation:** the plan file has exactly 9 tasks and all 9 are implemented and individually reviewed (`cd11328` is the tip); an earlier working note about "owed Tasks 10-13" was a numbering artifact of the progress ledger, not real owed work. #66 and #59 were closed upstream before this branch (origin/main `42795c3` is titled "(#66)"), so plan C owes nothing for them. The plan's "Issue closing" section stays the closing authority.
-- **#67 (repository surface typing) is still relevant but has no plan:** plan E was never written (it was to be written against the tree plans A-D leave). Ruling: after plan D, do a scoped typing pass for #67 if it stays small, otherwise leave #67 open with a comment naming what this branch already tightened (strict ids, typed `send`), so the next branch can size it against the new tree. **[REVIEW]**
+- **#67 (repository surface typing) is still relevant but has no plan:** plan E was never written (it was to be written against the tree plans A-D leave). Ruling: after plan D, do a scoped typing pass for #67 if it stays small, otherwise leave #67 open with a comment naming what this branch already tightened (strict ids, typed `send`), so the next branch can size it against the new tree. **[REVIEW]** Outcome: no typing pass was done. #67 stays open with that comment. Only the #58 item `listForRunFrom: Promise<OrderRow[]>` was tightened, in the final fix pass.
 - **Branch state for the PR (checked 2026-11-22, before plan D):** `origin/main` is at `42795c3`, which is the branch's merge-base; `fix/followup-issues` is 30 ahead / 0 behind, so the PR is a clean fast-forward — an earlier "main diverged" worry was a stale local view of the main repo, not a real divergence. The PR covers plans A, B, C and D plus this decisions document.
 - **Plan D execution shape:** implementers run sequentially because every task edits the two i18n catalogs (parallel implementers would conflict); reviewers are read-only and overlap the next implementer. `bun test apps/web/src` + `bun run typecheck` gate every task; the DB suite and e2e run once at plan end.
 
@@ -140,11 +146,11 @@ Execution order: A, B, C, D, E, on the one branch.
 - Plan D Task 7: `FillDialog.tsx` is 306 lines at dispatch, so the plan's conditional extraction (`FillDeleteStep.tsx`) applies.
 - Plan D Task 10: the unreferenced `errorNetwork` catalog key is deleted when `errNetwork` is added (no two keys with one meaning).
 - **[REVIEW] Plan D Task 13 item 9** is scoped to the final-values row: the changed-field glyph renders in BOTH the detected and final rows of a review card, so "one mark in the card" would fail by design. If a single mark per card was the intent, that is a UI change for a follow-up.
-- Plan D Task 5 follow-up (branch review): the Compare dialog's `Field` hints are part of the input's accessible NAME (the row uses `aria-describedby`); recorded, not changed on this branch.
+- Plan D Task 5 follow-up (branch review): the Compare dialog's `Field` hints are part of the input's accessible NAME (the row uses `aria-describedby`); recorded as #78, not changed on this branch.
 
 ## Plan D close-out (per-task reviews)
 
-- All 13 plan D tasks were approved by per-task Opus reviews: 0 Critical, 0 Important. Their minors (27 items) go into one fix pass (`.superpowers/sdd/2026-11-22-web-ux-a11y/fix-pass-brief.md`).
+- All 13 plan D tasks were approved by per-task Opus reviews: 0 Critical, 0 Important. Their minors (27 items) went into one fix pass (`8a21c69..6d9ae0e`). The brief lives in the untracked working notes.
 - Plan-end verification at `a3093f0`:
   - full `bun test`: 1533 pass / 64 skip / 0 fail
   - DB suite: 61 pass across 6 files
@@ -156,3 +162,9 @@ Execution order: A, B, C, D, E, on the one branch.
   - #78: form `Field` hints are part of the input's accessible name. The row uses `aria-describedby` correctly; `Field` does not.
   - #79: the Compare dialog lacks the row's standing-issue warning border.
   - #80: non-sim screens still show the browser's raw "Failed to fetch". Only Sim and the review tab map `NetworkError` to worded copy.
+
+## Branch-final reviews (2026-11-22)
+
+- Plan D whole-plan review (Opus 5.5): Spec FAIL on one Critical cross-task seam. In the app, the fill dialog's delete step opened with focus on "Delete for real", so a second Enter deleted the fill (Modal cleanup and opener chain vs the `FillDeleteStep` remount). Also found: focus lost after Delete, Cancel, ✕, and keep notices mounted as per-item live regions. All three are fixed in the final web fix pass.
+- Branch-wide review (Opus 5.5): READY AFTER FIXES, 0 Critical. The cross-plan seams hold: `CONFIRM_ERROR_KEYS` covers every code Telegram can reach, and the `archived` notice, `simErr.*`, `bucketIdx`, the `web` notification rows and migration 0009 agree across plans. The #58 leftovers (`listForRunFrom` typing, `silentNotifier` fixtures that never book) are done in the final server fix pass.
+- Commit `ef89515` uses a `perf:` subject, outside the repo's `feat|fix|docs|test|refactor|chore:` list. Accepted as is rather than rewriting branch history.
