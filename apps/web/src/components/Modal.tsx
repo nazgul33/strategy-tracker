@@ -63,7 +63,7 @@ export function Modal({
   wide?: boolean;
   /** Opt out of the Escape key for panels whose buttons carry the meaning. */
   closeOnEscape?: boolean;
-  children?: React.ReactNode;
+  children: React.ReactNode;
 }) {
   const t = useT();
   const panelRef = useRef<HTMLDivElement>(null);

@@ -41,17 +41,31 @@ function Host({ closeOnEscape, dropOpenerWhenOpen }: HostProps) {
     open &&
       d(
         Modal,
-        { key: 'outer', title: 'Test dialog', onClose: () => setOpen(false), closeOnEscape },
-        d('input', { 'data-testid': 'first' }),
-        d('button', { key: 'openInner', onClick: () => setInnerOpen(true) }, 'Open inner'),
-        d('button', { key: 'last', 'data-testid': 'last' }, 'Last'),
-        innerOpen &&
-          d(
-            Modal,
-            { key: 'inner', title: 'Inner dialog', onClose: () => setInnerOpen(false) },
-            d('input', { 'data-testid': 'inner' }),
-            d('button', { key: 'innerDone', 'data-testid': 'innerDone' }, 'Inner done'),
+        {
+          key: 'outer',
+          title: 'Test dialog',
+          onClose: () => setOpen(false),
+          closeOnEscape,
+          children: d(
+            React.Fragment,
+            null,
+            d('input', { 'data-testid': 'first' }),
+            d('button', { key: 'openInner', onClick: () => setInnerOpen(true) }, 'Open inner'),
+            d('button', { key: 'last', 'data-testid': 'last' }, 'Last'),
+            innerOpen &&
+              d(Modal, {
+                key: 'inner',
+                title: 'Inner dialog',
+                onClose: () => setInnerOpen(false),
+                children: d(
+                  React.Fragment,
+                  null,
+                  d('input', { 'data-testid': 'inner' }),
+                  d('button', { key: 'innerDone', 'data-testid': 'innerDone' }, 'Inner done'),
+                ),
+              }),
           ),
+        },
       ),
   );
 }
@@ -216,6 +230,25 @@ describe('Modal focus behaviour', () => {
     press(document.body, 'Escape');
     expect(dialogCount()).toBe(1);
     expect(document.activeElement).toBe(openInner);
+  });
+
+  it('closes only the last dialog in document order on Escape when two are mounted', async () => {
+    const closed: string[] = [];
+    await act(async () =>
+      root.render(
+        d(
+          'div',
+          null,
+          d(Modal, { title: 'First', onClose: () => closed.push('first'), children: d('button', null, 'a') }),
+          d(Modal, { title: 'Second', onClose: () => closed.push('second'), children: d('button', null, 'b') }),
+        ),
+      ),
+    );
+    expect(dialogCount()).toBe(2);
+
+    press(document.body, 'Escape');
+
+    expect(closed).toEqual(['second']);
   });
 
   it('keeps the header close button in the tab order', async () => {
