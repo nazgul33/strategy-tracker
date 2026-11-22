@@ -151,9 +151,17 @@ export function TableWrap({ children }: { children: ReactNode }) {
   );
 }
 
-export function Th({ children, className = '' }: { children?: ReactNode; className?: string }) {
+export function Th({
+  children,
+  className = '',
+  scope = 'col',
+}: {
+  children?: ReactNode;
+  className?: string;
+  scope?: 'col' | 'row';
+}) {
   return (
-    <th className={`whitespace-nowrap border-b border-border py-1.5 pr-3 font-medium text-muted-foreground ${className}`}>
+    <th scope={scope} className={`whitespace-nowrap border-b border-border py-1.5 pr-3 font-medium text-muted-foreground ${className}`}>
       {children}
     </th>
   );

@@ -78,6 +78,16 @@ describe('VisionReviewEntry accessibility', () => {
     expect(container.querySelector('[role="img"]')).toBeNull();
   });
 
+  it('labels each value row with a row header', () => {
+    render([EDITED]);
+    const label = (row: string) => container.querySelector(`tr[data-row=${row}] th[scope=row]`)!.textContent;
+    expect(label('detected')).toBe('Vision read');
+    expect(label('final')).toBe('Final');
+    const heads = Array.from(container.querySelectorAll('thead th'));
+    expect(heads.length).toBeGreaterThan(0);
+    expect(heads.every((th) => th.getAttribute('scope') === 'col')).toBe(true);
+  });
+
   it('names both in Korean', () => {
     localStorage.setItem('st-lang', 'ko');
     render([EDITED]);

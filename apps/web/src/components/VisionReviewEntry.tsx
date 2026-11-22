@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type KeyboardEvent, useState } from 'react';
 import type { DetectedDto, VisionReviewEntryDto, VisionReviewFillDto } from '../api.types';
 import { centsUsd, isoDate, isoDateTime, priceUsd } from '../format';
 import { useT } from '../i18n';
@@ -67,9 +67,12 @@ function FillRows({ fill }: { fill: VisionReviewFillDto }) {
           </div>
         </Td>
       )}
-      <Td className="whitespace-nowrap text-muted-foreground">
+      <th
+        scope="row"
+        className="whitespace-nowrap border-b border-border/60 py-1.5 pr-3 text-left align-top font-normal text-muted-foreground"
+      >
         {t(kind === 'detected' ? 'visionReviewRowDetected' : 'visionReviewRowFinal')}
-      </Td>
+      </th>
       {FIELDS.map((field) => {
         const isChanged = changed.has(field);
         return (
@@ -124,6 +127,22 @@ export function VisionReviewEntry({
 }) {
   const t = useT();
   const [armed, setArmed] = useState(false);
+  const [refocusDelete, setRefocusDelete] = useState(false);
+  const arm = () => {
+    setRefocusDelete(false);
+    setArmed(true);
+  };
+  const cancel = () => {
+    setRefocusDelete(true);
+    setArmed(false);
+    onCancel?.();
+  };
+  // The confirm is inline, not a Modal, so Escape is handled here; not while the delete is in flight.
+  const escapeToCancel = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape' || busy) return;
+    e.preventDefault();
+    cancel();
+  };
   return (
     <Card>
       <div data-capture={entry.captureId} className="space-y-3">
@@ -135,23 +154,20 @@ export function VisionReviewEntry({
           <span className="text-xs tabular-nums text-muted-foreground">{isoDateTime(entry.createdAt)}</span>
           <span className="text-xs tabular-nums text-muted-foreground">{Math.max(1, Math.round(entry.byteLen / 1024))} KB</span>
           {!armed && (
-            <Button className="ml-auto" variant="danger" onClick={() => setArmed(true)}>
+            <Button className="ml-auto" variant="danger" autoFocus={refocusDelete} onClick={arm}>
               {t('visionReviewDelete')}
             </Button>
           )}
         </div>
         {armed && (
-          <div className="space-y-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2">
+          <div
+            className="space-y-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2"
+            onKeyDown={escapeToCancel}
+          >
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <span className="text-sm text-destructive">{t('visionReviewDeleteWarning')}</span>
               <div className="ml-auto flex gap-2">
-                <Button
-                  disabled={busy}
-                  onClick={() => {
-                    setArmed(false);
-                    onCancel?.();
-                  }}
-                >
+                <Button autoFocus disabled={busy} onClick={cancel}>
                   {t('cancel')}
                 </Button>
                 <Button variant="danger" busy={busy} disabled={deleteDisabled} onClick={onDelete}>

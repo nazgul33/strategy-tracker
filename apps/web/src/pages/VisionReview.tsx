@@ -1,5 +1,5 @@
 // Screenshots kept for review: what vision read, and what the operator booked.
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '../api';
 import { VisionReviewEntry } from '../components/VisionReviewEntry';
 import { useAsync } from '../components/hooks';
@@ -20,22 +20,41 @@ export function VisionReviewPage() {
   const [deleteErrors, setDeleteErrors] = useState<Record<number, unknown>>({});
   const [listDismissed, setListDismissed] = useState(false);
   const [reloading, setReloading] = useState(false);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const [headingRequests, setHeadingRequests] = useState(0);
+
+  // A finished delete removes the card that held focus, and a dismissed error removes its own
+  // Dismiss button; give focus to the heading unless it already sits on something. Runs after
+  // the commit that dropped the element.
+  useEffect(() => {
+    if (headingRequests === 0) return;
+    const active = document.activeElement;
+    if (active === null || active === document.body) heading.current?.focus();
+  }, [headingRequests]);
+
+  const dismiss = (apply: () => void) => {
+    apply();
+    setHeadingRequests((n) => n + 1);
+  };
 
   const remove = async (id: number) => {
     setBusyId(id);
     setLastDeleteId(id);
     setListDismissed(false);
     setDeleteErrors((current) => without(current, id));
+    let failed = false;
     try {
       await api.deleteVisionReview(id);
     } catch (err) {
       // Already gone is what the operator wanted.
       if (!(err instanceof ApiError && err.code === 'not-found')) {
+        failed = true;
         setDeleteErrors((current) => ({ ...current, [id]: err }));
       }
     } finally {
       await reload();
       setBusyId(null);
+      if (!failed) setHeadingRequests((n) => n + 1);
     }
   };
 
@@ -69,18 +88,18 @@ export function VisionReviewPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">{t('visionReviewTitle')}</h1>
+        <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">{t('visionReviewTitle')}</h1>
         <Button busy={reloading} disabled={busyId !== null} onClick={() => void refresh()}>
           {t('reload')}
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">{t('visionReviewIntro')}</p>
-      {pageListError && <ErrorNote message={pageListError} onDismiss={() => setListDismissed(true)} />}
+      {pageListError && <ErrorNote message={pageListError} onDismiss={() => dismiss(() => setListDismissed(true))} />}
       {pageDeleteIds.map((id) => (
         <ErrorNote
           key={id}
           message={visionReviewErrorText(deleteErrors[id], t)}
-          onDismiss={() => setDeleteErrors((current) => without(current, id))}
+          onDismiss={() => dismiss(() => setDeleteErrors((current) => without(current, id)))}
         />
       ))}
       {loading && !data && <Spinner />}
