@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useT } from '../../i18n';
 import { Button } from '../ui';
 
@@ -37,20 +37,40 @@ export function useKeepNotices(): KeepNotices {
 }
 
 /**
- * Warning notices over the pending table, each with a Dismiss button. The
- * side label is translated at render time, so switching language re-renders
- * an already-standing notice in the new language.
+ * Warning notices over the pending table, each with a Dismiss button. They
+ * live in ONE live region that is always mounted — a status element that
+ * arrives together with its text is not reliably announced — and that is
+ * empty, with no box of its own, until a notice arrives. The side label is
+ * translated at render time, so switching language re-renders an
+ * already-standing notice in the new language.
  */
 export function KeepNoticeList({ notices }: { notices: KeepNotices }) {
   const t = useT();
-  if (notices.list.length === 0) return null;
+  const regionRef = useRef<HTMLDivElement>(null);
+  // Where the dismissed notice sat: once it is gone, focus goes to whichever
+  // notice took its place, else to the region, instead of dropping to <body>.
+  const refocusAt = useRef<number | null>(null);
+  useEffect(() => {
+    const index = refocusAt.current;
+    if (index === null) return;
+    refocusAt.current = null;
+    const buttons = regionRef.current?.querySelectorAll<HTMLElement>('[data-keep-notice] button');
+    const target = buttons && buttons.length > 0 ? buttons[Math.min(index, buttons.length - 1)] : regionRef.current;
+    target?.focus();
+  }, [notices.list]);
   return (
-    <div className="mb-3 space-y-2">
-      {notices.list.map((n) => (
+    <div
+      ref={regionRef}
+      role="status"
+      aria-live="polite"
+      data-keep-notices
+      tabIndex={-1}
+      className="space-y-2 outline-none empty:-mb-3"
+    >
+      {notices.list.map((n, i) => (
         <div
           key={n.id}
           data-keep-notice
-          role="status"
           className="flex items-start gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
         >
           <span className="flex-1">
@@ -62,7 +82,14 @@ export function KeepNoticeList({ notices }: { notices: KeepNotices }) {
               date: n.date || '?',
             })}
           </span>
-          <Button onClick={() => notices.dismiss(n.id)}>{t('dismiss')}</Button>
+          <Button
+            onClick={() => {
+              refocusAt.current = i;
+              notices.dismiss(n.id);
+            }}
+          >
+            {t('dismiss')}
+          </Button>
         </div>
       ))}
     </div>

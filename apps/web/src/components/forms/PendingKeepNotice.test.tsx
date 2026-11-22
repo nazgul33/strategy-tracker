@@ -18,8 +18,10 @@ type Route = Parameters<typeof installFetchStub>[0][number];
 // A keep-requested confirm/reject whose review record could not be saved (`archived:
 // false` even though the server keeps the screenshot before the row flips) must leave
 // a LASTING, NAMED warning notice — not the old transient inline error, which vanished
-// on the next action. The notice is a `div[data-keep-notice][role=status]` naming the
-// fill; the action error stays a `role=alert` with a stable testid (Review Round 2).
+// on the next action. Notices sit in ONE persistent `div[data-keep-notices][role=status]`
+// live region (an element mounted together with its text is not reliably announced), each
+// a `div[data-keep-notice]` naming the fill; the action error stays a `role=alert` with a
+// stable testid (Review Round 2).
 describe('pending keep record-failed notices', () => {
   afterEach(() => {
     roots.splice(0).forEach((root) => act(() => root.unmount()));
@@ -135,12 +137,34 @@ describe('pending keep record-failed notices', () => {
     await confirmKeeping(t('keepImageKeep'));
 
     const notice = noticeAt(0);
-    expect(notice.getAttribute('role')).toBe('status');
+    expect(notice.closest('[role=status]')).toBe(container.querySelector('[data-keep-notices]'));
+    expect(notice.getAttribute('role')).toBeNull();
     expect(notice.className).toContain('text-warning');
     expect(notice.className).not.toContain('text-destructive');
     expect(notice.textContent).toContain(
       'Booked AAPL Buy 11 sh @ $12345.00 on 2026-11-10, but its review record could not be saved.',
     );
+  });
+
+  it('keeps one polite live region mounted, empty until a notice arrives', async () => {
+    const state = { rows: [PENDING_ROW] };
+    backend(state, [keepFailed('/api/pending/9/confirm', () => (state.rows = []))]);
+    container = render();
+    await flush();
+
+    const region = container.querySelector('[data-keep-notices]') as HTMLElement;
+    expect(region.getAttribute('role')).toBe('status');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    expect(region.childElementCount).toBe(0);
+    expect(region.textContent).toBe('');
+
+    await editQty('11');
+    await confirmKeeping(t('keepImageKeep'));
+
+    // The very same element, so a screen reader sees text added to a live region.
+    expect(container.querySelector('[data-keep-notices]')).toBe(region);
+    expect(region.childElementCount).toBe(1);
+    expect(region.textContent).toContain('Booked AAPL Buy 11 sh');
   });
 
   it('a reject names it as rejected', async () => {
@@ -239,6 +263,30 @@ describe('pending keep record-failed notices', () => {
 
     await click(dismissButtons()[0]!);
     expect(container.querySelectorAll('[data-keep-notice]')).toHaveLength(0);
+  });
+
+  it('dismissing moves focus to the next notice, then to the region when none remain', async () => {
+    const row2 = { ...PENDING_ROW, id: 10, ticker: 'MSFT' };
+    const state = { rows: [PENDING_ROW, row2] };
+    backend(state, [
+      keepFailed('/api/pending/9/confirm', () => (state.rows = [row2])),
+      keepFailed('/api/pending/10/confirm', () => (state.rows = [])),
+    ]);
+    container = render();
+    await flush();
+    await editQty('11');
+    await confirmKeeping(t('keepImageKeep'));
+    await editQty('11');
+    await confirmKeeping(t('keepImageKeep'));
+    expect(dismissButtons()).toHaveLength(2);
+
+    await pressByKeyboard(dismissButtons()[0]!);
+    expect(dismissButtons()).toHaveLength(1);
+    expect(document.activeElement).toBe(dismissButtons()[0]!);
+
+    await pressByKeyboard(dismissButtons()[0]!);
+    expect(container.querySelectorAll('[data-keep-notice]')).toHaveLength(0);
+    expect(document.activeElement).toBe(container.querySelector('[data-keep-notices]'));
   });
 
   it('the action error is an alert with a stable hook', async () => {

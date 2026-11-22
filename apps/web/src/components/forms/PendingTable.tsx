@@ -133,8 +133,9 @@ export function PendingTable({
       // The server keeps the screenshot before it flips the row, so on a
       // keep-requested action `archived: false` means only the review record
       // failed: name the fill in a warning that outlives the next action,
-      // not an error the next action clears away. Added before the reload so
-      // a failed list read can never swallow it.
+      // not an error the next action clears away. `reload()` never throws
+      // (a failed read lands in `error`); adding first just keeps the notice
+      // independent of that.
       if (keepImage === true && !res.archived) {
         notices.add({
           action: action === 'confirm' ? 'book' : 'reject',
