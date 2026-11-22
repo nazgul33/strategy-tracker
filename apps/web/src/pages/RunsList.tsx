@@ -239,7 +239,7 @@ export function RunsListPage() {
       </Card>
 
       {showNew && (
-        <Modal title={t('runNew')} onClose={() => setShowNew(false)}>
+        <Modal title={t('runNew')} onClose={() => setShowNew(false)} closeOnEscape={false}>
           <CreateRunForm
             onCreated={() => {
               setShowNew(false);

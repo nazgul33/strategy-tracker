@@ -190,7 +190,7 @@ export function FillDialog({
 
   if (confirming && fill) {
     return (
-      <Modal title={t('dialog.delete')} onClose={onClose}>
+      <Modal title={t('dialog.delete')} onClose={onClose} closeOnEscape={false}>
         <p className="text-sm">{t('dialog.deleteWarning', { n: fill.shares })}</p>
         {closedNote}
         {errorLine}
@@ -198,14 +198,16 @@ export function FillDialog({
           <Button variant="danger" busy={busy} onClick={() => void remove()}>
             {t('dialog.deleteConfirm')}
           </Button>
-          <Button onClick={() => setConfirming(false)}>{t('cancel')}</Button>
+          <Button autoFocus onClick={() => setConfirming(false)}>
+            {t('cancel')}
+          </Button>
         </div>
       </Modal>
     );
   }
 
   return (
-    <Modal title={modify ? t('dialog.editFill') : t('dialog.addFill')} onClose={onClose}>
+    <Modal title={modify ? t('dialog.editFill') : t('dialog.addFill')} onClose={onClose} closeOnEscape={false}>
       <form onSubmit={(e) => void submit(e)} className="space-y-3">
         <Field label={t('manualSide')}>
           <Select

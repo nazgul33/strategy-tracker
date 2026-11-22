@@ -21,7 +21,7 @@ export function PendingReviewDialog({ row, values, onCancel, onDone }: PendingRe
   const set = (patch: Partial<RowValues>) => setDraft((prev) => patchRowValues(row, prev, patch));
 
   return (
-    <Modal wide title={`${t('pendingReviewTitle')} · ${row.ticker || '?'}`} onClose={onCancel}>
+    <Modal wide title={`${t('pendingReviewTitle')} · ${row.ticker || '?'}`} onClose={onCancel} closeOnEscape={false}>
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem]">
         <div className="max-h-[70vh] overflow-auto rounded border border-border bg-background">
           {row.captureId !== null && <ScreenshotLink captureId={row.captureId} imgClassName="w-full" />}

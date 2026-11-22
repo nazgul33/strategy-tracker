@@ -83,7 +83,7 @@ export function EditRunModal({
   };
 
   return (
-    <Modal title={t('poolTitle')} onClose={onClose}>
+    <Modal title={t('poolTitle')} onClose={onClose} closeOnEscape={false}>
       {saved ? (
         <div className="space-y-3">
           <div role="status" className="rounded border border-positive/40 bg-positive/10 px-3 py-2 text-sm text-positive">

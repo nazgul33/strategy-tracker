@@ -3,7 +3,6 @@
 // the dark class on <html> repaints everything at once.
 import type { ReactNode } from 'react';
 
-import { useT } from '../i18n';
 import type { BadgeTone } from '../viewmodels';
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
@@ -162,39 +161,6 @@ export function Td({
   );
 }
 
-/** Simple fixed-overlay modal used by the dialogs (pool edit, new run); `wide` makes room for side-by-side content. */
-export function Modal({
-  title,
-  onClose,
-  wide = false,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  wide?: boolean;
-  children: ReactNode;
-}) {
-  const t = useT();
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-background/70 p-4 pt-16 backdrop-blur-sm"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-    >
-      <div
-        className={`w-full ${wide ? 'max-w-4xl' : 'max-w-md'} rounded-lg border border-border bg-card p-4 shadow-lg`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-center justify-between gap-4">
-          <h3 className="text-sm font-semibold">{title}</h3>
-          <button type="button" aria-label={t('cancel')} className="text-muted-foreground hover:text-foreground" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
+// The shared dialog lives in its own module now (focus trap, Escape, focus
+// restore); re-exported here so pages keep importing it from the ui barrel.
+export { Modal } from './Modal';
