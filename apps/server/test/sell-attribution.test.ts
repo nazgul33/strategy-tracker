@@ -7,7 +7,7 @@ import { fakeRepos, recordingNotifier } from './booking-fakes'
 
 const D: ISODate = '2026-11-12'
 type Held = { idx: number; shares: number; buy: string }
-type Ord = { idx: number; kind: 'sell_loc' | 'stop_sell' | 'market_sell'; price: string }
+type Ord = { idx: number; kind: 'sell_loc' | 'stop_sell' | 'market_sell'; price: string; shares?: number }
 
 async function setup(held: Held[], ords: Ord[], notifyOverride?: (base: ReturnType<typeof recordingNotifier>['notify']) => FillBookingDeps['notify']) {
   const f = fakeRepos()
@@ -18,7 +18,7 @@ async function setup(held: Held[], ords: Ord[], notifyOverride?: (base: ReturnTy
   const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'attr', poolCents: 1000000, costPpm: 0, initialRunState: { buckets: s.buckets, cashCents: s.cashCents, closed: s.closed, ages: s.ages } })
   await f.repos.orderRepo.insertMany(ords.map((o) => ({
     runId, tradeDate: D, kind: o.kind, bucketIdx: o.idx,
-    limitPrice: o.kind === 'market_sell' ? 0n : parseUsd(o.price), shares: 10, status: 'open',
+    limitPrice: o.kind === 'market_sell' ? 0n : parseUsd(o.price), shares: o.shares ?? 10, status: 'open',
   })))
   return { f, deps, rec, runId }
 }
@@ -51,6 +51,7 @@ describe('sell attribution to the nearest order price', () => {
       attribution: {
         shares: 10,
         price: parseUsd('96.50'),
+        rule: 'price',
         chosen: { orderId: order(f, 0, 'stop_sell').id, bucketIdx: 0, kind: 'stop_sell', limitPrice: parseUsd('97.00'), distance: parseUsd('0.50') },
         alternatives: [{ orderId: order(f, 9, 'sell_loc').id, bucketIdx: 9, kind: 'sell_loc', limitPrice: parseUsd('91.00'), distance: parseUsd('5.50') }],
       },
@@ -88,10 +89,10 @@ describe('sell attribution to the nearest order price', () => {
 
   test('two other admissible buckets are listed nearest first, whatever the insertion order', async () => {
     const { f, deps, rec, runId } = await setup(
-      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 1, shares: 10, buy: '90.00' }, { idx: 2, shares: 10, buy: '105.00' }],
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 1, shares: 10, buy: '88.00' }, { idx: 2, shares: 10, buy: '105.00' }],
       [
         { idx: 2, kind: 'sell_loc', price: '108.00' }, { idx: 2, kind: 'stop_sell', price: '102.00' },
-        { idx: 1, kind: 'sell_loc', price: '92.00' }, { idx: 1, kind: 'stop_sell', price: '87.00' },
+        { idx: 1, kind: 'sell_loc', price: '90.00' }, { idx: 1, kind: 'stop_sell', price: '85.00' },
         { idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' },
       ],
     )
@@ -103,8 +104,8 @@ describe('sell attribution to the nearest order price', () => {
     expect(a.chosen).toMatchObject({ bucketIdx: 0, kind: 'stop_sell', limitPrice: parseUsd('97.00'), distance: parseUsd('0.50') })
     expect(a.alternatives).toHaveLength(2)
     expect(a.alternatives).toMatchObject([
-      { bucketIdx: 1, kind: 'sell_loc', limitPrice: parseUsd('92.00'), distance: parseUsd('4.50') },
       { bucketIdx: 2, kind: 'stop_sell', limitPrice: parseUsd('102.00'), distance: parseUsd('5.50') },
+      { bucketIdx: 1, kind: 'sell_loc', limitPrice: parseUsd('90.00'), distance: parseUsd('6.50') },
     ])
   })
 
@@ -136,14 +137,46 @@ describe('sell attribution to the nearest order price', () => {
     expect(a.alternatives[0]).toMatchObject({ bucketIdx: 0, kind: 'stop_sell', limitPrice: parseUsd('97.00'), distance: parseUsd('6.00') })
   })
 
-  // Pins the existing rung 1c tie-break (#48 gap): passes before the attribution change.
-  test('market_sell ties resolve to the lowest bucket regardless of insertion order', async () => {
+  test('market_sell ties resolve to the lowest bucket regardless of insertion order and list the other market sells', async () => {
     const { f, deps, rec, runId } = await setup(
       [{ idx: 2, shares: 10, buy: '100.00' }, { idx: 5, shares: 10, buy: '100.00' }, { idx: 7, shares: 10, buy: '100.00' }],
       [{ idx: 7, kind: 'market_sell', price: '0' }, { idx: 5, kind: 'market_sell', price: '0' }, { idx: 2, kind: 'market_sell', price: '0' }],
     )
     await sell(runId, 10, '50.00', deps)
     expect(lastFill(f).bucketIdx).toBe(2)
+    expect(rec.attributions).toHaveLength(1)
+    expect(rec.attributions[0]!.attribution).toMatchObject({
+      rule: 'market',
+      chosen: { bucketIdx: 2, kind: 'market_sell' },
+      alternatives: [{ bucketIdx: 5, kind: 'market_sell' }, { bucketIdx: 7, kind: 'market_sell' }],
+    })
+  })
+
+  test('a market_sell on another bucket is listed after the price legs', async () => {
+    const { f, deps, rec, runId } = await setup(
+      [{ idx: 0, shares: 10, buy: '95.00' }, { idx: 3, shares: 10, buy: '100.00' }, { idx: 5, shares: 10, buy: '96.00' }],
+      [{ idx: 0, kind: 'sell_loc', price: '97.85' }, { idx: 3, kind: 'market_sell', price: '0' }, { idx: 5, kind: 'sell_loc', price: '98.50' }],
+    )
+    await sell(runId, 10, '99.00', deps)
+    expect(lastFill(f).bucketIdx).toBe(5)
+    expect(rec.attributions).toHaveLength(1)
+    expect(rec.attributions[0]!.attribution).toMatchObject({
+      rule: 'price',
+      chosen: { bucketIdx: 5, kind: 'sell_loc', distance: parseUsd('0.50') },
+      alternatives: [{ bucketIdx: 0, kind: 'sell_loc', distance: parseUsd('1.15') }, { bucketIdx: 3, kind: 'market_sell' }],
+    })
+    expect(order(f, 3, 'market_sell').status).toBe('open')
+  })
+
+  test('a market_sell whose size matches the fill wins over a price leg on another bucket', async () => {
+    const { f, deps, rec, runId } = await setup(
+      [{ idx: 0, shares: 20, buy: '95.00' }, { idx: 3, shares: 10, buy: '100.00' }],
+      [{ idx: 0, kind: 'sell_loc', price: '97.85', shares: 20 }, { idx: 3, kind: 'market_sell', price: '0', shares: 10 }],
+    )
+    await sell(runId, 10, '99.00', deps)
+    expect(lastFill(f).bucketIdx).toBe(3)
+    expect(order(f, 3, 'market_sell').status).toBe('filled')
+    expect(order(f, 0, 'sell_loc').status).toBe('open')
     expect(rec.attributions).toEqual([])
   })
 })
@@ -182,5 +215,18 @@ describe('delivery of the attribution notice', () => {
     expect(rec.attributions[0]!.runId).toBe(runId)
     expect(rec.attributions[0]!.attribution.chosen).toMatchObject({ bucketIdx: 0, kind: 'stop_sell' })
     expect(rec.siblings).toHaveLength(1)
+  })
+
+  test('confirming a pending sell sends the attribution notice after the run lock is released', async () => {
+    let seen = 'never called'
+    const { f, deps, runId } = await setup(held43, book43, (base) => ({
+      ...base,
+      sellAttributed: async (rid) => {
+        seen = await Promise.race([withRunLock(rid, async () => 'free'), new Promise<string>((r) => setTimeout(() => r('held'), 100))])
+      },
+    }))
+    const pid = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: parseUsd('96.50'), fee: null, filledOn: D, status: 'pending' })
+    await confirmPendingFill(pid, null, deps)
+    expect(seen).toBe('free')
   })
 })

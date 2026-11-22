@@ -1,4 +1,4 @@
-import { applyBuyFill, applySellFill, nextBuyBucketIndex, parseUsd, DomainError, type ISODate, type RunState, type Bucket } from '@st/core'
+import { applyBuyFill, applySellFill, nextBuyBucketIndex, parseUsd, type ISODate, type RunState } from '@st/core'
 import { feeCents, centsFromUsd, formatUsd } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { ExtractResult, RawFill } from '@st/ingest'
@@ -7,7 +7,7 @@ import { claimCapture } from './capture-claim'
 import { recordCorrections } from './capture-corrections'
 import { withRunLock } from './run-lock'
 import { notifyBookingOutcome, type BookingNotifier, type BookedOutcome } from './booking-notify'
-import { matchSellOrder, openSellLegs, type OrderRow, type SellAttribution } from './sell-match'
+import { pickSellBucket, openSellLegs, type OrderRow, type SellAttribution } from './sell-match'
 import { storeCaptureImage } from './capture-image'
 import type { CorrectionRepo } from './correction-types'
 import type { CaptureImageInsert, CaptureImageListing } from '../db/repos-vision'
@@ -139,25 +139,15 @@ export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise
     next.ages[bucketIdx] = ageBuckets(next.ages, deps.today, { [bucketIdx]: input.filledOn })[bucketIdx]!
     // matching buy_loc order (lookup only; flip after ledger)
     const orders = await repos.orderRepo.listForDate(input.filledOn)
-    const match = orders.find((o: any) => o.runId === input.runId && o.kind === 'buy_loc' && o.status === 'open')
+    const match = orders.find((o: any) => o.runId === input.runId && o.kind === 'buy_loc' && (o.status === 'open' || o.status === 'stale'))
     if (match) matchedOrderId = match.id
   } else {
-    // From the fill date onwards: matchSellOrder narrows to filledOn, the cancel below needs later dates too.
+    // From the fill date onwards: matching narrows to filledOn, the cancel below needs later dates too.
     sellOrders = await repos.orderRepo.listForRunFrom(input.runId, input.filledOn)
-    const match = matchSellOrder(sellOrders, state, { runId: input.runId, filledOn: input.filledOn, shares: input.shares, price: priceBigInt })
-    let idx: number | undefined
-    if (match) {
-      idx = match.order.bucketIdx
-      matchedOrderId = match.order.id
-      attribution = match.attribution
-    } else {
-      const candidates = state.buckets
-        .filter((b: Bucket) => b.state !== 'empty' && b.shares >= input.shares)
-        .sort((a: Bucket, b: Bucket) => a.index - b.index)
-      if (candidates.length) idx = candidates[0]!.index
-    }
-    if (idx === undefined) throw new DomainError('no-bucket-for-sell')
-    bucketIdx = idx
+    const pick = pickSellBucket(sellOrders, state, { runId: input.runId, filledOn: input.filledOn, shares: input.shares, price: priceBigInt })
+    bucketIdx = pick.bucketIdx
+    matchedOrderId = pick.orderId
+    attribution = pick.attribution
     next = applySellFill(state, bucketIdx, input.shares, priceBigInt, finalFee, input.filledOn)
   }
 
@@ -176,16 +166,18 @@ export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise
   // A sell that empties its bucket leaves every open sell-side order of that bucket
   // with nothing to sell, however the bucket was chosen (matched order or fallback
   // guess) and whenever it was planned (see openSellLegs). A partial fill leaves
-  // shares that still need both legs, so nothing is cancelled. Plain status writer,
-  // not cancelOrder (re-enters the lock). The matched order flips to filled below.
+  // shares that still need both legs: it cancels nothing and leaves the matched order
+  // as it was, so its rest stays a candidate. Plain status writer, not cancelOrder
+  // (re-enters the lock). An emptying sell's matched order flips to filled below.
+  const emptied = input.side === 'sell' && next.buckets[bucketIdx]!.state === 'empty'
   const cancelledIds: number[] = []
-  if (input.side === 'sell' && next.buckets[bucketIdx]!.state === 'empty') {
+  if (emptied) {
     for (const o of openSellLegs(sellOrders, { runId: input.runId, bucketIdx, fromTradeDate: input.filledOn }, matchedOrderId)) {
       await repos.orderRepo.setStatus(o.id, 'cancelled', 'broker-filled')
       cancelledIds.push(o.id)
     }
   }
-  if (matchedOrderId !== null) await repos.orderRepo.setStatus(matchedOrderId, 'filled')
+  if (matchedOrderId !== null && (input.side === 'buy' || emptied)) await repos.orderRepo.setStatus(matchedOrderId, 'filled')
   return { cancelledIds, attribution }
 }
 

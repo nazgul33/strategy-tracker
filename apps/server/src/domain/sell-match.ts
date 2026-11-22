@@ -1,4 +1,4 @@
-import type { RunState, ISODate, Bucket } from '@st/core'
+import { DomainError, type RunState, type ISODate, type Bucket } from '@st/core'
 
 export interface OrderRow { id: number; runId: number; tradeDate: string; kind: string; bucketIdx: number; limitPrice: bigint; shares: number; status: string }
 
@@ -7,7 +7,8 @@ const SELL_SIDE_KINDS: readonly string[] = ['sell_loc', 'stop_sell', 'market_sel
 
 // The open sell-side orders of one bucket and run from `fromTradeDate` onwards,
 // lowest id first, minus `exceptId` (the order a fill matched). Open is load-bearing:
-// a leg an earlier partial fill already flipped to filled must not be reported again.
+// a stale leg's day is over at the broker and a filled or cancelled leg is no longer
+// live, so neither is pulled or announced.
 //
 // `>= fromTradeDate`, not `===` (the spec records this): a fill captured for an earlier
 // day and confirmed after the morning re-plan would otherwise leave today's freshly
@@ -18,7 +19,7 @@ export function openSellLegs(orders: OrderRow[], key: { runId: number; bucketIdx
     .sort((a, b) => a.id - b.id)
 }
 
-interface SellFillKey { runId: number; filledOn: ISODate; shares: number; price: bigint }
+export interface SellFillKey { runId: number; filledOn: ISODate; shares: number; price: bigint }
 
 export type PriceLegKind = 'sell_loc' | 'stop_sell'
 // distance = |fill price - limitPrice|
@@ -35,13 +36,32 @@ const cmp = (a: bigint, b: bigint): number => (a < b ? -1 : a > b ? 1 : 0)
 const kindRank = (k: PriceLegKind): number => (k === 'sell_loc' ? 0 : 1)
 const absDiff = (a: bigint, b: bigint): bigint => (a > b ? a - b : b - a)
 
-function toLeg(o: OrderRow, price: bigint): PriceLeg {
-  return { orderId: o.id, bucketIdx: o.bucketIdx, kind: o.kind as PriceLegKind, limitPrice: o.limitPrice, distance: absDiff(price, o.limitPrice) }
+function legOf(o: OrderRow, price: bigint): SellLeg | null {
+  switch (o.kind) {
+    case 'sell_loc':
+    case 'stop_sell':
+      return { orderId: o.id, bucketIdx: o.bucketIdx, kind: o.kind, limitPrice: o.limitPrice, distance: absDiff(price, o.limitPrice) }
+    case 'market_sell':
+      return { orderId: o.id, bucketIdx: o.bucketIdx, kind: 'market_sell' }
+    default:
+      return null
+  }
 }
 
-// Which open sell order does a sell fill belong to? Every candidate must be open
-// and of this run and trade date; all but the exact-price rung must also sit on a
-// held bucket with at least `shares` (see the exemption at rung 1a below).
+interface Pair { order: OrderRow; leg: SellLeg }
+type PricePair = { order: OrderRow; leg: PriceLeg }
+const isPrice = (p: Pair): p is PricePair => p.leg.kind !== 'market_sell'
+const byBucket = (a: Pair, b: Pair): number => a.order.bucketIdx - b.order.bucketIdx || a.order.id - b.order.id
+const nearestFirst = (a: PricePair, b: PricePair): number => cmp(a.leg.distance, b.leg.distance) || kindRank(a.leg.kind) - kindRank(b.leg.kind) || byBucket(a, b)
+
+// Which sell-side order does a sell fill belong to?
+//   Pool        orders of this run dated on the fill's trade date, of a sell-side kind
+//               (sell_loc, stop_sell, market_sell), open or stale. A stale order is one whose
+//               day ended without a booked fill, which is what a late-captured fill is.
+//               Filled and cancelled orders never take part.
+//   Gate        a pool order passes when its bucket is not empty and holds at least fill.shares.
+//   Admissible  a gated order that fits the price: sell_loc when price >= limit, stop_sell when
+//               price <= trigger, market_sell at any price.
 // Each held bucket carries two live legs: a limit-on-close target (sell_loc) and
 // a stop-market (stop_sell, limitPrice = trigger), with trigger < buyPrice < sellLimit.
 //   target fill: prints at the close, at or ABOVE its limit  => price >= limit
@@ -51,46 +71,71 @@ function toLeg(o: OrderRow, price: bigint): PriceLeg {
 // below another bucket's trigger. A fixed kind precedence (any target before any
 // stop) was wrong across buckets: in issue #43 a 96.50 stop fill was booked to
 // another bucket's 91.00 target, because 96.50 >= 91.00, although the 97.00 stop
-// on the bucket that really sold was 0.50 away. Order:
-//   1a  exact target: a sell_loc with limitPrice === price
-//   1b  nearest: every sell_loc with price >= limit and every stop_sell with
-//       price <= trigger; smallest |price - limitPrice| wins, then sell_loc before
-//       stop_sell, then lowest bucketIdx
-//   1c  market_sell, lowest bucketIdx
-// null leaves the caller's fallback. On 1a and 1b the result also carries the
-// admissible legs of OTHER buckets (nearest first) so the operator can be told the
-// attribution was a judgement call. It lists only target and stop legs; market_sell
-// legs on other buckets are not listed, and a fill matched on 1c or by the fallback
-// carries no attribution (see the spec's known limitations).
+// on the bucket that really sold was 0.50 away. First hit wins:
+//   1  exact price: the OPEN sell_loc legs with limitPrice === price (a stale one never
+//      takes this rung: on a bucket emptied since it would throw for a fill that belongs
+//      elsewhere). Among those that pass the gate, the single one sized like the fill
+//      (order shares === fill shares), else the lowest bucket. If none passes the gate the
+//      lowest bucket's leg is returned anyway, so an exact-price print its bucket cannot
+//      cover fails loudly in applySellFill (too-many-shares / bucket-not-held) instead of
+//      landing in another bucket and pulling that bucket's legs.
+//   2  share count, only when rung 1 found no exact-price leg: exactly one admissible order
+//      (any kind) sized like the fill. None or several: next rung.
+//   3  nearest: admissible sell_loc and stop_sell together; smallest |price - limitPrice|,
+//      then sell_loc before stop_sell, then lowest bucketIdx.
+//   4  market: the lowest-bucket admissible market_sell.
+// null leaves the caller's fallback. The result carries the admissible legs of OTHER buckets
+// (price legs in rung-3 order, then market sells by bucket) so the operator can be told the
+// attribution was a judgement call; a rung-2 pick carries none (a normal multi-target exit
+// would otherwise notify for every fill but the last). The caller flips the order to filled
+// only when the fill empties its bucket, so a partial fill leaves the rest a candidate.
 export function matchSellOrder(orders: OrderRow[], state: RunState, input: SellFillKey): SellMatch | null {
-  const onDay = orders.filter((o) => o.status === 'open' && o.runId === input.runId && o.tradeDate === input.filledOn)
-  const live = onDay.filter((o) => {
-    const b = state.buckets.find((x: Bucket) => x.index === o.bucketIdx)
-    return !!b && b.state !== 'empty' && b.shares >= input.shares
-  })
-  const candidates: PriceLeg[] = live
-    .filter((o) => (o.kind === 'sell_loc' && input.price >= o.limitPrice) || (o.kind === 'stop_sell' && input.price <= o.limitPrice))
-    .map((o) => toLeg(o, input.price))
-    .sort((a, b) => cmp(a.distance, b.distance) || kindRank(a.kind) - kindRank(b.kind) || a.bucketIdx - b.bucketIdx)
-
-  // Exact price is read from `onDay`, not `live`, so it skips the uniform
-  // "non-empty bucket with shares >= fill.shares" gate (the spec records this).
-  // Under the gate an exact-price sell with impossible shares is filtered out, the
-  // chain falls through, and the fill is booked into a DIFFERENT bucket while the
-  // sibling cancel pulls that bucket's legs — leaving the bucket that really sold
-  // held in the tracker with two live broker orders, the design's first anti-goal.
-  // Matching it here makes applySellFill throw 'too-many-shares' (a 422 the operator
-  // resolves) instead. 1b/1c keep the gate, where it is load-bearing for ranking.
-  const exact = onDay.filter((o) => o.kind === 'sell_loc' && o.limitPrice === input.price).sort((a, b) => a.bucketIdx - b.bucketIdx)[0]
-  const attribute = (order: OrderRow, chosen: PriceLeg): SellMatch => {
-    const alternatives = candidates.filter((c) => c.bucketIdx !== order.bucketIdx)
-    return { order, attribution: alternatives.length ? { shares: input.shares, price: input.price, rule: 'price', chosen, alternatives } : null }
+  const pool: Pair[] = []
+  for (const order of orders) {
+    if (order.runId !== input.runId || order.tradeDate !== input.filledOn || (order.status !== 'open' && order.status !== 'stale')) continue
+    const leg = legOf(order, input.price)
+    if (leg) pool.push({ order, leg })
   }
-  if (exact) return attribute(exact, toLeg(exact, input.price))
+  const covers = (p: Pair): boolean => {
+    const b = state.buckets.find((x: Bucket) => x.index === p.order.bucketIdx)
+    return !!b && b.state !== 'empty' && b.shares >= input.shares
+  }
+  const fits = (p: Pair): boolean => p.leg.kind === 'market_sell' || (p.leg.kind === 'sell_loc' ? input.price >= p.leg.limitPrice : input.price <= p.leg.limitPrice)
+  const admissible = pool.filter((p) => covers(p) && fits(p))
 
-  const nearest = candidates[0]
-  if (nearest) return attribute(live.find((o) => o.id === nearest.orderId)!, nearest)
+  const pick = (chosen: Pair, rule: AttributionRule): SellMatch => {
+    const others = admissible.filter((p) => p.order.bucketIdx !== chosen.order.bucketIdx)
+    const alternatives = [...others.filter(isPrice).sort(nearestFirst), ...others.filter((p) => !isPrice(p)).sort(byBucket)].map((p) => p.leg)
+    return { order: chosen.order, attribution: alternatives.length ? { shares: input.shares, price: input.price, rule, chosen: chosen.leg, alternatives } : null }
+  }
 
-  const market = live.filter((o) => o.kind === 'market_sell').sort((a, b) => a.bucketIdx - b.bucketIdx)[0]
-  return market ? { order: market, attribution: null } : null
+  const exact = pool.filter((p) => p.order.status === 'open' && p.order.kind === 'sell_loc' && p.order.limitPrice === input.price).sort(byBucket)
+  if (exact.length) {
+    const gated = exact.filter(covers)
+    const sized = gated.filter((p) => p.order.shares === input.shares)
+    return pick(sized.length === 1 ? sized[0]! : gated[0] ?? exact[0]!, 'price')
+  }
+
+  const sized = admissible.filter((p) => p.order.shares === input.shares)
+  if (sized.length === 1) return { order: sized[0]!.order, attribution: null }
+
+  const nearest = admissible.filter(isPrice).sort(nearestFirst)[0]
+  if (nearest) return pick(nearest, 'price')
+
+  const market = admissible.filter((p) => !isPrice(p)).sort(byBucket)[0]
+  return market ? pick(market, 'market') : null
+}
+
+export interface SellPick { bucketIdx: number; orderId: number | null; attribution: SellAttribution | null }
+
+// The whole sell-side choice: the matched order's bucket, else the lowest non-empty
+// bucket holding enough shares (no order flipped, no attribution).
+export function pickSellBucket(orders: OrderRow[], state: RunState, input: SellFillKey): SellPick {
+  const match = matchSellOrder(orders, state, input)
+  if (match) return { bucketIdx: match.order.bucketIdx, orderId: match.order.id, attribution: match.attribution }
+  const candidates = state.buckets
+    .filter((b: Bucket) => b.state !== 'empty' && b.shares >= input.shares)
+    .sort((a: Bucket, b: Bucket) => a.index - b.index)
+  if (!candidates.length) throw new DomainError('no-bucket-for-sell')
+  return { bucketIdx: candidates[0]!.index, orderId: null, attribution: null }
 }
