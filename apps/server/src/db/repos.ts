@@ -6,7 +6,7 @@ import { getSimRepo } from './repos-sim'
 import { getBarRepos } from './repos-bars'
 import { getVisionRepos } from './repos-vision'
 import type { CorrectionRepo } from '../domain/correction-types'
-import type { OrderRepo, PendingRepo } from '../domain/repo-types'
+import type { NewRun, OrderRepo, OrderRecord, PendingRepo, PendingRow, RunRepo, RunRow, RunStatus } from '../domain/repo-types'
 
 function serializeState(state: RunState): string {
   return JSON.stringify(state, (_, v) => typeof v === 'bigint' ? v.toString() : v)
@@ -26,12 +26,12 @@ export function getRepos(db: Db) {
   }
 
   const runRepo = {
-    async list() { return db.select().from(s.strategyRuns) },
-    async get(id: number) {
+    async list(): Promise<RunRow[]> { return db.select().from(s.strategyRuns) },
+    async get(id: number): Promise<RunRow | null> {
       const rows = await db.select().from(s.strategyRuns).where(eq(s.strategyRuns.id, id))
       return rows[0] ?? null
     },
-    async create(input: { strategyKey: string; ticker: string; name: string; poolCents: number; costPpm: number; buyGapPpm?: number; sellGapPpm?: number; cutLossPpm?: number; initialRunState?: RunState }) {
+    async create(input: NewRun): Promise<number> {
       const state = input.initialRunState ?? { buckets: [], cashCents: input.poolCents, closed: [], ages: {} }
       return db.transaction(async (tx) => {
         const [res] = await tx.insert(s.strategyRuns).values({
@@ -47,22 +47,22 @@ export function getRepos(db: Db) {
         return runId
       })
     },
-    async updateStatus(id: number, status: string) {
-      await db.update(s.strategyRuns).set({ status: status as any }).where(eq(s.strategyRuns.id, id))
+    async updateStatus(id: number, status: RunStatus): Promise<void> {
+      await db.update(s.strategyRuns).set({ status }).where(eq(s.strategyRuns.id, id))
     },
-    async updateStatusMany(ids: number[], from: string[], to: string): Promise<number> {
+    async updateStatusMany(ids: number[], from: RunStatus[], to: RunStatus): Promise<number> {
       if (ids.length === 0 || from.length === 0) return 0
-      const [res] = await db.update(s.strategyRuns).set({ status: to as any })
-        .where(and(inArray(s.strategyRuns.id, ids), inArray(s.strategyRuns.status, from as any)))
+      const [res] = await db.update(s.strategyRuns).set({ status: to })
+        .where(and(inArray(s.strategyRuns.id, ids), inArray(s.strategyRuns.status, from)))
       return res.affectedRows
     },
-    async updatePool(id: number, poolCents: number) {
+    async updatePool(id: number, poolCents: number): Promise<void> {
       await db.update(s.strategyRuns).set({ poolCents }).where(eq(s.strategyRuns.id, id))
     },
     async updateOrderShaping(id: number, v: { buyGapPpm: number; sellGapPpm: number; cutLossPpm: number }): Promise<void> {
       await db.update(s.strategyRuns).set({ buyGapPpm: v.buyGapPpm, sellGapPpm: v.sellGapPpm, cutLossPpm: v.cutLossPpm }).where(eq(s.strategyRuns.id, id))
     },
-  }
+  } satisfies RunRepo
 
   const bucketRepo = {
     async saveState(runId: number, state: RunState) {
@@ -89,7 +89,7 @@ export function getRepos(db: Db) {
       if (!orders.length) return
       await db.insert(s.orders).values(orders)
     },
-    async get(id) {
+    async get(id): Promise<OrderRecord | null> {
       const rows = await db.select().from(s.orders).where(eq(s.orders.id, id))
       return rows[0] ?? null
     },
@@ -142,7 +142,7 @@ export function getRepos(db: Db) {
     async listPending() { return db.select().from(s.pendingFills).where(eq(s.pendingFills.status, 'pending')) },
     async hasLiveForCapture(captureId) { return hasPendingWithStatus(captureId, 'pending') },
     async hasConfirmedForCapture(captureId) { return hasPendingWithStatus(captureId, 'confirmed') },
-    async get(id) { const rows = await db.select().from(s.pendingFills).where(eq(s.pendingFills.id, id)); return rows[0] ?? null },
+    async get(id): Promise<PendingRow | null> { const rows = await db.select().from(s.pendingFills).where(eq(s.pendingFills.id, id)); return rows[0] ?? null },
     async decide(id, status, edited?) {
       const patch = { status, ...edited }
       const [res] = await db.update(s.pendingFills).set(patch).where(and(eq(s.pendingFills.id, id), eq(s.pendingFills.status, 'pending')))

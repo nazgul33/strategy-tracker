@@ -1,6 +1,7 @@
 import { test, expect } from 'bun:test'
 import type { getRepos } from '../src/db/repos'
 import type { RepoSurface } from '../src/domain/booking'
+import type { HttpRepoSurface } from '../src/http/app'
 
 export function _dbPins(g: typeof getRepos) {
   // @ts-expect-error the real repositories need a Drizzle database
@@ -18,6 +19,15 @@ export async function _orderPendingPins(r: RepoSurface) {
   await r.pendingRepo.insert({ runId: 1 })
   // @ts-expect-error price is bigint myriadths
   const _pp: string = (await r.pendingRepo.listPending())[0]!.price
+}
+
+export async function _runPins(r: HttpRepoSurface) {
+  // @ts-expect-error 'done' is not a run status
+  await r.runRepo.updateStatus(1, 'done')
+  // @ts-expect-error a run needs its name, pool and cost
+  await r.runRepo.create({ ticker: 'X' })
+  // @ts-expect-error get may return null
+  const _t: string = (await r.runRepo.get(1)).ticker
 }
 
 test('repository surface type pins compile', () => { expect(true).toBe(true) })

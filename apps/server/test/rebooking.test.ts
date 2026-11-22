@@ -56,6 +56,11 @@ async function expectKind(fn: () => Promise<unknown>): Promise<DomainError> {
   throw new Error('expected a DomainError, but the call resolved')
 }
 
+test('manualFill on a missing run rejects with run-not-found', async () => {
+  const f = fakeRepos()
+  await expect(manualFill(42, { side: 'buy', shares: 1, price: '1.00', filledOn: '2026-11-06' }, deps(f))).rejects.toThrow('run-not-found')
+})
+
 describe('rebuildState', () => {
   test('replays fills on top of the pool and is pure', () => {
     const buy: FillRow = {

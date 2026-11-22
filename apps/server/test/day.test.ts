@@ -123,12 +123,12 @@ describe('day pipeline', () => {
     st1.buckets[1] = { index: 1, state: 'held', shares: 10, buyPrice: 3402300n, buyFeeCents: 0, filledOn: '2026-11-03' }
     st1.ages[1] = 3
     st1.cashCents = 1000000
-    const runId1 = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: st1 })
+    const runId1 = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, initialRunState: st1 })
     const st2 = emptyState(10)
     st2.buckets[1] = { index: 1, state: 'held', shares: 10, buyPrice: 3402300n, buyFeeCents: 0, filledOn: '2026-11-03' }
     st2.ages[1] = 3
     st2.cashCents = 1000000
-    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'A', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: st2 })
+    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'A', poolCents: 1000000, costPpm: 30, initialRunState: st2 })
 
     const sends: string[] = []
     const deps: DayDeps = {
@@ -169,7 +169,7 @@ describe('day pipeline', () => {
 
   test('(d) data-error', async () => {
     const f = makeRepos()
-    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: emptyState(10) })
+    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, initialRunState: emptyState(10) })
     const sends: string[] = []
     const deps: DayDeps = {
       today: () => '2026-11-06',
@@ -190,10 +190,10 @@ describe('day pipeline', () => {
 
   test('(d2) data-error on one run does not silence the other runs', async () => {
     const f = makeRepos()
-    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'BADA', name: 'A', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: emptyState(10) })
+    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'BADA', name: 'A', poolCents: 1000000, costPpm: 30, initialRunState: emptyState(10) })
     const st = emptyState(10)
     st.cashCents = 1000000
-    const okId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'B', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: st })
+    const okId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'B', poolCents: 1000000, costPpm: 30, initialRunState: st })
     const sends: string[] = []
     const deps: DayDeps = {
       today: () => '2026-11-06',
@@ -219,7 +219,7 @@ describe('day pipeline', () => {
 
   test('(e) conflict', async () => {
     const f = makeRepos()
-    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: emptyState(10) })
+    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, initialRunState: emptyState(10) })
     const sends: string[] = []
     const deps: DayDeps = {
       today: () => '2026-11-06',
@@ -239,7 +239,7 @@ describe('day pipeline', () => {
 
   test('(f) unconfirmed warning line', async () => {
     const f = makeRepos()
-    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: emptyState(10) })
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, initialRunState: emptyState(10) })
     // yesterday's unresolved order
     await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-05', kind: 'buy_loc', bucketIdx: 0, limitPrice: 100n, shares: 1, status: 'open' }])
     // older order
@@ -299,7 +299,7 @@ describe('day pipeline run lock', () => {
     st.buckets[1] = { index: 1, state: 'held', shares: 10, buyPrice: 3402300n, buyFeeCents: 0, filledOn: '2026-11-03' }
     st.ages[1] = 3
     st.cashCents = 1000000
-    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: st })
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, initialRunState: st })
     const deps: DayDeps = {
       today: () => '2026-11-06',
       fetchLastClose: async () => ({ date: '2026-11-05', close: 3402300n }),

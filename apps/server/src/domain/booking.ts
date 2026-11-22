@@ -10,6 +10,7 @@ import { notifyBookingOutcome, type BookingNotifier, type BookedOutcome } from '
 import { pickSellBucket, openSellLegs, staleSellLegs, type OrderRow, type SellAttribution } from './sell-match'
 import { storeCaptureImage } from './capture-image'
 import type { PendingDecisionPatch, RepoSurface } from './repo-types'
+import { requireRun } from './require-run'
 
 // The conflict shape belongs to the dedup matcher, the order row to the sell
 // matcher and the repository surface to repo-types; re-exported so the booking
@@ -82,7 +83,7 @@ export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise
     if (!usable) throw new Error('invalid-bucket')
   }
   const repos = deps.repos
-  const run = await repos.runRepo.get(input.runId)
+  const run = await requireRun(repos, input.runId)
   const state: RunState = await repos.bucketRepo.loadState(input.runId)
   const priceBigInt = parseUsd(input.priceStr)
   const finalFee = finalFeeCents(run, priceBigInt, input.shares, input.feeCents)
@@ -224,7 +225,7 @@ export function seedRun(runId: number, seed: SeedInput, deps: BookingDeps): Prom
 async function seedUnlocked(runId: number, seed: SeedInput, deps: BookingDeps): Promise<void> {
   if (!Number.isInteger(seed.cashCents) || seed.cashCents < 0) throw new Error('invalid seed cash')
   const repos = deps.repos
-  const run = await repos.runRepo.get(runId)
+  const run = await requireRun(repos, runId)
   let state: RunState = await repos.bucketRepo.loadState(runId)
   for (const b of seed.buckets) {
     const idx = nextBuyBucketIndex(state)

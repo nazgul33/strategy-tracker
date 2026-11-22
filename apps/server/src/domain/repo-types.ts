@@ -44,8 +44,30 @@ export interface PendingRepo {
   decide(id: number, status: 'confirmed' | 'rejected', edited?: PendingDecisionPatch): Promise<boolean>
 }
 
+export type RunStatus = 'active' | 'paused' | 'closed'
+
+export interface RunRow {
+  id: number; strategyKey: string; ticker: string; name: string; poolCents: number; costPpm: number
+  buyGapPpm: number; sellGapPpm: number; cutLossPpm: number; status: RunStatus; stateJson: string; createdAt: string
+}
+
+export interface NewRun {
+  strategyKey: string; ticker: string; name: string; poolCents: number; costPpm: number
+  buyGapPpm?: number; sellGapPpm?: number; cutLossPpm?: number; initialRunState?: RunState
+}
+
+export interface RunRepo {
+  list(): Promise<RunRow[]>
+  get(id: number): Promise<RunRow | null>
+  create(input: NewRun): Promise<number>
+  updateStatus(id: number, status: RunStatus): Promise<void>
+  updateStatusMany(ids: number[], from: RunStatus[], to: RunStatus): Promise<number>
+  updatePool(id: number, poolCents: number): Promise<void>
+  updateOrderShaping(id: number, v: { buyGapPpm: number; sellGapPpm: number; cutLossPpm: number }): Promise<void>
+}
+
 export interface RepoSurface {
-  runRepo: { list(): Promise<any[]>; get(id: number): Promise<any>; create(input: any): Promise<number>; updateStatus(id: number, status: string): Promise<void> }
+  runRepo: Pick<RunRepo, 'list' | 'get' | 'create' | 'updateStatus'>
   bucketRepo: { loadState(runId: number): Promise<RunState>; saveState(runId: number, state: RunState): Promise<void> }
   orderRepo: OrderRepo
   fillRepo: {

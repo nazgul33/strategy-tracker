@@ -2,6 +2,7 @@ import { parseUsd, type ISODate } from '@st/core'
 import { formatUsd } from '@st/core/money'
 import { bookUnlocked, finalFeeCents, type BookingDeps, type FillBookingDeps } from './booking'
 import { withRunLock } from './run-lock'
+import { requireRun } from './require-run'
 import { notifyBookingOutcome } from './booking-notify'
 import { resolveReview } from './vision-review'
 
@@ -49,7 +50,7 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
     const pending = pendingList.find((p) => p.id === pendingId)
     if (!pending) throw new Error('pending-not-found-or-not-pending')
 
-    const run = await repos.runRepo.get(pending.runId)
+    const run = await requireRun(repos, pending.runId)
     if (pending.ticker !== run.ticker) throw new Error('ticker-mismatch')
     if (opts?.keepImage === true && pending.captureId != null) await repos.captureImageRepo.setKeep(pending.captureId)
     const priceStr = overrides?.price ?? formatUsd(pending.price)

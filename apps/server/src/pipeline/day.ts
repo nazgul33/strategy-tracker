@@ -2,7 +2,7 @@ import { dayInfo, prevTradingDay, type ISODate } from '@st/calendar'
 import { advanceDay, type RunState, type Run } from '@st/core'
 import { computeOrders, type MrParams } from '@st/strategies'
 import { rollStale, type RepoSurface, type BookingDeps } from '../domain/booking'
-import type { NewOrder } from '../domain/repo-types'
+import type { NewOrder, RunRow } from '../domain/repo-types'
 import { withRunLock } from '../domain/run-lock'
 import { renderDigest, renderClosed, renderReminder } from '@st/telegram/digest'
 import { t } from '@st/telegram/i18n'
@@ -15,7 +15,7 @@ export interface DayDeps {
   send: (chatId: string, text: string) => Promise<void>
   allowedChatIds: string[]
   repos: RepoSurface
-  params: (run: any) => MrParams
+  params: (run: RunRow) => MrParams
   digestLang: 'en' | 'ko'
   /** optional: store the sanity-checked close for the price history chart */
   persistClose?: (ticker: string, tradeDate: ISODate, close: bigint) => Promise<void>
@@ -60,7 +60,7 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
   // stale roll from last trading day: orders dated before today roll up
   const stale = await rollStale(today, { repos: deps.repos, today } as BookingDeps)
 
-  const runs = (await deps.repos.runRepo.list()) as any[]
+  const runs = await deps.repos.runRepo.list()
   const active = runs.filter((r) => r.status === 'active')
 
   let numFailed = 0

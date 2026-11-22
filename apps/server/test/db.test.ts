@@ -144,7 +144,7 @@ describeIf('db integration', () => {
       if (stmt === '') continue
       await db.execute(sql.raw(stmt))
     }
-    expect((await repos.runRepo.get(runId)).status).toBe('closed')
+    expect((await repos.runRepo.get(runId))!.status).toBe('closed')
     // enum is really narrower again: writing `done` must now be rejected
     let rejected = false
     try { await db.execute(sql.raw(`UPDATE strategy_runs SET status = 'done' WHERE id = ${runId}`)) } catch { rejected = true }
@@ -551,9 +551,9 @@ describeIf('db integration', () => {
     test('runRepo: cutLossPpm defaults to 0, create stores it, updateOrderShaping replaces updateGaps', async () => {
       const uniq = Date.now()
       const plain = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'CL' + uniq, name: 'cl-plain-' + uniq, poolCents: 1000, costPpm: 10 })
-      expect((await repos.runRepo.get(plain)).cutLossPpm).toBe(0)
+      expect((await repos.runRepo.get(plain))!.cutLossPpm).toBe(0)
       const withCut = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'CL' + uniq, name: 'cl-cut-' + uniq, poolCents: 1000, costPpm: 10, cutLossPpm: 150_000 })
-      expect((await repos.runRepo.get(withCut)).cutLossPpm).toBe(150_000)
+      expect((await repos.runRepo.get(withCut))!.cutLossPpm).toBe(150_000)
 
       await repos.runRepo.updateOrderShaping(plain, { buyGapPpm: 10_000, sellGapPpm: 20_000, cutLossPpm: 250_000 })
       expect(await repos.runRepo.get(plain)).toMatchObject({ buyGapPpm: 10_000, sellGapPpm: 20_000, cutLossPpm: 250_000 })
@@ -836,8 +836,8 @@ describeIf('db integration', () => {
         runId, captureId, bucketIdx: null, side: 'buy', ticker: 'V', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status: 'pending',
         detectedSide: 'buy', detectedShares: 1, detectedPrice: 100n, detectedFilledOn: null, detectedFee: null, detectedAt: '2026-02-10 12:00:00',
       })
-      const l = await repos.pendingRepo.get(legacy)
-      const s = await repos.pendingRepo.get(snap)
+      const l = (await repos.pendingRepo.get(legacy))!
+      const s = (await repos.pendingRepo.get(snap))!
       expect(l.detectedAt).toBeNull()
       expect(l.detectedSide).toBeNull()
       expect(s).toMatchObject({ detectedSide: 'buy', detectedShares: 1, detectedPrice: 100n, detectedFilledOn: null, detectedFee: null })
