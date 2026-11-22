@@ -12,6 +12,7 @@ import { RecalcResultModal, type RecalcResult } from '../components/RecalcSummar
 import { EditRunModal } from '../components/forms/EditRunModal';
 import { FillDialog } from '../components/forms/FillDialog';
 import { CorrectionList } from '../components/forms/CorrectionList';
+import { useKeepNotices } from '../components/forms/KeepNotices';
 import { PendingTable } from '../components/forms/PendingTable';
 import { FillsPanel, NotificationsPanel, OrdersPanel } from '../components/RunPanels';
 import { RunHistory } from '../components/RunHistory';
@@ -42,6 +43,9 @@ const TABS: { id: Tab; labelKey: string }[] = [
 export function RunDetailPage({ id }: { id: number }) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.getRun(id), [id]);
+  // Owned here, not inside the table: switching tabs remounts the pending
+  // panel, and a warning the operator has not dismissed must survive that.
+  const keepNotices = useKeepNotices();
 
   const [tab, setTab] = useState<Tab>('orders');
   const [panelKey, setPanelKey] = useState(0);
@@ -204,7 +208,7 @@ export function RunDetailPage({ id }: { id: number }) {
                 void reload();
               }}
             />
-            <PendingTable key={`p${panelKey}`} runId={id} />
+            <PendingTable key={`p${panelKey}`} runId={id} notices={keepNotices} />
           </div>
         )}
         {tab === 'fills' && (

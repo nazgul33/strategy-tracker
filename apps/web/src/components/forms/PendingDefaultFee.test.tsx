@@ -210,7 +210,7 @@ describe('default fee popup', () => {
     await pressButton('Confirm');
     await pressButton('Use default fee');
     await pressButton('Keep for review');
-    expect(container.textContent).toContain(lookup('en', 'keepImageNotKept'));
+    expect(container.textContent).toContain('its review record could not be saved');
   });
 
   it('Compare, clear the fee, Done, then Confirm still meets the popup', async () => {

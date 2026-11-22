@@ -26,6 +26,29 @@ function modalInitialFocus(panel: HTMLElement): HTMLElement | null {
   return panel.querySelector<HTMLElement>(MODAL_FOCUSABLE);
 }
 
+// The control that had focus, plus the control to return to: when focus sat
+// inside another panel (a popup opened from a popup's button), the host panel
+// usually closes together with this one, taking its buttons down — so the
+// host panel's own recorded opener replaces it. Resolution runs during
+// render, while the host panel is still mounted and its opener recorded.
+// `raw` is kept to honor "restore what I took" while it is still on screen.
+function captureOpener(active: HTMLElement | null): { raw: HTMLElement | null; back: HTMLElement | null } {
+  if (!active) return { raw: null, back: null };
+  let back = active;
+  const seen = new Set<Element>(); // panels already walked: no chasing a cycle
+  for (
+    let host = active.closest('[data-modal-panel]');
+    host !== null && !seen.has(host);
+    host = back?.closest('[data-modal-panel]') ?? null
+  ) {
+    seen.add(host);
+    const chained = modalOpeners.get(host);
+    if (!chained) break;
+    back = chained;
+  }
+  return { raw: active, back };
+}
+
 /** Simple fixed-overlay modal used by the dialogs (pool edit, new run); `wide` makes room for side-by-side content.
  * Traps focus inside the panel, closes on Escape unless `closeOnEscape` is off, and returns focus to its opener. */
 export function Modal({
@@ -45,8 +68,12 @@ export function Modal({
   const t = useT();
   const panelRef = useRef<HTMLDivElement>(null);
   // Captured during this panel's first render, so the value is already right
-  // when an autoFocus child steals focus during the same commit.
-  const [opener] = useState(() => (document.activeElement instanceof HTMLElement ? document.activeElement : null));
+  // when an autoFocus child steals focus during the same commit — and so a
+  // host panel that opens together with this one is still in the DOM while
+  // its recorded opener is looked up.
+  const [opener] = useState(() =>
+    captureOpener(document.activeElement instanceof HTMLElement ? document.activeElement : null),
+  );
 
   // Initial focus, the opener bookkeeping, and the restore on unmount — all
   // in one effect, so the cleanup still has the panel element after React
@@ -57,12 +84,17 @@ export function Modal({
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
-    modalOpeners.set(panel, opener); // `opener` is state: fixed for the panel's lifetime.
+    modalOpeners.set(panel, opener.raw); // `opener` is state: fixed for the panel's lifetime.
     if (!panel.contains(document.activeElement)) modalInitialFocus(panel)?.focus();
     return () => {
-      const back = modalOpeners.get(panel);
+      const raw = modalOpeners.get(panel);
       modalOpeners.delete(panel);
-      if (back && back.isConnected) back.focus();
+      // What we took if it is still on screen; otherwise the chained opener —
+      // the host panel this one was opened from usually went down with it.
+      // A dead chain end gets nothing: focusing a detached node would drop
+      // focus to <body> for no reason.
+      const target = raw && raw.isConnected ? raw : opener.back;
+      if (target && target.isConnected) target.focus();
     };
   }, []);
 

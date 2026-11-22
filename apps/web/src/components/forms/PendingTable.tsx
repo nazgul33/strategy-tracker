@@ -8,6 +8,7 @@ import { useAsync } from '../hooks';
 import { EmptyNote, TableWrap, Th } from '../ui';
 import { DefaultFeePrompt } from './DefaultFeePrompt';
 import { KeepImagePrompt } from './KeepImagePrompt';
+import { KeepNoticeList, useKeepNotices, type KeepNotices } from './KeepNotices';
 import { PendingReviewDialog } from './PendingReviewDialog';
 import { PendingRow, initialRowValues } from './PendingRow';
 
@@ -28,9 +29,13 @@ interface Decision {
 // either ticker-mismatch (integrity guard: the pending row's ticker ≠ the run's
 // ticker — the untouched row stays visible for rejection) or the row was
 // already handled elsewhere.
-export function PendingTable({ runId }: { runId?: number }) {
+export function PendingTable({ runId, notices: inherited }: { runId?: number; notices?: KeepNotices }) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.listPending(), []);
+  // Notices live upstream when given one (the run page keeps them across tab
+  // switches); standalone the table owns its list.
+  const own = useKeepNotices();
+  const notices = inherited ?? own;
   const [buckets, setBuckets] = useState<Record<number, string>>({});
   const [edited, setEdited] = useState<Record<number, RowValues>>({});
   const [reviewId, setReviewId] = useState<number | null>(null);
@@ -100,7 +105,7 @@ export function PendingTable({ runId }: { runId?: number }) {
     }
   };
 
-  const submit = async ({ row, action, overrides }: Decision, keepImage?: boolean) => {
+  const submit = async ({ row, values, action, overrides }: Decision, keepImage?: boolean) => {
     setBusyId(row.id);
     try {
       const res =
@@ -108,7 +113,20 @@ export function PendingTable({ runId }: { runId?: number }) {
           ? await api.confirmPending(row.id, overrides, keepImage)
           : await api.rejectPending(row.id, keepImage);
       await reload();
-      if (keepImage === true && !res.archived) setActionError(t('keepImageNotKept'));
+      // The server keeps the screenshot before it flips the row, so on a
+      // keep-requested action `archived: false` means only the review record
+      // failed: name the fill in a warning that outlives the next action,
+      // not an error the next action clears away.
+      if (keepImage === true && !res.archived) {
+        notices.add({
+          action: action === 'confirm' ? 'book' : 'reject',
+          ticker: row.ticker,
+          side: values.side,
+          shares: values.shares.trim(),
+          price: values.price.trim(),
+          date: values.filledOn.trim(),
+        });
+      }
     } catch (err) {
       await reportError(err);
     } finally {
@@ -152,7 +170,12 @@ export function PendingTable({ runId }: { runId?: number }) {
   return (
     <div className="space-y-3">
       {error && <p className="text-sm text-destructive">{error}</p>}
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+      {actionError && (
+        <p data-testid="pendingActionError" role="alert" className="text-sm text-destructive">
+          {actionError}
+        </p>
+      )}
+      <KeepNoticeList notices={notices} />
       {visible.length === 0 ? (
         <EmptyNote>{t('pendingEmpty')}</EmptyNote>
       ) : (

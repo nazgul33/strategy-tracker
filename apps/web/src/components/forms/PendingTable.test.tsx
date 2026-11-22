@@ -349,15 +349,15 @@ describe('PendingTable', () => {
       expect(calls[0]!.body).toEqual({ overrides: { shares: 11 } });
     });
 
-    const NOT_KEPT = 'the screenshot could not be kept for review';
+    const RECORD_FAILED = 'its review record could not be saved';
 
-    it('a keep that did not stick says so', async () => {
+    it('a keep whose review record failed says so', async () => {
       await renderWithConfirmCalls(ROW, { ok: true, archived: false });
       await editQty();
       await clickConfirm();
       await pressButton('Keep for review');
 
-      expect(container.textContent).toContain(NOT_KEPT);
+      expect(container.textContent).toContain(RECORD_FAILED);
     });
 
     it('a keep that stuck shows no note', async () => {
@@ -367,7 +367,7 @@ describe('PendingTable', () => {
       await pressButton('Keep for review');
 
       expect(calls.length).toBe(1);
-      expect(container.textContent).not.toContain(NOT_KEPT);
+      expect(container.textContent).not.toContain(RECORD_FAILED);
     });
 
     it('Discard never shows the note', async () => {
@@ -377,17 +377,17 @@ describe('PendingTable', () => {
       await pressButton('Discard');
 
       expect(calls.length).toBe(1);
-      expect(container.textContent).not.toContain(NOT_KEPT);
+      expect(container.textContent).not.toContain(RECORD_FAILED);
     });
 
-    it('a reject kept for review that did not stick says so', async () => {
+    it('a reject kept for review whose review record failed says so', async () => {
       const calls = await renderWithConfirmCalls(ROW, { ok: true, archived: false });
       await pressButton('Reject');
       await pressButton('Keep for review');
 
       expect(calls.length).toBe(1);
       expect(calls[0]).toMatchObject({ method: 'POST', url: '/api/pending/9/reject' });
-      expect(container.textContent).toContain(NOT_KEPT);
+      expect(container.textContent).toContain(RECORD_FAILED);
     });
 
     it('dismissing the prompt posts nothing and leaves the edit in place', async () => {
