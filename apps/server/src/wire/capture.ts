@@ -33,15 +33,14 @@ export interface CaptureDeps {
   getVisionApiKey(): Promise<string>;
   today(): string;
   lang?: Lang;
-  // chats told to pull a cancelled sibling leg at the broker; omitted or empty: nobody
-  allowedChatIds?: string[];
+  // chats told about booking notices; empty: recorded for the web only
+  allowedChatIds: string[];
   send(chatId: string, text: string, extra?: Record<string, unknown>): Promise<void>;
   fetchImpl?: typeof fetch;
 }
 
 export function makeCaptureHandlers(deps: CaptureDeps) {
   const lang: Lang = deps.lang ?? 'en';
-  let lastChatId = '';
 
   async function extractOrTell(chatId: string, image: { base64: string; mime: string }) {
     const cfg = {
@@ -62,8 +61,6 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
   }
 
   async function onPhoto(chatId: string, image: { base64: string; mime: string }, caption?: string): Promise<void> {
-    lastChatId = chatId;
-
     let pinned: { id: number; ticker: string } | null = null;
     // the run id must be the caption's FIRST token: `7`, `#7` or `/capture 7`.
     // anything else (e.g. a "NVDA 12/25" note) falls through to ticker auto-route.
@@ -159,8 +156,13 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
         price: row.price,
         date: row.filledOn,
       });
-      if (row.detectedFilledOn === null) text += '\n' + t('capture-date-substituted', lang, { date: row.filledOn });
-      await deps.send(chatId, text, { reply_markup: buildPendingKeyboard(String(row.id)) });
+      if (row.detectedFilledOn === null) {
+        // a substituted date must not be confirmed blind: no buttons, the web Pending view fixes it
+        text += '\n' + t('capture-date-substituted', lang, { date: row.filledOn });
+        await deps.send(chatId, text);
+      } else {
+        await deps.send(chatId, text, { reply_markup: buildPendingKeyboard(String(row.id)) });
+      }
     }
   }
 
@@ -183,8 +185,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     return t('confirm-err-unknown', lang, { code: code || 'error' });
   }
 
-  async function onConfirm(cbData: string, approved: boolean): Promise<void> {
-    const chatId = lastChatId;
+  async function onConfirm(chatId: string, cbData: string, approved: boolean): Promise<void> {
     const m = /^(yes|no):(\d+)$/.exec(cbData);
     if (!m) return;
     const id = Number(m[2]);
@@ -193,7 +194,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
         await confirmPendingFill(id, null, {
           repos: deps.repos,
           today: deps.today(),
-          notify: makeBookingNotifier({ repos: deps.repos, allowedChatIds: deps.allowedChatIds ?? [], send: deps.send, lang }),
+          notify: makeBookingNotifier({ repos: deps.repos, allowedChatIds: deps.allowedChatIds, send: deps.send, lang }),
         });
       } catch (e) {
         await deps.send(chatId, confirmErrorText(e));
@@ -211,7 +212,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       // still freezes its record and sweeps the bytes when it was the last fill.
       const rejected = await rejectPendingFill(id, { repos: deps.repos }, { keepImage: false });
       if (!rejected) {
-        await deps.send(chatId, t('duplicate-capture', lang));
+        await deps.send(chatId, t('confirm-err-already-handled', lang));
         return;
       }
       await deps.send(chatId, t('rejected-line', lang));

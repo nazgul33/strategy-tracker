@@ -237,7 +237,7 @@ function activeRun(id: number, ticker: string): FakeRow {
   return { id, ticker, status: 'active', poolCents: 10_000_000, costPpm: 10 };
 }
 
-function makeCapture(opts: FakeOpts & { today?: string; fetchImpl?: typeof fetch; lang?: Lang } = {}) {
+function makeCapture(opts: FakeOpts & { today?: string; fetchImpl?: typeof fetch; lang?: Lang; allowedChatIds?: string[] } = {}) {
   const fakes = makeCaptureFakes(opts);
   const sent: { chatId: string; text: string; extra?: Record<string, unknown> }[] = [];
   const handlers = makeCaptureHandlers({
@@ -246,6 +246,7 @@ function makeCapture(opts: FakeOpts & { today?: string; fetchImpl?: typeof fetch
     getVisionApiKey: async () => 'test-vision-key',
     today: () => opts.today ?? '2026-11-10',
     lang: opts.lang,
+    allowedChatIds: opts.allowedChatIds ?? [],
     fetchImpl: opts.fetchImpl ?? visionFetch,
     send: async (chatId, text, extra) => {
       sent.push({ chatId, text, extra });
@@ -268,7 +269,7 @@ const multiVisionFetch = (async () => {
 const NOTICE_EN = 'ℹ️ Fills from this image were already confirmed earlier — the rows below may be duplicates. Check before confirming.';
 
 const DATE_NOTICE_EN =
-  '⚠️ No usable trade date was read from the screenshot, so the capture date 2026-11-10 was used. If the trade was on another day, fix the date in the web app\'s Pending view instead of confirming here.';
+  '⚠️ No usable trade date was read from the screenshot, so the capture date 2026-11-10 was used. Check the date and confirm this fill in the web app\'s Pending view.';
 
 const PNG_B64 = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64');
 
@@ -294,7 +295,7 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     expect(h.sent[0]!.extra).toEqual({ reply_markup: buildPendingKeyboard(String(p.id)) });
 
     // confirm through the real confirmPendingFill: bucket 0, fill row, ledger row
-    await h.handlers.onConfirm(`yes:${p.id}`, true);
+    await h.handlers.onConfirm('777', `yes:${p.id}`, true);
     expect(p.status).toBe('confirmed');
     expect(p.bucketIdx).toBe(0);
     expect(h.fills.length).toBe(1);
@@ -311,7 +312,7 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     const p = h.pending[0]!;
-    await h.handlers.onConfirm(`no:${p.id}`, false);
+    await h.handlers.onConfirm('777', `no:${p.id}`, false);
     expect(p.status).toBe('rejected');
     expect(h.fills.length).toBe(0);
     expect(h.sent.at(-1)!.text).toBe('Rejected — fill discarded.');
@@ -437,7 +438,7 @@ describe('capture onPhoto — dedup and failures', () => {
   test('same image after rejecting its fill is read again', async () => {
     const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
-    await h.handlers.onConfirm(`no:${h.pending[0]!.id}`, false);
+    await h.handlers.onConfirm('777', `no:${h.pending[0]!.id}`, false);
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     expect(h.captures.length).toBe(1);
     expect(h.pending.map((p) => p.status)).toEqual(['rejected', 'pending']);
@@ -458,13 +459,13 @@ describe('capture onPhoto — dedup and failures', () => {
     }) as unknown as typeof fetch;
     const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: flaky });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
-    await h.handlers.onConfirm(`yes:${h.pending[0]!.id}`, true);
+    await h.handlers.onConfirm('777', `yes:${h.pending[0]!.id}`, true);
     h.sent.length = 0;
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     expect(h.captures.length).toBe(1);
     expect(h.sent.map((s) => s.text)).toEqual([NOTICE_EN, `Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?\n${DATE_NOTICE_EN}`]);
     expect(h.sent[0]!.extra).toBeUndefined();
-    expect(h.sent[1]!.extra).toEqual({ reply_markup: buildPendingKeyboard(String(h.pending[1]!.id)) });
+    expect(h.sent[1]!.extra).toBeUndefined();
   });
 
   test('booked-earlier notice has a Korean line', () => {
@@ -481,6 +482,7 @@ describe('capture onPhoto — dedup and failures', () => {
       vision: { baseUrl: 'https://vision.example/v1', model: 'vision-model' },
       getVisionApiKey: async () => 'test-vision-key',
       today: () => '2026-11-10',
+      allowedChatIds: [],
       fetchImpl: (async () => ({ ok: false, status: 500, text: async () => 'boom' }) as unknown as Response) as unknown as typeof fetch,
       send: async (chatId, text) => void sent.push({ chatId, text }),
     });
@@ -535,29 +537,75 @@ describe('capture prompt — trade date vision could not read', () => {
       return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as unknown as Response;
     }) as unknown as typeof fetch;
 
-  test('a fill with no date carries the substitution notice', async () => {
+  test('a fill with no date carries the substitution notice and no buttons', async () => {
     const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: fetchWith() });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     expect(h.sent[0]!.text).toBe(`Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?\n${DATE_NOTICE_EN}`);
-    expect(h.sent[0]!.extra).toEqual({ reply_markup: buildPendingKeyboard(String(h.pending[0]!.id)) });
+    expect(h.sent[0]!.extra).toBeUndefined();
   });
 
   test('a date the extractor dropped as too far from today gets the same notice', async () => {
     const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: fetchWith('2026-01-02') });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     expect(h.sent[0]!.text).toContain('capture date 2026-11-10 was used');
+    expect(h.sent[0]!.extra).toBeUndefined();
   });
 
   test('the notice is rendered in ko', async () => {
     const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: fetchWith(), lang: 'ko' });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     expect(h.sent[0]!.text).toContain('캡처한 날짜 2026-11-10');
+    expect(h.sent[0]!.text).toContain('웹 앱의 \'확인 대기\'에서 날짜를 확인한 뒤');
   });
 
   test('a readable date carries no notice', async () => {
     const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: fetchWith('2026-11-10') });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     expect(h.sent[0]!.text).not.toContain('\n');
+    expect(h.sent[0]!.extra).toEqual({ reply_markup: buildPendingKeyboard(String(h.pending[0]!.id)) });
+  });
+});
+
+describe('capture onConfirm — reply target', () => {
+  test('the confirm reply goes to the chat the button was pressed in', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    const p = h.pending[0]!;
+    await h.handlers.onConfirm('888', `yes:${p.id}`, true);
+    expect(h.sent.at(-1)).toEqual({ chatId: '888', text: 'Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 into bucket 0', extra: undefined });
+
+    const r = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    await r.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    await r.handlers.onConfirm('888', `no:${r.pending[0]!.id}`, false);
+    expect(r.sent.at(-1)).toEqual({ chatId: '888', text: 'Rejected — fill discarded.', extra: undefined });
+  });
+
+  test('a button pressed with no photo since start replies in its own chat', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    const id = await h.repos.pendingRepo.insert({ runId: 1, captureId: null, bucketIdx: null, side: 'buy', ticker: 'NVDA', shares: 10, price: parseUsd('180.50'), fee: null, filledOn: '2026-11-10' });
+    await h.handlers.onConfirm('999', `yes:${id}`, true);
+    expect(h.sent.length).toBeGreaterThan(0);
+    expect(h.sent.every((s) => s.chatId === '999')).toBe(true);
+  });
+
+  test('pressing a button on an already-handled row says already handled', async () => {
+    const sequences: [boolean, boolean][] = [[true, true], [true, false], [false, false], [false, true]];
+    for (const lang of ['en', 'ko'] as const) {
+      const expected = t('confirm-err-already-handled', lang);
+      for (const [first, second] of sequences) {
+        const h = makeCapture({ runs: [activeRun(1, 'NVDA')], lang });
+        await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+        const id = h.pending[0]!.id;
+        await h.handlers.onConfirm('777', `${first ? 'yes' : 'no'}:${id}`, first);
+        await h.handlers.onConfirm('888', `${second ? 'yes' : 'no'}:${id}`, second);
+        expect(h.sent.at(-1)).toMatchObject({ chatId: '888', text: expected });
+      }
+      const h = makeCapture({ runs: [activeRun(1, 'NVDA')], lang });
+      await h.handlers.onConfirm('777', 'no:4242', false);
+      expect(h.sent).toEqual([{ chatId: '777', text: expected, extra: undefined }]);
+    }
+    expect(t('confirm-err-already-handled', 'en')).toBe('Already handled — this fill was already confirmed or rejected.');
+    expect(t('confirm-err-already-handled', 'ko')).toBe('이미 처리되었습니다 — 이 체결은 이미 확정되었거나 거부되었습니다.');
   });
 });
 
@@ -571,7 +619,7 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
   test('ticker-mismatch (Error code) is rendered from the en catalog', async () => {
     const { h, p } = await capturedPending('en');
     p.ticker = 'AAPL';
-    await h.handlers.onConfirm(`yes:${p.id}`, true);
+    await h.handlers.onConfirm('777', `yes:${p.id}`, true);
     expect(h.sent.at(-1)!.text).toBe('Ticker does not match the run — tap No to reject this fill, then re-capture.');
     expect(h.fills.length).toBe(0);
   });
@@ -579,7 +627,7 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
   test('ticker-mismatch is rendered from the ko catalog', async () => {
     const { h, p } = await capturedPending('ko');
     p.ticker = 'AAPL';
-    await h.handlers.onConfirm(`yes:${p.id}`, true);
+    await h.handlers.onConfirm('777', `yes:${p.id}`, true);
     expect(h.sent.at(-1)!.text).toBe('티커가 런과 일치하지 않습니다 — \'No\'를 눌러 이 체결을 거부하고 다시 캡처하세요.');
   });
 
@@ -589,8 +637,8 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
       ['ko', '이미 처리되었습니다 — 이 체결은 이미 확정되었거나 거부되었습니다.'],
     ] as const) {
       const { h, p } = await capturedPending(lang);
-      await h.handlers.onConfirm(`yes:${p.id}`, true);
-      await h.handlers.onConfirm(`yes:${p.id}`, true);
+      await h.handlers.onConfirm('777', `yes:${p.id}`, true);
+      await h.handlers.onConfirm('777', `yes:${p.id}`, true);
       expect(h.sent.at(-1)!.text).toBe(text);
     }
   });
@@ -598,14 +646,14 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
   test('DomainError kind (empty message) is mapped, not sent blank', async () => {
     const { h, p } = await capturedPending('en');
     p.side = 'sell';
-    await h.handlers.onConfirm(`yes:${p.id}`, true);
+    await h.handlers.onConfirm('777', `yes:${p.id}`, true);
     expect(h.sent.at(-1)!.text).toBe('No held bucket can cover this sell — check the share count.');
   });
 
   test('DomainError kind is rendered in ko', async () => {
     const { h, p } = await capturedPending('ko');
     p.side = 'sell';
-    await h.handlers.onConfirm(`yes:${p.id}`, true);
+    await h.handlers.onConfirm('777', `yes:${p.id}`, true);
     expect(h.sent.at(-1)!.text).toBe('이 매도를 처리할 수 있는 보유 버킷이 없습니다 — 수량을 확인하세요.');
   });
 
@@ -622,7 +670,7 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
       ];
       h.repos.orderRepo.listForRun = async () => orders;
       h.repos.orderRepo.listForRunFrom = async () => orders;
-      await h.handlers.onConfirm(`yes:${p.id}`, true);
+      await h.handlers.onConfirm('777', `yes:${p.id}`, true);
       expect(h.sent.at(-1)!.text).toBe(text);
       expect(h.fills.length).toBe(0);
     }
@@ -637,7 +685,7 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
       h.repos.runRepo.get = async () => {
         throw new Error('boom');
       };
-      await h.handlers.onConfirm(`yes:${p.id}`, true);
+      await h.handlers.onConfirm('777', `yes:${p.id}`, true);
       expect(h.sent.at(-1)!.text).toBe(text);
     }
   });
@@ -841,7 +889,7 @@ describe('capture confirm — sibling leg cancelled by a bucket-emptying sell', 
 
   test('confirming the sell tells every allowed chat to pull the cancelled leg and records the notifications', async () => {
     const { fakes, orders, pid, sent, handlers } = await setupSell();
-    await handlers.onConfirm(`yes:${pid}`, true);
+    await handlers.onConfirm('111', `yes:${pid}`, true);
     const text = '⚠️ Run #1 NVDA: cancel bucket 0 target ($103.00) at your broker — the other leg already filled, so this order is no longer needed.';
     expect(sent.filter((s) => s.text === text).map((s) => s.chatId)).toEqual(['111', '222']);
     expect(fakes.notifications).toEqual([
@@ -854,25 +902,26 @@ describe('capture confirm — sibling leg cancelled by a bucket-emptying sell', 
 
   test('with no allowed chats the Telegram confirm records the notice for the web', async () => {
     const { fakes, pid, sent, handlers } = await setupSell({ allowedChatIds: [] });
-    await handlers.onConfirm(`yes:${pid}`, true);
+    await handlers.onConfirm('111', `yes:${pid}`, true);
     const text = '⚠️ Run #1 NVDA: cancel bucket 0 target ($103.00) at your broker — the other leg already filled, so this order is no longer needed.';
     expect(fakes.notifications).toEqual([{ runId: 1, chatId: 'web', text }]);
     expect(sent.some((s) => s.text === text)).toBe(false);
   });
 
   test('a Telegram outage on the notice never fails the confirm', async () => {
-    const sent: string[] = [];
+    const sent: { chatId: string; text: string }[] = [];
     const { fakes, orders, pid, handlers } = await setupSell({
-      send: async (_chatId, text) => {
+      send: async (chatId, text) => {
         if (text.startsWith('⚠️ Run #1 NVDA: cancel')) throw new Error('telegram-down');
-        sent.push(text);
+        sent.push({ chatId, text });
       },
     });
     const errors = spyOn(console, 'error').mockImplementation(() => {});
     try {
-      await handlers.onConfirm(`yes:${pid}`, true);
+      await handlers.onConfirm('111', `yes:${pid}`, true);
       expect(sent).toHaveLength(1);
-      expect(sent[0]).toStartWith('Booked NVDA sell 10 sh');
+      expect(sent[0]!.chatId).toBe('111');
+      expect(sent[0]!.text).toStartWith('Booked NVDA sell 10 sh');
       expect(fakes.fills).toHaveLength(1);
       expect(fakes.ledger).toHaveLength(1);
       expect(orders[0]!.status).toBe('cancelled');
