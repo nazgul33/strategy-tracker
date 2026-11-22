@@ -1,5 +1,4 @@
 import { describe, test, expect, beforeEach, spyOn } from 'bun:test'
-import { isTradingDay } from '@st/calendar'
 import { type OHLCBar } from '@st/market-data'
 import { makeCachedBarReader } from '../src/market/bars'
 import { day, mkBar, makeUpstream } from './bars-fakes'

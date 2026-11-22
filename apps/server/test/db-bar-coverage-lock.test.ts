@@ -71,6 +71,8 @@ describe('barCoverageRepo.add retry policy', () => {
   test('the backoff doubles per attempt with up to 4 ms of jitter', () => {
     expect([1, 2, 3, 4].map((a) => deadlockBackoffMs(a, () => 0))).toEqual([5, 10, 20, 40])
     expect(deadlockBackoffMs(1, () => 0.999)).toBe(9)
+    expect(deadlockBackoffMs(0, () => 0)).toBe(5)
+    expect(deadlockBackoffMs(9, () => 0)).toBe(40)
   })
 })
 
