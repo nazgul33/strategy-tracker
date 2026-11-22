@@ -1,6 +1,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { VisionReviewEntryDto, VisionReviewFillDto } from '../api.types';
+import { lookup } from '../i18n/catalog';
 import { installFetchStub, restoreFetch } from '../testing/fetchStub';
 import { EDITED, entry, FEELESS, READ, REJECTED, TYPED_FEE, UNEDITED } from '../testing/visionReview';
 
@@ -262,7 +263,7 @@ describe('VisionReviewPage', () => {
 
     const alerts = container.querySelectorAll('[role=alert]');
     expect(alerts.length).toBe(1);
-    expect(alerts[0]!.textContent).toBe('list-down');
+    expect(alerts[0]!.textContent).toBe(lookup('en', 'visionReviewErr.server', { code: 'list-down' }));
     expect(cards().length).toBe(0);
   });
 });

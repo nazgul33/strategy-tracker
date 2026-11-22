@@ -3,6 +3,7 @@
 // the dark class on <html> repaints everything at once.
 import type { ReactNode } from 'react';
 
+import { useT } from '../i18n';
 import type { BadgeTone } from '../viewmodels';
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
@@ -64,10 +65,25 @@ export function Spinner() {
   return <div className="animate-pulse py-6 text-center text-sm text-muted-foreground">…</div>;
 }
 
-export function ErrorNote({ message }: { message: string }) {
+const ERROR_NOTE_CLASS = 'rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive';
+
+export function ErrorNote({ message, onDismiss }: { message: string; onDismiss?: () => void }) {
+  const t = useT();
+  if (!onDismiss) {
+    return (
+      <div className={ERROR_NOTE_CLASS} role="alert">
+        {message}
+      </div>
+    );
+  }
   return (
-    <div className="rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
-      {message}
+    <div className={`${ERROR_NOTE_CLASS} flex items-start gap-2`}>
+      <div role="alert" className="flex-1">
+        {message}
+      </div>
+      <button type="button" aria-label={t('dismiss')} onClick={onDismiss} className="shrink-0 leading-none">
+        ✕
+      </button>
     </div>
   );
 }

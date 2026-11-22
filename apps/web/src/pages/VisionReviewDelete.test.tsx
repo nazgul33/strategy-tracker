@@ -1,5 +1,6 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { lookup } from '../i18n/catalog';
 import { installFetchStub, restoreFetch, type Route } from '../testing/fetchStub';
 import { EDITED, entry, REJECTED } from '../testing/visionReview';
 
@@ -134,7 +135,7 @@ describe('VisionReviewPage delete errors', () => {
     const found = alerts();
     expect(found.length).toBe(1);
     expect(cards()[0]!.contains(found[0]!)).toBe(true);
-    expect(found[0]!.textContent).toBe('boom');
+    expect(found[0]!.textContent).toBe(lookup('en', 'visionReviewErr.server', { code: 'boom' }));
     expect(button('Delete for real', cards()[0]!)).toBeTruthy();
     expect(cards()[1]!.querySelector('[role=alert]')).toBeNull();
   });
@@ -155,7 +156,7 @@ describe('VisionReviewPage delete errors', () => {
     const found = alerts();
     expect(found.length).toBe(1);
     expect(cards()[0]!.contains(found[0]!)).toBe(true);
-    expect(found[0]!.textContent).toBe('list-down');
+    expect(found[0]!.textContent).toBe(lookup('en', 'visionReviewErr.server', { code: 'list-down' }));
   });
 
   it("Cancel on another card leaves the failed card's error", async () => {
@@ -168,7 +169,7 @@ describe('VisionReviewPage delete errors', () => {
     const found = alerts();
     expect(found.length).toBe(1);
     expect(cards()[0]!.contains(found[0]!)).toBe(true);
-    expect(found[0]!.textContent).toBe('boom');
+    expect(found[0]!.textContent).toBe(lookup('en', 'visionReviewErr.server', { code: 'boom' }));
     expect(button('Delete for real', cards()[0]!)).toBeTruthy();
   });
 
@@ -182,7 +183,7 @@ describe('VisionReviewPage delete errors', () => {
     const found = alerts();
     expect(found.length).toBe(1);
     expect(cards().some((c) => c.contains(found[0]!))).toBe(false);
-    expect(found[0]!.textContent).toBe('list-down');
+    expect(found[0]!.textContent).toBe(lookup('en', 'visionReviewErr.server', { code: 'list-down' }));
     await release();
   });
 
@@ -204,7 +205,7 @@ describe('VisionReviewPage delete errors', () => {
     const found = alerts();
     expect(found.length).toBe(1);
     expect(cards().some((c) => c.contains(found[0]!))).toBe(false);
-    expect(found[0]!.textContent).toBe('list-down');
+    expect(found[0]!.textContent).toBe(lookup('en', 'visionReviewErr.server', { code: 'list-down' }));
     expect(Array.from(cards()[0]!.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['Delete']);
   });
 
@@ -219,6 +220,6 @@ describe('VisionReviewPage delete errors', () => {
     const found = alerts();
     expect(found.length).toBe(1);
     expect(cards().some((c) => c.contains(found[0]!))).toBe(false);
-    expect(found[0]!.textContent).toBe('boom');
+    expect(found[0]!.textContent).toBe(lookup('en', 'visionReviewErr.server', { code: 'boom' }));
   });
 });
