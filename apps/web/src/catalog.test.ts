@@ -64,12 +64,17 @@ describe('i18n catalogs', () => {
     expect(plannerCodes).toEqual(['cut-loss-immediate', 'no-bucket-available', 'shares-zero']);
 
     const source = await Bun.file(new URL('../../../packages/strategies/src/mean-reversion.ts', import.meta.url)).text();
-    expect(source.match(/notices\.push\(/g)!.length).toBe(plannerCodes.length);
+    // Name the call site: a bare `expected 1, got 0` does not say which file lost a push.
+    expect({ 'mean-reversion.ts pushes': source.match(/notices\.push\(/g)?.length ?? 0 }).toEqual({
+      'mean-reversion.ts pushes': plannerCodes.length,
+    });
 
     const daySource = await Bun.file(new URL('../../../apps/server/src/pipeline/day.ts', import.meta.url)).text();
     const dayPushes = daySource.match(/notices\.push\(/g)?.length ?? 0;
     const dayCodes = [...new Set([...daySource.matchAll(/notices\.push\(\{\s*code:\s*'([\w-]+)'/g)].map((m) => m[1]!))].sort();
-    expect(dayPushes).toBe([...daySource.matchAll(/notices\.push\(\{\s*code:\s*'([\w-]+)'/g)].length);
+    expect({ 'day.ts pushes': dayPushes }).toEqual({
+      'day.ts pushes': [...daySource.matchAll(/notices\.push\(\{\s*code:\s*'([\w-]+)'/g)].length,
+    });
     expect(dayCodes).toEqual(['unconfirmed']);
 
     const codes = [...new Set([...plannerCodes, ...dayCodes])].sort();

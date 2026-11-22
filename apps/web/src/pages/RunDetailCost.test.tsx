@@ -2,6 +2,7 @@
 // GlobalRegistrator.register(), otherwise onChange handlers silently never fire.
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import type { RunDetailDto } from '../api.types';
 import { installFetchStub, restoreFetch } from '../testing/fetchStub';
 
 GlobalRegistrator.register();
@@ -23,7 +24,7 @@ afterAll(() => {
   delete globalThis.IS_REACT_ACT_ENVIRONMENT;
 });
 
-const RUN = {
+const RUN: RunDetailDto = {
   id: 1,
   strategyKey: 'mean-reversion',
   ticker: 'QQQ',

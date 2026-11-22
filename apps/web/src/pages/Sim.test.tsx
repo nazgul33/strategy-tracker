@@ -196,6 +196,19 @@ describe('SimPage gap fields', () => {
     expect(calls[0]!.body.costPpm).toBe(700);
   });
 
+  it('a settings load that succeeded leaves the cost status empty', async () => {
+    await act(async () => {
+      root.render(d(SimPage));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const note = document.querySelector('[data-testid="costDefaultFailed"]');
+    expect(note).not.toBeNull();
+    expect(note!.getAttribute('role')).toBe('status');
+    expect(note!.textContent).toBe('');
+  });
+
   it('a failed settings load says so by the cost field', async () => {
     settingsRoute.status = 500;
     await act(async () => {
