@@ -2,7 +2,7 @@ import { describe, expect, spyOn, test } from 'bun:test';
 import { applyBuyFill, emptyState, parseUsd } from '@st/core';
 import { buildPendingKeyboard } from '@st/telegram';
 import { t, type Lang } from '@st/telegram/i18n';
-import type { FillRow, LedgerRow } from '../src/db/schema';
+import type { FillRow, LedgerRow } from '../src/domain/booking';
 import type { OrderRecord } from '../src/domain/repo-types';
 import { makeCaptureHandlers } from '../src/wire/capture';
 import { parseEnv, todayEt } from '../src/wire/deps';

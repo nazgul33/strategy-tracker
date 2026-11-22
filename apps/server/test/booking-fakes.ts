@@ -1,5 +1,6 @@
 import type { RunState } from '@st/core'
 import type { BookingNotifier, OrderRow, PendingDecisionPatch, RepoSurface, SellAttribution } from '../src/domain/booking'
+import type { CaptureStatus } from '../src/domain/repo-types'
 import { fakeCorrectionRepo } from './fake-corrections'
 
 // A pending row without a vision snapshot: the legacy shape (detectedAt null).
@@ -118,7 +119,7 @@ export function fakeRepos() {
   const captureRepo = {
     async findByHash(runId: number, hash: string) {
       const c = captures.find((x) => x.runId === runId && x.imageHash === hash)
-      return c ? { id: c.id as number, status: c.status as string } : null
+      return c ? { id: c.id as number, status: c.status as CaptureStatus } : null
     },
     async setStatus(id: number, status: string) { const c = captures.find((x) => x.id === id); if (c) c.status = status },
     async insert(c: any) {

@@ -16,7 +16,7 @@ import { requireRun } from './require-run'
 // matcher and the repository surface to repo-types; re-exported so the booking
 // surface keeps being the single place its consumers import from.
 export type { CaptureConflict, OrderRow, BookingNotifier, BookedOutcome, SellAttribution }
-export type { RepoSurface, PendingDecisionPatch, FillRow } from './repo-types'
+export type { RepoSurface, PendingDecisionPatch, FillRow, LedgerRow } from './repo-types'
 
 // confirmPendingFill lives in its own module (this file's size); re-exported so
 // every caller keeps importing the booking surface from here.

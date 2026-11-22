@@ -1,4 +1,4 @@
-import type { RunState } from '@st/core'
+import type { Bucket, ClosedBucket, RunState } from '@st/core'
 import { eq, and, sql, inArray } from 'drizzle-orm'
 import * as s from './schema'
 import type { Db, DbOrTx } from './db-type'
@@ -6,7 +6,14 @@ import { getSimRepo } from './repos-sim'
 import { getBarRepos } from './repos-bars'
 import { getVisionRepos } from './repos-vision'
 import type { CorrectionRepo } from '../domain/correction-types'
-import type { NewRun, OrderRepo, OrderRecord, PendingRepo, PendingRow, RunRepo, RunRow, RunStatus } from '../domain/repo-types'
+import type {
+  CaptureRepo, CaptureStatus, FillPatch, FillRepo, LedgerRepo, NewCapture, NewFill, NewLedgerEntry, NewNotification, NewRun,
+  NotificationRepo, OrderRepo, OrderRecord, PendingRepo, PendingRow, RunRepo, RunRow, RunStatus,
+} from '../domain/repo-types'
+
+// bigints are stored as strings in state_json
+type StoredBucket = Omit<Bucket, 'buyPrice'> & { buyPrice?: string | null }
+type StoredClosed = Omit<ClosedBucket, 'buyPrice' | 'soldPrice'> & { buyPrice: string; soldPrice: string }
 
 function serializeState(state: RunState): string {
   return JSON.stringify(state, (_, v) => typeof v === 'bigint' ? v.toString() : v)
@@ -72,13 +79,13 @@ export function getRepos(db: Db) {
       const rows = await db.select().from(s.strategyRuns).where(eq(s.strategyRuns.id, runId))
       const raw = JSON.parse(rows[0].stateJson)
       // rehydrate bigints and age keys
-      const rehydrateBucket = (b: any) => ({ ...b, buyPrice: BigInt(b.buyPrice ?? 0) })
+      const rehydrateBucket = (b: StoredBucket) => ({ ...b, buyPrice: BigInt(b.buyPrice ?? 0) })
       const ages: Record<number, number> = {}
       for (const k of Object.keys(raw.ages ?? {})) ages[Number(k)] = raw.ages[k]
       return {
         buckets: (raw.buckets ?? []).map(rehydrateBucket),
         cashCents: raw.cashCents,
-        closed: (raw.closed ?? []).map((c: any) => ({ ...c, buyPrice: BigInt(c.buyPrice), soldPrice: BigInt(c.soldPrice) })),
+        closed: (raw.closed ?? []).map((c: StoredClosed) => ({ ...c, buyPrice: BigInt(c.buyPrice), soldPrice: BigInt(c.soldPrice) })),
         ages,
       }
     },
@@ -118,18 +125,18 @@ export function getRepos(db: Db) {
   } satisfies OrderRepo
 
   const fillRepo = {
-    async insert(fill: any) { await db.insert(s.fills).values(fill) },
+    async insert(fill: NewFill): Promise<void> { await db.insert(s.fills).values(fill) },
     async listForRun(runId: number) { return db.select().from(s.fills).where(eq(s.fills.runId, runId)).orderBy(s.fills.id) },
     // Run-scoped guard: a foreign fillId can never be touched. Field names
     // match the fills schema; price is bigint myriadths.
-    async update(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number; filledOn?: string }): Promise<void> {
+    async update(runId: number, fillId: number, patch: FillPatch): Promise<void> {
       await db.update(s.fills).set(patch).where(and(eq(s.fills.id, fillId), eq(s.fills.runId, runId)))
     },
     // Run-scoped guard: a foreign fillId can never be touched. No-op when absent.
     async deleteById(runId: number, fillId: number): Promise<void> {
       await db.delete(s.fills).where(and(eq(s.fills.id, fillId), eq(s.fills.runId, runId)))
     },
-  }
+  } satisfies FillRepo
 
   async function hasPendingWithStatus(captureId: number, status: 'pending' | 'confirmed'): Promise<boolean> {
     const rows = await db.select({ id: s.pendingFills.id }).from(s.pendingFills)
@@ -180,7 +187,7 @@ export function getRepos(db: Db) {
   }
 
   const captureRepo = {
-    async findByHash(runId: number, hash: string): Promise<{ id: number; status: string } | null> {
+    async findByHash(runId: number, hash: string): Promise<{ id: number; status: CaptureStatus } | null> {
       const rows = await db.select({ id: s.captures.id, status: s.captures.status }).from(s.captures)
         .where(and(eq(s.captures.runId, runId), eq(s.captures.imageHash, hash))).limit(1)
       return rows[0] ?? null
@@ -188,27 +195,28 @@ export function getRepos(db: Db) {
     async setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void> {
       await db.update(s.captures).set({ status }).where(eq(s.captures.id, id))
     },
-    async insert(c: any): Promise<{ inserted: boolean; id?: number }> {
+    async insert(c: NewCapture): Promise<{ inserted: boolean; id?: number }> {
       try {
         const [res] = await db.insert(s.captures).values(c)
         return { inserted: true, id: res.insertId }
-      } catch (e: any) {
-        const msg = String(e) + ' ' + (e?.message ?? '') + ' ' + (e?.cause?.message ?? '')
+      } catch (e) {
+        const err = e as { message?: string; cause?: { message?: string } } | null | undefined
+        const msg = String(e) + ' ' + (err?.message ?? '') + ' ' + (err?.cause?.message ?? '')
         if (msg.includes('ER_DUP_ENTRY') || msg.toLowerCase().includes('duplicate')) return { inserted: false }
         throw e
       }
     },
-  }
+  } satisfies CaptureRepo
 
   const ledgerRepo = {
-    async insert(l: any) { await db.insert(s.ledger).values(l) },
+    async insert(l: NewLedgerEntry): Promise<void> { await db.insert(s.ledger).values(l) },
     async listForRun(runId: number) { return db.select().from(s.ledger).where(eq(s.ledger.runId, runId)) },
-  }
+  } satisfies LedgerRepo
 
   const notificationRepo = {
-    async insert(n: any) { await db.insert(s.notifications).values(n) },
+    async insert(n: NewNotification): Promise<void> { await db.insert(s.notifications).values(n) },
     async listForRun(runId: number) { return db.select().from(s.notifications).where(eq(s.notifications.runId, runId)) },
-  }
+  } satisfies NotificationRepo
 
   const settingsRepo = {
     async getAll(): Promise<Record<string, string>> {

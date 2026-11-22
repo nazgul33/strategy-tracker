@@ -5,6 +5,7 @@ import { progressView } from '@st/strategies'
 import { t as tgT } from '@st/telegram/i18n'
 import { seedRun, manualFill, cancelOrder } from '../../domain/booking'
 import type { RawFill } from '@st/ingest'
+import type { OHLCBar } from '@st/market-data'
 import { jsonBig, type HttpDeps } from '../app'
 import { fillBookingDeps } from '../booking-deps'
 import type { RunStatus } from '../../domain/repo-types'
@@ -196,7 +197,7 @@ export function runsRouter(deps: HttpDeps): Hono {
   ): Promise<{ tradeDate: ISODate; close: bigint }[]> {
     if (!deps.fetchDailyBars) return []
     const to = prevTradingDay(today)
-    let bars: any[]
+    let bars: OHLCBar[]
     try {
       bars = await deps.fetchDailyBars(ticker, start, to)
     } catch (e) {

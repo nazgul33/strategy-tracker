@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { RepoSurface } from '../domain/booking'
-import type { OrderRepo, PendingRepo, RunRepo } from '../domain/repo-types'
+import type { OHLCBar } from '@st/market-data'
+import type { FillRepo, NotificationRepo, OrderRepo, PendingRepo, RunRepo } from '../domain/repo-types'
 import type { SimRepoSurface } from '../sim/sim'
 import { authMiddleware, makeToken } from './auth'
 import type { BarCacheRepos } from '../market/bars'
@@ -15,8 +16,8 @@ export interface HttpRepoSurface extends RepoSurface {
   poolEditRepo: { insert(input: { runId: number; poolCents: number }): Promise<void> }
   runRepo: RunRepo
   orderRepo: OrderRepo
-  fillRepo: RepoSurface['fillRepo']
-  notificationRepo: RepoSurface['notificationRepo'] & { listForRun(runId: number): Promise<any[]> }
+  fillRepo: FillRepo
+  notificationRepo: NotificationRepo
   pendingRepo: PendingRepo
   captureImageRepo: RepoSurface['captureImageRepo'] & { existingIds(captureIds: number[]): Promise<Set<number>> }
   simRepo: SimRepoSurface
@@ -30,7 +31,7 @@ export interface HttpDeps {
   defaultSettings: { visionBaseUrl: string; visionModel: string; digestLang: 'en' | 'ko'; defaultCostPpm: number }
   triggerMorning: () => Promise<string>
   // The price-history route relies on this reader persisting the bars it returns (production wires the cached reader); each bar carries `date`.
-  fetchDailyBars: (ticker: string, from: string, to: string) => Promise<any[]>
+  fetchDailyBars: (ticker: string, from: string, to: string) => Promise<OHLCBar[]>
   allowedChatIds: string[]
   send: (chatId: string, text: string) => Promise<void>
 }

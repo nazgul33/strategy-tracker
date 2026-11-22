@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test'
 import type { getRepos } from '../src/db/repos'
 import type { RepoSurface } from '../src/domain/booking'
-import type { HttpRepoSurface } from '../src/http/app'
+import type { HttpDeps, HttpRepoSurface } from '../src/http/app'
 
 export function _dbPins(g: typeof getRepos) {
   // @ts-expect-error the real repositories need a Drizzle database
@@ -28,6 +28,21 @@ export async function _runPins(r: HttpRepoSurface) {
   await r.runRepo.create({ ticker: 'X' })
   // @ts-expect-error get may return null
   const _t: string = (await r.runRepo.get(1)).ticker
+}
+
+export async function _restPins(r: HttpRepoSurface, d: HttpDeps) {
+  // @ts-expect-error a fill needs every column
+  await r.fillRepo.insert({ runId: 1 })
+  // @ts-expect-error a capture needs its hash and status
+  await r.captureRepo.insert({ runId: 1 })
+  // @ts-expect-error a ledger entry needs kind and amount
+  await r.ledgerRepo.insert({ runId: 1 })
+  // @ts-expect-error a notification needs its chat
+  await r.notificationRepo.insert({ text: 'x' })
+  // @ts-expect-error text is a string
+  const _n: number = (await r.notificationRepo.listForRun(1))[0]!.text
+  // @ts-expect-error bars carry a bigint close
+  const _c: string = (await d.fetchDailyBars('X', '2026-01-01', '2026-01-02'))[0]!.close
 }
 
 test('repository surface type pins compile', () => { expect(true).toBe(true) })

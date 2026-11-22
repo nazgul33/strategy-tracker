@@ -6,7 +6,48 @@ import type { ReviewedPendingRow, VisionReviewInsert, VisionReviewRow } from './
 
 export interface PendingDecisionPatch { side: 'buy' | 'sell'; shares: number; price: bigint; fee: number; filledOn: ISODate; bucketIdx: number }
 
-export interface FillRow { id: number; runId: number; bucketIdx: number; side: 'buy' | 'sell'; ticker: string; shares: number; price: bigint; fee: number; filledOn: ISODate; source: string }
+export type FillSource = 'capture' | 'manual' | 'seed'
+
+export interface FillRow { id: number; runId: number; bucketIdx: number; side: 'buy' | 'sell'; ticker: string; shares: number; price: bigint; fee: number; filledOn: ISODate; source: FillSource }
+
+export type NewFill = Omit<FillRow, 'id'>
+
+export interface FillPatch { shares?: number; price?: bigint; fee?: number; filledOn?: ISODate }
+
+export interface FillRepo {
+  insert(fill: NewFill): Promise<void>
+  listForRun(runId: number): Promise<FillRow[]>
+  update(runId: number, fillId: number, patch: FillPatch): Promise<void>
+  deleteById(runId: number, fillId: number): Promise<void>
+}
+
+export type CaptureStatus = 'pending' | 'parsed' | 'unparseable' | 'duplicate' | 'confirmed'
+
+export interface NewCapture { runId: number; chatId: string | null; imageHash: string; status: CaptureStatus }
+
+export interface CaptureRepo {
+  findByHash(runId: number, hash: string): Promise<{ id: number; status: CaptureStatus } | null>
+  setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void>
+  insert(c: NewCapture): Promise<{ inserted: boolean; id?: number }>
+}
+
+export interface LedgerRow { id: number; runId: number; ts: string; kind: string; amountCents: number; ref: string | null }
+
+export type NewLedgerEntry = Omit<LedgerRow, 'id' | 'ts'>
+
+export interface LedgerRepo {
+  insert(l: NewLedgerEntry): Promise<void>
+  listForRun(runId: number): Promise<LedgerRow[]>
+}
+
+export interface NotificationRow { id: number; runId: number | null; chatId: string; text: string; sentAt: string }
+
+export type NewNotification = Omit<NotificationRow, 'id' | 'sentAt'>
+
+export interface NotificationRepo {
+  insert(n: NewNotification): Promise<void>
+  listForRun(runId: number): Promise<NotificationRow[]>
+}
 
 export type OrderKind = 'buy_loc' | 'sell_loc' | 'market_sell' | 'stop_sell'
 export type OrderStatus = 'open' | 'filled' | 'stale' | 'cancelled'
@@ -70,16 +111,11 @@ export interface RepoSurface {
   runRepo: Pick<RunRepo, 'list' | 'get' | 'create' | 'updateStatus'>
   bucketRepo: { loadState(runId: number): Promise<RunState>; saveState(runId: number, state: RunState): Promise<void> }
   orderRepo: OrderRepo
-  fillRepo: {
-    insert(fill: any): Promise<any>
-    listForRun(runId: number): Promise<FillRow[]>
-    // Rebook/delete history surface (Cash Model A rebuild).
-    update?(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number }): Promise<void>
-    deleteById?(runId: number, fillId: number): Promise<void>
-  }
+  // update/deleteById: rebook/delete history surface (Cash Model A rebuild).
+  fillRepo: Pick<FillRepo, 'insert' | 'listForRun'> & Partial<Pick<FillRepo, 'update' | 'deleteById'>>
   pendingRepo: Omit<PendingRepo, 'get'>
   correctionRepo: CorrectionRepo
-  captureRepo: { findByHash(runId: number, hash: string): Promise<{ id: number; status: string } | null>; setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
+  captureRepo: CaptureRepo
   captureImageRepo: {
     insertIgnore(row: CaptureImageInsert): Promise<boolean>
     getBytes(captureId: number): Promise<{ mime: string; bytes: Buffer } | null>
@@ -94,6 +130,6 @@ export interface RepoSurface {
     listForCaptures(captureIds: number[]): Promise<VisionReviewRow[]>
     deleteFor(captureId: number): Promise<void>
   }
-  ledgerRepo: { insert(l: any): Promise<any>; listForRun(runId: number): Promise<any[]> }
-  notificationRepo: { insert(n: any): Promise<any> }
+  ledgerRepo: LedgerRepo
+  notificationRepo: Pick<NotificationRepo, 'insert'>
 }
