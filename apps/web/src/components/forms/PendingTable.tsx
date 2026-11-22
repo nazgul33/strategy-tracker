@@ -31,6 +31,7 @@ interface Decision {
 export function PendingTable({ runId }: { runId?: number }) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.listPending(), []);
+  const [buckets, setBuckets] = useState<Record<number, string>>({});
   const [edited, setEdited] = useState<Record<number, RowValues>>({});
   const [reviewId, setReviewId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -45,7 +46,7 @@ export function PendingTable({ runId }: { runId?: number }) {
     setEdited((prev) => ({ ...prev, [r.id]: patchRowValues(r, prev[r.id] ?? initialRowValues(r), patch) }));
   const setValues = (r: PendingFillDto, values: RowValues) => setEdited((prev) => ({ ...prev, [r.id]: values }));
 
-  const buildOverrides = (r: PendingFillDto, v: RowValues): PendingOverrides | undefined => {
+  const buildOverrides = (r: PendingFillDto, v: RowValues, bucket: string): PendingOverrides | undefined => {
     const invalid = () => new Error(t('pendingInvalidOverride'));
     // A field vision missed stays unbooked until it is filled in: left blank it reads as
     // unedited, and the server would substitute its own value (the capture date for a date).
@@ -76,6 +77,7 @@ export function PendingTable({ runId }: { runId?: number }) {
         body.feeCents = cents;
       }
     }
+    if (v.side === 'sell' && bucket !== '') body.bucketIdx = Number(bucket);
     return Object.keys(body).length > 0 ? body : undefined;
   };
 
@@ -125,7 +127,7 @@ export function PendingTable({ runId }: { runId?: number }) {
     const values = valuesFor(r);
     let overrides: PendingOverrides | undefined;
     try {
-      if (action === 'confirm') overrides = buildOverrides(r, values);
+      if (action === 'confirm') overrides = buildOverrides(r, values, buckets[r.id] ?? '');
     } catch (err) {
       await reportError(err);
       return;
@@ -163,6 +165,7 @@ export function PendingTable({ runId }: { runId?: number }) {
               <Th className="text-right">{t('pendingColQty')}</Th>
               <Th className="text-right">{t('pendingColPrice')}</Th>
               <Th className="text-right">{t('pendingColFee')}</Th>
+              <Th>{t('pendingColBucket')}</Th>
               <Th>
                 <span className="sr-only">{t('pendingColScreenshot')}</span>
               </Th>
@@ -177,6 +180,8 @@ export function PendingTable({ runId }: { runId?: number }) {
                 row={r}
                 values={valuesFor(r)}
                 onChange={(patch) => patchValues(r, patch)}
+                bucket={buckets[r.id] ?? ''}
+                onBucketChange={(value) => setBuckets((prev) => ({ ...prev, [r.id]: value }))}
                 onOpenSideBySide={() => setReviewId(r.id)}
                 onConfirm={() => void act(r, 'confirm')}
                 onReject={() => void act(r, 'reject')}

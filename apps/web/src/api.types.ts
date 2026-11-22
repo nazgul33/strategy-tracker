@@ -118,6 +118,8 @@ export interface PendingFillDto {
   hasImage: boolean;
   /** The run's cost in ppm: the fee the server derives when none is supplied is `feeCents(price, shares, costPpm)`. */
   costPpm: number;
+  /** The row's own run's non-empty buckets; the choices a confirmed sell can be booked to. */
+  heldBuckets: HeldBucketDto[];
   /** What vision read. `null` = the row predates the snapshot; a null field = vision missed it. */
   detected: DetectedDto | null;
 }

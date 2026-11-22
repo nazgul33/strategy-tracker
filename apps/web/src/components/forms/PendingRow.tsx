@@ -4,6 +4,7 @@ import { isoDate, priceInputValue } from '../../format';
 import { autoFeeUsd } from '../../autofee';
 import { feeIsDerived, fieldEditState, standingIssue, type RowField, type RowValues } from '../../pendingvalues';
 import { Button, Input, Select, Td } from '../ui';
+import { BucketSelect } from './BucketSelect';
 
 // Myriadths → an input value: at least two decimals, more only when the price
 // really has them, so an untouched field never reads as an edit.
@@ -41,13 +42,25 @@ interface PendingRowProps {
   row: PendingFillDto;
   values: RowValues;
   onChange: (patch: Partial<RowValues>) => void;
+  bucket: string;
+  onBucketChange: (value: string) => void;
   onOpenSideBySide: () => void;
   onConfirm: () => void;
   onReject: () => void;
   busy: boolean;
 }
 
-export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm, onReject, busy }: PendingRowProps) {
+export function PendingRow({
+  row,
+  values,
+  onChange,
+  bucket,
+  onBucketChange,
+  onOpenSideBySide,
+  onConfirm,
+  onReject,
+  busy,
+}: PendingRowProps) {
   const t = useT();
   // Flag a field the row is missing until the operator has filled it in.
   const issue = standingIssue(row, values);
@@ -122,6 +135,11 @@ export function PendingRow({ row, values, onChange, onOpenSideBySide, onConfirm,
           <div data-auto-fee title={t('pendingFeeAutoHint')} className="text-xs text-muted-foreground">
             {t('pendingFeeAuto')}
           </div>
+        )}
+      </Td>
+      <Td>
+        {values.side === 'sell' && (
+          <BucketSelect aria-label={t('fillBucket')} value={bucket} held={row.heldBuckets} onChange={onBucketChange} />
         )}
       </Td>
       <Td>

@@ -19,6 +19,7 @@ function pendingRow(over: Partial<PendingFillDto> = {}): PendingFillDto {
     createdAt: '2026-11-02T14:00:00Z',
     hasImage: true,
     costPpm: 40,
+    heldBuckets: [],
     detected: null,
     ...over,
   };

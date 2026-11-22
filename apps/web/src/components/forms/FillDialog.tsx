@@ -220,7 +220,14 @@ export function FillDialog({
         </Field>
         {!modify && side === 'sell' && (
           <Field label={t('fillBucket')}>
-            <BucketSelect data-testid="manualBucketSelect" aria-label={t('fillBucket')} value={bucket} held={heldBuckets} onChange={setBucket} />          </Field>
+            <BucketSelect
+              data-testid="manualBucketSelect"
+              aria-label={t('fillBucket')}
+              value={bucket}
+              held={heldBuckets}
+              onChange={setBucket}
+            />
+          </Field>
         )}
         <Field label={t('manualQty')}>
           <Input

@@ -202,6 +202,7 @@
   "orderStatusStale": "Stale",
   "pendingAlreadyHandled": "Already handled",
   "pendingColActions": "Actions",
+  "pendingColBucket": "Bucket",
   "pendingColDate": "Trade date",
   "pendingColDetected": "Detected",
   "pendingColFee": "Fee",

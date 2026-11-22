@@ -38,6 +38,7 @@ const ROW: PendingFillDto = {
   createdAt: '2026-11-10T14:30:00Z',
   hasImage: true,
   costPpm: 40,
+  heldBuckets: [],
   detected: { side: 'buy', shares: 10, price: '123450000', filledOn: '2026-11-10', fee: 100 },
 };
 
@@ -138,7 +139,7 @@ describe('PendingTable header', () => {
       root.render(d(PendingTable, { runId: 7 }));
     });
     await flush();
-    const th = Array.from(container.querySelectorAll('thead th'))[6]!;
+    const th = Array.from(container.querySelectorAll('thead th'))[7]!;
     const label = th.querySelector('.sr-only')!;
     expect(label.textContent).toBe('Screenshot');
     expect(lookup('ko', 'pendingColScreenshot')).toBe('스크린샷');
@@ -202,6 +203,8 @@ describe('PendingRow blank fee', () => {
                 onChange: () => {},
                 onOpenSideBySide: () => {},
                 onConfirm: () => {},
+                bucket: '',
+                onBucketChange: () => {},
                 onReject: () => {},
                 busy: false,
               }),

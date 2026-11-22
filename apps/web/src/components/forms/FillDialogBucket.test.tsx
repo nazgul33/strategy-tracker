@@ -157,6 +157,15 @@ describe('FillDialog bucket selector', () => {
     expect('bucketIdx' in body).toBe(false);
   });
 
+  it('a bucket chosen, the side switched to buy and back to sell is still chosen', async () => {
+    await render();
+    await choose(element('manualSideSelect'), 'sell');
+    await choose(bucketSelect(), '2');
+    await choose(element('manualSideSelect'), 'buy');
+    await choose(element('manualSideSelect'), 'sell');
+    expect(bucketSelect().value).toBe('2');
+  });
+
   it('edit mode has no bucket selector', async () => {
     await render({
       fill: {

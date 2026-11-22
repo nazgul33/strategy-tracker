@@ -202,6 +202,7 @@
   "orderStatusStale": "만료",
   "pendingAlreadyHandled": "이미 처리됨",
   "pendingColActions": "작업",
+  "pendingColBucket": "버킷",
   "pendingColDate": "거래일",
   "pendingColDetected": "감지일시",
   "pendingColFee": "수수료",
