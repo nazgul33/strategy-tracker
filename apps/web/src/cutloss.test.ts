@@ -76,6 +76,39 @@ describe('underwaterStopCount', () => {
       });
     }
   });
+
+  describe("matches the planner's cut-loss-immediate count", () => {
+    const run: Run = {
+      id: 0,
+      name: 'x',
+      ticker: 'T',
+      strategyKey: 'mean-reversion',
+      costPpm: 0,
+      buyGapPpm: 0,
+      sellGapPpm: 0,
+      cutLossPpm: 30_000,
+      poolCents: 1_000_000,
+      status: 'active',
+    };
+    const prices = ['1000000', '1000100', '900000'];
+    const state = emptyState(3);
+    prices.forEach((p, i) => {
+      state.buckets[i] = { index: i, state: 'held', shares: 10, buyPrice: BigInt(p), buyFeeCents: 0, filledOn: '2026-11-02' };
+    });
+    const dtos = prices.map((p, i) => held(i, p));
+
+    for (const lastClose of [970000n, 970001n, 969999n, 873000n, 873001n, 872999n]) {
+      test(`close ${lastClose}`, () => {
+        const n = computeOrders(run, state, { lastClose }).notices.find((x) => x.code === 'cut-loss-immediate')?.params?.n ?? 0;
+        expect(underwaterStopCount(dtos, 30_000, String(lastClose))).toBe(Number(n));
+      });
+    }
+
+    test('a stop exactly at the close counts, one myriadth above does not', () => {
+      expect(underwaterStopCount([held(0, '1000000')], 30_000, '970000')).toBe(1);
+      expect(underwaterStopCount([held(0, '1000000')], 30_000, '970001')).toBe(0);
+    });
+  });
 });
 
 describe('stopCheckUnavailable', () => {

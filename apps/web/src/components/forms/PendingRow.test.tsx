@@ -225,6 +225,12 @@ describe('PendingRow blank fee', () => {
     expect((await feeInput(ROW, {})).placeholder).toBe('auto $4.94');
   });
 
+  it('no auto marker while the placeholder shows', async () => {
+    const input = await feeInput(FEELESS, {});
+    expect(input.placeholder).toBe('auto $4.94');
+    expect(container.querySelector('[data-auto-fee]')).toBeNull();
+  });
+
   it('a comma-grouped price still derives the placeholder', async () => {
     expect((await feeInput(FEELESS, { price: '12,345.00' })).placeholder).toBe('auto $4.94');
   });

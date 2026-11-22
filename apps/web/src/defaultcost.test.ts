@@ -58,4 +58,30 @@ describe('default cost memo', () => {
     await loadDefaultCostText();
     expect(settingsGets).toBe(2);
   });
+
+  test("a reset while a load is in flight drops that load's result", async () => {
+    // Keep the first /api/settings response pending until released.
+    const inner = globalThis.fetch;
+    let open = () => {};
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    let held = true;
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      if (held && String(input).includes('/api/settings')) {
+        held = false;
+        return gate.then(() => inner(input, init));
+      }
+      return inner(input, init);
+    }) as typeof fetch;
+
+    const first = loadDefaultCostText();
+    resetDefaultCostMemo();
+    open();
+    await first;
+
+    expect(peekDefaultCostText()).toBeUndefined();
+    expect(await loadDefaultCostText()).toBe('0.070');
+    expect(settingsGets).toBe(2);
+  });
 });
