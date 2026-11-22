@@ -60,7 +60,14 @@ export function pendingRouter(deps: HttpDeps): Hono {
     const id = parseId(c.req.param('id'))
     if (id === null) return c.json({ error: 'not-pending' }, 409)
     const body = await c.req.json().catch(() => ({}))
-    const rejected = await rejectPendingFill(id, fillBookingDeps(deps), { keepImage: body?.keepImage === true })
+    let rejected: { archived: boolean } | null
+    try {
+      rejected = await rejectPendingFill(id, fillBookingDeps(deps), { keepImage: body?.keepImage === true })
+    } catch (e: any) {
+      if (e?.message === 'pending-not-pending' || e?.message === 'pending-not-found-or-not-pending') return c.json({ error: 'not-pending' }, 409)
+      if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
+      return c.json({ error: e?.message ?? 'error' }, 422)
+    }
     if (!rejected) return c.json({ error: 'not-pending' }, 409)
     return c.json({ ok: true, archived: rejected.archived })
   })
