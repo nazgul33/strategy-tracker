@@ -134,7 +134,7 @@ Execution order: A, B, C, D, E, on the one branch.
 ## Plan D rulings (as tasks land)
 
 - **[REVIEW] ko `dismiss` = 닫기** (plan D Task 2, plan-pinned copy): 닫기 also means "close", and the dialog ✕ carries `aria-label=cancel`. Assistive tech distinguishes them by context, but a human may prefer 해제/무시 for the notice-dismiss button. Plan copy table verbatim for now.
-- Task 2 kept the plan's notice trigger exactly: only `keepImage === true && !res.archived` warns; a discard never notifies; `archived:true` with no review row keeps the plain `keepImageNotKept` line.
+- Task 2 kept the plan's notice trigger exactly: only `keepImage === true && !res.archived` warns, and a discard never notifies. The old one-line `keepImageNotKept` message and its catalog key are gone. An `archived:true` answer shows nothing.
 - Task 2 touched `Modal.tsx` beyond its plan file list (authorized): the opener chain fixes the fee-dialog -> keep-prompt handoff so Escape returns focus to the row's Confirm button (plan Review Focus 1). Reviewer audited it as the minimal correct fix.
 - Plan D Task 6: the controller's brief described the wrong task; the implementer followed plan Task 6 (`refreshKey`), which is correct. Briefs 7-13 were then re-audited against the plan and HEAD by a planning agent (Fable 5.2) before dispatch. Model directive from Task 3 on: planning Fable 5.2/high, review Opus 5.5/high, implementation Sonnet 5.5.
 - Plan D Task 7: `FillDialog.tsx` is 306 lines at dispatch, so the plan's conditional extraction (`FillDeleteStep.tsx`) applies.
