@@ -91,8 +91,16 @@ describe('GET /api/pending run lookup', () => {
       return get(id)
     }
 
+    const stateCalls: number[] = []
+    const loadState = f.repos.bucketRepo.loadState.bind(f.repos.bucketRepo)
+    f.repos.bucketRepo.loadState = async (id: number) => {
+      stateCalls.push(id)
+      return loadState(id)
+    }
+
     const rows = await (await app.request('/api/pending', { headers: auth })).json()
     expect(calls.sort()).toEqual([runId, otherRun].sort())
+    expect(stateCalls.sort()).toEqual([runId, otherRun].sort())
     expect(maxInFlight).toBe(2)
     expect(rows.map((r: any) => r.costPpm)).toEqual([5000, 5000, 250])
   })
