@@ -12,6 +12,7 @@ const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { act } = await import('react');
 const { RunDetailPage } = await import('./RunDetail');
+const { PENDING_ROW, setInputValue } = await import('../testing/pendingRow');
 
 const d = React.createElement;
 
@@ -78,6 +79,7 @@ function stubFetch() {
     // Sub-resources before the bare run route: matching is by substring.
     { url: '/price-history', json: { start: '2026-11-04', bars: [] } },
     { url: '/orders', json: [] },
+    { url: '/api/pending', json: [{ ...PENDING_ROW, runId: 1 }] },
     {
       url: '/api/runs/1',
       get json() {
@@ -137,6 +139,20 @@ describe('RunDetailPage pending tab corrections', () => {
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['POST /api/corrections/1/apply']);
     expect(correctionGets).toBe(2);
     expect(runGets).toBe(runBefore + 1);
+  });
+
+  it('applying a correction keeps an edit typed in the pending table', async () => {
+    const qty = () => document.querySelector('input[aria-label="Qty"]') as HTMLInputElement;
+    await act(async () => setInputValue(qty(), '11'));
+    expect(qty().value).toBe('11');
+
+    await act(async () => {
+      buttonByText('Apply').click();
+    });
+    await flush();
+
+    expect(correctionGets).toBe(2);
+    expect(qty().value).toBe('11');
   });
 
   it('re-clicking the Pending tab reloads the corrections list once', async () => {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError, api, ungroupUsd, usdFeeOrNull, usdOrNull, usdToCents, type PendingFillDto, type PendingOverrides } from '../../api';
 import { autoFeeUsd } from '../../autofee';
 import { costPercentText } from '../../format';
@@ -29,9 +29,27 @@ interface Decision {
 // either ticker-mismatch (integrity guard: the pending row's ticker ≠ the run's
 // ticker — the untouched row stays visible for rejection) or the row was
 // already handled elsewhere.
-export function PendingTable({ runId, notices: inherited }: { runId?: number; notices?: KeepNotices }) {
+//
+// A changed `refreshKey` re-reads the list in place (silent: rows, typed edits, the
+// open prompt and the review dialog all stay), so a host can refresh the rows
+// without remounting the table.
+export function PendingTable({
+  runId,
+  notices: inherited,
+  refreshKey,
+}: {
+  runId?: number;
+  notices?: KeepNotices;
+  refreshKey?: string | number;
+}) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.listPending(), []);
+  const seenKey = useRef(refreshKey);
+  useEffect(() => {
+    if (seenKey.current === refreshKey) return;
+    seenKey.current = refreshKey;
+    void reload();
+  }, [refreshKey, reload]);
   // Notices live upstream when given one (the run page keeps them across tab
   // switches); standalone the table owns its list.
   const own = useKeepNotices();

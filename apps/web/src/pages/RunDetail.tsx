@@ -199,7 +199,8 @@ export function RunDetailPage({ id }: { id: number }) {
         {tab === 'orders' && <OrdersPanel runId={id} />}
         {tab === 'pending' && (
           <div className="space-y-6">
-            {/* Keyed on tabKey (refresh on tab click) but not on panelKey: it reloads itself after an action. */}
+            {/* Both are keyed on tabKey (a tab click remounts them) but not on panelKey: each reloads itself
+                after an action, and the pending table re-reads in place when refreshKey changes. */}
             <CorrectionList
               key={`c${tabKey}`}
               runId={id}
@@ -208,7 +209,12 @@ export function RunDetailPage({ id }: { id: number }) {
                 void reload();
               }}
             />
-            <PendingTable key={`p${panelKey}`} runId={id} notices={keepNotices} />
+            <PendingTable
+              key={`p${tabKey}`}
+              runId={id}
+              notices={keepNotices}
+              refreshKey={`${panelKey}:${run.costPpm}`}
+            />
           </div>
         )}
         {tab === 'fills' && (
