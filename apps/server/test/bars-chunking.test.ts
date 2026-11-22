@@ -14,7 +14,7 @@ describe('makeCachedBarReader gap chunking', () => {
     f = makeFakes()
     up = makeUpstream()
     today = '2026-06-01'
-    read = makeCachedBarReader({ upstream: up, repos: f.repos as any, today: () => today })
+    read = makeCachedBarReader({ upstream: up, repos: f.repos, today: () => today })
   })
 
   test('a multi-year gap goes upstream one calendar year at a time', async () => {

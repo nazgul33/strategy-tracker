@@ -25,7 +25,7 @@ async function kindOf(fn: () => Promise<unknown>): Promise<string> {
 // Run with a buy 44 @ 60.00 (bucket 0) and a manual sell 44 @ 66.03 fee 2.03.
 async function setup() {
   const f = fakeRepos()
-  const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: silentNotifier }
+  const deps: FillBookingDeps = { repos: f.repos, today: TODAY, notify: silentNotifier }
   const runId = await f.repos.runRepo.create({
     strategyKey: 'mean-reversion', ticker: 'SOXL', name: 'r', poolCents: 1_000_000, costPpm: 0,
     initialRunState: { buckets: emptyState(10).buckets, cashCents: 1_000_000, closed: [], ages: {} },

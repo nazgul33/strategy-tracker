@@ -1,6 +1,6 @@
 import type { RunState } from '@st/core'
 import type { BookingNotifier, OrderRow, PendingDecisionPatch, RepoSurface, SellAttribution } from '../src/domain/booking'
-import type { CaptureStatus } from '../src/domain/repo-types'
+import type { NewCapture } from '../src/domain/repo-types'
 import { fakeCorrectionRepo } from './fake-corrections'
 
 // A pending row without a vision snapshot: the legacy shape (detectedAt null).
@@ -38,7 +38,7 @@ export function fakeRepos() {
   const orders: any[] = []
   const fills: any[] = []
   const pending: any[] = []
-  const captures: any[] = []
+  const captures: Array<NewCapture & { id: number }> = []
   const ledger: any[] = []
   const captureImages: any[] = []
   const visionReviews: any[] = []
@@ -119,10 +119,10 @@ export function fakeRepos() {
   const captureRepo = {
     async findByHash(runId: number, hash: string) {
       const c = captures.find((x) => x.runId === runId && x.imageHash === hash)
-      return c ? { id: c.id as number, status: c.status as CaptureStatus } : null
+      return c ? { id: c.id, status: c.status } : null
     },
-    async setStatus(id: number, status: string) { const c = captures.find((x) => x.id === id); if (c) c.status = status },
-    async insert(c: any) {
+    async setStatus(id: number, status: 'parsed' | 'unparseable') { const c = captures.find((x) => x.id === id); if (c) c.status = status },
+    async insert(c: NewCapture) {
       const dup = captures.some((x) => x.runId === c.runId && x.imageHash === c.imageHash)
       if (dup) return { inserted: false }
       const id = captureSeq++

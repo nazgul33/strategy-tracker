@@ -8,7 +8,7 @@ import { fakeRepos, silentNotifier } from './booking-fakes'
 const TODAY: ISODate = '2026-01-15'
 type F = ReturnType<typeof fakeRepos>
 
-const deps = (f: F): FillBookingDeps => ({ repos: f.repos as any, today: TODAY, notify: silentNotifier })
+const deps = (f: F): FillBookingDeps => ({ repos: f.repos, today: TODAY, notify: silentNotifier })
 const getState = (f: F, runId: number): Promise<RunState> => f.repos.bucketRepo.loadState(runId)
 const adjustRows = (f: F) => f._stores.ledger.filter((l: any) => l.kind === 'adjust')
 const asJson = (v: unknown) => JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? x.toString() : x))

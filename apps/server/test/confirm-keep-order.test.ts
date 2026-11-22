@@ -9,7 +9,7 @@ const PNG = { base64: Buffer.from('fake-png-bytes').toString('base64'), mime: 'i
 
 async function setup(fills: number) {
   const f = fakeRepos()
-  const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: silentNotifier }
+  const deps: FillBookingDeps = { repos: f.repos, today: TODAY, notify: silentNotifier }
   const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'ko', poolCents: 10_000_000, costPpm: 100, initialRunState: emptyState(6) })
   const ext: ExtractResult = { ok: true, fills: Array.from({ length: fills }, (_, i) => ({ side: 'buy' as const, ticker: 'AAPL', shares: 1 + i, price: `${10 + i}.00`, fee: '0.05', date: '2026-11-04' })) }
   const out = await ingestCapture(runId, PNG, ext, deps) as { pending: PendingFillRow[] }

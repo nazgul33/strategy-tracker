@@ -9,12 +9,12 @@ import { withRunLock } from './run-lock'
 import { notifyBookingOutcome, type BookingNotifier, type BookedOutcome } from './booking-notify'
 import { pickSellBucket, openSellLegs, staleSellLegs, type OrderRow, type SellAttribution } from './sell-match'
 import { storeCaptureImage } from './capture-image'
-import type { PendingDecisionPatch, RepoSurface } from './repo-types'
+import type { FillSource, PendingDecisionPatch, RepoSurface } from './repo-types'
 import { requireRun } from './require-run'
 
 // The conflict shape belongs to the dedup matcher, the order row to the sell
-// matcher and the repository surface to repo-types; re-exported so the booking
-// surface keeps being the single place its consumers import from.
+// matcher and the repository surface to repo-types; re-exported here for the
+// consumers that import the booking surface from this module.
 export type { CaptureConflict, OrderRow, BookingNotifier, BookedOutcome, SellAttribution }
 export type { RepoSurface, PendingDecisionPatch, FillRow, LedgerRow } from './repo-types'
 
@@ -53,7 +53,7 @@ export interface BookInput {
   feeCents: number | null  // null => compute
   filledOn: ISODate
   pendingId?: number | null
-  source: 'capture' | 'manual' | 'seed'
+  source: FillSource
   bucketIdx?: number | null  // sell only: the operator's bucket; null/undefined = automatic
 }
 

@@ -77,15 +77,15 @@ export function getRepos(db: Db) {
     },
     async loadState(runId: number): Promise<RunState> {
       const rows = await db.select().from(s.strategyRuns).where(eq(s.strategyRuns.id, runId))
-      const raw = JSON.parse(rows[0].stateJson)
+      const raw: { buckets?: StoredBucket[]; cashCents: number; closed?: StoredClosed[]; ages?: Record<string, number> } = JSON.parse(rows[0].stateJson)
       // rehydrate bigints and age keys
       const rehydrateBucket = (b: StoredBucket) => ({ ...b, buyPrice: BigInt(b.buyPrice ?? 0) })
       const ages: Record<number, number> = {}
-      for (const k of Object.keys(raw.ages ?? {})) ages[Number(k)] = raw.ages[k]
+      for (const k of Object.keys(raw.ages ?? {})) ages[Number(k)] = raw.ages![k]
       return {
         buckets: (raw.buckets ?? []).map(rehydrateBucket),
         cashCents: raw.cashCents,
-        closed: (raw.closed ?? []).map((c: StoredClosed) => ({ ...c, buyPrice: BigInt(c.buyPrice), soldPrice: BigInt(c.soldPrice) })),
+        closed: (raw.closed ?? []).map((c) => ({ ...c, buyPrice: BigInt(c.buyPrice), soldPrice: BigInt(c.soldPrice) })),
         ages,
       }
     },

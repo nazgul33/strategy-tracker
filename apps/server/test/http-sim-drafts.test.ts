@@ -34,7 +34,7 @@ describe('http sim drafts', () => {
       if (out.length === 0) throw new MarketDataError('no-data')
       return out
     }
-    deps.fetchDailyBars = makeCachedBarReader({ upstream: raw, repos: f.repos as any, today: deps.today })
+    deps.fetchDailyBars = makeCachedBarReader({ upstream: raw, repos: f.repos, today: deps.today })
     const app = createApp(deps)
     const auth = await loginAs(app)
     const call = (method: string, path: string, body?: unknown) =>

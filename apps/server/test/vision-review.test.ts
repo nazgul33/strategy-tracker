@@ -93,7 +93,7 @@ describe('isEdited', () => {
     const f = fakeRepos()
     f._stores.captureImages.push({ captureId: 7, mime: 'image/png', bytes: Buffer.from('x'), byteLen: 1, keep: false })
     const row = { id: 1, runId: 1, captureId: 7, ticker: 'AAPL', detectedSide: 'buy', detectedShares: 10, detectedPrice: parseUsd('180.50'), detectedFilledOn: '2026-11-04', detectedFee: 12, detectedAt: '2026-11-06 09:00:00' }
-    await resolveReview(f.repos as any, { pendingRow: row, captureId: 7, outcome: 'rejected', final: null, keepImage: true })
+    await resolveReview(f.repos, { pendingRow: row, captureId: 7, outcome: 'rejected', final: null, keepImage: true })
     expect(f._stores.visionReviews).toHaveLength(1)
     expect(f._stores.visionReviews[0]!.edited).toBe(false)
   })
@@ -101,7 +101,7 @@ describe('isEdited', () => {
 
 async function setup(fills: number) {
   const f = fakeRepos()
-  const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: silentNotifier }
+  const deps: FillBookingDeps = { repos: f.repos, today: TODAY, notify: silentNotifier }
   const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'vr', poolCents: 10_000_000, costPpm: 100, initialRunState: emptyState(6) })
   const ext: ExtractResult = { ok: true, fills: Array.from({ length: fills }, (_, i) => ({ side: 'buy' as const, ticker: 'AAPL', shares: 1 + i, price: `${10 + i}.00`, fee: '0.05', date: '2026-11-04' })) }
   const out = await ingestCapture(runId, PNG, ext, deps) as { pending: PendingFillRow[] }
@@ -187,7 +187,7 @@ describe('freeze, keep, sweep', () => {
 
   test('a manual row (no capture) is a no-op', async () => {
     const f = fakeRepos()
-    await resolveReview(f.repos as any, { pendingRow: { ...legacyRow(), id: 1 }, captureId: null, outcome: 'confirmed', final: final(), keepImage: true })
+    await resolveReview(f.repos, { pendingRow: { ...legacyRow(), id: 1 }, captureId: null, outcome: 'confirmed', final: final(), keepImage: true })
     expect(f._stores.visionReviews).toHaveLength(0)
     expect(f._stores.captureImages).toHaveLength(0)
   })
@@ -195,7 +195,7 @@ describe('freeze, keep, sweep', () => {
   test('a legacy row resolved with a capture freezes edited false', async () => {
     const f = fakeRepos()
     await f.repos.captureImageRepo.insertIgnore({ captureId: 7, mime: 'image/png', bytes: Buffer.from('x'), byteLen: 1 })
-    await resolveReview(f.repos as any, { pendingRow: { ...legacyRow(), id: 2 }, captureId: 7, outcome: 'confirmed', final: final({ shares: 99 }), keepImage: true, feeOverride: undefined })
+    await resolveReview(f.repos, { pendingRow: { ...legacyRow(), id: 2 }, captureId: 7, outcome: 'confirmed', final: final({ shares: 99 }), keepImage: true, feeOverride: undefined })
     expect(f._stores.visionReviews).toHaveLength(1)
     expect(f._stores.visionReviews[0]!.edited).toBe(false)
     expect(f._stores.visionReviews[0]!.detectedShares).toBeNull()
@@ -213,7 +213,7 @@ describe('freeze, keep, sweep', () => {
 
   test('a feeless capture confirmed as-is is not edited, and records the booked fee', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: TODAY, notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'nf', poolCents: 10_000_000, costPpm: 100, initialRunState: emptyState(6) })
     const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 10, price: '100.00', date: '2026-11-04' }] }
     const out = await ingestCapture(runId, PNG, ext, deps) as { pending: PendingFillRow[] }
@@ -226,7 +226,7 @@ describe('freeze, keep, sweep', () => {
 
   test('a feeless capture confirmed with feeCents null is not edited, and records the recomputed fee', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: TODAY, notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'nf3', poolCents: 10_000_000, costPpm: 100, initialRunState: emptyState(6) })
     const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 10, price: '100.00', date: '2026-11-04' }] }
     const out = await ingestCapture(runId, PNG, ext, deps) as { pending: PendingFillRow[] }
@@ -241,7 +241,7 @@ describe('freeze, keep, sweep', () => {
   // fee is the operator's or the one the system derived.
   async function feelessCapture() {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: TODAY, notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'fo', poolCents: 10_000_000, costPpm: 100, initialRunState: emptyState(6) })
     const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 10, price: '100.00', date: '2026-11-04' }] }
     const out = await ingestCapture(runId, PNG, ext, deps) as { pending: PendingFillRow[] }
@@ -291,7 +291,7 @@ describe('freeze, keep, sweep', () => {
 
   test('a feeless capture confirmed with an explicit differing fee is edited', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: TODAY, notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'nf2', poolCents: 10_000_000, costPpm: 100, initialRunState: emptyState(6) })
     const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 10, price: '100.00', date: '2026-11-04' }] }
     const out = await ingestCapture(runId, PNG, ext, deps) as { pending: PendingFillRow[] }
@@ -307,7 +307,7 @@ describe('freeze, keep, sweep', () => {
   async function sellEmptyingBucket() {
     const f = fakeRepos()
     const notified: number[] = []
-    const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: { ...silentNotifier, siblingCancelled: async (_r, o) => { notified.push(o.id) } } }
+    const deps: FillBookingDeps = { repos: f.repos, today: TODAY, notify: { ...silentNotifier, siblingCancelled: async (_r, o) => { notified.push(o.id) } } }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'nt', poolCents: 10_000_000, costPpm: 100, initialRunState: emptyState(4) })
     const ext: ExtractResult = { ok: true, fills: [
       { side: 'buy', ticker: 'AAPL', shares: 10, price: '100.00', date: TODAY },
@@ -386,7 +386,7 @@ describe('Telegram reject', () => {
     const sent: string[] = []
     const repos = { ...s.f.repos, pendingRepo: { ...s.f.repos.pendingRepo, get: async (id: number) => s.f._stores.pending.find((p: any) => p.id === id) ?? null } }
     const handlers = makeCaptureHandlers({
-      repos: repos as any, vision: { baseUrl: 'http://x', model: 'm' }, getVisionApiKey: async () => 'k',
+      repos, vision: { baseUrl: 'http://x', model: 'm' }, getVisionApiKey: async () => 'k',
       today: () => TODAY, allowedChatIds: [], send: async (_chat, text) => { sent.push(text) },
     })
     return { ...s, sent, handlers }

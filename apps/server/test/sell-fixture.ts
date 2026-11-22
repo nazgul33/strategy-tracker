@@ -14,7 +14,7 @@ type Fakes = ReturnType<typeof fakeRepos>
 export async function sellSetup(held: Held[], ords: Ord[]) {
   const f = fakeRepos()
   const rec = recordingNotifier()
-  const deps: FillBookingDeps = { repos: f.repos as any, today: D, notify: rec.notify }
+  const deps: FillBookingDeps = { repos: f.repos, today: D, notify: rec.notify }
   let s = emptyState(10)
   for (const h of held) s = applyBuyFill(s, h.idx, h.shares, parseUsd(h.buy), 0, '2026-11-01')
   const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'sell', poolCents: 1000000, costPpm: 0, initialRunState: { buckets: s.buckets, cashCents: s.cashCents, closed: s.closed, ages: s.ages } })

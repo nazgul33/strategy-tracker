@@ -3,10 +3,14 @@ import { applyBuyFill, emptyState, parseUsd } from '@st/core';
 import { buildPendingKeyboard } from '@st/telegram';
 import { t, type Lang } from '@st/telegram/i18n';
 import type { FillRow, LedgerRow } from '../src/domain/booking';
-import type { OrderRecord } from '../src/domain/repo-types';
-import { makeCaptureHandlers } from '../src/wire/capture';
+import type { NewCapture, NewFill, NewLedgerEntry, NewNotification, NewOrder, NewPending, NewRun, OrderRecord, OrderStatus, PendingDecisionPatch, PendingRow, RunRow, RunStatus } from '../src/domain/repo-types';
+import type { CaptureImageInsert } from '../src/db/repos-vision';
+import type { VisionReviewInsert } from '../src/domain/vision-review';
+import { makeCaptureHandlers, type CaptureRepos } from '../src/wire/capture';
 import { parseEnv, todayEt } from '../src/wire/deps';
+import { NO_SNAPSHOT } from './booking-fakes';
 import { fakeCorrectionRepo } from './fake-corrections';
+import type { Expect, IsNever, ArityMismatches } from './type-assert';
 
 // ---------- parseEnv ----------
 
@@ -124,16 +128,16 @@ describe('todayEt', () => {
 
 type FakeRow = Record<string, unknown>;
 interface FakeOpts {
-  runs?: FakeRow[];
+  runs?: RunRow[];
 }
 
 function makeCaptureFakes(opts: FakeOpts = {}) {
   const runs = opts.runs ?? [];
-  const pending: FakeRow[] = [];
+  const pending: PendingRow[] = [];
   const fills: FillRow[] = [];
   const ledger: LedgerRow[] = [];
-  const notifications: FakeRow[] = [];
-  const captures: { id: number; runId: number; imageHash: string; status: string }[] = [];
+  const notifications: NewNotification[] = [];
+  const captures: Array<NewCapture & { id: number }> = [];
   let pendingId = 1;
   let fillId = 1;
 
@@ -151,8 +155,8 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
   const runRepo = {
     list: async () => runs,
     get: async (id: number) => runs.find((r) => r.id === id) ?? null,
-    create: async () => 1,
-    updateStatus: async () => {},
+    create: async (_input: NewRun) => 1,
+    updateStatus: async (_id: number, _status: RunStatus) => {},
   };
   const bucketRepo = {
     loadState: async (runId: number) => stateFor(runId),
@@ -161,31 +165,31 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
     },
   };
   const orderRepo = {
-    insertMany: async () => {},
+    insertMany: async (_orders: NewOrder[]) => {},
+    get: async (_id: number) => null as OrderRecord | null,
     listForDate: async (_date: string) => [] as OrderRecord[],
     listForRun: async (_runId: number, _date?: string) => [] as OrderRecord[],
     listForRunFrom: async (_runId: number, _fromDate: string) => [] as OrderRecord[],
-    markStale: async () => 0,
-    setStatus: async () => {},
-    listOpenBefore: async () => [] as OrderRecord[],
+    markStale: async (_date: string) => 0,
+    setStatus: async (_id: number, _status: OrderStatus, _cancelReason?: string) => {},
+    listOpenBefore: async (_date: string) => [] as OrderRecord[],
   };
   const fillRepo = {
-    insert: async (row: Omit<FillRow, 'id'>) => {
-      fills.push({ ...(row as FillRow), id: fillId++ });
-      return fillId - 1;
+    insert: async (row: NewFill) => {
+      fills.push({ ...row, id: fillId++ });
     },
     listForRun: async (runId: number) => fills.filter((x) => x.runId === runId),
   };
   const pendingRepo = {
-    insert: async (row: FakeRow) => {
-      pending.push({ ...row, id: pendingId, status: 'pending' });
+    insert: async (row: NewPending) => {
+      pending.push({ ...row, id: pendingId, status: 'pending', createdAt: '' });
       return pendingId++;
     },
     get: async (id: number) => pending.find((p) => p.id === id) ?? null,
     listPending: async () => pending.filter((p) => p.status === 'pending'),
     hasLiveForCapture: async (captureId: number) => pending.some((p) => p.captureId === captureId && p.status === 'pending'),
     hasConfirmedForCapture: async (captureId: number) => pending.some((p) => p.captureId === captureId && p.status === 'confirmed'),
-    decide: async (id: number, status: string, edited?: FakeRow): Promise<boolean> => {
+    decide: async (id: number, status: 'confirmed' | 'rejected', edited?: PendingDecisionPatch): Promise<boolean> => {
       const p = pending.find((x) => x.id === id);
       if (!p || p.status !== 'pending') return false;
       p.status = status;
@@ -198,34 +202,32 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
       const c = captures.find((x) => x.runId === runId && x.imageHash === imageHash);
       return c ? { id: c.id, status: c.status } : null;
     },
-    setStatus: async (id: number, status: string) => {
+    setStatus: async (id: number, status: 'parsed' | 'unparseable') => {
       const c = captures.find((x) => x.id === id);
       if (c) c.status = status;
     },
-    insert: async (c: { runId: number; chatId: string | null; imageHash: string; status: string }) => {
+    insert: async (c: NewCapture) => {
       if (captures.some((x) => x.runId === c.runId && x.imageHash === c.imageHash)) return { inserted: false as const };
-      captures.push({ id: captures.length + 1, runId: c.runId, imageHash: c.imageHash, status: c.status });
+      captures.push({ ...c, id: captures.length + 1 });
       return { inserted: true as const, id: captures.length };
     },
   };
   const ledgerRepo = {
-    insert: async (row: Omit<LedgerRow, 'id'>) => {
-      ledger.push({ ...(row as LedgerRow), id: ledger.length + 1 });
-      return ledger.length;
+    insert: async (row: NewLedgerEntry) => {
+      ledger.push({ ...row, id: ledger.length + 1, ts: '' });
     },
-    listForRun: async () => ledger,
+    listForRun: async (_runId: number) => ledger,
   };
   const notificationRepo = {
-    insert: async (row: FakeRow) => {
+    insert: async (row: NewNotification) => {
       notifications.push({ ...row });
-      return notifications.length;
     },
   };
   const correctionFake = fakeCorrectionRepo();
   // Ingest stores the screenshot and a resolution archives it; these tests do not inspect either.
-  const captureImageRepo = { async insertIgnore() { return true }, async getBytes() { return null }, async isKept() { return false }, async setKeep() {}, async deleteFor() {}, async listKept() { return [] } };
-  const visionReviewRepo = { async insertIgnore() {}, async listForCaptures() { return [] }, async deleteFor() {} };
-  const repos = { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, captureImageRepo, visionReviewRepo, ledgerRepo, notificationRepo };
+  const captureImageRepo = { async insertIgnore(_row: CaptureImageInsert) { return true }, async getBytes(_captureId: number) { return null }, async isKept(_captureId: number) { return false }, async setKeep(_captureId: number) {}, async deleteFor(_captureId: number) {}, async discard(_captureId: number) {}, async listKept(_limit: number) { return [] } };
+  const visionReviewRepo = { async insertIgnore(_row: VisionReviewInsert) {}, async listForCaptures(_captureIds: number[]) { return [] }, async deleteFor(_captureId: number) {} };
+  const repos = { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, captureImageRepo, visionReviewRepo, ledgerRepo, notificationRepo } satisfies CaptureRepos;
   return { repos, pending, fills, ledger, notifications, captures, corrections: correctionFake.store, stateFor };
 }
 
@@ -234,15 +236,17 @@ const visionFetch = (async (url: string) => {
   return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as unknown as Response;
 }) as unknown as typeof fetch;
 
-function activeRun(id: number, ticker: string): FakeRow {
-  return { id, ticker, status: 'active', poolCents: 10_000_000, costPpm: 10 };
+function activeRun(id: number, ticker: string): RunRow {
+  return { id, ticker, status: 'active', poolCents: 10_000_000, costPpm: 10, strategyKey: 'mean-reversion', name: '', buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, stateJson: '', createdAt: '' };
 }
+
+type _wire = Expect<IsNever<ArityMismatches<ReturnType<typeof makeCaptureFakes>['repos'], CaptureRepos>>>;
 
 function makeCapture(opts: FakeOpts & { today?: string; fetchImpl?: typeof fetch; lang?: Lang; allowedChatIds?: string[] } = {}) {
   const fakes = makeCaptureFakes(opts);
   const sent: { chatId: string; text: string; extra?: Record<string, unknown> }[] = [];
   const handlers = makeCaptureHandlers({
-    repos: fakes.repos as never,
+    repos: fakes.repos,
     vision: { baseUrl: 'https://vision.example/v1', model: 'vision-model' },
     getVisionApiKey: async () => 'test-vision-key',
     today: () => opts.today ?? '2026-11-10',
@@ -324,7 +328,7 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     await h.repos.fillRepo.insert({
       runId: 1, bucketIdx: 0, side: 'buy', ticker: 'NVDA', shares: 10,
       price: parseUsd('999.99'), fee: 0, filledOn: '2026-11-10', source: 'manual',
-    } as never);
+    });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     expect(h.pending.length).toBe(0);
     expect(h.sent.length).toBe(1);
@@ -340,7 +344,7 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     await h.repos.fillRepo.insert({
       runId: 1, bucketIdx: 0, side: 'buy', ticker: 'NVDA', shares: 10,
       price: parseUsd('999.99'), fee: 0, filledOn: '2026-11-10', source: 'manual',
-    } as never);
+    });
     const id = await h.repos.correctionRepo.insert({
       runId: 1, fillId: 1, captureId: null, side: 'buy', ticker: 'NVDA', bookedShares: 10, bookedFilledOn: '2026-11-10',
       bookedPrice: parseUsd('999.99'), bookedFee: 0, proposedPrice: parseUsd('180.50'), proposedFee: null,
@@ -359,7 +363,7 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     await h.repos.fillRepo.insert({
       runId: 1, bucketIdx: 0, side: 'buy', ticker: 'NVDA', shares: 10,
       price: parseUsd('999.99'), fee: 0, filledOn: '2026-11-10', source: 'manual',
-    } as never);
+    });
     // The matcher reads the list first; the recorder's later read sees the fill gone.
     const real = h.repos.fillRepo.listForRun.bind(h.repos.fillRepo);
     let calls = 0;
@@ -392,10 +396,10 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     await h.repos.fillRepo.insert({
       runId: 1, bucketIdx: 0, side: 'buy', ticker: 'NVDA', shares: 10,
       price: parseUsd('999.99'), fee: 0, filledOn: '2026-11-10', source: 'manual',
-    } as never);
+    });
     await h.repos.pendingRepo.insert({
       runId: 1, captureId: null, bucketIdx: null, side: 'sell', ticker: 'NVDA', shares: 4,
-      price: parseUsd('190.00'), fee: null, filledOn: '2026-11-10',
+      price: parseUsd('190.00'), fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT,
     });
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     return h;
@@ -479,7 +483,7 @@ describe('capture onPhoto — dedup and failures', () => {
     const fakes = makeCaptureFakes({ runs: [activeRun(1, 'NVDA')] });
     const sent: { chatId: string; text: string }[] = [];
     const handlers = makeCaptureHandlers({
-      repos: fakes.repos as never,
+      repos: fakes.repos,
       vision: { baseUrl: 'https://vision.example/v1', model: 'vision-model' },
       getVisionApiKey: async () => 'test-vision-key',
       today: () => '2026-11-10',
@@ -518,7 +522,7 @@ describe('capture onPhoto — dedup and failures', () => {
     await h.repos.fillRepo.insert({
       runId: 1, bucketIdx: 0, side: 'buy', ticker: 'NVDA', shares: 10,
       price: parseUsd('999.99'), fee: 0, filledOn: '2026-11-10', source: 'manual',
-    } as never);
+    });
     const real = h.repos.fillRepo.listForRun.bind(h.repos.fillRepo);
     let calls = 0;
     h.repos.fillRepo.listForRun = async (runId: number) => (calls++ === 0 ? real(runId) : []);
@@ -583,7 +587,7 @@ describe('capture onConfirm — reply target', () => {
 
   test('a button pressed with no photo since start replies in its own chat', async () => {
     const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
-    const id = await h.repos.pendingRepo.insert({ runId: 1, captureId: null, bucketIdx: null, side: 'buy', ticker: 'NVDA', shares: 10, price: parseUsd('180.50'), fee: null, filledOn: '2026-11-10' });
+    const id = await h.repos.pendingRepo.insert({ runId: 1, captureId: null, bucketIdx: null, side: 'buy', ticker: 'NVDA', shares: 10, price: parseUsd('180.50'), fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT });
     await h.handlers.onConfirm('999', `yes:${id}`, true);
     expect(h.sent.length).toBeGreaterThan(0);
     expect(h.sent.every((s) => s.chatId === '999')).toBe(true);
@@ -891,7 +895,7 @@ describe('capture status and orders', () => {
   });
 
   test('minor-2: onStatus omits non-active (archived) runs', async () => {
-    const h = makeCapture({ runs: [activeRun(1, 'NVDA'), { ...activeRun(2, 'AAPL'), status: 'archived' }] });
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA'), { ...activeRun(2, 'AAPL'), status: 'closed' }] });
     await h.handlers.onStatus('777');
     expect(h.sent.length).toBe(1);
     expect(h.sent[0]!.text).toContain('Run #1 NVDA');
@@ -929,10 +933,10 @@ describe('capture confirm — sibling leg cancelled by a bucket-emptying sell', 
         if (reason !== undefined) o.cancelReason = reason;
       },
     });
-    const pid = await fakes.repos.pendingRepo.insert({ runId: 1, captureId: null, bucketIdx: null, side: 'sell', ticker: 'NVDA', shares: 10, price: parseUsd('96.50'), fee: null, filledOn: '2026-11-10' });
+    const pid = await fakes.repos.pendingRepo.insert({ runId: 1, captureId: null, bucketIdx: null, side: 'sell', ticker: 'NVDA', shares: 10, price: parseUsd('96.50'), fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT });
     const sent: { chatId: string; text: string }[] = [];
     const handlers = makeCaptureHandlers({
-      repos: fakes.repos as never,
+      repos: fakes.repos,
       vision: { baseUrl: 'https://vision.example/v1', model: 'vision-model' },
       getVisionApiKey: async () => 'k',
       today: () => '2026-11-10',

@@ -16,7 +16,7 @@ type BookedConflict = Extract<CaptureConflict, { matchedKind: 'booked' }>
 describe('booking', () => {
   test('(a) duplicate capture', async () => {
     const f = fakeRepos()
-    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const deps: BookingDeps = { repos: f.repos, today: '2026-11-06' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r1', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
     const img = { base64: 'AAAA', mime: 'image/png' }
     const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 1, price: '10.00' }] }
@@ -29,7 +29,7 @@ describe('booking', () => {
 
   test('capture with extracted dates books pendings on the screenshot date', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'rd', poolCents: 100000, costPpm: 100, initialRunState: emptyState(2) })
     const ext: ExtractResult = { ok: true, fills: [
       { side: 'buy', ticker: 'AAPL', shares: 5, price: '10.00', date: '2026-11-04' },
@@ -46,7 +46,7 @@ describe('booking', () => {
 
   test('(b) rejected', async () => {
     const f = fakeRepos()
-    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const deps: BookingDeps = { repos: f.repos, today: '2026-11-06' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r2', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
     const img = { base64: 'BBBB', mime: 'image/png' }
     const ext: ExtractResult = { ok: false, reason: 'unparseable', detail: 'bad' }
@@ -58,7 +58,7 @@ describe('booking', () => {
 
   test('(c) buy confirm', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r3', poolCents: 1000000, costPpm: 100, initialRunState: { buckets: emptyState(10).buckets, cashCents: 1000000, closed: [], ages: {} } })
     // pending buy
     const img = { base64: 'CCCC', mime: 'image/png' }
@@ -86,7 +86,7 @@ describe('booking', () => {
 
   test('a late buy flips a stale buy_loc dated on its fill day', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'late-buy', poolCents: 1000000, costPpm: 100, initialRunState: { buckets: emptyState(10).buckets, cashCents: 1000000, closed: [], ages: {} } })
     await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-05', kind: 'buy_loc', bucketIdx: 0, limitPrice: 100n, shares: 55, status: 'stale' }])
     await manualFill(runId, { side: 'buy', shares: 55, price: '340.22', filledOn: '2026-11-05' }, deps)
@@ -95,7 +95,7 @@ describe('booking', () => {
 
   test('(c2) no-order case no throw', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r3b', poolCents: 1000000, costPpm: 100, initialRunState: { buckets: emptyState(10).buckets, cashCents: 1000000, closed: [], ages: {} } })
     const img = { base64: 'CCCC2', mime: 'image/png' }
     const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 55, price: '340.22' }] }
@@ -108,7 +108,7 @@ describe('booking', () => {
 
   test('(d) sell', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const state = emptyState(10)
     // pre-held buckets
     let s = applyBuyFill(state, 0, 10, 100000n, 0, '2026-11-01')
@@ -135,7 +135,7 @@ describe('booking', () => {
 
   test('(d2) full sell closes', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const state = emptyState(10)
     let s = applyBuyFill(state, 0, 10, 100000n, 0, '2026-11-01')
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r4b', poolCents: 1000000, costPpm: 100, initialRunState: { buckets: s.buckets, cashCents: s.cashCents, closed: s.closed, ages: s.ages } })
@@ -152,7 +152,7 @@ describe('booking', () => {
 
   test('(e) late booking pin 3', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r5', poolCents: 1000000, costPpm: 100, initialRunState: emptyState(10) as any })
     // adjust cash
     const st0 = await f.repos.bucketRepo.loadState(runId)
@@ -174,7 +174,7 @@ describe('booking', () => {
 
   test('(f) rollStale', async () => {
     const f = fakeRepos()
-    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const deps: BookingDeps = { repos: f.repos, today: '2026-11-06' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r6', poolCents: 1000, costPpm: 10, initialRunState: emptyState(2) })
     await f.repos.orderRepo.insertMany([
       { runId, tradeDate: '2026-11-04', kind: 'buy_loc', bucketIdx: 0, limitPrice: 100n, shares: 1, status: 'open' },
@@ -196,7 +196,7 @@ describe('booking', () => {
 
   test('(g) seedRun', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r7', poolCents: 1000, costPpm: 100, initialRunState: emptyState(3) })
     await seedRun(runId, { cashCents: 500, buckets: [{ shares: 5, buyPrice: '10.00', filledOn: '2026-11-03' }, { shares: 3, buyPrice: '12.00', filledOn: '2026-11-04' }] }, deps)
     const state = await f.repos.bucketRepo.loadState(runId)
@@ -211,14 +211,14 @@ describe('booking', () => {
 
   test('(g2) seedRun guards missing cash (defense in depth)', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r7b', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
     await expect(seedRun(runId, { cashCents: undefined as any, buckets: [] }, deps)).rejects.toThrow('invalid seed cash')
   })
 
   test('(h) manualFill', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r8', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
     const beforePending = f._stores.pending.length
     await manualFill(runId, { side: 'buy', shares: 3, price: '5.00', filledOn: '2026-11-06' }, deps)
@@ -229,7 +229,7 @@ describe('booking', () => {
 
   test('manualFill ignores a stray ticker and stamps the run ticker', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r8b', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
     const legacy = { side: 'buy' as const, ticker: 'ZZZ', shares: 3, price: '5.00', filledOn: '2026-11-06' }
     await manualFill(runId, legacy, deps)
@@ -238,7 +238,7 @@ describe('booking', () => {
 
   test('(i) double-confirm throws and over-size sell throws', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r9', poolCents: 1000000, costPpm: 100, initialRunState: emptyState(10) as any })
     const st0 = await f.repos.bucketRepo.loadState(runId); st0.cashCents = 1000000; await f.repos.bucketRepo.saveState(runId, st0)
     const img = { base64: 'IIII', mime: 'image/png' }
@@ -264,7 +264,7 @@ describe('booking', () => {
 
   test('race path duplicate', async () => {
     const f = fakeRepos()
-    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
+    const deps: BookingDeps = { repos: f.repos, today: '2026-11-06' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'race', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
     const img = { base64: 'RACE', mime: 'image/png' }
     const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 1, price: '1.00' }] }
@@ -284,7 +284,7 @@ describe('booking', () => {
 
   test('concurrent confirms on one run serialize', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'cc', poolCents: 1_000_000, costPpm: 100, initialRunState: emptyState(2) })
     const pid1 = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 5, price: parseUsd('10.00'), fee: null, filledOn: '2026-11-06', status: 'pending' })
     const pid2 = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 5, price: parseUsd('10.00'), fee: null, filledOn: '2026-11-06', status: 'pending' })
@@ -309,7 +309,7 @@ describe('booking', () => {
 
   test('declared fee pending used verbatim', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'fee', poolCents: 1000000, costPpm: 100, initialRunState: { buckets: emptyState(2).buckets, cashCents: 1000000, closed: [], ages: {} } })
     const pid = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 5, price: parseUsd('10.00'), fee: 999, filledOn: '2026-11-06', status: 'pending' })
     await confirmPendingFill(pid, null, deps)
@@ -319,7 +319,7 @@ describe('booking', () => {
 
   test('confirm with ticker mismatch throws and books nothing', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'mism', poolCents: 1000000, costPpm: 100, initialRunState: { buckets: emptyState(2).buckets, cashCents: 1000000, closed: [], ages: {} } })
     const stateBefore = serializeState(await f.repos.bucketRepo.loadState(runId))
     const pid = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'buy', ticker: 'ZZZ', shares: 5, price: parseUsd('10.00'), fee: null, filledOn: '2026-11-06', status: 'pending' })
@@ -331,7 +331,7 @@ describe('booking', () => {
 
   test('fallback lowest-index multiple candidates', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const state = emptyState(10)
     let s = applyBuyFill(state, 0, 10, 100000n, 0, '2026-11-01')
     s = applyBuyFill(s, 1, 10, 200000n, 0, '2026-11-02')
@@ -347,7 +347,7 @@ describe('booking', () => {
 
   test('market_sell matching', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const state = emptyState(10)
     let s = applyBuyFill(state, 2, 10, 100000n, 0, '2026-11-01')
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'ms', poolCents: 1000000, costPpm: 100, initialRunState: { buckets: s.buckets, cashCents: s.cashCents, closed: s.closed, ages: s.ages } })
@@ -364,7 +364,7 @@ describe('booking', () => {
 
   test('over-size sell with matching order stays open', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const state = emptyState(10)
     let s = applyBuyFill(state, 0, 5, 100000n, 0, '2026-11-01')
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'os', poolCents: 1000000, costPpm: 100, initialRunState: { buckets: s.buckets, cashCents: s.cashCents, closed: s.closed, ages: s.ages } })
@@ -384,14 +384,14 @@ describe('booking', () => {
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'C1', name: 'c1', poolCents: 100, costPpm: 0 })
     await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 1, limitPrice: 200n, shares: 5, status: 'open' }])
     const id = f._stores.orders[0].id
-    const order = await cancelOrder(runId, id, 'strategy-change', { repos: f.repos as any, today: '2026-11-11' })
+    const order = await cancelOrder(runId, id, 'strategy-change', { repos: f.repos, today: '2026-11-11' })
     expect(order.status).toBe('cancelled')
     expect(order.cancelReason).toBe('strategy-change')
   })
 
   test('cancelOrder rejects unknown, foreign-run, and non-open orders', async () => {
     const f = fakeRepos()
-    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-11' }
+    const deps: BookingDeps = { repos: f.repos, today: '2026-11-11' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'C2', name: 'c2', poolCents: 100, costPpm: 0 })
     const otherRunId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'C3', name: 'c3', poolCents: 100, costPpm: 0 })
     await f.repos.orderRepo.insertMany([
@@ -411,7 +411,7 @@ describe('booking', () => {
 
   test('cancelOrder rejects unknown reason', async () => {
     const f = fakeRepos()
-    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-11' }
+    const deps: BookingDeps = { repos: f.repos, today: '2026-11-11' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'C4', name: 'c4', poolCents: 100, costPpm: 0 })
     await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 1, limitPrice: 200n, shares: 5, status: 'open' }])
     const id = f._stores.orders[0].id
@@ -431,7 +431,7 @@ describe('booking', () => {
 describe('buy bucket selection', () => {
   test('manual buy after a closed cycle skips the closed bucket', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'next1', poolCents: 1000000, costPpm: 100, initialRunState: emptyState(3) })
     // Full cycle in bucket 0: buy then full-size sell (fallback matching) closes it.
     await manualFill(runId, { side: 'buy', shares: 5, price: '5.00', filledOn: '2026-11-02' }, deps)
@@ -449,7 +449,7 @@ describe('buy bucket selection', () => {
 
   test('manual buy reuses lowest closed bucket when all buckets closed', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'next2', poolCents: 1000000, costPpm: 100, initialRunState: emptyState(2) })
     // Close both buckets: 0, then the never-used 1 (new allocation order).
     await manualFill(runId, { side: 'buy', shares: 5, price: '5.00', filledOn: '2026-11-02' }, deps)
@@ -467,7 +467,7 @@ describe('buy bucket selection', () => {
 
   test('seedRun fills 0,1 in order', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'next3', poolCents: 1000000, costPpm: 100, initialRunState: emptyState(2) })
     await seedRun(runId, { cashCents: 500, buckets: [{ shares: 5, buyPrice: '10.00', filledOn: '2026-11-03' }, { shares: 3, buyPrice: '12.00', filledOn: '2026-11-04' }] }, deps)
     const idxs = f._stores.fills.filter((x: any) => x.runId === runId).map((x: any) => x.bucketIdx)
@@ -478,7 +478,7 @@ describe('buy bucket selection', () => {
 describe('capture dedup against booked fills and pending rows', () => {
   const setup = async (name: string) => {
     const f = fakeRepos()
-    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-15' }
+    const deps: BookingDeps = { repos: f.repos, today: '2026-11-15' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'SOXL', name, poolCents: 1_000_000, costPpm: 100 })
     return { f, deps, runId }
   }
@@ -697,7 +697,7 @@ describe('capture dedup against booked fills and pending rows', () => {
 describe('capture re-upload', () => {
   const setup = async (name: string) => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-15', notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-15', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'SOXL', name, poolCents: 1_000_000, costPpm: 100 })
     return { f, deps, runId }
   }
@@ -848,7 +848,7 @@ describe('capture re-upload', () => {
 describe('capture corrections', () => {
   const setup = async (name: string) => {
     const f = fakeRepos()
-    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-15' }
+    const deps: BookingDeps = { repos: f.repos, today: '2026-11-15' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'SOXL', name, poolCents: 1_000_000, costPpm: 100 })
     return { f, deps, runId }
   }
@@ -1072,7 +1072,7 @@ describe('sell matching with target and stop legs', () => {
 
   async function setup(held: Held[], ords: Ord[]) {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: D, notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: D, notify: silentNotifier }
     let s = emptyState(10)
     for (const h of held) s = applyBuyFill(s, h.idx, h.shares, parseUsd(h.buy), 0, '2026-11-01')
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'stops', poolCents: 1000000, costPpm: 0, initialRunState: { buckets: s.buckets, cashCents: s.cashCents, closed: s.closed, ages: s.ages } })
@@ -1610,7 +1610,7 @@ describe('confirmPendingFill side and fee overrides', () => {
 
   async function setup(held: Array<{ idx: number; shares: number; buy: string }>, pend: { side?: 'buy' | 'sell'; shares?: number; price?: string; fee?: number | null } = {}, costPpm = 100) {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: D, notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: D, notify: silentNotifier }
     let s = emptyState(10)
     for (const h of held) s = applyBuyFill(s, h.idx, h.shares, parseUsd(h.buy), 0, '2026-11-01')
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'ov', poolCents: 1_000_000, costPpm, initialRunState: { buckets: s.buckets, cashCents: s.cashCents, closed: s.closed, ages: s.ages } })
