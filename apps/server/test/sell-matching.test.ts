@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { parseUsd } from '@st/core/money'
-import { runBooking } from '../src/domain/booking'
+import { runBooking, manualFill } from '../src/domain/booking'
 import { D, Y, book43, held43, sellSetup, sellAt, orderOf, fillsOf, heldShares } from './sell-fixture'
 
 const permutations = <T>(xs: T[]): T[][] => (xs.length <= 1 ? [xs] : xs.flatMap((x, i) => permutations([...xs.slice(0, i), ...xs.slice(i + 1)]).map((rest) => [x, ...rest])))
@@ -88,7 +88,9 @@ describe('stale legs on the fill day (#53)', () => {
     await sellAt(runId, 10, '91.20', deps, Y)
     expect(fillsOf(f)).toEqual([[10, 9]])
     expect(orderOf(f, 9, 'sell_loc', Y).status).toBe('filled')
-    expect(orderOf(f, 9, 'stop_sell', Y).status).toBe('stale')
+    expect(orderOf(f, 9, 'stop_sell', Y)).toMatchObject({ status: 'cancelled', cancelReason: 'broker-filled' })
+    expect(orderOf(f, 0, 'sell_loc', Y).status).toBe('stale')
+    expect(orderOf(f, 0, 'stop_sell', Y).status).toBe('stale')
     expect(orderOf(f, 9, 'sell_loc')).toMatchObject({ status: 'cancelled', cancelReason: 'broker-filled' })
     expect(orderOf(f, 9, 'stop_sell')).toMatchObject({ status: 'cancelled', cancelReason: 'broker-filled' })
     expect(orderOf(f, 0, 'sell_loc').status).toBe('open')
@@ -100,6 +102,26 @@ describe('stale legs on the fill day (#53)', () => {
       chosen: { bucketIdx: 9, kind: 'sell_loc', distance: parseUsd('0.20') },
       alternatives: [{ bucketIdx: 0, kind: 'stop_sell', limitPrice: parseUsd('97.00'), distance: parseUsd('5.80') }],
     })
+  })
+
+  test('the sibling stale leg is cancelled silently, so a rebuy of the bucket cannot let it absorb a second late fill', async () => {
+    const held = Array.from({ length: 10 }, (_, idx) => ({ idx, shares: 10, buy: '88.00' }))
+    const { f, deps, rec, runId } = await sellSetup(held, [
+      { idx: 9, kind: 'sell_loc', price: '91.00', tradeDate: Y, status: 'stale' },
+      { idx: 9, kind: 'stop_sell', price: '85.40', tradeDate: Y, status: 'stale' },
+      { idx: 8, kind: 'stop_sell', price: '85.50', tradeDate: Y, status: 'stale' },
+    ])
+    await sellAt(runId, 10, '91.20', deps, Y)
+    expect(fillsOf(f)).toEqual([[10, 9]])
+    expect(orderOf(f, 9, 'stop_sell', Y)).toMatchObject({ status: 'cancelled', cancelReason: 'broker-filled' })
+    expect(rec.siblings).toEqual([])
+    await manualFill(runId, { side: 'buy', price: '88.00', shares: 10, filledOn: D }, deps)
+    expect((await heldShares(f, runId))[9]).toBe(10)
+    await sellAt(runId, 10, '85.00', deps, Y)
+    expect(fillsOf(f)).toEqual([[10, 9], [10, 8]])
+    expect(orderOf(f, 8, 'stop_sell', Y).status).toBe('filled')
+    expect(orderOf(f, 9, 'stop_sell', Y).status).toBe('cancelled')
+    expect(rec.attributions).toEqual([])
   })
 
   test('a partial late fill leaves the stale leg stale and cancels nothing', async () => {

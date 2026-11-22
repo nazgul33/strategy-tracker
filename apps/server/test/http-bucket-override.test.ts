@@ -39,6 +39,15 @@ describe('bucket override on POST /runs/:id/fills', () => {
     expect(buckets[0]!.state).toBe('held')
   })
 
+  test('a bucketIdx past the run\'s bucket count is 422 bucket-not-found and books nothing', async () => {
+    const { f, postFill } = await setup()
+    const before = f.fills.length
+    const res = await postFill({ side: 'sell', shares: 10, price: '96.50', filledOn: D, bucketIdx: 10 })
+    expect(res.status).toBe(422)
+    expect(await res.json()).toEqual({ error: 'bucket-not-found' })
+    expect(f.fills).toHaveLength(before)
+  })
+
   test('rejects a bad bucket with 422 and books nothing', async () => {
     const { f, postFill } = await setup()
     const before = f.fills.length
@@ -93,6 +102,14 @@ describe('GET /api/pending heldBuckets', () => {
       [{ index: 0, shares: 10 }, { index: 1, shares: 10 }],
       [{ index: 0, shares: 5 }],
     ])
+  })
+
+  test('includes a force_sell bucket', async () => {
+    const { f, app, auth, id, addPending } = await setup()
+    f.states.get(id)!.buckets[1]!.state = 'force_sell'
+    await addPending()
+    const rows = await (await app.request('/api/pending', { headers: auth })).json()
+    expect(rows[0].heldBuckets).toEqual([{ index: 0, shares: 10 }, { index: 1, shares: 10 }])
   })
 
   test('gives a row whose run is gone no buckets', async () => {

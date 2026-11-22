@@ -7,7 +7,7 @@ import { claimCapture } from './capture-claim'
 import { recordCorrections } from './capture-corrections'
 import { withRunLock } from './run-lock'
 import { notifyBookingOutcome, type BookingNotifier, type BookedOutcome } from './booking-notify'
-import { pickSellBucket, openSellLegs, type OrderRow, type SellAttribution } from './sell-match'
+import { pickSellBucket, openSellLegs, staleSellLegs, type OrderRow, type SellAttribution } from './sell-match'
 import { storeCaptureImage } from './capture-image'
 import type { CorrectionRepo } from './correction-types'
 import type { CaptureImageInsert, CaptureImageListing } from '../db/repos-vision'
@@ -120,7 +120,10 @@ export function finalFeeCents(run: { costPpm: number }, price: bigint, shares: n
 }
 
 export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<BookedOutcome> {
-  if (input.bucketIdx != null && (input.side !== 'sell' || !Number.isInteger(input.bucketIdx) || input.bucketIdx < 0)) throw new Error('invalid-bucket')
+  if (input.bucketIdx != null) {
+    const usable = input.side === 'sell' && Number.isInteger(input.bucketIdx) && input.bucketIdx >= 0
+    if (!usable) throw new Error('invalid-bucket')
+  }
   const repos = deps.repos
   const run = await repos.runRepo.get(input.runId)
   const state: RunState = await repos.bucketRepo.loadState(input.runId)
@@ -177,6 +180,10 @@ export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise
     for (const o of openSellLegs(sellOrders, { runId: input.runId, bucketIdx, fromTradeDate: input.filledOn }, matchedOrderId)) {
       await repos.orderRepo.setStatus(o.id, 'cancelled', 'broker-filled')
       cancelledIds.push(o.id)
+    }
+    // Not announced and not in cancelledIds: nothing is live at the broker for a stale leg.
+    for (const o of staleSellLegs(sellOrders, { runId: input.runId, bucketIdx, tradeDate: input.filledOn }, matchedOrderId)) {
+      await repos.orderRepo.setStatus(o.id, 'cancelled', 'broker-filled')
     }
   }
   if (matchedOrderId !== null && (input.side === 'buy' || emptied)) await repos.orderRepo.setStatus(matchedOrderId, 'filled')

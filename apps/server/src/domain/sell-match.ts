@@ -19,6 +19,16 @@ export function openSellLegs(orders: OrderRow[], key: { runId: number; bucketIdx
     .sort((a, b) => a.id - b.id)
 }
 
+// The stale sell-side orders of one bucket and run dated exactly `tradeDate`, minus
+// `exceptId`, lowest id first. A fill that empties the bucket retires them silently
+// (no message: that broker day is over), otherwise a later rebuy of the bucket would
+// let one pass the shares gate and absorb an unrelated late fill of the same day.
+export function staleSellLegs(orders: OrderRow[], key: { runId: number; bucketIdx: number; tradeDate: string }, exceptId: number | null): OrderRow[] {
+  return orders
+    .filter((o) => o.runId === key.runId && o.bucketIdx === key.bucketIdx && o.tradeDate === key.tradeDate && o.status === 'stale' && o.id !== exceptId && SELL_SIDE_KINDS.includes(o.kind))
+    .sort((a, b) => a.id - b.id)
+}
+
 export interface SellFillKey { runId: number; filledOn: ISODate; shares: number; price: bigint }
 
 export type PriceLegKind = 'sell_loc' | 'stop_sell'

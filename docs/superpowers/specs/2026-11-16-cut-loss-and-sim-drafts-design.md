@@ -258,8 +258,8 @@ because on a bucket emptied since it would throw for a fill that belongs elsewhe
   rung-2 pick and the fallback carry none.
 - **Flip.** The matched order flips to `filled` only when the fill empties its
   bucket; a partial fill leaves it as it was (`open` or `stale`), so the rest of
-  that leg stays a candidate. An emptying fill also cancels the bucket's other
-  open sell-side orders (see "Sibling cancel").
+  that leg stays a candidate. An emptying fill also cancels every other `open`
+  sell-side order of that bucket (see "Sibling cancel").
 - **Forced bucket.** With an operator-chosen bucket the rungs are skipped; see
   "Bucket override".
 
@@ -292,7 +292,10 @@ ruling of the follow-up decisions log:
   count equals its order's size, so rung 2 uses it. This reverses the 2026-11-18
   "price distance only" ruling. The exact-price rung stays first (controller
   ruling): an exact print is the strongest signal, and an exact-price print its
-  bucket cannot cover must still fail loudly instead of booking elsewhere.
+  bucket cannot cover must still fail loudly instead of booking elsewhere. Cost:
+  a partial fill whose share count equals another bucket's leg size is booked
+  there without a notice; in particular a second partial of a leg can be booked to
+  another bucket whose leg size equals the shares left.
 - **#53, stale legs (ruling 2).** A fill captured for an earlier day and confirmed
   after the morning re-plan found that day's legs `stale`, fell to the fallback,
   and the sibling cancel pulled the wrong bucket's legs for today. A `stale` leg
@@ -308,7 +311,8 @@ ruling of the follow-up decisions log:
 - **#55, market alternatives (ruling 4).** `market_sell` legs on other buckets are
   listed in the attribution notice (new copy with no limit or distance), after the
   price legs, and take part in rung 2. Ranking by price is unchanged otherwise: a
-  nearer price leg still beats a market sell when the share count does not decide.
+  any admissible price leg still beats a market sell, at any distance, when the
+  share count does not decide.
 - **#57, bucket override (ruling 5).** The operator can book a sell to a bucket of
   their choice (see "Bucket override").
 
@@ -322,13 +326,13 @@ ruling of the follow-up decisions log:
   and the leg was chosen by the exact-price rung, by price distance or by the
   market-sell rung; never when the share count decided (controller ruling: a normal
   multi-target exit sends none, where it would otherwise send one per fill but the
-  last). A fill booked to an operator-chosen bucket sends no attribution notice. The
-  notice names the rule that decided. It is one `notifications` row (Notifications
-  tab) and one Telegram message per allowed chat; with no allowed chats nothing is
-  written or sent. They are sent after the run lock is released and before any
-  sibling-cancel message. The alternatives are listed price legs first (nearest
-  first), then market-sell legs by bucket. A forced bucket or the fallback carries
-  no notice. The copy keys in `packages/telegram/src/i18n.ts` are
+  last). A fill booked to an operator-chosen bucket, or to the fallback bucket,
+  sends no attribution notice. The notice names the rule that decided. It is one
+  `notifications` row (Notifications tab) and one Telegram message per allowed
+  chat; with no allowed chats nothing is written or sent. They are sent after the
+  run lock is released and before any sibling-cancel message. The alternatives are
+  listed price legs first (nearest first), then market-sell legs by bucket. The
+  copy keys in `packages/telegram/src/i18n.ts` are
   `sell-attributed`, `sell-attributed-alt`, `sell-attributed-alt-market`,
   `sell-attributed-why-price`, `sell-attributed-why-market`, `leg-sell_loc`,
   `leg-stop_sell` and `leg-market_sell`.
@@ -341,16 +345,23 @@ ruling of the follow-up decisions log:
 4. Addressed 2026-11-22 (#52): the share-count rung separates same-close targets of different sizes.
 5. With no allowed chats no notice reaches the operator, not even in the
    Notifications tab (`notifications.chat_id` is NOT NULL).
+6. A fill edit or correction that turns a partial sell into a bucket-emptying one does not flip or cancel that bucket's legs: they stay `open` on an empty bucket for the rest of that day, and a later same-day fill at exactly one of their prices fails `bucket-not-held` (the operator can force the bucket).
 
 **Sibling cancel.** Both legs sit live at the broker, so when one fires the other
 must stop looking live in the tracker *and* the operator must pull it by hand.
 
 - A sell that **empties its bucket**, whichever leg, rung, fallback or forced
-  bucket booked it, cancels every `open` sell-side order (`sell_loc`, `stop_sell`,
-  `market_sell`) of that run and bucket dated on or after the fill's trade date
-  (`tradeDate >= filledOn`) with `cancelReason: 'broker-filled'` (already in
-  `CANCEL_REASONS`). A fill captured for an earlier day and confirmed after the
-  morning re-plan therefore also cancels **today's** freshly planned legs.
+  bucket booked it, cancels every other `open` sell-side order (`sell_loc`,
+  `stop_sell`, `market_sell`) of that run and bucket dated on or after the fill's
+  trade date (`tradeDate >= filledOn`) with `cancelReason: 'broker-filled'`
+  (already in `CANCEL_REASONS`); the matched order is not among them, it flips to
+  `filled`. A fill captured for an earlier day and confirmed after the morning
+  re-plan therefore also cancels **today's** freshly planned legs.
+- The bucket's `stale` sell-side orders dated exactly on the fill's trade date are
+  cancelled too (same reason), without a message: that broker day is over and
+  nothing is live to pull. Otherwise, once the bucket is bought again, such a leg
+  would pass the shares gate on the new lot and could absorb a later late fill of
+  that day.
 - A **partial** fill cancels nothing — the remaining shares still need both legs,
   and the next morning's plan re-sizes them. It leaves the matched order as it was
   (`open` or `stale`) until a fill empties the bucket (ruling 3).
