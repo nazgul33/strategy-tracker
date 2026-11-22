@@ -25,7 +25,7 @@ export function countingUpstream(): { upstream: (t: string, f: string, to: strin
   return { calls, upstream: async (t, f, to) => { calls.push([t, f, to]); return BARS } }
 }
 
-const BODY = { name: 'E2E draft', from: '2026-11-02', to: '2026-11-06', poolCents: 1_000_000 }
+const BODY = { from: '2026-11-02', to: '2026-11-06', poolCents: 1_000_000 }
 
 const eventsOn = async (c: E2eCtx, id: number, date: string): Promise<any[]> => {
   const { days } = await jsonOf(await c.req('GET', `/sim/${id}`, undefined, c.token))

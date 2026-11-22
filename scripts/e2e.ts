@@ -281,7 +281,7 @@ async function main(): Promise<void> {
       'day3: forced exit liquidates held bucket at last open 349.00 (market sells fill LOO)')
     ok(lastDay.heldCount === 0 && lastDay.cashCents === 1_000_982, 'sim ends flat with cash 1000982')
     const simSaved = await runSim(
-      { name: 'E2E Sim', ticker: 'NVDA', from: '2026-11-06', to: '2026-11-12', poolCents: 1_000_000, costPpm: 1_000 },
+      { ticker: 'NVDA', from: '2026-11-06', to: '2026-11-12', poolCents: 1_000_000, costPpm: 1_000 },
       { fetchDailyBars: async () => BARS, repos: repos.simRepo },
     )
     ok(simSaved.id >= 1 && simSaved.dayCount === 3, 'runSim persists sim run + 3 day rows')

@@ -17,7 +17,7 @@ describe('http sim drafts', () => {
     const close = 1_000_000n - k * 20_000n
     return { date, open: close + 5_000n, high: close + 15_000n, low: close - 40_000n, close }
   }
-  const base = { name: 's', ticker: 'A', from: '2026-11-02', to: '2026-11-06', poolCents: 1_000_000, costPpm: 30 }
+  const base = { ticker: 'A', from: '2026-11-02', to: '2026-11-06', poolCents: 1_000_000, costPpm: 30 }
 
   async function setup() {
     const f = makeFakes()
@@ -153,17 +153,17 @@ describe('http sim drafts', () => {
   test('PUT needs no name and ignores one that is sent', async () => {
     const { call, create, edit } = await setup()
     const { id } = await create()
-    const { name: _n, ...noName } = edit
-    expect((await call('PUT', `/${id}`, noName)).status).toBe(200)
-    expect((await call('PUT', `/${id}`, { ...noName, name: 42 })).status).toBe(200)
+    expect((await call('PUT', `/${id}`, edit)).status).toBe(200)
+    expect((await call('PUT', `/${id}`, { ...edit, name: 42 })).status).toBe(200)
   })
 
-  test('POST still requires a name', async () => {
+  test('POST needs no name and ignores one that is sent', async () => {
     const { f, call } = await setup()
-    const res = await call('POST', '', { ...base, name: ' ' })
-    expect(res.status).toBe(400)
-    expect((await res.json()).error).toBe('invalid name')
-    expect(f.simRuns).toHaveLength(0)
+    for (const over of [{}, { name: ' ' }, { name: 42 }, { name: 'kept by an old web bundle' }]) {
+      expect((await call('POST', '', { ...base, ...over })).status).toBe(200)
+    }
+    expect(f.simRuns).toHaveLength(4)
+    expect(f.simRuns.every((r) => !('name' in r))).toBe(true)
   })
 
   test('PUT omitting costPpm uses the env default, like POST', async () => {
@@ -275,9 +275,9 @@ describe('http sim drafts', () => {
 
   test('GET /api/sim marks drafts and saved runs, newest first', async () => {
     const { call, create } = await setup()
-    const a = await create({ name: 'a' })
-    const b = await create({ name: 'b' })
-    const c = await create({ name: 'c' })
+    const a = await create()
+    const b = await create()
+    const c = await create()
     await call('POST', `/${b.id}/save`)
     const rows = await (await call('GET', '')).json()
     expect(rows.map((r: any) => [r.id, r.draft])).toEqual([[c.id, true], [b.id, false], [a.id, true]])
