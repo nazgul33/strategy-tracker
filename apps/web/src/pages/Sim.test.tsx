@@ -134,6 +134,18 @@ describe('SimPage gap fields', () => {
     expect(calls[0]!.body.sellGapPpm).toBe(20000);
   });
 
+  it('asks for no name and posts none', async () => {
+    await act(async () => {
+      root.render(d(SimPage));
+    });
+    const labels = Array.from(document.querySelectorAll('label span')).map((s) => s.textContent ?? '');
+    expect(labels.some((l) => l.trim() === 'Name')).toBe(false);
+    await fillBaseFields();
+    await submitForm();
+    expect(calls.length).toBe(1);
+    expect('name' in calls[0]!.body).toBe(false);
+  });
+
   it('submits blank gaps as explicit 0', async () => {
     await act(async () => {
       root.render(d(SimPage));

@@ -66,7 +66,7 @@ describe('createRun gaps', () => {
 
 // runSim mirrors createRun: gaps ride along only when set.
 describe('runSim gaps', () => {
-  const base = { name: 'S', ticker: 'abc', from: '2026-01-02', to: '2026-06-30', poolCents: 1000, costPpm: 200 };
+  const base = { ticker: 'abc', from: '2026-01-02', to: '2026-06-30', poolCents: 1000, costPpm: 200 };
 
   test('includes gaps when provided, omits when not', async () => {
     const bodies: unknown[] = [];
@@ -110,8 +110,10 @@ describe('sim draft endpoints', () => {
 
   test('runSim carries cutLossPpm when set', async () => {
     const { calls, api } = recorder();
-    await api.runSim({ ...config, name: ' S ', ticker: 'qqq' });
-    expect(JSON.parse(String(calls[0]!.init?.body))).toMatchObject({ ticker: 'QQQ', name: 'S', cutLossPpm: 35_000 });
+    await api.runSim({ ...config, ticker: 'qqq' });
+    const body = JSON.parse(String(calls[0]!.init?.body));
+    expect(body).toMatchObject({ ticker: 'QQQ', cutLossPpm: 35_000 });
+    expect('name' in body).toBe(false);
   });
 
   test('saveSimRun POSTs /save and deleteSimRun DELETEs, both resolving on 204', async () => {

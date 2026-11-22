@@ -29,8 +29,8 @@ export interface SimConfigForm {
   maxAge: string;
 }
 
-/** The wire shape of a validated config: ppm and cents, no ticker, no name. */
-export type SimConfigInput = Omit<SimInput, 'ticker' | 'name'>;
+/** The wire shape of a validated config: ppm and cents, no ticker. */
+export type SimConfigInput = Omit<SimInput, 'ticker'>;
 
 export type SimConfigResult = { ok: true; input: SimConfigInput } | { ok: false; error: string };
 

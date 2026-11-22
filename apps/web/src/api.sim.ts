@@ -1,7 +1,7 @@
 // Request body shared by the sim create (POST) and Apply (PUT) endpoints.
 import type { SimUpdateInput } from './api.types';
 
-/** Body shared by POST (create) and PUT (Apply): every config field but the ticker and name. */
+/** Body shared by POST (create) and PUT (Apply): every config field but the ticker. */
 export function simConfigBody(input: SimUpdateInput): Record<string, unknown> {
   const body: Record<string, unknown> = {
     from: input.from,

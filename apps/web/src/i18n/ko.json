@@ -372,7 +372,6 @@
   "simInvalidRange": "시작일은 종료일 이전이어야 합니다.",
   "simInvalidTicker": "1~10자의 티커를 입력하세요.",
   "simMaxAge": "최대 보유 (일, 선택)",
-  "simName": "이름",
   "simNeedsAuth": "이 실행은 보호되어 있습니다. 로그인한 후 열람할 수 있습니다.",
   "simNextDay": "다음 날",
   "simNoFills": "그날 체결 없음.",

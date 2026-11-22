@@ -372,7 +372,6 @@
   "simInvalidRange": "Start must be before end.",
   "simInvalidTicker": "Enter a 1–10 character ticker.",
   "simMaxAge": "Max age (days, optional)",
-  "simName": "Name",
   "simNeedsAuth": "This run is password protected — sign in to view it.",
   "simNextDay": "Next day",
   "simNoFills": "No fills that day.",

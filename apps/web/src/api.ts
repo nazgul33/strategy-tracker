@@ -284,7 +284,6 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
     runSim: (input) =>
       send<{ id: number; dayCount: number }>('POST', '/api/sim', {
         ticker: input.ticker.trim().toUpperCase(),
-        name: input.name.trim(),
         ...simConfigBody(input),
       }),
     updateSimRun: (id, input) => send<{ id: number; dayCount: number }>('PUT', `/api/sim/${id}`, simConfigBody(input)),

@@ -65,7 +65,6 @@ export function SimPage() {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.listSimRuns(), []);
 
-  const [name, setName] = useState('');
   const [ticker, setTicker] = useState('');
   const [rest, setRest] = useState<ConfigRest>({
     from: todayIso(),
@@ -102,7 +101,7 @@ export function SimPage() {
     setBusy(true);
     setSubmitError(null);
     try {
-      const res = await api.runSim({ name: name.trim(), ticker: tid, ...result.input });
+      const res = await api.runSim({ ticker: tid, ...result.input });
       window.location.hash = `#/sim/${res.id}`;
     } catch (err) {
       setSubmitError(simErrorText(err, t));
@@ -136,9 +135,6 @@ export function SimPage() {
           {fieldError !== null && <ErrorNote message={fieldError} />}
           {submitError !== null && <ErrorNote message={submitError} />}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Field label={t('simName')}>
-              <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
-            </Field>
             <Field label={t('simTicker')}>
               <Input value={ticker} onChange={(e) => setTicker(e.target.value)} maxLength={10} placeholder="AAA" required dir="ltr" />
             </Field>
