@@ -99,11 +99,11 @@ describe('edit hints', () => {
     expect(container.querySelectorAll('[data-edit]').length).toBe(1);
   });
 
-  it('a cleared fee gets the dashed hint and says the default fee is booked', async () => {
+  it('a cleared fee gets the dashed hint and says the auto fee is booked', async () => {
     await render(ROW);
     await type('Fee', '');
     expect(field('Fee').getAttribute('data-edit')).toBe('erased');
-    expect(field('Fee').title).toBe('Cleared — the default fee will be booked');
+    expect(field('Fee').title).toBe('Cleared — the auto fee will be booked');
     expect(field('Fee').classList.contains('border-dashed')).toBe(true);
     expect(field('Fee').classList.contains('border-warning')).toBe(true);
   });

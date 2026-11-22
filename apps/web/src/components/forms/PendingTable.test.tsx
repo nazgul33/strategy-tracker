@@ -550,7 +550,7 @@ describe('PendingTable', () => {
       const calls = await renderWithConfirmCalls(feeless);
       await type(5, '');
       await clickConfirm();
-      await pressButton('Use default fee');
+      await pressButton('Use auto fee');
       expect(calls[0]!.body).toEqual({});
     });
 
@@ -636,7 +636,7 @@ describe('PendingTable', () => {
       setInputValue(control<HTMLInputElement>(5, 'input'), '');
     });
     await clickConfirm();
-    await pressButton('Use default fee');
+    await pressButton('Use auto fee');
     await pressButton('Keep for review');
     expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ feeCents: null });
   });

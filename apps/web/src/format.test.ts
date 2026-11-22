@@ -77,6 +77,12 @@ describe('costPercentText', () => {
     expect(costPercentText(1_000_000)).toBe('100.000%');
   });
 
+  test('a fourth decimal appears only when the rate is not a multiple of 10 ppm', () => {
+    expect(costPercentText(705)).toBe('0.0705%');
+    expect(costPercentText(1)).toBe('0.0001%');
+    expect(costPercentText(12_345)).toBe('1.2345%');
+  });
+
   test('missing or non-finite values render as an em dash', () => {
     expect(costPercentText(null)).toBe('—');
     expect(costPercentText(undefined)).toBe('—');

@@ -41,7 +41,7 @@ const ROW: PendingFillDto = {
 };
 const FEELESS: PendingFillDto = { ...ROW, fee: null, hasImage: false, detected: { ...ROW.detected!, fee: null } };
 
-const TITLE = 'Use the default fee?';
+const TITLE = 'Use the auto fee?';
 
 function setInputValue(el: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
@@ -58,7 +58,7 @@ async function flush() {
   }
 }
 
-describe('default fee popup', () => {
+describe('auto fee popup', () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
 
@@ -103,7 +103,7 @@ describe('default fee popup', () => {
 
   const type = (label: string, value: string) => act(async () => setInputValue(input(label), value));
 
-  it('clearing a read fee asks before booking the default fee, then confirms with feeCents null', async () => {
+  it('clearing a read fee asks before booking the auto fee, then confirms with feeCents null', async () => {
     const calls = await renderWithConfirmCalls(ROW);
     await type('Fee', '');
     await pressButton('Confirm');
@@ -112,7 +112,7 @@ describe('default fee popup', () => {
     expect(dialog(TITLE)!.textContent).toContain('0.004% × $12345.00 × 10 sh = $4.94');
     expect(calls.length).toBe(0);
 
-    await pressButton('Use default fee');
+    await pressButton('Use auto fee');
     expect(dialog(TITLE)).toBeNull();
     expect(container.querySelector('[role=dialog]')!.textContent).toContain('Values were edited');
     expect(calls.length).toBe(0);
@@ -150,7 +150,7 @@ describe('default fee popup', () => {
     expect(dialog(TITLE)).toBeTruthy();
     expect(calls.length).toBe(0);
 
-    await pressButton('Use default fee');
+    await pressButton('Use auto fee');
     expect(calls.length).toBe(1);
     expect(calls[0]!.body).toEqual({});
   });
@@ -165,7 +165,7 @@ describe('default fee popup', () => {
     expect(dialog(TITLE)!.textContent).toContain('× 10 sh = $4.94');
     expect(dialog(TITLE)!.textContent).not.toContain('20 sh');
 
-    await pressButton('Use default fee');
+    await pressButton('Use auto fee');
     expect(calls.length).toBe(1);
     expect(calls[0]).toMatchObject({ method: 'POST', url: '/api/pending/9/confirm' });
     expect(calls[0]!.body).toEqual({ overrides: { feeCents: null } });
@@ -196,7 +196,7 @@ describe('default fee popup', () => {
     await type('Fee', '');
     await pressButton('Confirm');
     await type('Qty', '20');
-    await pressButton('Use default fee');
+    await pressButton('Use auto fee');
     expect(calls.length).toBe(0);
 
     await pressButton('Keep for review');
@@ -208,7 +208,7 @@ describe('default fee popup', () => {
     await renderWithConfirmCalls(ROW, { ok: true, archived: false });
     await type('Fee', '');
     await pressButton('Confirm');
-    await pressButton('Use default fee');
+    await pressButton('Use auto fee');
     await pressButton('Keep for review');
     expect(container.textContent).toContain('its review record could not be saved');
   });

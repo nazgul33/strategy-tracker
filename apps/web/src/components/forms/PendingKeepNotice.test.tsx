@@ -240,7 +240,7 @@ describe('pending keep record-failed notices', () => {
 
   it("dismissing the keep prompt after the fee popup returns focus to that row's Confirm", async () => {
     // The fee popup hands the row off to the keep prompt: the prompt's opener is the
-    // "Use default fee" button, which its own click destroys. Focus must follow the
+    // "Use auto fee" button, which its own click destroys. Focus must follow the
     // chain to the control that opened the pair (Review Focus 1; Modal's opener chain).
     const state = { rows: [PENDING_ROW] };
     backend(state, []);

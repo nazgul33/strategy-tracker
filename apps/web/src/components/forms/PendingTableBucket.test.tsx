@@ -166,7 +166,7 @@ describe('PendingTable bucket selector', () => {
     await choose(bucketSelect(9), '3');
     await act(async () => setInputValue(rowOf(9).querySelector('input[aria-label="Fee"]') as HTMLInputElement, ''));
     await confirmRow(9);
-    await pressButton('Use default fee');
+    await pressButton('Use auto fee');
     await pressButton('Keep for review');
     expect(calls.length).toBe(1);
     expect((calls[0]!.body as { overrides: { bucketIdx?: number } }).overrides.bucketIdx).toBe(3);
