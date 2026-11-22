@@ -37,7 +37,7 @@ export interface PendingDecisionPatch { side: 'buy' | 'sell'; shares: number; pr
 export interface RepoSurface {
   runRepo: { list(): Promise<any[]>; get(id: number): Promise<any>; create(input: any): Promise<number>; updateStatus(id: number, status: string): Promise<void> }
   bucketRepo: { loadState(runId: number): Promise<RunState>; saveState(runId: number, state: RunState): Promise<void> }
-  orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; listForRun(runId: number, date?: string): Promise<any[]>; listForRunFrom(runId: number, fromDate: string): Promise<any[]>; markStale(date: string): Promise<any>; get(id: number): Promise<any | null>; setStatus(id: number, status: string, cancelReason?: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
+  orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; listForRun(runId: number, date?: string): Promise<any[]>; listForRunFrom(runId: number, fromDate: string): Promise<OrderRow[]>; markStale(date: string): Promise<any>; get(id: number): Promise<any | null>; setStatus(id: number, status: string, cancelReason?: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
   fillRepo: {
     insert(fill: any): Promise<any>
     listForRun(runId: number): Promise<FillRow[]>
