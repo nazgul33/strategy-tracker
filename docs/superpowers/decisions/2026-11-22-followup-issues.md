@@ -141,3 +141,18 @@ Execution order: A, B, C, D, E, on the one branch.
 - Plan D Task 10: the unreferenced `errorNetwork` catalog key is deleted when `errNetwork` is added (no two keys with one meaning).
 - **[REVIEW] Plan D Task 13 item 9** is scoped to the final-values row: the changed-field glyph renders in BOTH the detected and final rows of a review card, so "one mark in the card" would fail by design. If a single mark per card was the intent, that is a UI change for a follow-up.
 - Plan D Task 5 follow-up (branch review): the Compare dialog's `Field` hints are part of the input's accessible NAME (the row uses `aria-describedby`); recorded, not changed on this branch.
+
+## Plan D close-out (per-task reviews)
+
+- All 13 plan D tasks were approved by per-task Opus reviews: 0 Critical, 0 Important. Their minors (27 items) go into one fix pass (`.superpowers/sdd/2026-11-22-web-ux-a11y/fix-pass-brief.md`).
+- Plan-end verification at `a3093f0`:
+  - full `bun test`: 1533 pass / 64 skip / 0 fail
+  - DB suite: 61 pass across 6 files
+  - e2e smoke: 128 assertions, and the scratch DB was dropped
+- Task 12 also carries a controller scope addition: dismissing a page-level error on the review tab moves focus to the page heading instead of dropping it to the body. Task 11's review found that gap.
+- Task 12 ruling: `Th` defaults to `scope="col"`. All 79 `<Th` uses sit in a `<thead>`, so none is mis-scoped.
+- **[REVIEW] Escape on an armed review card is ignored while its delete is in flight** (plan silent). Cancelling mid-request could leave a late error stored for a card that shows it nowhere.
+- Follow-up issues filed:
+  - #78: form `Field` hints are part of the input's accessible name. The row uses `aria-describedby` correctly; `Field` does not.
+  - #79: the Compare dialog lacks the row's standing-issue warning border.
+  - #80: non-sim screens still show the browser's raw "Failed to fetch". Only Sim and the review tab map `NetworkError` to worded copy.
