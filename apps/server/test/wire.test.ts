@@ -588,6 +588,21 @@ describe('capture onConfirm — reply target', () => {
     expect(h.sent.every((s) => s.chatId === '999')).toBe(true);
   });
 
+  test('callback data that is not a canonical id books nothing and answers nothing', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    const p = h.pending[0]!;
+    const sentBefore = h.sent.length;
+    await h.handlers.onConfirm('777', 'yes:007', true);
+    await h.handlers.onConfirm('777', `yes:00${p.id}`, true);
+    await h.handlers.onConfirm('777', `yes:0x${Number(p.id).toString(16)}`, true);
+    await h.handlers.onConfirm('777', `no:00${p.id}`, false);
+    await h.handlers.onConfirm('777', `yes:${p.id}\n`, true);
+    await h.handlers.onConfirm('777', `no:${p.id}`, true);
+    expect(h.sent.length).toBe(sentBefore);
+    expect(h.pending[0]!.status).toBe('pending');
+  });
+
   test('pressing a button on an already-handled row says already handled', async () => {
     const sequences: [boolean, boolean][] = [[true, true], [true, false], [false, false], [false, true]];
     for (const lang of ['en', 'ko'] as const) {

@@ -30,7 +30,7 @@ apps/server/       drizzle.config.ts package.json tsconfig.json
     main.ts
     db/schema.ts db/client.ts db/repos.ts db/repos-bars.ts db/repos-sim.ts db/repos-vision.ts
     domain/booking.ts domain/confirm-pending.ts domain/capture-claim.ts domain/capture-corrections.ts domain/capture-dedup.ts domain/booking-notify.ts domain/capture-image.ts domain/correction-types.ts domain/corrections.ts domain/order-ops.ts domain/ppm.ts domain/recompute.ts domain/run-lock.ts domain/sell-match.ts domain/vision-review.ts
-    wire/deps.ts wire/capture.ts wire/booking-notifier.ts wire/boot-sweeps.ts
+    wire/deps.ts wire/capture.ts wire/booking-notifier.ts wire/boot-sweeps.ts wire/send.ts
     pipeline/day.ts pipeline/wire.ts
     market/bars.ts
     sim/sim.ts sim/serialize.ts

@@ -11,8 +11,9 @@ import { makeCachedBarReader } from './market/bars'
 import { runMorningPipeline, type DayDeps } from './pipeline/day'
 import { startJobs } from './pipeline/wire'
 import { runBootSweeps } from './wire/boot-sweeps'
-import { makeCaptureHandlers } from './wire/capture'
+import { makeCaptureHandlers, type CaptureDeps } from './wire/capture'
 import { parseEnv, todayEt } from './wire/deps'
+import { makeSend } from './wire/send'
 
 async function main(): Promise<void> {
   const env = parseEnv(process.env)
@@ -31,13 +32,7 @@ async function main(): Promise<void> {
 
   // bot is optional: without a token every send just logs (dev + first boot before setup)
   let bot: ReturnType<typeof createBot> | null = null
-  const send = async (chatId: string, text: string): Promise<void> => {
-    if (!bot) {
-      console.log(`[send:${chatId}] ${text.slice(0, 120)}`)
-      return
-    }
-    await bot.api.sendMessage(chatId, text)
-  }
+  const send: CaptureDeps['send'] = makeSend(() => bot?.api ?? null)
 
   const handlers = makeCaptureHandlers({
     repos,

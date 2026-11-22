@@ -6,6 +6,7 @@ import type { Lang } from '@st/telegram/i18n';
 
 import { confirmPendingFill, ingestCapture, rejectPendingFill } from '../domain/booking';
 import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/booking';
+import { parseId } from '../http/params';
 import { makeBookingNotifier } from './booking-notifier';
 
 type PendingRow = { id: number; side: string; ticker: string; shares: number; price: bigint | string; bucketIdx: number | null; filledOn: string; status: string };
@@ -186,9 +187,10 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
   }
 
   async function onConfirm(chatId: string, cbData: string, approved: boolean): Promise<void> {
-    const m = /^(yes|no):(\d+)$/.exec(cbData);
-    if (!m) return;
-    const id = Number(m[2]);
+    const m = /^(yes|no):(.*)$/s.exec(cbData);
+    const id = m ? parseId(m[2]!) : null;
+    // the bot derives `approved` from the same data; a disagreement is malformed
+    if (!m || id === null || (m[1] === 'yes') !== approved) return;
     if (approved) {
       try {
         await confirmPendingFill(id, null, {

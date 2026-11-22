@@ -79,8 +79,8 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
   return { archived }
 }
 
-// Resolves null when the row is missing or already handled (callers answer 409 /
-// the duplicate message). Under the run lock so two siblings resolving at once
+// Resolves null when the row is missing or already handled (the HTTP caller answers
+// 409, the Telegram caller answers "Already handled"). Under the run lock so two siblings resolving at once
 // cannot both see "no pending left" and race the sweep. The reject has taken
 // effect once decide succeeds, so an archive failure is logged and contained,
 // exactly as on the confirm path, and reported as archived: false. As there,
