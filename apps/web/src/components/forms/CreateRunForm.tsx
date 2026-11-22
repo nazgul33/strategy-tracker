@@ -158,7 +158,7 @@ export function CreateRunForm({
       )}
       <div className="grid grid-cols-2 gap-3">
         <Field label={t('runName')}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus data-autofocus />
         </Field>
         <Field label={t('runTicker')}>
           <Input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="QQQ" />

@@ -251,6 +251,60 @@ describe('Modal focus behaviour', () => {
     expect(closed).toEqual(['second']);
   });
 
+  // StrictMode (main.tsx) simulates an unmount and re-mount on mount; the
+  // simulated cleanup must not restore focus to the opener over the autoFocus child.
+  it('keeps focus on the autoFocus child under StrictMode, and restores the opener on close', async () => {
+    function StrictHost() {
+      const [open, setOpen] = React.useState(false);
+      return d(
+        'div',
+        null,
+        d('button', { id: 'opener', onClick: () => setOpen(true) }, 'Open'),
+        open &&
+          d(Modal, {
+            title: 'Strict dialog',
+            onClose: () => setOpen(false),
+            children: d(
+              React.Fragment,
+              null,
+              d('button', { 'data-testid': 'danger' }, 'Danger'),
+              d('button', { 'data-testid': 'safe', autoFocus: true, 'data-autofocus': true }, 'Safe'),
+            ),
+          }),
+      );
+    }
+    await act(async () => root.render(d(React.StrictMode, null, d(StrictHost))));
+    await focus(byId('opener'));
+    await click(byId('opener'));
+    expect(document.activeElement).toBe(byTestId('safe'));
+
+    await click(headerClose(topPanel()));
+    expect(dialogCount()).toBe(0);
+    expect(document.activeElement).toBe(byId('opener'));
+  });
+
+  it('prefers a data-autofocus child over the first control, on open and on a Tab from outside', async () => {
+    await act(async () =>
+      root.render(
+        d(Modal, {
+          title: 'Marked',
+          onClose: () => {},
+          children: d(
+            React.Fragment,
+            null,
+            d('input', { 'data-testid': 'first' }),
+            d('button', { 'data-testid': 'marked', 'data-autofocus': true }, 'Marked'),
+          ),
+        }),
+      ),
+    );
+    expect(document.activeElement).toBe(byTestId('marked'));
+    document.body.focus();
+    const ev = press(document.body, 'Tab');
+    expect(ev.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(byTestId('marked'));
+  });
+
   it('keeps the header close button in the tab order', async () => {
     await show();
     const close = headerClose(topPanel());

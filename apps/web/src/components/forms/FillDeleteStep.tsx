@@ -28,7 +28,7 @@ export function FillDeleteStep({
         <Button variant="danger" busy={busy} onClick={onDelete}>
           {t('dialog.deleteConfirm')}
         </Button>
-        <Button autoFocus onClick={onBack}>
+        <Button autoFocus data-autofocus onClick={onBack}>
           {t('cancel')}
         </Button>
       </div>

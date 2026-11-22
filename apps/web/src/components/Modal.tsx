@@ -1,22 +1,26 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useT } from '../i18n';
 
-// Elements a keyboard user can land on inside a dialog. Deliberately narrow
-// (no tabindex, no audio/video): every dialog in the app is buttons, inputs,
-// selects and links.
+// Elements a keyboard user can land on inside a dialog: links, enabled form
+// controls (not hidden inputs) and anything with a tabindex other than -1.
+// No audio/video: no dialog in the app has any.
 export const MODAL_FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])';
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 // The control that had focus while each panel was mounted, so closing hands
 // focus back to whatever opened it — an outer dialog's control when panels
 // nest, the page button otherwise. `opener` is captured in render (see
-// below), before children's autoFocus can move focus anywhere.
+// below), before children's autoFocus can move focus anywhere. Entries are
+// never deleted: a later dialog's opener-chain walk may still pass through a
+// closed panel (a step swap), and the WeakMap frees them with their nodes.
 const modalOpeners = new WeakMap<Element, HTMLElement | null>();
 
 /** Where focus starts in the panel, and where a Tab from behind the overlay
- * returns it: an explicit autoFocus child, else the body's first control. */
+ * returns it: a `data-autofocus` child, else the body's first control. React
+ * does not write `autoFocus` to the DOM, so a child that sets `autoFocus` also
+ * sets `data-autofocus` to be findable here. */
 function modalInitialFocus(panel: HTMLElement): HTMLElement | null {
-  const preferred = panel.querySelector<HTMLElement>('[autoFocus]');
+  const preferred = panel.querySelector<HTMLElement>('[data-autofocus]');
   if (preferred) return preferred;
   const body = panel.querySelector<HTMLElement>('[data-modal-body]');
   if (body) {
@@ -87,8 +91,14 @@ export function Modal({
     modalOpeners.set(panel, opener.raw); // `opener` is state: fixed for the panel's lifetime.
     if (!panel.contains(document.activeElement)) modalInitialFocus(panel)?.focus();
     return () => {
+      // Two cases where restoring would steal focus from a dialog that is
+      // taking over: StrictMode's simulated unmount (the panel is still
+      // attached), and a successor dialog that already holds focus (a step
+      // swap mounts the new panel before this cleanup runs).
+      if (panel.isConnected) return;
+      const owner = document.activeElement?.closest('[data-modal-panel]');
+      if (owner && owner !== panel && owner.isConnected) return;
       const raw = modalOpeners.get(panel);
-      modalOpeners.delete(panel);
       // What we took if it is still on screen; otherwise the chained opener —
       // the host panel this one was opened from usually went down with it.
       // A dead chain end gets nothing: focusing a detached node would drop

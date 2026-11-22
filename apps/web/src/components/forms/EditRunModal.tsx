@@ -108,6 +108,7 @@ export function EditRunModal({
               inputMode="decimal"
               placeholder="1000"
               autoFocus
+              data-autofocus
             />
           </Field>
           <div className="grid grid-cols-3 gap-3">
