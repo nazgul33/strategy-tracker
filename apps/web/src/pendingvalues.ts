@@ -2,25 +2,34 @@ import { parseUsd } from '@st/core/money';
 import { ungroupUsd, usdToCents, type DetectedDto, type PendingFillDto } from './api';
 import { autoFeeUsd } from './autofee';
 
+/** A field `confirmPendingFill` needs that the row may lack. */
+export type MissedField = 'ticker' | 'side' | 'shares' | 'price' | 'filledOn';
+
 export interface PendingIssue {
   /** Field the user must fix before confirming; `null` when nothing is missing. */
-  field: 'ticker' | 'side' | 'shares' | 'price' | 'filledOn' | null;
+  field: MissedField | null;
 }
 
 /**
- * Fields `confirmPendingFill` needs present (on the row or as an override);
- * surfacing them turns a server 400 into an actionable hint. The trade date is
- * read from the vision snapshot as well as the row: ingest substitutes the
- * capture date when vision found none, so the row's own `filledOn` is never
- * empty and would hide a date the operator has not seen.
+ * Every field `confirmPendingFill` needs present (on the row or as an override),
+ * in the order the operator meets them; surfacing them turns a server 400 into an
+ * actionable hint. The trade date is read from the vision snapshot as well as the
+ * row: ingest substitutes the capture date when vision found none, so the row's
+ * own `filledOn` is never empty and would hide a date the operator has not seen.
  */
+export function missingFields(row: PendingFillDto): MissedField[] {
+  const missed: MissedField[] = [];
+  if (!row.ticker) missed.push('ticker');
+  if (row.side !== 'buy' && row.side !== 'sell') missed.push('side');
+  if (!Number.isInteger(row.shares) || row.shares <= 0) missed.push('shares');
+  if (!row.price) missed.push('price');
+  if (!row.filledOn || row.detected?.filledOn === null) missed.push('filledOn');
+  return missed;
+}
+
+/** The first missing field; see `missingFields`. */
 export function pendingIssue(row: PendingFillDto): PendingIssue {
-  if (!row.ticker) return { field: 'ticker' };
-  if (row.side !== 'buy' && row.side !== 'sell') return { field: 'side' };
-  if (!Number.isInteger(row.shares) || row.shares <= 0) return { field: 'shares' };
-  if (!row.price) return { field: 'price' };
-  if (!row.filledOn || row.detected?.filledOn === null) return { field: 'filledOn' };
-  return { field: null };
+  return { field: missingFields(row)[0] ?? null };
 }
 
 /** What the operator currently has in each editable field of a pending row. */
@@ -38,13 +47,11 @@ export interface RowValues {
 export type RowField = Exclude<keyof RowValues, 'feeTouched'>;
 
 /**
- * The issue still standing for a row: the missing field is only one while the
+ * The issues still standing for a row: a missed field only stands while the
  * operator has not filled it in. `ticker` has no control, so it never clears.
  */
-export function standingIssue(row: PendingFillDto, values: RowValues): PendingIssue['field'] {
-  const { field } = pendingIssue(row);
-  if (field === null || field === 'ticker') return field;
-  return values[field].trim() === '' ? field : null;
+export function standingIssues(row: PendingFillDto, values: RowValues): MissedField[] {
+  return missingFields(row).filter((field) => field === 'ticker' || values[field].trim() === '');
 }
 
 // What vision read for the fee: the snapshot's, or the row's own for a row
@@ -113,7 +120,7 @@ function sameFee(detected: number | null, value: string, derivedCents: number | 
 }
 
 // What each field is compared against; a row that predates the snapshot stands in for itself.
-function detectedFor(row: PendingFillDto): DetectedDto {
+function snapshotFor(row: PendingFillDto): DetectedDto {
   return (
     row.detected ?? {
       side: row.side || null,
@@ -123,6 +130,28 @@ function detectedFor(row: PendingFillDto): DetectedDto {
       fee: row.fee,
     }
   );
+}
+
+/**
+ * What vision read per field; `null` = it read nothing there. A row that predates
+ * the snapshot has no such record, so each field stands in with its own value.
+ * A field whose own value is empty or unusable (a side that is not buy/sell, an
+ * empty price, a null fee) still reads as `null`, so filling it in reads as
+ * "filled in"; a shares of 0 or an empty date stand in as they are, so editing
+ * them reads as "changed".
+ */
+export function detectedFor(row: PendingFillDto): Record<RowField, string | number | null> {
+  const d = row.detected;
+  if (!d) {
+    return {
+      filledOn: row.filledOn,
+      side: row.side === 'buy' || row.side === 'sell' ? row.side : null,
+      shares: row.shares,
+      price: row.price || null,
+      fee: readFee(row),
+    };
+  }
+  return { filledOn: d.filledOn, side: d.side || null, shares: d.shares, price: d.price || null, fee: readFee(row) };
 }
 
 /**
@@ -136,7 +165,7 @@ function detectedFor(row: PendingFillDto): DetectedDto {
  * (except a fee equal to the one the server derives for the current qty and price).
  */
 export function pendingEdits(row: PendingFillDto, values: RowValues): RowField[] {
-  const d = detectedFor(row);
+  const d = snapshotFor(row);
   const edited: RowField[] = [];
   const text = (detected: string | null, value: string) => (detected ?? '') === value.trim();
   if (!text(d.filledOn, values.filledOn)) edited.push('filledOn');
@@ -150,15 +179,21 @@ export function pendingEdits(row: PendingFillDto, values: RowValues): RowField[]
 /**
  * How a control differs from what vision read, for the hint on it. `erased`: the
  * field is blank though a value was read (or, for the fee, one is derivable, which
- * covers a feeless row whose prefilled derived fee was cleared). `changed`: any
- * other edit. A field the standing issue names gets no hint; its own warning
- * border stands until it is filled in.
+ * covers a feeless row whose prefilled derived fee was cleared). `filled`: vision
+ * read nothing there and the operator supplied a value. `changed`: any other edit.
+ * A field the standing issues name gets no hint; its own warning border stands
+ * until it is filled in.
  */
-export function fieldEditState(row: PendingFillDto, values: RowValues, field: RowField): 'changed' | 'erased' | null {
-  if (standingIssue(row, values) === field) return null;
+export function fieldEditState(
+  row: PendingFillDto,
+  values: RowValues,
+  field: RowField,
+): 'changed' | 'filled' | 'erased' | null {
+  if ((standingIssues(row, values) as readonly string[]).includes(field)) return null;
   if (values[field].trim() === '') {
     const derivable = field === 'fee' && autoFeeUsd(values.shares, values.price, row.costPpm) !== '';
-    if (detectedFor(row)[field] !== null || derivable) return 'erased';
+    if (snapshotFor(row)[field] !== null || derivable) return 'erased';
   }
-  return pendingEdits(row, values).includes(field) ? 'changed' : null;
+  if (!pendingEdits(row, values).includes(field)) return null;
+  return detectedFor(row)[field] === null ? 'filled' : 'changed';
 }

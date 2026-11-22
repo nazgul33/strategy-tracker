@@ -13,6 +13,7 @@ const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { act } = await import('react');
 const { PendingTable } = await import('./PendingTable');
+const { lookup } = await import('../../i18n/catalog');
 
 const d = React.createElement;
 
@@ -110,7 +111,7 @@ describe('PendingTable edge cases', () => {
 
     expect(calls.length).toBe(0);
     expect(container.textContent).toContain('Check the values');
-    expect(container.textContent).not.toContain('fill in the highlighted field');
+    expect(container.textContent).not.toContain(lookup('en', 'pendingNeedsOverride'));
   });
 
   it('fee text that is not an amount blocks the confirm', async () => {
@@ -156,5 +157,25 @@ describe('PendingTable edge cases', () => {
     expect(container.textContent).toContain('Already handled');
     expect(promptOpen()).toBe(false);
     expect(container.textContent).toContain('Nothing waiting for confirmation.');
+  });
+
+  it('a field vision missed blocks the confirm even when another missed field was filled in', async () => {
+    const missedBoth: PendingFillDto = {
+      ...PENDING_ROW,
+      side: '',
+      price: '',
+      detected: { ...PENDING_ROW.detected!, side: null, price: null },
+    };
+    const calls = await renderWithConfirmCalls(missedBoth);
+    await act(async () => {
+      const side = control<HTMLSelectElement>(2, 'select');
+      side.value = 'buy';
+      side.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await clickConfirm();
+
+    expect(calls.length).toBe(0);
+    expect(promptOpen()).toBe(false);
+    expect(container.querySelector('p.text-destructive')!.textContent).toBe(lookup('en', 'pendingNeedsOverride'));
   });
 });

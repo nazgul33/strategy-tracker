@@ -7,6 +7,8 @@ import { loadDefaultCostText, peekDefaultCostText } from '../defaultcost';
 export interface AsyncData<T> {
   data: T | undefined;
   error: string | undefined;
+  /** the caught value behind `error`; undefined after a success */
+  failure: unknown;
   loading: boolean;
   /** re-fetch (silent: keeps previous data on screen) */
   reload: () => Promise<void>;
@@ -15,6 +17,7 @@ export interface AsyncData<T> {
 export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): AsyncData<T> {
   const [data, setData] = useState<T | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [failure, setFailure] = useState<unknown>(undefined);
   const [loading, setLoading] = useState(true);
   const fnRef = useRef(fn);
   fnRef.current = fn;
@@ -26,12 +29,14 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): Asy
         const value = await fnRef.current();
         setData(value);
         setError(undefined);
+        setFailure(undefined);
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) {
           setToken(null);
           if (window.location.hash !== '#/login') window.location.hash = '#/login';
         }
         setError(e instanceof Error ? e.message : String(e));
+        setFailure(e);
       } finally {
         setLoading(false);
       }
@@ -46,7 +51,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): Asy
   }, [load, key]);
 
   const reload = useCallback(() => load(true), [load]);
-  return { data, error, loading, reload };
+  return { data, error, failure, loading, reload };
 }
 
 /**

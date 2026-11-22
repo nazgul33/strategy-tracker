@@ -147,13 +147,14 @@ async function main(): Promise<void> {
     ok(detail.state.cashCents === 700_000 && detail.progressView.heldCount === 1, 'seeded cash 700000, heldCount 1')
 
     // ---- photo capture through wire/capture → fake vision → pending row ------
-    const captureMsgs: string[] = []
+    const captureMsgs: { text: string; extra?: Record<string, unknown> }[] = []
     const capture = makeCaptureHandlers({
       repos,
       vision: { baseUrl: `http://127.0.0.1:${vision.port}/v1`, model: 'e2e-vision' },
       getVisionApiKey: async () => 'e2e-key',
       today: () => TODAY,
-      send: async (_chatId: string, text: string) => { captureMsgs.push(text) },
+      allowedChatIds: ['chat-1'],
+      send: async (_chatId: string, text: string, extra?: Record<string, unknown>) => { captureMsgs.push({ text, extra }) },
     })
     const photo: E2eCtx['photo'] = async (fills, image) => {
       visionFills = fills
@@ -162,14 +163,14 @@ async function main(): Promise<void> {
     const ctx: E2eCtx = { ok, req, token, photo }
     await capture.onPhoto('chat-1', IMG, 'NVDA 11/9 broker fill') // no run id in caption -> ticker auto-route
     ok(
-      captureMsgs.some((m) => m === 'Booked NVDA buy 30 sh @ $179.50 on 2026-11-09 — confirm?\n⚠️ No usable trade date was read from the screenshot, so the capture date 2026-11-09 was used. If the trade was on another day, fix the date in the web app\'s Pending view instead of confirming here.'),
-      'capture-booked prompt and capture-date notice verbatim',
+      captureMsgs.some((m) => m.text === 'Booked NVDA buy 30 sh @ $179.50 on 2026-11-09 — confirm?\n⚠️ No usable trade date was read from the screenshot, so the capture date 2026-11-09 was used. Check the date and confirm this fill in the web app\'s Pending view.' && m.extra === undefined),
+      'capture-booked prompt and capture-date notice verbatim, no buttons',
     )
     const pend = await repos.pendingRepo.listPending()
     ok(pend.length === 1 && pend[0]!.side === 'buy' && pend[0]!.shares === 30 &&
       pend[0]!.price === 1795000n && pend[0]!.fee === 50, 'pending row: buy 30 sh, price 1795000n (bigint), fee 50c')
     await capture.onPhoto('chat-1', IMG, 'NVDA 11/9 broker fill')
-    ok(captureMsgs.some((m) => m === 'Duplicate capture — all fills already booked or pending, or a correction is waiting in Pending.'), 'same photo again -> duplicate-capture message')
+    ok(captureMsgs.some((m) => m.text === 'Duplicate capture — all fills already booked or pending, or a correction is waiting in Pending.'), 'same photo again -> duplicate-capture message')
     ok((await repos.pendingRepo.listPending()).length === 1, 'duplicate created no second pending row')
     ok(visionHits.length === 2 && visionHits[0]!.model === 'e2e-vision',
       'both photos hit fake vision (hash guard runs after extraction), model echoed')
@@ -280,7 +281,7 @@ async function main(): Promise<void> {
       'day3: forced exit liquidates held bucket at last open 349.00 (market sells fill LOO)')
     ok(lastDay.heldCount === 0 && lastDay.cashCents === 1_000_982, 'sim ends flat with cash 1000982')
     const simSaved = await runSim(
-      { name: 'E2E Sim', ticker: 'NVDA', from: '2026-11-06', to: '2026-11-12', poolCents: 1_000_000, costPpm: 1_000 },
+      { ticker: 'NVDA', from: '2026-11-06', to: '2026-11-12', poolCents: 1_000_000, costPpm: 1_000 },
       { fetchDailyBars: async () => BARS, repos: repos.simRepo },
     )
     ok(simSaved.id >= 1 && simSaved.dayCount === 3, 'runSim persists sim run + 3 day rows')

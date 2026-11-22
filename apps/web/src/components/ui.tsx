@@ -65,10 +65,25 @@ export function Spinner() {
   return <div className="animate-pulse py-6 text-center text-sm text-muted-foreground">…</div>;
 }
 
-export function ErrorNote({ message }: { message: string }) {
+const ERROR_NOTE_CLASS = 'rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive';
+
+export function ErrorNote({ message, onDismiss }: { message: string; onDismiss?: () => void }) {
+  const t = useT();
+  if (!onDismiss) {
+    return (
+      <div className={ERROR_NOTE_CLASS} role="alert">
+        {message}
+      </div>
+    );
+  }
   return (
-    <div className="rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
-      {message}
+    <div className={`${ERROR_NOTE_CLASS} flex items-start gap-2`}>
+      <div role="alert" className="flex-1">
+        {message}
+      </div>
+      <button type="button" aria-label={t('dismiss')} onClick={onDismiss} className="shrink-0 leading-none">
+        ✕
+      </button>
     </div>
   );
 }
@@ -136,9 +151,17 @@ export function TableWrap({ children }: { children: ReactNode }) {
   );
 }
 
-export function Th({ children, className = '' }: { children?: ReactNode; className?: string }) {
+export function Th({
+  children,
+  className = '',
+  scope = 'col',
+}: {
+  children?: ReactNode;
+  className?: string;
+  scope?: 'col' | 'row';
+}) {
   return (
-    <th className={`whitespace-nowrap border-b border-border py-1.5 pr-3 font-medium text-muted-foreground ${className}`}>
+    <th scope={scope} className={`whitespace-nowrap border-b border-border py-1.5 pr-3 font-medium text-muted-foreground ${className}`}>
       {children}
     </th>
   );
@@ -162,39 +185,6 @@ export function Td({
   );
 }
 
-/** Simple fixed-overlay modal used by the dialogs (pool edit, new run); `wide` makes room for side-by-side content. */
-export function Modal({
-  title,
-  onClose,
-  wide = false,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  wide?: boolean;
-  children: ReactNode;
-}) {
-  const t = useT();
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-background/70 p-4 pt-16 backdrop-blur-sm"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-    >
-      <div
-        className={`w-full ${wide ? 'max-w-4xl' : 'max-w-md'} rounded-lg border border-border bg-card p-4 shadow-lg`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-center justify-between gap-4">
-          <h3 className="text-sm font-semibold">{title}</h3>
-          <button type="button" aria-label={t('cancel')} className="text-muted-foreground hover:text-foreground" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
+// The shared dialog lives in its own module now (focus trap, Escape, focus
+// restore); re-exported here so pages keep importing it from the ui barrel.
+export { Modal } from './Modal';

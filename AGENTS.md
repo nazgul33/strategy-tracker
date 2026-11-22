@@ -17,7 +17,7 @@ package.json  bun.lock  tsconfig.json  tsconfig.base.json  .env.example  .gitign
 Dockerfile  docker-compose.yml
 prod_helpers/      build_and_push.sh run_prod_container.sh
 resources/trade_images/   sample broker screenshots (mpop/)
-docs/superpowers/  specs/ plans/ followups/  (design specs, implementation plans, followup lists)
+docs/superpowers/  specs/ plans/ followups/ decisions/  (design specs, implementation plans, followup lists, decision logs)
 packages/          each package also has package.json tsconfig.json
   core/src/        money.ts domain.ts fills.ts index.ts      (+ core/test/*)
   calendar/src/    index.ts nyse-data.ts crosscheck.ts       (+ calendar/test/*)
@@ -30,19 +30,19 @@ apps/server/       drizzle.config.ts package.json tsconfig.json
     main.ts
     db/schema.ts db/client.ts db/repos.ts db/repos-bars.ts db/repos-sim.ts db/repos-vision.ts
     domain/booking.ts domain/confirm-pending.ts domain/capture-claim.ts domain/capture-corrections.ts domain/capture-dedup.ts domain/booking-notify.ts domain/capture-image.ts domain/correction-types.ts domain/corrections.ts domain/order-ops.ts domain/ppm.ts domain/recompute.ts domain/run-lock.ts domain/sell-match.ts domain/vision-review.ts
-    wire/deps.ts wire/capture.ts wire/booking-notifier.ts wire/boot-sweeps.ts
+    wire/deps.ts wire/capture.ts wire/booking-notifier.ts wire/boot-sweeps.ts wire/send.ts
     pipeline/day.ts pipeline/wire.ts
     market/bars.ts
     sim/sim.ts sim/serialize.ts
     http/app.ts http/auth.ts http/booking-deps.ts http/params.ts http/routes/{runs,fills,pending,corrections,sim,settings,vision-review}.ts
   db/              README.md
-  db/migrations/   0000_fantastic_thunderbolts.sql … 0008_material_blue_marvel.sql (+ meta/)
-  test/            *.test.ts per area (booking, rebooking, sell-attribution, booking-notifier, vision-review, capture-claim, capture-image, corrections, fake-corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, calendar-2028, day, migration-sql, sim, wire, http-*, db*) + fake-corrections.ts http-fakes.ts booking-fakes.ts
+  db/migrations/   0000_fantastic_thunderbolts.sql … 0009_living_lenny_balinger.sql (+ meta/)
+  test/            *.test.ts per area (booking, rebooking, sell-attribution, sell-matching, sell-bucket-override, http-bucket-override, booking-notifier, vision-review, capture-claim, capture-image, corrections, fake-corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, send, calendar-2028, day, migration-sql, sim, wire, http-*, db*, confirm-keep-order, refreeze-kept, main-boot-order) + fake-corrections.ts http-fakes.ts booking-fakes.ts bars-fakes.ts sell-fixture.ts
 apps/web/          package.json tsconfig.json index.html vite.config.ts tailwind.config.ts postcss.config.js .gitignore
-apps/web/src/      main.tsx App.tsx style.css api.ts api.sim.ts api.types.ts autofee.ts defaultcost.ts format.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts priceHistory.ts simconfig.ts simerrors.ts simview.ts (+ colocated *.test.ts(x))
-  testing/{fetchStub,pendingRow,visionReview}.ts   (shared test fixtures, no DOM needed at import time; fetchStub.test.ts)
-  components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,PriceChart,RecalcSummary,RunPanels,RunHistory,ScreenshotLink,VisionReviewEntry,hooks,ui,forms/*}
-  components/forms/{CorrectionList,CreateRunForm,DefaultFeePrompt,EditRunModal,FillDialog,KeepImagePrompt,PendingReviewDialog,PendingRow,PendingTable,SimConfigFields,SimConfigPanel}
+apps/web/src/      main.tsx App.tsx style.css api.ts api.sim.ts api.types.ts autofee.ts defaultcost.ts format.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts priceHistory.ts simconfig.ts simerrors.ts simview.ts usd.ts visionreviewerrors.ts (+ colocated *.test.ts(x))
+  testing/{fetchStub,holdFetch,pendingRow,visionReview}.ts   (shared test fixtures, no DOM needed at import time; fetchStub.test.ts)
+  components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,PriceChart,RecalcSummary,RunPanels,RunHistory,ScreenshotLink,VisionReviewEntry,Modal,hooks,ui,forms/*}
+  components/forms/{BucketSelect,CorrectionList,CreateRunForm,DefaultFeePrompt,EditRunModal,FillDeleteStep,FillDialog,KeepImagePrompt,KeepNotices,PendingReviewDialog,PendingRow,PendingTable,SimConfigFields,SimConfigPanel,pendingHints}
   pages/{RunsList,RunDetail,Sim,SimRun,Settings,Login,Pending,VisionReview}.tsx
   i18n/catalog.ts i18n/index.tsx i18n/en.json i18n/ko.json
 scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-sim-drafts.ts e2e-vision-review.ts tsconfig.json
@@ -68,7 +68,7 @@ scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-sim-drafts.ts e2e-vision
 | DB integration | yes | `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun test` |
 | Operator E2E smoke | yes | `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun scripts/e2e.ts` (run from repo root) |
 
-`scripts/e2e.ts` never touches the `st_test` tables: it creates a fresh `st_e2e_*` scratch DB, runs migrations on it, drives the real HTTP app + capture pipeline against it (fake vision endpoint on 127.0.0.1), and always drops the scratch DB — including on failure. (The DB suite likewise creates and drops its own `st_janitor_*` scratch database in `apps/server/test/db-vision-janitor.test.ts`.) Bars, closes and the calendar cross-check are injected, so it works offline.
+`scripts/e2e.ts` never touches the `st_test` tables: it creates a fresh `st_e2e_*` scratch DB, runs migrations on it, drives the real HTTP app + capture pipeline against it (fake vision endpoint on 127.0.0.1), and always drops the scratch DB — including on failure. (The DB suite likewise creates and drops its own scratch databases: `st_janitor_*` in `apps/server/test/db-vision-janitor.test.ts` and `st_simlist_*` in `apps/server/test/db-sim-list.test.ts`.) Bars, closes and the calendar cross-check are injected, so it works offline.
 
 - Test DB: `docker run -d --name st-mariadb-test -e MARIADB_ROOT_PASSWORD=test -e MARIADB_DATABASE=st_test -p 127.0.0.1:3307:3306 mariadb:11`
 

@@ -43,6 +43,32 @@ function parseBars(json: any): { ts: number[]; q: any } | null {
   return { ts, q };
 }
 
+async function request(url: string, fetchImpl: typeof fetch): Promise<Response> {
+  try {
+    return await fetchImpl(url);
+  } catch (cause) {
+    throw new MarketDataError('http', String(cause));
+  }
+}
+
+// The body is read only on a non-OK answer and may not be JSON (an HTML error page).
+async function notOkError(res: Response, allowNoDataRange: boolean): Promise<MarketDataError> {
+  const body: any = await res.json().catch(() => null);
+  const error = body?.chart?.error;
+  // An unknown or delisted symbol answers 404 "Not Found".
+  if (res.status === 404 && error?.code === 'Not Found') return new MarketDataError('no-data');
+  // A range wholly before the ticker's listing date answers 400 with this body.
+  if (
+    allowNoDataRange &&
+    res.status === 400 &&
+    typeof error?.description === 'string' &&
+    error.description.startsWith("Data doesn't exist")
+  ) {
+    return new MarketDataError('no-data');
+  }
+  return new MarketDataError('http');
+}
+
 export async function fetchDailyBars(
   ticker: string,
   from: ISODate,
@@ -54,16 +80,8 @@ export async function fetchDailyBars(
   toDate.setUTCDate(toDate.getUTCDate() + 1);
   const period2 = Math.floor(toDate.getTime() / 1000);
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${period1}&period2=${period2}&interval=1d`;
-  const res = await fetchImpl(url);
-  if (!res.ok) {
-    // A range wholly before the ticker's listing date answers 400 with this body.
-    const body: any = await res.json().catch(() => null);
-    const description = body?.chart?.error?.description;
-    if (res.status === 400 && typeof description === 'string' && description.startsWith("Data doesn't exist")) {
-      throw new MarketDataError('no-data');
-    }
-    throw new MarketDataError('http');
-  }
+  const res = await request(url, fetchImpl);
+  if (!res.ok) throw await notOkError(res, true);
   const json = await res.json();
   if (json?.chart?.error) throw new MarketDataError('no-data');
   const parsed = parseBars(json);
@@ -98,8 +116,8 @@ export async function fetchLastClose(
   fetchImpl: typeof fetch = globalThis.fetch,
 ): Promise<{ date: ISODate; close: bigint }> {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=10d&interval=1d`;
-  const res = await fetchImpl(url);
-  if (!res.ok) throw new MarketDataError('http');
+  const res = await request(url, fetchImpl);
+  if (!res.ok) throw await notOkError(res, false);
   const json = await res.json();
   if (json?.chart?.error) throw new MarketDataError('no-data');
   const parsed = parseBars(json);

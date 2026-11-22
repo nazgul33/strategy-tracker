@@ -158,7 +158,7 @@ export function CreateRunForm({
       )}
       <div className="grid grid-cols-2 gap-3">
         <Field label={t('runName')}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus data-autofocus />
         </Field>
         <Field label={t('runTicker')}>
           <Input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="QQQ" />
@@ -166,21 +166,21 @@ export function CreateRunForm({
         <Field label={t('runPoolCents')}>
           <Input value={pool} onChange={(e) => setPool(e.target.value)} inputMode="decimal" placeholder="10000" />
         </Field>
-        <Field label={t('runCostPpm')} hint={t('runForm.costHint')}>
-          <Input
-            data-testid="costInput"
-            value={cost}
-            onChange={(e) => setCost(e.target.value)}
-            inputMode="decimal"
-            placeholder="0.070"
-            invalid={cost !== '' && !isPercentText(cost.trim(), 3)}
-          />
-          {costLoadFailed && (
-            <span data-testid="costDefaultFailed" role="status" className="mt-1 block text-[11px] text-warning">
-              {t('costDefaultFailed')}
-            </span>
-          )}
-        </Field>
+        <div>
+          <Field label={t('runCostPpm')} hint={t('runForm.costHint')}>
+            <Input
+              data-testid="costInput"
+              value={cost}
+              onChange={(e) => setCost(e.target.value)}
+              inputMode="decimal"
+              placeholder="0.070"
+              invalid={cost !== '' && !isPercentText(cost.trim(), 3)}
+            />
+          </Field>
+          <span data-testid="costDefaultFailed" role="status" className="mt-1 block text-[11px] text-warning">
+            {costLoadFailed ? t('costDefaultFailed') : ''}
+          </span>
+        </div>
         <Field label={t('runForm.buyGapLabel')} hint={t('runForm.buyGapHint')}>
           <Input
             data-testid="buyGapInput"

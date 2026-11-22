@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll } from 'bun:test'
 import { getDb, applyMigrations } from '../src/db/client'
 import { getRepos } from '../src/db/repos'
-import { getBarRepos, isDeadlock } from '../src/db/repos-bars'
+import { getBarRepos, deadlockBackoffMs, isDeadlock } from '../src/db/repos-bars'
 
 const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 
@@ -34,19 +34,22 @@ describeIf('barCoverageRepo.add under concurrent writers', () => {
 describe('barCoverageRepo.add retry policy', () => {
   function stubbed(failures: unknown[]) {
     let calls = 0
+    const delays: number[] = []
     const db = {
       transaction: async () => {
         calls += 1
         if (calls <= failures.length) throw failures[calls - 1]
       },
     }
-    return { repo: getBarRepos(db as any).barCoverageRepo, calls: () => calls }
+    const repo = getBarRepos(db as any, { sleep: async (ms: number) => { delays.push(ms) }, random: () => 0 }).barCoverageRepo
+    return { repo, calls: () => calls, delays }
   }
 
   test('add retries a deadlock and succeeds on the fifth attempt', async () => {
     const s = stubbed(Array.from({ length: 4 }, () => ({ errno: 1213 })))
     await expect(s.repo.add('AAPL', '2026-01-05', '2026-01-08')).resolves.toBeUndefined()
     expect(s.calls()).toBe(5)
+    expect(s.delays).toEqual([5, 10, 20, 40])
   })
 
   test('add gives up after five deadlocks', async () => {
@@ -54,6 +57,7 @@ describe('barCoverageRepo.add retry policy', () => {
     const s = stubbed(Array.from({ length: 10 }, () => err))
     await expect(s.repo.add('AAPL', '2026-01-05', '2026-01-08')).rejects.toBe(err)
     expect(s.calls()).toBe(5)
+    expect(s.delays).toEqual([5, 10, 20, 40])
   })
 
   test('add does not retry any other error', async () => {
@@ -61,6 +65,14 @@ describe('barCoverageRepo.add retry policy', () => {
     const s = stubbed([err, err, err])
     await expect(s.repo.add('AAPL', '2026-01-05', '2026-01-08')).rejects.toBe(err)
     expect(s.calls()).toBe(1)
+    expect(s.delays).toEqual([])
+  })
+
+  test('the backoff doubles per attempt with up to 4 ms of jitter', () => {
+    expect([1, 2, 3, 4].map((a) => deadlockBackoffMs(a, () => 0))).toEqual([5, 10, 20, 40])
+    expect(deadlockBackoffMs(1, () => 0.999)).toBe(9)
+    expect(deadlockBackoffMs(0, () => 0)).toBe(5)
+    expect(deadlockBackoffMs(9, () => 0)).toBe(40)
   })
 })
 

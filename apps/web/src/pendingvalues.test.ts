@@ -1,11 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { DetectedDto, PendingFillDto } from './api';
 import {
-  feeIsDerived,
   patchRowValues,
   pendingEdits,
   pendingIssue,
-  standingIssue,
+  standingIssues,
   type RowValues,
 } from './pendingvalues';
 
@@ -27,6 +26,7 @@ function pendingRow(over: Partial<PendingFillDto> = {}): PendingFillDto {
     createdAt: '2026-11-02T14:00:00Z',
     hasImage: true,
     costPpm: 40,
+    heldBuckets: [],
     detected: null,
     ...over,
   };
@@ -64,22 +64,33 @@ describe('pendingIssue', () => {
   });
 });
 
-describe('standingIssue', () => {
+describe('standingIssues', () => {
   const substituted = pendingRow({ filledOn: '2026-11-09', detected: { ...detected, filledOn: null } });
   const blankDate: RowValues = { ...same, filledOn: '' };
 
   test('a missed date stands while the field is blank and clears once it is filled in', () => {
-    expect(standingIssue(substituted, blankDate)).toBe('filledOn');
-    expect(standingIssue(substituted, { ...blankDate, filledOn: ' ' })).toBe('filledOn');
-    expect(standingIssue(substituted, { ...blankDate, filledOn: '2026-11-09' })).toBeNull();
+    expect(standingIssues(substituted, blankDate)).toEqual(['filledOn']);
+    expect(standingIssues(substituted, { ...blankDate, filledOn: ' ' })).toEqual(['filledOn']);
+    expect(standingIssues(substituted, { ...blankDate, filledOn: '2026-11-09' })).toEqual([]);
   });
 
   test('a row with nothing missing has no standing issue', () => {
-    expect(standingIssue(row(), same)).toBeNull();
+    expect(standingIssues(row(), same)).toEqual([]);
   });
 
   test('a missing ticker has no control, so it always stands', () => {
-    expect(standingIssue(pendingRow({ ticker: '' }), same)).toBe('ticker');
+    expect(standingIssues(pendingRow({ ticker: '' }), same)).toEqual(['ticker']);
+  });
+
+  test('every field vision missed stands, not just the first', () => {
+    const twoMissed = pendingRow({ side: '', price: '', detected: { ...detected, side: null, price: null } });
+    expect(standingIssues(twoMissed, { ...same, side: '', price: '' })).toEqual(['side', 'price']);
+    expect(standingIssues(twoMissed, { ...same, side: 'buy', price: '' })).toEqual(['price']);
+  });
+
+  test('a missing ticker stands alongside the other missed fields', () => {
+    const r = pendingRow({ ticker: '', price: '' });
+    expect(standingIssues(r, { ...same, price: '' })).toEqual(['ticker', 'price']);
   });
 });
 
@@ -259,35 +270,5 @@ describe('patchRowValues', () => {
       values = patchRowValues(fl, values, patch);
       expect(pendingEdits(fl, values)).not.toContain('fee');
     }
-  });
-});
-
-describe('feeIsDerived', () => {
-  const fl = row(feeless);
-
-  test('a feeless capture holding exactly the derived fee is marked', () => {
-    expect(feeIsDerived(fl, { ...same, fee: '0.07' })).toBe(true);
-  });
-
-  test('a typed fee that differs is not', () => {
-    expect(feeIsDerived(fl, { ...same, fee: '0.09' })).toBe(false);
-  });
-
-  test('a stale derived fee is not, once qty has moved on', () => {
-    expect(feeIsDerived(fl, { ...same, shares: '12', fee: '0.07', feeTouched: true })).toBe(false);
-  });
-
-  test('a blank fee shows nothing to mark', () => {
-    expect(feeIsDerived(fl, { ...same, fee: '' })).toBe(false);
-  });
-
-  test('a fee vision read is never marked as derived', () => {
-    expect(feeIsDerived(row(), same)).toBe(false);
-    expect(feeIsDerived(row(), { ...same, fee: '0.07' })).toBe(false);
-  });
-
-  test('a legacy row is marked only when it stored no fee', () => {
-    expect(feeIsDerived(row(null), { ...same, price: '349.99', fee: '0.14' })).toBe(true);
-    expect(feeIsDerived(pendingRow({ detected: null, fee: 14 }), { ...same, price: '349.99', fee: '0.14' })).toBe(false);
   });
 });

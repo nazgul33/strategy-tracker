@@ -96,10 +96,17 @@ export function costInputText(ppm: number): string {
   return (ppm / 10_000).toFixed(3);
 }
 
-/** Integer cost ppm → display text with three decimals and its own percent sign, e.g. 700 → `0.070%`. */
+/**
+ * Integer cost ppm → display text with its own percent sign: three decimals (700 → `0.070%`),
+ * a fourth only when the rate is not a multiple of 10 ppm (705 → `0.0705%`), so the shown
+ * rate times price times quantity is the fee shown. Integer math throughout, no float division;
+ * a non-integer or negative rate falls back to `costInputText`.
+ */
 export function costPercentText(ppm: number | null | undefined): string {
   if (ppm === null || ppm === undefined || !Number.isFinite(ppm)) return '—';
-  return `${costInputText(ppm)}%`;
+  if (!Number.isInteger(ppm) || ppm < 0) return `${costInputText(ppm)}%`;
+  const fraction = String(ppm % 10_000).padStart(4, '0');
+  return `${(ppm - (ppm % 10_000)) / 10_000}.${ppm % 10 === 0 ? fraction.slice(0, 3) : fraction}%`;
 }
 
 /** Fraction (0..1) → `72.4%`; `null` when there is nothing to divide by. */

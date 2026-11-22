@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { DomainError, type ISODate } from '@st/core'
 import { rebookFill, deleteFill, recalcRunState } from '../../domain/recompute'
 import type { HttpDeps } from '../app'
+import { parseId } from '../params'
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -14,7 +15,7 @@ export function fillsRouter(deps: HttpDeps): Hono {
   const centsToStr = (cents: number) => `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`
 
   r.put('/runs/:id/fills/:fillId', async (c) => {
-    const runId = Number(c.req.param('id'))
+    const runId = parseId(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
     const { qty, priceCents, feeCents, filledOn } = body ?? {}
     // feeCents must be sent: integer >= 0, or null = recompute the fee from run costPpm
@@ -22,13 +23,15 @@ export function fillsRouter(deps: HttpDeps): Hono {
     if (!Number.isInteger(qty) || qty <= 0 || !Number.isInteger(priceCents) || priceCents <= 0
       || (feeCents !== null && (!Number.isInteger(feeCents) || feeCents < 0))
       || (filledOn !== undefined && (typeof filledOn !== 'string' || !ISO_DATE_RE.test(filledOn)))) return c.json({ error: 'invalid-body' }, 400)
-    const run = await deps.repos.runRepo.get(runId)
-    if (!run) return c.json({ error: 'no-run' }, 404)
+    const run = runId === null ? null : await deps.repos.runRepo.get(runId)
+    if (runId === null || !run) return c.json({ error: 'no-run' }, 404)
+    const fillId = parseId(c.req.param('fillId'))
+    if (fillId === null) return c.json({ error: 'no-fill' }, 422)
     let edited: { deltaCents: number }
     try {
       // no cash guard: an oversized qty is the operator's call, books go negative
       edited = await rebookFill(runId, {
-        fillId: Number(c.req.param('fillId')), shares: qty, priceStr: centsToStr(priceCents), feeCents: feeCents as number | null,
+        fillId, shares: qty, priceStr: centsToStr(priceCents), feeCents: feeCents as number | null,
         filledOn: filledOn as ISODate | undefined,
       }, bookingDeps())
     } catch (e) {
@@ -39,16 +42,15 @@ export function fillsRouter(deps: HttpDeps): Hono {
   })
 
   r.delete('/runs/:id/fills/:fillId', async (c) => {
-    const runId = Number(c.req.param('id'))
-    // a non-numeric id can never name the newest fill of a bucket
-    const raw = c.req.param('fillId')
-    if (!/^\d+$/.test(raw)) return c.json({ error: 'not-last' }, 422)
-    const run = await deps.repos.runRepo.get(runId)
-    if (!run) return c.json({ error: 'no-run' }, 404)
+    const runId = parseId(c.req.param('id'))
+    const fillId = parseId(c.req.param('fillId'))
+    if (fillId === null) return c.json({ error: 'no-fill' }, 422)
+    const run = runId === null ? null : await deps.repos.runRepo.get(runId)
+    if (runId === null || !run) return c.json({ error: 'no-run' }, 404)
     let deleted: { fill: { id: number }; deltaCents: number }
     try {
       // the domain guards per-bucket newness and books the compensating adjust
-      deleted = await deleteFill(runId, Number(raw), bookingDeps())
+      deleted = await deleteFill(runId, fillId, bookingDeps())
     } catch (e) {
       if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
       throw e
@@ -58,9 +60,9 @@ export function fillsRouter(deps: HttpDeps): Hono {
 
   // Re-derive the run state from the fill history without touching any row.
   r.post('/runs/:id/recalc', async (c) => {
-    const runId = Number(c.req.param('id'))
-    const run = await deps.repos.runRepo.get(runId)
-    if (!run) return c.json({ error: 'no-run' }, 404)
+    const runId = parseId(c.req.param('id'))
+    const run = runId === null ? null : await deps.repos.runRepo.get(runId)
+    if (runId === null || !run) return c.json({ error: 'no-run' }, 404)
     let recalc: { deltaCents: number; fillCount: number }
     try {
       recalc = await recalcRunState(runId, bookingDeps())

@@ -36,6 +36,7 @@ const ROW: PendingFillDto = {
   createdAt: '2026-11-10T14:30:00Z',
   hasImage: true,
   costPpm: 40,
+  heldBuckets: [],
   detected: { side: 'buy', shares: 10, price: '123450000', filledOn: '2026-11-10', fee: 100 },
 };
 
@@ -153,6 +154,28 @@ describe('PendingReviewDialog', () => {
     expect(link.target).toBe('_blank');
     expect(link.rel).toContain('noreferrer');
     expect(link.querySelector('img')).toBeTruthy();
+  });
+
+  it('Escape neither cancels nor drops an edit', async () => {
+    await show();
+    await act(async () => {
+      setInputValue(input('Qty'), '11');
+    });
+    await act(async () => {
+      document.body.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    });
+    expect(cancels).toBe(0);
+    expect(done).toEqual([]);
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(input('Qty').value).toBe('11');
+  });
+
+  it('initial focus lands on a control inside the dialog', async () => {
+    await show();
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    const focusables = Array.from(dialog.querySelectorAll('a[href], button, input, select, textarea'));
+    expect(focusables).toContain(document.activeElement as HTMLElement);
   });
 
   it('Done reports the edited values and Cancel reports nothing', async () => {

@@ -67,7 +67,7 @@ unset.
 | `PORT` | no | `8080` | HTTP port |
 | `DIGEST_LANG` | no | `en` | `en` or `ko` |
 | `DEFAULT_COST_PERCENT` | no | `0.07` | per-side trading cost prefilled for new runs and sims, as a percent with up to 3 decimals (`0` = no cost, max `100`) |
-| `TELEGRAM_BOT_TOKEN` | no | unset | unset ⇒ bot disabled; every send falls back to a console log line |
+| `TELEGRAM_BOT_TOKEN` | no | unset | unset ⇒ bot disabled; every send falls back to a console log line; booking notices are still recorded in the run's Notifications tab (chat `web`) |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | when token set | — | comma-separated Telegram chat IDs |
 | `VISION_BASE_URL` | when token set | — | OpenAI-compatible vision endpoint base URL |
 | `VISION_MODEL` | when token set | — | model name for fill extraction |
@@ -148,7 +148,8 @@ Only chat IDs on the allowlist get any response (`packages/telegram/src/bot.ts`)
   auto-routed by ticker — and only if every ticker resolves to exactly one active run (an ambiguous
   or unknown ticker books nothing and says so).
 - The vision model extracts the fills; each becomes a pending fill with a `Yes`/`No` inline
-  keyboard. `Yes` books it (lowest empty bucket for buys), `No` rejects. Nothing is booked without
+  keyboard (except when its trade date had to be substituted: that prompt has no buttons and
+  points to the web Pending view). `Yes` books it (lowest empty bucket for buys), `No` rejects. Nothing is booked without
   that tap. Re-sending the identical photo is deduped by content hash.
 - A fill-capture reminder goes out at 16:05 ET on trading days (nothing on weekends/holidays).
 

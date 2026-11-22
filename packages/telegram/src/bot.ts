@@ -8,7 +8,7 @@ export interface BotDeps {
   allowedChatIds: string[]
   lang?: Lang
   onPhoto(chatId: string, image: { base64: string; mime: string }, caption?: string): Promise<void> | void
-  onConfirm(cbData: string, approved: boolean): Promise<void> | void
+  onConfirm(chatId: string, cbData: string, approved: boolean): Promise<void> | void
   onStatus(chatId: string): Promise<void> | void
   onOrders(chatId: string): Promise<void> | void
 }
@@ -63,10 +63,16 @@ export function createBot(deps: BotDeps): Bot {
     const chatId = String(ctx.chat?.id ?? '')
     if (!gate(chatId)) return
     const data = ctx.callbackQuery?.data ?? ''
-    const approved = data.startsWith('yes:')
-    await deps.onConfirm(data, approved)
-    await ctx.answerCallbackQuery()
+    try {
+      await ctx.answerCallbackQuery()
+    } catch (e) {
+      console.error('[bot] answerCallbackQuery failed:', String(e))
+    }
+    await deps.onConfirm(chatId, data, data.startsWith('yes:'))
   })
+
+  // grammY's default rethrows a handler error out of long polling and ends it for good
+  bot.catch((err) => console.error('[bot] update failed:', String(err.error)))
 
   return bot
 }

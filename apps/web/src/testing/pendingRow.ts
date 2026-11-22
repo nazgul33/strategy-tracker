@@ -16,6 +16,7 @@ export const PENDING_ROW: PendingFillDto = {
   createdAt: '2026-11-10T14:30:00Z',
   hasImage: true,
   costPpm: 40,
+  heldBuckets: [],
   detected: { side: 'buy', shares: 10, price: '123450000', filledOn: '2026-11-10', fee: 100 },
 };
 

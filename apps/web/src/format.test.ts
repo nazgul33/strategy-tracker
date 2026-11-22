@@ -77,6 +77,23 @@ describe('costPercentText', () => {
     expect(costPercentText(1_000_000)).toBe('100.000%');
   });
 
+  test('a fourth decimal appears only when the rate is not a multiple of 10 ppm', () => {
+    expect(costPercentText(705)).toBe('0.0705%');
+    expect(costPercentText(1)).toBe('0.0001%');
+    expect(costPercentText(12_345)).toBe('1.2345%');
+  });
+
+  test('boundaries around a whole percent and 100%', () => {
+    expect(costPercentText(9_999)).toBe('0.9999%');
+    expect(costPercentText(10_001)).toBe('1.0001%');
+    expect(costPercentText(1_000_005)).toBe('100.0005%');
+  });
+
+  test('a non-integer or negative rate falls back to the bare input text', () => {
+    expect(costPercentText(-700)).toBe(`${costInputText(-700)}%`);
+    expect(costPercentText(12.5)).toBe(`${costInputText(12.5)}%`);
+  });
+
   test('missing or non-finite values render as an em dash', () => {
     expect(costPercentText(null)).toBe('—');
     expect(costPercentText(undefined)).toBe('—');

@@ -10,7 +10,7 @@ const ISO_RE = /^\d{4}-\d{2}-\d{2}$/
 
 type Validated = { ok: true; input: any } | { ok: false; error: string }
 
-// Everything a simulation takes except the ticker and name: POST adds those from the body, PUT takes the ticker from the stored draft.
+// Everything a simulation takes except the ticker: POST adds it from the body, PUT takes it from the stored draft.
 function validateConfig(body: any, defaultCostPpm: number): Validated {
   const from = body?.from
   const to = body?.to
@@ -40,10 +40,8 @@ function validateConfig(body: any, defaultCostPpm: number): Validated {
 function validateCreate(body: any, defaultCostPpm: number): Validated {
   const ticker = body?.ticker
   if (typeof ticker !== 'string' || ticker.trim() === '') return { ok: false, error: 'invalid ticker' }
-  const name = body?.name
-  if (typeof name !== 'string' || name.trim() === '') return { ok: false, error: 'invalid name' }
   const v = validateConfig(body, defaultCostPpm)
-  return v.ok ? { ok: true, input: { ...v.input, name, ticker } } : v
+  return v.ok ? { ok: true, input: { ...v.input, ticker } } : v
 }
 
 export function simRouter(deps: HttpDeps): Hono {

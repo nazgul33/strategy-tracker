@@ -35,8 +35,9 @@ export function visionReviewRouter(deps: HttpDeps): Hono {
     const entries = kept
       .map((k) => {
         const fills = reviews.filter((v) => v.captureId === k.captureId).sort(byCreatedThen((a, b) => a.id - b.id))
-        // A kept image always has a frozen row (the freeze precedes the keep flag); without
-        // one there is no run or ticker to show.
+        // A kept image normally has a frozen row. The keep is written before the confirm or reject
+        // flips its row, so a crash before the freeze can leave one without; the boot repair
+        // (`refreezeKept`) rebuilds it, and until then there is no run or ticker to show.
         if (!fills.length) return null
         return { captureId: k.captureId, runId: fills[0]!.runId, ticker: fills[0]!.ticker, createdAt: k.createdAt, mime: k.mime, byteLen: k.byteLen, fills: fills.map(fillDto) }
       })

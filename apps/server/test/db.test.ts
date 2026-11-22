@@ -5,7 +5,7 @@ import { emptyState, parseUsd } from '@st/core'
 import type { ExtractResult } from '@st/ingest'
 import { getDb, applyMigrations } from '../src/db/client'
 import { getRepos } from '../src/db/repos'
-import { ingestCapture, manualFill, type FillBookingDeps } from '../src/domain/booking'
+import { ingestCapture, manualFill, type BookingDeps, type FillBookingDeps } from '../src/domain/booking'
 import { listOpenCorrections, applyCorrection } from '../src/domain/corrections'
 import { silentNotifier } from './booking-fakes'
 
@@ -182,10 +182,10 @@ describeIf('db integration', () => {
     const otherId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'LG' + uniq, name: 'from-other-' + uniq, poolCents: 1000, costPpm: 10 })
     const mk = (id: number, tradeDate: string, status: string) => ({ runId: id, tradeDate, kind: 'sell_loc', bucketIdx: 0, limitPrice: 35000000n, shares: 5, status })
     await repos.orderRepo.insertMany([
-      mk(runId, '2026-11-09', 'open'), mk(runId, '2026-11-10', 'cancelled'), mk(runId, '2026-11-11', 'open'), mk(otherId, '2026-11-10', 'open'),
+      mk(runId, '2026-11-11', 'open'), mk(runId, '2026-11-09', 'open'), mk(runId, '2026-11-10', 'cancelled'), mk(otherId, '2026-11-10', 'open'),
     ])
     const rows = await repos.orderRepo.listForRunFrom(runId, '2026-11-10')
-    expect(rows.map((o: any) => o.tradeDate)).toEqual(['2026-11-10', '2026-11-11'])
+    expect(rows.map((o: any) => o.tradeDate).sort()).toEqual(['2026-11-10', '2026-11-11'])
     expect(rows.every((o: any) => o.runId === runId)).toBe(true)
     expect(rows.map((o: any) => o.id)).toEqual([...rows.map((o: any) => o.id)].sort((a, b) => a - b))
   })
@@ -264,7 +264,7 @@ describeIf('db integration', () => {
     await repos.fillRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker, shares: 11, price: parseUsd('218.55'), fee: 0, filledOn: '2026-11-12', source: 'capture' })
     await repos.pendingRepo.insert({ runId, bucketIdx: null, side: 'sell', ticker, shares: 270, price: parseUsd('65.53'), fee: 345, filledOn: '2026-11-12', status: 'pending' })
 
-    const deps: FillBookingDeps = { repos, today: '2026-11-15', notify: silentNotifier }
+    const deps: BookingDeps = { repos, today: '2026-11-15' }
     // extraction spells the same two trades with string prices — the dedup key
     // must canonicalize across the DB bigint and the extract string
     const ext: ExtractResult = {
@@ -290,7 +290,7 @@ describeIf('db integration', () => {
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'dedup-mixed-' + Date.now(), poolCents: 1_000_000, costPpm: 10 })
     await repos.fillRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker, shares: 11, price: parseUsd('218.55'), fee: 0, filledOn: '2026-11-12', source: 'capture' })
 
-    const deps: FillBookingDeps = { repos, today: '2026-11-15', notify: silentNotifier }
+    const deps: BookingDeps = { repos, today: '2026-11-15' }
     const ext: ExtractResult = {
       ok: true,
       fills: [
@@ -319,7 +319,7 @@ describeIf('db integration', () => {
     // booked sell carrying a price typo, stored as bigint myriadths like every real fill
     await repos.fillRepo.insert({ runId, bucketIdx: 0, side: 'sell', ticker, shares: 44, price: parseUsd('66.03'), fee: 0, filledOn: '2026-11-11', source: 'manual' })
 
-    const deps: FillBookingDeps = { repos, today: '2026-11-15', notify: silentNotifier }
+    const deps: BookingDeps = { repos, today: '2026-11-15' }
     const ext: ExtractResult = { ok: true, fills: [{ side: 'sell', ticker, shares: 44, price: '64.07', date: '2026-11-11' }] }
     const out: any = await ingestCapture(runId, { base64: 'CONFLICT-REAL-' + Date.now(), mime: 'image/png' }, ext, deps)
 
@@ -342,7 +342,7 @@ describeIf('db integration', () => {
   test('ingestCapture re-reads a seen image after its fill was rejected', async () => {
     const ticker = 'RU' + Date.now()
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'reupload-' + Date.now(), poolCents: 1_000_000, costPpm: 10 })
-    const deps: FillBookingDeps = { repos, today: '2026-11-15', notify: silentNotifier }
+    const deps: BookingDeps = { repos, today: '2026-11-15' }
     const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker, shares: 11, price: '218.55', date: '2026-11-12' }] }
     const image = { base64: 'REUP-REAL-' + Date.now(), mime: 'image/png' }
 
@@ -396,7 +396,7 @@ describeIf('db integration', () => {
   test('ingestCapture flags a re-read of a capture that already has a confirmed row', async () => {
     const ticker = 'BE' + Date.now()
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'booked-earlier-' + Date.now(), poolCents: 1_000_000, costPpm: 10 })
-    const deps: FillBookingDeps = { repos, today: '2026-11-15', notify: silentNotifier }
+    const deps: BookingDeps = { repos, today: '2026-11-15' }
     const image = { base64: 'BOOKED-EARLIER-' + Date.now(), mime: 'image/png' }
     const dated: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker, shares: 11, price: '218.55', date: '2026-11-12' }] }
     const undated: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker, shares: 11, price: '218.55' }] }

@@ -18,3 +18,19 @@ describe('migration 0007 SQL', () => {
     expect(backfill).toBeDefined()
   })
 })
+
+describe('migration indexes', () => {
+  const migrationsDir = fileURLToPath(new URL('../db/migrations/', import.meta.url))
+
+  test('the orders and sim sweep indexes exist', async () => {
+    const files = [...new Bun.Glob('*.sql').scanSync({ cwd: migrationsDir })].sort()
+    const all = (await Promise.all(files.map((f) => Bun.file(migrationsDir + f).text()))).join('\n')
+    const want = [
+      /CREATE INDEX `orders_run_trade_date_idx` ON `orders` \(`run_id`,`trade_date`\)/,
+      /CREATE INDEX `orders_trade_date_idx` ON `orders` \(`trade_date`\)/,
+      /CREATE INDEX `sim_runs_draft_created_idx` ON `sim_runs` \(`draft`,`created_at`\)/,
+      /CREATE INDEX `sim_days_sim_run_idx` ON `sim_days` \(`sim_run_id`\)/,
+    ]
+    for (const re of want) expect(all).toMatch(re)
+  })
+})

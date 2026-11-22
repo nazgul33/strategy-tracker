@@ -37,6 +37,12 @@ export interface BucketDto {
   filledOn: string | null;
 }
 
+/** A non-empty bucket a sell can be booked to. */
+export interface HeldBucketDto {
+  index: number;
+  shares: number;
+}
+
 export interface ClosedBucketDto {
   index: number;
   shares: number;
@@ -112,6 +118,8 @@ export interface PendingFillDto {
   hasImage: boolean;
   /** The run's cost in ppm: the fee the server derives when none is supplied is `feeCents(price, shares, costPpm)`. */
   costPpm: number;
+  /** The row's own run's non-empty buckets; the choices a confirmed sell can be booked to. */
+  heldBuckets: HeldBucketDto[];
   /** What vision read. `null` = the row predates the snapshot; a null field = vision missed it. */
   detected: DetectedDto | null;
 }
@@ -260,6 +268,7 @@ export interface PendingOverrides {
   price?: string; // "12.34"
   filledOn?: string; // YYYY-MM-DD
   feeCents?: number | null;
+  bucketIdx?: number; // sell only; omitted = automatic
 }
 
 /** Body of POST /runs/:id/fills — USD strings; the ticker is the run's own, server-stamped. */
@@ -269,10 +278,10 @@ export interface ManualFillInput {
   price: string; // "12.34"
   fee?: string; // "0.50" or omitted
   filledOn: string; // YYYY-MM-DD
+  bucketIdx?: number; // sell only; omitted = automatic
 }
 
 export interface SimInput {
-  name: string;
   ticker: string;
   from: string;
   to: string;
@@ -285,4 +294,4 @@ export interface SimInput {
 }
 
 /** PUT body for Apply: the draft's ticker is its identity, so it is never sent. */
-export type SimUpdateInput = Omit<SimInput, 'ticker' | 'name'>;
+export type SimUpdateInput = Omit<SimInput, 'ticker'>;

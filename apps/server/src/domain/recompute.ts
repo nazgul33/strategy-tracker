@@ -37,7 +37,8 @@ export interface RebookEdit { fillId: number; shares: number; priceStr: string; 
 // Rebuilding state does not reopen orders (applies to deleteFill too): a sell
 // fill's sibling-cancelled leg stays cancelled after that sell is edited away or
 // deleted, so a re-held bucket has no live protection until the next morning's
-// re-plan places its legs again.
+// re-plan places its legs again. It does not close them either: an edit that turns
+// a partial sell into a bucket-emptying one leaves that bucket's legs open.
 export function rebookFill(
   runId: number,
   edit: RebookEdit,

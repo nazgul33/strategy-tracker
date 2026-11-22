@@ -36,14 +36,16 @@ export function SimConfigFields({
       <Field label={t('simPool')}>
         <Input data-testid="simPoolInput" inputMode="decimal" placeholder="100000" required {...bind('pool')} />
       </Field>
-      <Field label={t('simCostPpm')} hint={t('runForm.costHint')}>
-        <Input data-testid="costInput" inputMode="decimal" placeholder="0.070" required invalid={flags.cost} {...bind('cost')} />
+      <div>
+        <Field label={t('simCostPpm')} hint={t('runForm.costHint')}>
+          <Input data-testid="costInput" inputMode="decimal" placeholder="0.070" required invalid={flags.cost} {...bind('cost')} />
+        </Field>
         {costNote !== undefined && (
           <span data-testid="costDefaultFailed" role="status" className="mt-1 block text-[11px] text-warning">
             {costNote}
           </span>
         )}
-      </Field>
+      </div>
       <Field label={t('simForm.buyGapLabel')}>
         <Input data-testid="buyGapInput" inputMode="decimal" placeholder="0" invalid={flags.buyGap} {...bind('buyGap')} />
       </Field>

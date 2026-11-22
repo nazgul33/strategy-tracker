@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import type { PendingFillDto } from '../../api';
 import { useT } from '../../i18n';
-import { feeIsDerived, patchRowValues, type RowValues } from '../../pendingvalues';
+import { autoFeeUsd } from '../../autofee';
+import { patchRowValues, type RowField, type RowValues } from '../../pendingvalues';
 import { ScreenshotLink } from '../ScreenshotLink';
 import { Button, Field, Input, Modal, Select } from '../ui';
+import { editHint } from './pendingHints';
 
 interface PendingReviewDialogProps {
   row: PendingFillDto;
@@ -19,50 +21,62 @@ export function PendingReviewDialog({ row, values, onCancel, onDone }: PendingRe
   const t = useT();
   const [draft, setDraft] = useState<RowValues>(values);
   const set = (patch: Partial<RowValues>) => setDraft((prev) => patchRowValues(row, prev, patch));
+  // The hint text beside a field and the marks on its control, the same as on the row;
+  // there is room here, so the text is always visible rather than shown on focus.
+  const hintFor = (f: RowField) => {
+    const h = editHint(row, draft, f);
+    const text = h ? t(h.key) : undefined;
+    const control = h
+      ? { className: `w-full ${h.look}`.trim(), ...(h.state === 'auto' ? {} : { 'data-edit': h.state }) }
+      : { className: 'w-full' };
+    return { text, control };
+  };
+  const date = hintFor('filledOn');
+  const side = hintFor('side');
+  const shares = hintFor('shares');
+  const price = hintFor('price');
+  const fee = hintFor('fee');
+  const autoFee = draft.fee.trim() === '' ? autoFeeUsd(draft.shares, draft.price, row.costPpm) : '';
 
   return (
-    <Modal wide title={`${t('pendingReviewTitle')} · ${row.ticker || '?'}`} onClose={onCancel}>
+    <Modal wide title={`${t('pendingReviewTitle')} · ${row.ticker || '?'}`} onClose={onCancel} closeOnEscape={false}>
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem]">
         <div className="max-h-[70vh] overflow-auto rounded border border-border bg-background">
           {row.captureId !== null && <ScreenshotLink captureId={row.captureId} imgClassName="w-full" />}
         </div>
         <div className="space-y-3">
-          <Field label={t('pendingColDate')}>
-            <Input
-              type="date"
-              className="w-full"
-              value={draft.filledOn}
-              onChange={(e) => set({ filledOn: e.target.value })}
-            />
+          <Field label={t('pendingColDate')} hint={date.text}>
+            <Input type="date" {...date.control} value={draft.filledOn} onChange={(e) => set({ filledOn: e.target.value })} />
           </Field>
-          <Field label={t('pendingColSide')}>
-            <Select className="w-full" value={draft.side} onChange={(e) => set({ side: e.target.value })}>
+          <Field label={t('pendingColSide')} hint={side.text}>
+            <Select {...side.control} value={draft.side} onChange={(e) => set({ side: e.target.value })}>
               {draft.side === '' && <option value="">—</option>}
               <option value="buy">{t('orderSideBuy')}</option>
               <option value="sell">{t('orderSideSell')}</option>
             </Select>
           </Field>
-          <Field label={t('pendingColQty')}>
+          <Field label={t('pendingColQty')} hint={shares.text}>
             <Input
-              className="w-full"
+              {...shares.control}
               inputMode="numeric"
               value={draft.shares}
               onChange={(e) => set({ shares: e.target.value })}
             />
           </Field>
-          <Field label={t('pendingColPrice')}>
+          <Field label={t('pendingColPrice')} hint={price.text}>
             <Input
-              className="w-full"
+              {...price.control}
               inputMode="decimal"
               value={draft.price}
               onChange={(e) => set({ price: e.target.value })}
             />
           </Field>
-          <Field label={t('pendingColFee')} hint={feeIsDerived(row, draft) ? t('pendingFeeAutoHint') : undefined}>
+          <Field label={t('pendingColFee')} hint={fee.text}>
             <Input
-              className="w-full"
+              {...fee.control}
               inputMode="decimal"
               value={draft.fee}
+              placeholder={autoFee ? t('pendingFeeAutoPlaceholder', { fee: autoFee }) : undefined}
               onChange={(e) => set({ fee: e.target.value })}
             />
           </Field>

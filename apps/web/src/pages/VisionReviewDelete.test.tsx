@@ -1,6 +1,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { installFetchStub, restoreFetch, type Route } from '../testing/fetchStub';
+import { lookup } from '../i18n/catalog';
+import { installFetchStub, restoreFetch, type FetchCalls, type Route } from '../testing/fetchStub';
 import { EDITED, entry, REJECTED } from '../testing/visionReview';
 
 GlobalRegistrator.register();
@@ -28,7 +29,7 @@ async function flush() {
   }
 }
 
-describe('VisionReviewPage delete errors', () => {
+describe('VisionReviewPage deletes', () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
 
@@ -52,12 +53,13 @@ describe('VisionReviewPage delete errors', () => {
   const two = () => [entry(3, [EDITED], 'AAPL'), entry(5, [REJECTED], 'SOXL')];
   const DELETE_OK = (id: number): Route => ({ method: 'DELETE', url: `/api/vision-reviews/${id}`, json: { ok: true } });
 
-  async function render(routes: Route[]) {
-    installFetchStub(routes);
+  async function render(routes: Route[]): Promise<FetchCalls> {
+    const calls = installFetchStub(routes);
     await act(async () => {
       root.render(d(VisionReviewPage));
     });
     await flush();
+    return calls;
   }
 
   const button = (text: string, within: ParentNode = container) => {
@@ -106,11 +108,7 @@ describe('VisionReviewPage delete errors', () => {
 
   it('arming and deleting one card leaves its sibling untouched', async () => {
     const list: Route = { url: '/api/vision-reviews', json: { entries: two() } };
-    const calls = installFetchStub([DELETE_OK(3), list]);
-    await act(async () => {
-      root.render(d(VisionReviewPage));
-    });
-    await flush();
+    const calls = await render([DELETE_OK(3), list]);
 
     await click('Delete');
     expect(Array.from(cards()[1]!.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['Delete']);
@@ -134,7 +132,7 @@ describe('VisionReviewPage delete errors', () => {
     const found = alerts();
     expect(found.length).toBe(1);
     expect(cards()[0]!.contains(found[0]!)).toBe(true);
-    expect(found[0]!.textContent).toBe('boom');
+    expect(found[0]!.textContent).toBe(lookup('en', 'visionReviewErr.server', { code: 'boom' }));
     expect(button('Delete for real', cards()[0]!)).toBeTruthy();
     expect(cards()[1]!.querySelector('[role=alert]')).toBeNull();
   });
@@ -155,7 +153,7 @@ describe('VisionReviewPage delete errors', () => {
     const found = alerts();
     expect(found.length).toBe(1);
     expect(cards()[0]!.contains(found[0]!)).toBe(true);
-    expect(found[0]!.textContent).toBe('list-down');
+    expect(found[0]!.textContent).toBe(lookup('en', 'visionReviewErr.server', { code: 'list-down' }));
   });
 
   it("Cancel on another card leaves the failed card's error", async () => {
@@ -168,7 +166,7 @@ describe('VisionReviewPage delete errors', () => {
     const found = alerts();
     expect(found.length).toBe(1);
     expect(cards()[0]!.contains(found[0]!)).toBe(true);
-    expect(found[0]!.textContent).toBe('boom');
+    expect(found[0]!.textContent).toBe(lookup('en', 'visionReviewErr.server', { code: 'boom' }));
     expect(button('Delete for real', cards()[0]!)).toBeTruthy();
   });
 
@@ -182,7 +180,7 @@ describe('VisionReviewPage delete errors', () => {
     const found = alerts();
     expect(found.length).toBe(1);
     expect(cards().some((c) => c.contains(found[0]!))).toBe(false);
-    expect(found[0]!.textContent).toBe('list-down');
+    expect(found[0]!.textContent).toBe(lookup('en', 'visionReviewErr.server', { code: 'list-down' }));
     await release();
   });
 
@@ -204,7 +202,7 @@ describe('VisionReviewPage delete errors', () => {
     const found = alerts();
     expect(found.length).toBe(1);
     expect(cards().some((c) => c.contains(found[0]!))).toBe(false);
-    expect(found[0]!.textContent).toBe('list-down');
+    expect(found[0]!.textContent).toBe(lookup('en', 'visionReviewErr.server', { code: 'list-down' }));
     expect(Array.from(cards()[0]!.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['Delete']);
   });
 
@@ -219,6 +217,6 @@ describe('VisionReviewPage delete errors', () => {
     const found = alerts();
     expect(found.length).toBe(1);
     expect(cards().some((c) => c.contains(found[0]!))).toBe(false);
-    expect(found[0]!.textContent).toBe('boom');
+    expect(found[0]!.textContent).toBe(lookup('en', 'visionReviewErr.server', { code: 'boom' }));
   });
 });

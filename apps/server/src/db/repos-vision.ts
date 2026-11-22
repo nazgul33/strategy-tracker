@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, notExists, sql } from 'drizzle-orm'
 import * as s from './schema'
-import type { VisionReviewInsert, VisionReviewRow } from '../domain/vision-review'
+import type { UnfrozenPendingRow, VisionReviewInsert, VisionReviewRow } from '../domain/vision-review'
 
 export type CaptureImageInsert = { captureId: number; mime: string; bytes: Buffer; byteLen: number }
 export type CaptureImageListing = { captureId: number; mime: string; byteLen: number; createdAt: string }
@@ -46,8 +46,9 @@ export function getVisionRepos(db: any) {
       })
     },
     // Boot-time janitor for bytes and frozen rows stranded by a swallowed archive failure.
-    // Run it only while nothing else is writing: a pass between a confirm's decide and its
-    // setKeep would delete the image that confirm is about to keep.
+    // Run it only while nothing else is writing. A requested keep is written before the confirm
+    // or reject flips its row, so that image is safe; but a pass between the flip and the freeze
+    // of a resolution that asked for no keep would delete an image it is still about to freeze.
     async sweepOrphans(): Promise<number[]> {
       return db.transaction(async (tx: any) => {
         const liveFor = (captureId: any) => tx.select({ one: sql`1` }).from(s.pendingFills)
@@ -83,6 +84,22 @@ export function getVisionRepos(db: any) {
     async insertIgnore(row: VisionReviewInsert): Promise<void> {
       await db.insert(s.visionReviews).values(row)
         .onDuplicateKeyUpdate({ set: { pendingFillId: row.pendingFillId } })
+    },
+    // Resolved rows of a kept image that have no frozen record: what a crash between a
+    // confirm's flip and its freeze leaves behind. Siblings are not looked at.
+    async listUnfrozenKept(): Promise<UnfrozenPendingRow[]> {
+      const frozen = db.select({ one: sql`1` }).from(s.visionReviews).where(eq(s.visionReviews.pendingFillId, s.pendingFills.id))
+      return db.select({
+        id: s.pendingFills.id, runId: s.pendingFills.runId, ticker: s.pendingFills.ticker, captureId: s.pendingFills.captureId,
+        status: s.pendingFills.status, side: s.pendingFills.side, shares: s.pendingFills.shares, price: s.pendingFills.price,
+        fee: s.pendingFills.fee, filledOn: s.pendingFills.filledOn,
+        detectedSide: s.pendingFills.detectedSide, detectedShares: s.pendingFills.detectedShares,
+        detectedPrice: s.pendingFills.detectedPrice, detectedFilledOn: s.pendingFills.detectedFilledOn,
+        detectedFee: s.pendingFills.detectedFee, detectedAt: s.pendingFills.detectedAt,
+      }).from(s.pendingFills)
+        .innerJoin(s.captureImages, and(eq(s.captureImages.captureId, s.pendingFills.captureId), eq(s.captureImages.keep, true)))
+        .where(and(inArray(s.pendingFills.status, ['confirmed', 'rejected']), notExists(frozen)))
+        .orderBy(s.pendingFills.id)
     },
     async listForCaptures(captureIds: number[]): Promise<VisionReviewRow[]> {
       if (!captureIds.length) return []

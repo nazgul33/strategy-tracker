@@ -160,6 +160,13 @@ export function fakeRepos() {
       if (visionReviews.some((x) => x.pendingFillId === row.pendingFillId)) return
       visionReviews.push({ id: visionSeq++, createdAt: '', ...row })
     },
+    async listUnfrozenKept() {
+      return pending
+        .filter((p) => (p.status === 'confirmed' || p.status === 'rejected')
+          && captureImages.some((x) => x.captureId === p.captureId && x.keep)
+          && !visionReviews.some((v) => v.pendingFillId === p.id))
+        .sort((a, b) => a.id - b.id)
+    },
     async listForCaptures(captureIds: number[]) { return visionReviews.filter((x) => captureIds.includes(x.captureId)) },
     async deleteFor(captureId: number) {
       for (let i = visionReviews.length - 1; i >= 0; i--) if (visionReviews[i]!.captureId === captureId) visionReviews.splice(i, 1)

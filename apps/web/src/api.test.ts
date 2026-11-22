@@ -1,32 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 
-import { ApiError, createApi, ungroupUsd, usdToCents } from './api';
+import { ApiError, NetworkError, createApi } from './api';
 import type { ApiErrorCode, Http } from './api';
 
-describe('ungroupUsd', () => {
-  test('strips only well-formed grouping', () => {
-    expect(ungroupUsd(' 12,345,678.90 ')).toBe('12345678.90');
-    expect(ungroupUsd('1,000.00')).toBe('1000.00');
-    expect(ungroupUsd('1,00')).toBe('1,00');
-    expect(ungroupUsd('12,34.00')).toBe('12,34.00');
-  });
-});
-
-// Users naturally type comma-grouped amounts ("1,000"); core's parseUsd
-// rejects commas, so the web layer strips standard grouping before parsing.
-describe('usdToCents', () => {
-  test('accepts comma-grouped amounts', () => {
-    expect(usdToCents('1,000')).toBe(100000);
-    expect(usdToCents('12,345,678.90')).toBe(1234567890);
-  });
-
-  test('rejects malformed grouping', () => {
-    expect(usdToCents('1,00')).toBeNull();
-  });
-
-  test('plain amounts keep working', () => {
-    expect(usdToCents('12.345')).toBe(1235);
-    expect(usdToCents('bogus')).toBeNull();
+describe('call() transport failures', () => {
+  test('a fetch that throws becomes a NetworkError with its message', async () => {
+    const api = createApi(() => Promise.reject(new TypeError('Failed to fetch')), { getToken: () => null });
+    const err = await api.listRuns().then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(NetworkError);
+    expect(err).not.toBeInstanceOf(ApiError);
+    expect((err as Error).message).toBe('Failed to fetch');
+    expect((err as Error).name).toBe('NetworkError');
+    expect((err as Error).cause).toBeInstanceOf(TypeError);
   });
 });
 
@@ -66,7 +54,7 @@ describe('createRun gaps', () => {
 
 // runSim mirrors createRun: gaps ride along only when set.
 describe('runSim gaps', () => {
-  const base = { name: 'S', ticker: 'abc', from: '2026-01-02', to: '2026-06-30', poolCents: 1000, costPpm: 200 };
+  const base = { ticker: 'abc', from: '2026-01-02', to: '2026-06-30', poolCents: 1000, costPpm: 200 };
 
   test('includes gaps when provided, omits when not', async () => {
     const bodies: unknown[] = [];
@@ -110,8 +98,10 @@ describe('sim draft endpoints', () => {
 
   test('runSim carries cutLossPpm when set', async () => {
     const { calls, api } = recorder();
-    await api.runSim({ ...config, name: ' S ', ticker: 'qqq' });
-    expect(JSON.parse(String(calls[0]!.init?.body))).toMatchObject({ ticker: 'QQQ', name: 'S', cutLossPpm: 35_000 });
+    await api.runSim({ ...config, ticker: 'qqq' });
+    const body = JSON.parse(String(calls[0]!.init?.body));
+    expect(body).toMatchObject({ ticker: 'QQQ', cutLossPpm: 35_000 });
+    expect('name' in body).toBe(false);
   });
 
   test('saveSimRun POSTs /save and deleteSimRun DELETEs, both resolving on 204', async () => {
@@ -247,160 +237,20 @@ describe('fill mutation deltas', () => {
   });
 });
 
-// Wire contract of the fill edit/delete calls: verb, path, JSON body and the
-// ApiError the server's 4xx/5xx replies are normalized into.
-describe('updateFill / deleteFill wire contract', () => {
-  const record = (res: () => Response) => {
-    const calls: { url: string; init?: RequestInit }[] = [];
-    const http: Http = async (url, init) => {
-      calls.push({ url, init });
-      return res();
+// A sell can name the bucket it is booked to; omitted means automatic.
+describe('bucketIdx', () => {
+  const sell = { side: 'sell' as const, shares: 5, price: '10', filledOn: '2026-01-02' };
+
+  test('addManualFill sends bucketIdx only when given', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const http: Http = async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return Response.json({ ok: true });
     };
-    return { calls, api: createApi(http, { getToken: () => 't' }) };
-  };
-  const ok = () => Response.json({ ok: true, deltaCents: 0 });
-
-  test('updateFill PUTs to /api/runs/:id/fills/:fillId with the JSON body and bearer token', async () => {
-    const { calls, api } = record(ok);
-    await api.updateFill(4, 9, { qty: 10, priceCents: 5000, feeCents: 41 });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toBe('/api/runs/4/fills/9');
-    expect(calls[0]!.init?.method).toBe('PUT');
-    expect(calls[0]!.init?.headers).toMatchObject({ 'content-type': 'application/json', Authorization: 'Bearer t' });
-    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ qty: 10, priceCents: 5000, feeCents: 41 });
-  });
-
-  test('updateFill passes feeCents 0 through and sends null when the fee is omitted or null', async () => {
-    const { calls, api } = record(ok);
-    await api.updateFill(1, 2, { qty: 1, priceCents: 100, feeCents: 0 });
-    await api.updateFill(1, 2, { qty: 1, priceCents: 100 });
-    await api.updateFill(1, 2, { qty: 1, priceCents: 100, feeCents: null });
-    const bodies = calls.map((c) => JSON.parse(String(c.init?.body)) as Record<string, unknown>);
-    expect(bodies[0]).toEqual({ qty: 1, priceCents: 100, feeCents: 0 });
-    expect(bodies[1]).toEqual({ qty: 1, priceCents: 100, feeCents: null });
-    expect(bodies[2]).toEqual({ qty: 1, priceCents: 100, feeCents: null });
-  });
-
-  test('updateFill forwards filledOn when given and omits the key otherwise', async () => {
-    const { calls, api } = record(ok);
-    await api.updateFill(1, 2, { qty: 1, priceCents: 100, feeCents: 5, filledOn: '2026-11-03' });
-    await api.updateFill(1, 2, { qty: 1, priceCents: 100, feeCents: 5 });
-    const bodies = calls.map((c) => JSON.parse(String(c.init?.body)) as Record<string, unknown>);
-    expect(bodies[0]).toEqual({ qty: 1, priceCents: 100, feeCents: 5, filledOn: '2026-11-03' });
-    expect('filledOn' in bodies[1]!).toBe(false);
-  });
-
-  test('deleteFill sends DELETE to /api/runs/:id/fills/:fillId with the bearer token', async () => {
-    const { calls, api } = record(() => Response.json({ ok: true, deletedFillId: 7, deltaCents: 80 }));
-    await api.deleteFill(4, 7);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toBe('/api/runs/4/fills/7');
-    expect(calls[0]!.init?.method).toBe('DELETE');
-    expect(calls[0]!.init?.headers).toMatchObject({ Authorization: 'Bearer t' });
-  });
-
-  test('a 422 {error:"not-last"} becomes ApiError(422, "not-last") on both calls', async () => {
-    const { api } = record(() => Response.json({ error: 'not-last' }, { status: 422 }));
-    const put = await api.updateFill(1, 2, { qty: 1, priceCents: 100 }).then(() => null, (e: unknown) => e);
-    const del = await api.deleteFill(1, 2).then(() => null, (e: unknown) => e);
-    for (const err of [put, del]) {
-      expect(err).toBeInstanceOf(ApiError);
-      expect(err).toMatchObject({ status: 422, code: 'not-last' });
-    }
-  });
-
-  test('a non-JSON 500 falls back to ApiError(500, "http-500") on both calls', async () => {
-    const { api } = record(() => new Response('<html>boom</html>', { status: 500 }));
-    const put = await api.updateFill(1, 2, { qty: 1, priceCents: 100 }).then(() => null, (e: unknown) => e);
-    const del = await api.deleteFill(1, 2).then(() => null, (e: unknown) => e);
-    for (const err of [put, del]) {
-      expect(err).toBeInstanceOf(ApiError);
-      expect(err).toMatchObject({ status: 500, code: 'http-500' });
-    }
-  });
-});
-
-describe('pending review wire contract', () => {
-  const record = (res: () => Response = () => Response.json({ ok: true })) => {
-    const calls: { url: string; init?: RequestInit }[] = [];
-    const http: Http = async (url, init) => {
-      calls.push({ url, init });
-      return res();
-    };
-    return { calls, api: createApi(http, { getToken: () => 't' }) };
-  };
-  const body = (c: { init?: RequestInit }) => JSON.parse(String(c.init?.body));
-
-  test('confirmPending with no overrides and no keep sends an empty body', async () => {
-    const { calls, api } = record();
-    await api.confirmPending(3);
-    expect(calls[0]!.url).toBe('/api/pending/3/confirm');
-    expect(calls[0]!.init?.method).toBe('POST');
-    expect(body(calls[0]!)).toEqual({});
-  });
-
-  test('confirmPending sends keepImage only when true', async () => {
-    const { calls, api } = record();
-    await api.confirmPending(3, undefined, true);
-    await api.confirmPending(3, undefined, false);
-    expect(body(calls[0]!)).toEqual({ keepImage: true });
-    expect('keepImage' in body(calls[1]!)).toBe(false);
-  });
-
-  test('confirmPending with overrides and keepImage false sends only the overrides', async () => {
-    const { calls, api } = record();
-    await api.confirmPending(3, { shares: 11 }, false);
-    expect(body(calls[0]!)).toEqual({ overrides: { shares: 11 } });
-  });
-
-  test('confirmPending carries overrides, including feeCents null, next to keepImage', async () => {
-    const { calls, api } = record();
-    await api.confirmPending(3, { side: 'sell', price: '178.4', feeCents: null }, true);
-    expect(body(calls[0]!)).toEqual({ overrides: { side: 'sell', price: '178.4', feeCents: null }, keepImage: true });
-  });
-
-  test('rejectPending sends keepImage only when true', async () => {
-    const { calls, api } = record();
-    await api.rejectPending(3);
-    await api.rejectPending(3, true);
-    expect(calls.map((c) => c.url)).toEqual(['/api/pending/3/reject', '/api/pending/3/reject']);
-    expect(body(calls[0]!)).toEqual({});
-    expect(body(calls[1]!)).toEqual({ keepImage: true });
-  });
-
-  test('confirmPending resolves archived from the body, defaulting to true', async () => {
-    const failed = record(() => Response.json({ ok: true, archived: false }));
-    await expect(failed.api.confirmPending(3, undefined, true)).resolves.toEqual({ archived: false });
-    const bare = record(() => Response.json({ ok: true }));
-    await expect(bare.api.confirmPending(3)).resolves.toEqual({ archived: true });
-  });
-
-  test('rejectPending resolves archived from the body, defaulting to true', async () => {
-    const failed = record(() => Response.json({ ok: true, archived: false }));
-    await expect(failed.api.rejectPending(3, true)).resolves.toEqual({ archived: false });
-    const bare = record(() => Response.json({ ok: true }));
-    await expect(bare.api.rejectPending(3)).resolves.toEqual({ archived: true });
-  });
-
-  test('listVisionReviews unwraps entries', async () => {
-    const entry = { captureId: 5, runId: 1, ticker: 'AAPL', createdAt: '2026-11-02T14:00:00Z', mime: 'image/png', byteLen: 9, fills: [] };
-    const { calls, api } = record(() => Response.json({ entries: [entry] }));
-    await expect(api.listVisionReviews()).resolves.toEqual([entry]);
-    expect(calls[0]!.url).toBe('/api/vision-reviews');
-  });
-
-  test('deleteVisionReview DELETEs the capture and maps 404 to ApiError', async () => {
-    const { calls, api } = record();
-    await expect(api.deleteVisionReview(5)).resolves.toBeUndefined();
-    expect(calls[0]!.url).toBe('/api/vision-reviews/5');
-    expect(calls[0]!.init?.method).toBe('DELETE');
-    const missing = record(() => Response.json({ error: 'not-found' }, { status: 404 }));
-    await expect(missing.api.deleteVisionReview(6)).rejects.toMatchObject({ status: 404, code: 'not-found' });
-  });
-
-  test('captureImageUrl is a plain path and makes no request', () => {
-    const { calls, api } = record();
-    expect(api.captureImageUrl(12)).toBe('/api/captures/12/image');
-    expect(calls).toHaveLength(0);
+    const api = createApi(http, { getToken: () => null });
+    await api.addManualFill(1, { ...sell, bucketIdx: 2 });
+    await api.addManualFill(1, sell);
+    expect(bodies[0]!.bucketIdx).toBe(2);
+    expect('bucketIdx' in bodies[1]!).toBe(false);
   });
 });

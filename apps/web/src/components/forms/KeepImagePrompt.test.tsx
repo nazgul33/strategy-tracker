@@ -113,4 +113,48 @@ describe('KeepImagePrompt', () => {
     expect(dismissals).toBe(1);
     expect(decisions).toEqual([]);
   });
+
+  it('returns focus to the button that opened the prompt', async () => {
+    // The prompt as it sits in PendingTable: a row button opens it, and
+    // closing it must put the caret back on that button.
+    function Host() {
+      const [open, setOpen] = React.useState(false);
+      return d(
+        'div',
+        null,
+        d('button', { id: 'hostBtn', onClick: () => setOpen(true) }, 'Review'),
+        open &&
+          d(KeepImagePrompt, {
+            action: 'confirm',
+            onDecide: (keep: boolean) => {
+              decisions.push(keep);
+              setOpen(false); // like PendingTable: a decision ends the prompt
+            },
+            onDismiss: () => {
+              dismissals += 1;
+              setOpen(false);
+            },
+          }),
+      );
+    }
+    await act(async () => root.render(d(Host)));
+    const opener = document.getElementById('hostBtn')!;
+    await act(async () => opener.focus()); // a real activation focuses the button; happy-dom click() does not
+    await act(async () => opener.click());
+    expect(container.textContent).toContain('Keep for review');
+    await click('Discard');
+    expect(decisions).toEqual([false]);
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it('Escape closes the prompt', async () => {
+    await show('reject');
+    await act(async () => {
+      document.body.dispatchEvent(
+        new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+    });
+    expect(dismissals).toBe(1);
+    expect(decisions).toEqual([]);
+  });
 });

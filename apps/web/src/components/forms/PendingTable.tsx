@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError, api, ungroupUsd, usdFeeOrNull, usdOrNull, usdToCents, type PendingFillDto, type PendingOverrides } from '../../api';
 import { autoFeeUsd } from '../../autofee';
 import { costPercentText } from '../../format';
 import { useT } from '../../i18n';
-import { patchRowValues, pendingEdits, standingIssue, type RowValues } from '../../pendingvalues';
+import { patchRowValues, pendingEdits, standingIssues, type RowValues } from '../../pendingvalues';
 import { useAsync } from '../hooks';
 import { EmptyNote, TableWrap, Th } from '../ui';
 import { DefaultFeePrompt } from './DefaultFeePrompt';
 import { KeepImagePrompt } from './KeepImagePrompt';
+import { KeepNoticeList, useKeepNotices, type KeepNotices } from './KeepNotices';
 import { PendingReviewDialog } from './PendingReviewDialog';
 import { PendingRow, initialRowValues } from './PendingRow';
 
@@ -28,9 +29,32 @@ interface Decision {
 // either ticker-mismatch (integrity guard: the pending row's ticker ≠ the run's
 // ticker — the untouched row stays visible for rejection) or the row was
 // already handled elsewhere.
-export function PendingTable({ runId }: { runId?: number }) {
+//
+// A changed `refreshKey` re-reads the list in place (silent: rows, typed edits, the
+// open prompt and the review dialog all stay), so a host can refresh the rows
+// without remounting the table.
+export function PendingTable({
+  runId,
+  notices: inherited,
+  refreshKey,
+}: {
+  runId?: number;
+  notices?: KeepNotices;
+  refreshKey?: string | number;
+}) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.listPending(), []);
+  const seenKey = useRef(refreshKey);
+  useEffect(() => {
+    if (seenKey.current === refreshKey) return;
+    seenKey.current = refreshKey;
+    void reload();
+  }, [refreshKey, reload]);
+  // Notices live upstream when given one (the run page keeps them across tab
+  // switches); standalone the table owns its list.
+  const own = useKeepNotices();
+  const notices = inherited ?? own;
+  const [buckets, setBuckets] = useState<Record<number, string>>({});
   const [edited, setEdited] = useState<Record<number, RowValues>>({});
   const [reviewId, setReviewId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -45,11 +69,11 @@ export function PendingTable({ runId }: { runId?: number }) {
     setEdited((prev) => ({ ...prev, [r.id]: patchRowValues(r, prev[r.id] ?? initialRowValues(r), patch) }));
   const setValues = (r: PendingFillDto, values: RowValues) => setEdited((prev) => ({ ...prev, [r.id]: values }));
 
-  const buildOverrides = (r: PendingFillDto, v: RowValues): PendingOverrides | undefined => {
+  const buildOverrides = (r: PendingFillDto, v: RowValues, bucket: string): PendingOverrides | undefined => {
     const invalid = () => new Error(t('pendingInvalidOverride'));
     // A field vision missed stays unbooked until it is filled in: left blank it reads as
     // unedited, and the server would substitute its own value (the capture date for a date).
-    if (standingIssue(r, v) !== null && standingIssue(r, v) !== 'ticker') throw new Error(t('pendingNeedsOverride'));
+    if (standingIssues(r, v).some((f) => f !== 'ticker')) throw new Error(t('pendingNeedsOverride'));
     const body: PendingOverrides = {};
     for (const field of pendingEdits(r, v)) {
       if (field === 'side') {
@@ -76,6 +100,7 @@ export function PendingTable({ runId }: { runId?: number }) {
         body.feeCents = cents;
       }
     }
+    if (v.side === 'sell' && bucket !== '') body.bucketIdx = Number(bucket);
     return Object.keys(body).length > 0 ? body : undefined;
   };
 
@@ -98,15 +123,30 @@ export function PendingTable({ runId }: { runId?: number }) {
     }
   };
 
-  const submit = async ({ row, action, overrides }: Decision, keepImage?: boolean) => {
+  const submit = async ({ row, values, action, overrides }: Decision, keepImage?: boolean) => {
     setBusyId(row.id);
     try {
       const res =
         action === 'confirm'
           ? await api.confirmPending(row.id, overrides, keepImage)
           : await api.rejectPending(row.id, keepImage);
+      // The server keeps the screenshot before it flips the row, so on a
+      // keep-requested action `archived: false` means only the review record
+      // failed: name the fill in a warning that outlives the next action,
+      // not an error the next action clears away. `reload()` never throws
+      // (a failed read lands in `error`); adding first just keeps the notice
+      // independent of that.
+      if (keepImage === true && !res.archived) {
+        notices.add({
+          action: action === 'confirm' ? 'book' : 'reject',
+          ticker: row.ticker,
+          side: values.side,
+          shares: values.shares.trim(),
+          price: values.price.trim(),
+          date: values.filledOn.trim(),
+        });
+      }
       await reload();
-      if (keepImage === true && !res.archived) setActionError(t('keepImageNotKept'));
     } catch (err) {
       await reportError(err);
     } finally {
@@ -125,7 +165,7 @@ export function PendingTable({ runId }: { runId?: number }) {
     const values = valuesFor(r);
     let overrides: PendingOverrides | undefined;
     try {
-      if (action === 'confirm') overrides = buildOverrides(r, values);
+      if (action === 'confirm') overrides = buildOverrides(r, values, buckets[r.id] ?? '');
     } catch (err) {
       await reportError(err);
       return;
@@ -150,7 +190,12 @@ export function PendingTable({ runId }: { runId?: number }) {
   return (
     <div className="space-y-3">
       {error && <p className="text-sm text-destructive">{error}</p>}
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+      {actionError && (
+        <p data-testid="pendingActionError" role="alert" className="text-sm text-destructive">
+          {actionError}
+        </p>
+      )}
+      <KeepNoticeList notices={notices} />
       {visible.length === 0 ? (
         <EmptyNote>{t('pendingEmpty')}</EmptyNote>
       ) : (
@@ -163,6 +208,7 @@ export function PendingTable({ runId }: { runId?: number }) {
               <Th className="text-right">{t('pendingColQty')}</Th>
               <Th className="text-right">{t('pendingColPrice')}</Th>
               <Th className="text-right">{t('pendingColFee')}</Th>
+              <Th>{t('pendingColBucket')}</Th>
               <Th>
                 <span className="sr-only">{t('pendingColScreenshot')}</span>
               </Th>
@@ -177,6 +223,8 @@ export function PendingTable({ runId }: { runId?: number }) {
                 row={r}
                 values={valuesFor(r)}
                 onChange={(patch) => patchValues(r, patch)}
+                bucket={buckets[r.id] ?? ''}
+                onBucketChange={(value) => setBuckets((prev) => ({ ...prev, [r.id]: value }))}
                 onOpenSideBySide={() => setReviewId(r.id)}
                 onConfirm={() => void act(r, 'confirm')}
                 onReject={() => void act(r, 'reject')}

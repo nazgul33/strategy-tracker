@@ -66,7 +66,7 @@ export function OrdersPanel({ runId }: { runId: number }) {
         <OrderTable orders={data ?? []} onCancel={setCancelId} />
       )}
       {cancelId !== null && (
-        <Modal title={t('cancelOrder')} onClose={() => setCancelId(null)}>
+        <Modal title={t('cancelOrder')} onClose={() => setCancelId(null)} closeOnEscape={false}>
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             {t('orderColReason')}
             <Select value={reason} onChange={(e) => setReason(e.target.value)}>

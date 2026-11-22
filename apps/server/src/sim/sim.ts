@@ -30,7 +30,6 @@ export interface SimDay {
 }
 
 export interface SimInput {
-  name: string
   ticker: string
   from: ISODate
   to: ISODate
@@ -238,7 +237,7 @@ async function prepareSim(input: SimInput, fetchDailyBars: FetchBars): Promise<{
   const cutLossPpm = input.cutLossPpm ?? 0
   if (!isValidCutLossPpm(cutLossPpm)) throw new DomainError('invalid-params')
 
-  const run: Run = { id: 0, name: input.name, ticker: input.ticker, strategyKey: 'mean-reversion', costPpm: input.costPpm, buyGapPpm, sellGapPpm, cutLossPpm, poolCents: input.poolCents, status: 'active' }
+  const run: Run = { id: 0, name: input.ticker, ticker: input.ticker, strategyKey: 'mean-reversion', costPpm: input.costPpm, buyGapPpm, sellGapPpm, cutLossPpm, poolCents: input.poolCents, status: 'active' }
 
   const bars = await fetchDailyBars(input.ticker, input.from, input.to)
   const { days, states } = simulate(run, params, bars)
@@ -263,14 +262,14 @@ export async function runSim(input: SimInput, deps: { fetchDailyBars: FetchBars;
 }
 
 // Re-runs a draft in place. The ticker is the draft's identity, so it comes from the stored
-// row; no name is stored, so the in-memory run is labelled by id. Everything is simulated
+// row; no name is stored, so the in-memory run is labelled by its ticker. Everything is simulated
 // before anything is written, and the write is one guarded transaction: a failure leaves the
 // draft as it was, and a draft saved or discarded after the check above is never overwritten.
-export async function updateSimRun(id: number, input: Omit<SimInput, 'ticker' | 'name'>, deps: { fetchDailyBars: FetchBars; repos: Pick<SimRepoSurface, 'getRun' | 'rewriteDraft'> }): Promise<{ id: number; dayCount: number }> {
+export async function updateSimRun(id: number, input: Omit<SimInput, 'ticker'>, deps: { fetchDailyBars: FetchBars; repos: Pick<SimRepoSurface, 'getRun' | 'rewriteDraft'> }): Promise<{ id: number; dayCount: number }> {
   const run = await deps.repos.getRun(id)
   if (!run) throw new DomainError('sim-not-found')
   if (!run.draft) throw new DomainError('sim-finalized')
-  const { config, days } = await prepareSim({ ...input, name: `Sim #${id}`, ticker: run.ticker }, deps.fetchDailyBars)
+  const { config, days } = await prepareSim({ ...input, ticker: run.ticker }, deps.fetchDailyBars)
   if (!(await deps.repos.rewriteDraft(id, config, days.map((d) => ({ simRunId: id, ...d }))))) {
     throw new DomainError((await deps.repos.getRun(id)) ? 'sim-finalized' : 'sim-not-found')
   }

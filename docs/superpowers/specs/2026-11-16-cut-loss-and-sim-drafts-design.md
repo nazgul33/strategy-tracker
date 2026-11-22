@@ -221,30 +221,55 @@ fills: a LOC sell prints at the close, not at the limit, so the exact match miss
 routinely, and the loosest (highest) trigger in the book would then swallow the
 fill. Within one bucket the target test (`price >= limit`) and the stop test
 (`price <= trigger`) are disjoint, but across buckets both can admit the same fill.
-The chain is therefore: exact target, then the nearest order price among targets
-and stops together (see the amendment below), then `market_sell`, then the
-fallback. These are the rungs of the table:
+The rule below (as amended 2026-11-22, see the end of this section) decides which
+order, and so which bucket, a sell fill belongs to. It lives in
+`apps/server/src/domain/sell-match.ts`.
 
-| # | Candidate | Admissibility | Tie-break |
+- **Pool.** Orders of this run dated on the fill's trade date, of a sell-side kind
+  (`sell_loc`, `stop_sell`, `market_sell`), with status `open` or `stale`. `filled`
+  and `cancelled` orders never take part. A `stale` order is one whose day ended
+  without a booked fill, which is what a late-captured fill is.
+- **Gate.** A pool order passes when its bucket is not `empty` and holds at least
+  `fill.shares`.
+- **Admissible.** A gated order that fits the price: `sell_loc` when
+  `price >= limitPrice`, `stop_sell` when `price <= limitPrice` (the trigger),
+  `market_sell` at any price.
+
+The rungs, first hit wins:
+
+| # | Rung | Candidates | Pick |
 |---|---|---|---|
-| 1a | open `sell_loc` | `price === limitPrice` (unchanged) | lowest `bucketIdx` |
-| 1b | **nearest**: open `sell_loc` and open `stop_sell`, together | `sell_loc`: `price >= limitPrice`; `stop_sell`: `price <= limitPrice` (the trigger) | smallest `abs(price - limitPrice)`; on an equal distance `sell_loc` before `stop_sell`, then the lowest `bucketIdx` |
-| 1c | open `market_sell` | any price (unchanged) | lowest `bucketIdx` |
-| — | fallback | unchanged | lowest non-empty bucket with enough shares |
+| 1 | Exact price | the **open** `sell_loc` orders of the pool with `price === limitPrice` (a stale one never takes this rung) | among those whose bucket passes the gate, the one sized like the fill (`shares === fill.shares`) when exactly one is, else the lowest `bucketIdx`; none passes the gate: the lowest bucket's leg anyway, so the booking fails loudly |
+| 2 | Share count | only when rung 1 found no exact-price leg at all: the admissible orders of every kind, open or stale | the one with `shares === fill.shares`, when exactly one is; none or several: next rung |
+| 3 | Nearest price | admissible `sell_loc` and `stop_sell`, together | smallest `abs(price - limitPrice)`; on an equal distance `sell_loc` before `stop_sell`, then the lowest `bucketIdx` |
+| 4 | Market sell | admissible `market_sell` | lowest `bucketIdx` |
+| 5 | Fallback | no order matched | the lowest non-empty bucket with enough shares, no order flipped; none: `no-bucket-for-sell` |
 
-Every candidate on 1b and 1c additionally requires a non-empty bucket with
-`shares >= fill.shares`. Rung 1a reads the open `sell_loc` orders without that
-gate: the code has always read the exact-price rung that way and the spec now
-records it. An exact-price sell with impossible shares therefore still matches and
-fails as `too-many-shares` instead of landing in another bucket.
+Rung 1 reads the exact-price legs through the gate only to choose among them: an
+exact-price print whose bucket cannot cover it still matches and fails as
+`too-many-shares` (or `bucket-not-held`) in `applySellFill` instead of landing in
+another bucket and pulling that bucket's legs. A stale leg never takes rung 1,
+because on a bucket emptied since it would throw for a fill that belongs elsewhere.
 
-For any single bucket `trigger < buyPrice < sellLimit`, so 1b's two tests
+- **Attribution.** The admissible orders on buckets other than the chosen one:
+  price legs in rung-3 order, then market sells by bucket. When that list is not
+  empty and the leg was chosen by rung 1, 3 or 4, the match carries an attribution
+  with the rule that decided (`price` for rungs 1 and 3, `market` for rung 4). A
+  rung-2 pick and the fallback carry none.
+- **Flip.** The matched order flips to `filled` only when the fill empties its
+  bucket; a partial fill leaves it as it was (`open` or `stale`), so the rest of
+  that leg stays a candidate. An emptying fill also cancels every other `open`
+  sell-side order of that bucket (see "Sibling cancel").
+- **Forced bucket.** With an operator-chosen bucket the rungs are skipped; see
+  "Bucket override".
+
+For any single bucket `trigger < buyPrice < sellLimit`, so rung 3's two tests
 (`price >= limit` and `price <= trigger`) can never both admit the same bucket.
-Across buckets they can, and 1b therefore ranks target and stop legs together by
-price distance instead of giving every target precedence over every stop. 1b is
-new behaviour for fills that have nothing to do with cut-loss, and it is a strict
-improvement: those fills used to miss 1a and land in the "lowest non-empty bucket"
-guess.
+Across buckets they can, and rung 3 therefore ranks target and stop legs together
+by price distance instead of giving every target precedence over every stop. Rung 3
+is new behaviour for fills that have nothing to do with cut-loss, and it is a
+strict improvement: those fills used to miss the exact-price rung and land in the
+"lowest non-empty bucket" guess.
 
 **Amended 2026-11-18 (#43).** The original chain tried the **highest** qualifying
 `sell_loc` (`price >= limitPrice`) before any `stop_sell`, on the argument that a
@@ -254,56 +279,95 @@ one bucket but not across buckets. Bucket 0 bought at 100.00 (target 103.00, sto
 fills at 96.50. The old chain admitted bucket 9's 91.00 target because
 96.50 >= 91.00 and booked the fill there, although bucket 0's 97.00 stop is only
 0.50 away and bucket 9's target 5.50. The sell was booked to the wrong bucket, and
-the sibling cancel then pulled that bucket's orders. Rung 1b now picks the leg
-nearest to the fill price, which books this fill to bucket 0's stop.
+the sibling cancel then pulled that bucket's orders. The nearest-leg rung (then
+1b, rung 3 of the table above) picks the leg nearest to the fill price, which books
+this fill to bucket 0's stop.
 
-- **Tie-break (operator ruling, 2026-11-18).** Candidates are ranked by price
-  distance alone; kind (target before stop) and then bucket index only break exact
-  ties.
-- **Attribution notice.** When a fill matched on 1a or 1b and a leg on *another*
-  bucket was also admissible, the booking is a judgement call, so the operator is
-  told: one `notifications` row (Notifications tab) and one Telegram message per
-  allowed chat; with no allowed chats nothing is written or sent. They are sent
-  after the run lock is released and before any sibling-cancel message. The copy
-  keys in `packages/telegram/src/i18n.ts` are `sell-attributed`,
-  `sell-attributed-alt`, `leg-sell_loc` and `leg-stop_sell`. An unambiguous fill
-  (no other bucket's leg admissible) sends nothing; a fill matched by `market_sell`
-  or by the fallback carries no notice, and `market_sell` legs on other buckets are
-  not listed as alternatives.
+**Amended 2026-11-22 (#52 to #55, #57).** Five changes to the rule, each from a
+ruling of the follow-up decisions log:
 
-**Known limitations (whole-branch review, 2026-11-20) — not addressed here, awaiting an operator decision:**
+- **#52, share count (ruling 1).** At a normal exit several targets fill at one
+  close and price distance cannot tell them apart: a fill landed in the wrong
+  bucket and a later fill failed `no-bucket-for-sell`. A full-leg fill's share
+  count equals its order's size, so rung 2 uses it. This reverses the 2026-11-18
+  "price distance only" ruling. The exact-price rung stays first (controller
+  ruling): an exact print is the strongest signal, and an exact-price print its
+  bucket cannot cover must still fail loudly instead of booking elsewhere. Cost:
+  a partial fill whose share count equals another bucket's leg size is booked
+  there without a notice; in particular a second partial of a leg can be booked to
+  another bucket whose leg size equals the shares left.
+- **#53, stale legs (ruling 2).** A fill captured for an earlier day and confirmed
+  after the morning re-plan found that day's legs `stale`, fell to the fallback,
+  and the sibling cancel pulled the wrong bucket's legs for today. A `stale` leg
+  dated on the fill's trade date is now in the pool, behind the shares gate. This
+  reverses the pinned test "a stale stop order never matches".
+- **#54, partial fills (ruling 3).** The first partial fill flipped its order to
+  `filled`, so the rest of that leg stopped being a candidate and booked to another
+  bucket. The order now flips only when the fill empties its bucket. A partially
+  filled order therefore stays `open`; the next morning it is rolled to `stale` like
+  any unfilled order and counts in the digest's "{count} unconfirmed orders from
+  {date}" warning, so a day with a partial reports one more order than before. The
+  re-plan sizes the next day's legs from the bucket's remaining shares, as before.
+- **#55, market alternatives (ruling 4).** `market_sell` legs on other buckets are
+  listed in the attribution notice (new copy with no limit or distance), after the
+  price legs, and take part in rung 2. Ranking by price is unchanged otherwise: a
+  any admissible price leg still beats a market sell, at any distance, when the
+  share count does not decide.
+- **#57, bucket override (ruling 5).** The operator can book a sell to a bucket of
+  their choice (see "Bucket override").
 
-1. A second partial fill of the same leg: the first partial flips the matched
-   order to `filled`, so the rest of that leg is no longer a candidate and can book
-   to another bucket, with no notice.
-2. A `market_sell` on another bucket is never listed as an alternative, and a
-   target or stop on another bucket outranks it.
-3. A fill dated on an earlier day and confirmed after the morning roll: that day's
-   legs are `stale`, so none is a candidate; the fill falls to the lowest-bucket
-   fallback, and the sibling cancel then pulls that bucket's legs for today.
-4. Several buckets' targets filling at the same close with different share counts:
-   price distance cannot tell the fills apart, so a fill can land in a bucket that
-   holds more shares, and a later, larger fill can then fail with
-   `no-bucket-for-sell`.
-5. With no allowed chats no notice reaches the operator, not even in the
-   Notifications tab (`notifications.chat_id` is NOT NULL).
+- **Tie-break.** An open target at exactly the fill price comes first: among those
+  that can cover the fill, the one sized like the fill, else the lowest bucket; if
+  none can cover it, the lowest one is returned and the booking fails loudly. Then
+  the share count (rung 2, only when no exact-price target exists). Then price
+  distance. Kind (target before stop) and then bucket index break exact distance
+  ties only.
+- **Attribution notice.** Sent when a leg on *another* bucket was also admissible
+  and the leg was chosen by the exact-price rung, by price distance or by the
+  market-sell rung; never when the share count decided (controller ruling: a normal
+  multi-target exit sends none, where it would otherwise send one per fill but the
+  last). A fill booked to an operator-chosen bucket, or to the fallback bucket,
+  sends no attribution notice. The notice names the rule that decided. It is one
+  `notifications` row (Notifications tab) and one Telegram message per allowed
+  chat; with no allowed chats one row with chat id `web` is written (shown as
+  "web only" in the Notifications tab) and nothing is sent; the sibling-cancel
+  notice does the same. They are sent after the run lock is released and before
+  any sibling-cancel message. The alternatives are listed price legs first
+  (nearest first), then market-sell legs by bucket. The copy keys in
+  `packages/telegram/src/i18n.ts` are `sell-attributed`, `sell-attributed-alt`,
+  `sell-attributed-alt-market`, `sell-attributed-why-price`,
+  `sell-attributed-why-market`, `leg-sell_loc`, `leg-stop_sell` and
+  `leg-market_sell`.
+
+**Known limitations (whole-branch review, 2026-11-20; item 5 is still open, tracked as #73):**
+
+1. Addressed 2026-11-22 (#54): a partial fill no longer flips its order, so the rest of that leg stays a candidate.
+2. Addressed 2026-11-22 (#55): `market_sell` legs on other buckets are listed as alternatives and take part in the share-count rung; price ranking is unchanged.
+3. Addressed 2026-11-22 (#53): a stale leg of the fill's day is a candidate; a late fill that still falls to the fallback pulls that bucket's legs for today only when it empties the fallback bucket.
+4. Addressed 2026-11-22 (#52): the share-count rung separates same-close targets of different sizes.
+5. A fill edit or correction that turns a partial sell into a bucket-emptying one does not flip or cancel that bucket's legs: they stay `open` on an empty bucket for the rest of that day, and a later same-day fill at exactly one of their prices fails `bucket-not-held` (the operator can force the bucket). Tracked as #73.
 
 **Sibling cancel.** Both legs sit live at the broker, so when one fires the other
 must stop looking live in the tracker *and* the operator must pull it by hand.
 
-- Booking a `stop_sell` fill that **empties the bucket** cancels that
-  run/bucket's open `sell_loc` from the fill's trade date **onwards**
-  (`tradeDate >= filledOn`) with `cancelReason: 'broker-filled'` (already in
-  `CANCEL_REASONS`). A fill captured for an earlier day and confirmed after the
-  morning re-plan must also cancel that day's freshly planned legs. Symmetrically, a
-  bucket-emptying `sell_loc` or `market_sell` fill cancels the open `stop_sell`.
+- A sell that **empties its bucket**, whichever leg, rung, fallback or forced
+  bucket booked it, cancels every other `open` sell-side order (`sell_loc`,
+  `stop_sell`, `market_sell`) of that run and bucket dated on or after the fill's
+  trade date (`tradeDate >= filledOn`) with `cancelReason: 'broker-filled'`
+  (already in `CANCEL_REASONS`); the matched order is not among them, it flips to
+  `filled`. A fill captured for an earlier day and confirmed after the morning
+  re-plan therefore also cancels **today's** freshly planned legs.
+- The bucket's `stale` sell-side orders dated exactly on the fill's trade date are
+  cancelled too (same reason), without a message: that broker day is over and
+  nothing is live to pull. Otherwise, once the bucket is bought again, such a leg
+  would pass the shares gate on the new lot and could absorb a later late fill of
+  that day.
 - A **partial** fill cancels nothing — the remaining shares still need both legs,
-  and the next morning's plan re-sizes them. The matched order itself still flips
-  to `filled`, exactly as booking does for partial `sell_loc` fills today;
-  partial-fill order accounting is out of scope here.
+  and the next morning's plan re-sizes them. It leaves the matched order as it was
+  (`open` or `stale`) until a fill empties the bucket (ruling 3).
 - The cancel happens inside the same `withRunLock` span, after the fill insert,
-  alongside the `order.setStatus('filled')` flip, preserving the R15
-  "flip the order last" ordering.
+  alongside the `order.setStatus('filled')` flip (made only when the fill empties
+  the bucket), preserving the R15 "flip the order last" ordering.
 - **It notifies** (operator ruling 2026-11-16): a `notifications` row plus a
   Telegram message, reusing the `order-cancelled` path that `POST
   /runs/:id/orders/:orderId/cancel` already uses (`runs.ts:258`), with new en/ko
@@ -311,6 +375,43 @@ must stop looking live in the tracker *and* the operator must pull it by hand.
   *outside* the lock span so a Telegram outage can never fail a booking.
 
 `rollStale` needs no change (it is kind-agnostic).
+
+### Bucket override (#57, ruling 5)
+
+The operator can book a sell to a bucket of their choice when the matching rule
+cannot know which bucket really sold.
+
+- **Fields.** An optional `bucketIdx` on the manual fill body (`POST
+  /runs/:id/fills`) and on the pending confirm `overrides` (`POST
+  /pending/:id/confirm`). It applies to a sell only; absent or `null` means
+  automatic. No new column: the fill's `bucket_idx` already records where it went,
+  and whether the bucket was forced is not recorded.
+- **Validation.** `bookUnlocked` throws `invalid-bucket` before any read that leads
+  to a write when `bucketIdx` is given and the side is not `sell`, or it is not a
+  non-negative integer. The rest is the ordinary sell validation in
+  `applySellFill`: `bucket-not-found` (past the run's bucket count),
+  `bucket-not-held` (empty) and `too-many-shares`. All four answer `422 { error }`
+  on both routes, and nothing is persisted: no fill, no ledger row, no order flip,
+  and a pending row stays pending.
+- **Leg choice.** The rungs are skipped. `matchForcedLeg` picks, among that
+  bucket's pool orders (sell-side, `open` or `stale` on the fill day) that fit the
+  price: exactly one with `shares === fill.shares`, else the nearest price leg
+  (target before stop on a tie), else a `market_sell`; none fits: nothing flips.
+  There is no gate; the bucket's own validation is `applySellFill`'s. The leg flips
+  and the bucket's other open sell-side legs are cancelled only when the fill
+  empties the bucket, as for any sell.
+- **No notice.** A sell booked to an operator-chosen bucket sends no attribution
+  notice: the operator made the choice. The sibling-cancel notice still goes out.
+- **`GET /api/pending`.** Each row carries `heldBuckets: { index, shares }[]`: the
+  buckets of that row's own run whose state is not `empty` (force-sell buckets hold
+  shares and are included), ascending by index, read once per distinct run;
+  `[]` when the run no longer exists.
+- **Web.** The manual fill dialog (add mode) and each pending row, when the side is
+  `sell`, show a **Bucket** selector (`BucketSelect`): "Automatic" (the default, no
+  `bucketIdx` is sent) and one option per held bucket ("Bucket N · S sh"). A buy
+  never sends `bucketIdx`. A bucket chosen on a pending row is not a vision
+  correction: it does not open the keep/discard screenshot prompt and is not
+  written to the vision review record.
 
 ### Raising cut-loss on buckets that are already underwater
 
@@ -558,7 +659,10 @@ cachedFetchDailyBars(ticker, from, to):
   `stop_sell` per held bucket with the right trigger and shares, none for
   `force_sell`, none when the percent is 0; order of `orders` pinned.
 - `packages/telegram/test/digest.test.ts`: stop line rendered in en + ko, placed
-  after that bucket's sell line.
+  after that bucket's sell line; the rendered `sell-attributed` copy and every
+  `sell-attributed*` key (`sell-attributed-alt`, `sell-attributed-alt-market`,
+  `sell-attributed-why-price`, `sell-attributed-why-market`) and `leg-*` key
+  (`leg-sell_loc`, `leg-stop_sell`, `leg-market_sell`), en and ko.
 - `apps/server/test/booking.test.ts`: the match chain — exact target still wins; a
   fill books to the **nearest** leg by price distance, target or stop (the
   reviewer's scenario, fill at 91.50 with bucket 0 stop 97.00 and bucket 9 target
@@ -568,9 +672,13 @@ cachedFetchDailyBars(ticker, from, to):
   the lowest bucket index; `market_sell` still matches at any price; a
   bucket-emptying stop fill cancels the sibling `sell_loc` with `broker-filled` and
   hands the cancelled leg to the notifier; a bucket-emptying target fill cancels the sibling
-  `stop_sell`; a **partial** stop fill cancels nothing; a sell strictly between
-  every trigger and every limit (admissible to no leg) still reaches the old
-  fallback.
+  `stop_sell`; a **partial** stop fill cancels nothing and leaves its own order
+  `open`; a sell strictly between every trigger and every limit (admissible to no
+  leg) still reaches the old fallback. Pins changed 2026-11-22: "(d) sell" and
+  "market_sell matching" (a partial fill leaves the order `open`); "a stale stop
+  dated on the fill day matches like an open one" (was: a stale stop never
+  matches); `matchSellOrder` returns a `stale` order of the fill day, never
+  a filled or cancelled one.
 - `apps/server/test/sell-attribution.test.ts` (fakes in `booking-fakes.ts`, which
   record the notices in memory; no DB, no `notifications` table): the #43
   collision — bucket 0 target 103.00 / stop 97.00, bucket 9 target 91.00 / stop
@@ -579,21 +687,51 @@ cachedFetchDailyBars(ticker, from, to):
   bucket; `market_sell` ties go to the lowest bucket whatever the insertion order;
   an unambiguous fill produces no attribution notice; two other admissible buckets
   are listed nearest first whatever the insertion order (bucket 0 stop 97.00,
-  bucket 1 target 92.00, bucket 2 stop 102.00, fill 96.50); a bucket whose legs do
-  not fit the price is not an alternative; an exact 1a hit still reports another
-  admissible bucket; a failing attribution notice does not block the sibling
-  notices; the attribution notice runs after the run lock is released; confirming a
-  pending sell sends it too.
+  bucket 1 target 92.00, bucket 2 stop 102.00, fill 96.50; since 2026-11-22 the
+  nearest-first fixture has bucket 1 buy at 88.00 with a 90.00 target, so the
+  alternatives read stop 102.00 then target 90.00); a bucket whose legs do not fit
+  the price is not an alternative; an exact-price hit still reports another
+  admissible bucket; market-sell ties go to the lowest bucket and list the other
+  market sells after the price legs, a market sell sized like the fill wins over a
+  price leg; a failing attribution notice does not block the sibling notices; the
+  attribution notice runs after the run lock is released; confirming a pending
+  sell sends it too, and after the run lock is released (the `confirmPendingFill`
+  lock probe).
+- `apps/server/test/sell-matching.test.ts` (fixture `sell-fixture.ts`): the share
+  count decides when no exact-price target exists (two and three targets filling at
+  one close book to their own buckets in every confirmation order and send no
+  notice; the share count outranks price distance; the
+  leg sized like the fill wins on a shared exact-price target); stale legs of the
+  fill day (a late fill books to the leg that took it and pulls only that bucket's
+  legs for today; a partial late fill leaves the leg stale; a stale exact-price
+  target is not read without the gate and is skipped when it cannot cover the fill,
+  where an open one fails loudly); partial fills keep their order open (two and
+  three partials of one stop or target, two buckets sharing a target price, a
+  same-price fill too big for what is left goes to the other bucket at that price,
+  or still fails loudly when none can cover it).
+- `apps/server/test/sell-bucket-override.test.ts` and
+  `apps/server/test/http-bucket-override.test.ts`: the forced bucket books there and
+  flips the leg that fits the price (or none), a forced partial cancels nothing, a
+  forced late fill flips the stale leg, a bucket that is not held, too small, out of
+  range, or given on a buy or malformed books nothing and answers `invalid-bucket` /
+  `bucket-not-held` / `too-many-shares` / `bucket-not-found` (422 over HTTP), no
+  attribution notice is sent, a confirm override books there and a confirm that
+  turns the row into a buy with a bucket leaves it pending; `GET /api/pending` lists
+  each row's own run's `heldBuckets` and `[]` for a run that is gone.
+- `apps/web` `FillDialogBucket.test.tsx` and `PendingTableBucket.test.tsx`: the
+  selector shows only for a sell, offers Automatic and the row's own run's held
+  buckets, posts `bucketIdx` only when a bucket is chosen and the side is still
+  sell (also through the default-fee popup and the keep prompt), never opens the
+  screenshot prompt by itself, and does not leak between rows.
 - `apps/server/test/booking-notifier.test.ts` (in-memory fakes, no DB): the
   rendered multi-alternative text, joined with "; ", a `notifications` row and a
-  message per chat, nothing with no allowed chats, and a failing chat does not stop
+  message per chat, one `web` row with no allowed chats, and a failing chat does not stop
   the next.
-- `apps/server/test/http-sibling-notify.test.ts`: over HTTP with the real notifier,
+- `apps/server/test/http-sibling-notify.test.ts`: over HTTP against the in-memory
+  fakes of `http-fakes.ts`, with the real notifier,
   an ambiguous manual sell (the 96.50 case) writes a `notifications` row and sends
   a Telegram message to the allowed chat for the attribution notice, followed by
   the sibling-cancel notice, in that order and with the exact text.
-- `packages/telegram/test/digest.test.ts`: the rendered `sell-attributed`,
-  `sell-attributed-alt` and `leg-sell_loc` copy in en and ko.
 - `apps/server/test/day.test.ts`: planned `stop_sell` rows persisted to `orders`
   with the new kind.
 - `apps/server/test/sim.test.ts`: gap-down open fills at the open; intraday touch

@@ -1,7 +1,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { VisionReviewEntryDto, VisionReviewFillDto } from '../api.types';
-import { EDITED, UNEDITED } from '../testing/visionReview';
+import { EDITED, REJECTED, TYPED_FEE, UNEDITED } from '../testing/visionReview';
 
 GlobalRegistrator.register();
 
@@ -66,6 +66,19 @@ describe('VisionReviewEntry accessibility', () => {
     }
   });
 
+  it('marks a typed fee with the glyph', () => {
+    render([TYPED_FEE]);
+    // The glyph renders in both rows of a changed field; the final row is the one that holds the typed fee.
+    const marks = container.querySelectorAll('[data-fill="15"][data-row="final"] [role="img"]');
+    expect(marks.length).toBe(1);
+    expect(marks[0]!.closest('td')!.querySelector('[data-field]')!.getAttribute('data-field')).toBe('fee');
+  });
+
+  it('a rejected fill has no glyph', () => {
+    render([REJECTED]);
+    expect(container.querySelector('[role="img"]')).toBeNull();
+  });
+
   it('keeps the marker out of a text selection, after the value it marks', () => {
     render([EDITED]);
     const mark = container.querySelector('[role="img"][aria-label="changed"]')!;
@@ -76,6 +89,16 @@ describe('VisionReviewEntry accessibility', () => {
   it('an unchanged fill carries no marker', () => {
     render([UNEDITED]);
     expect(container.querySelector('[role="img"]')).toBeNull();
+  });
+
+  it('labels each value row with a row header', () => {
+    render([EDITED]);
+    const label = (row: string) => container.querySelector(`tr[data-row=${row}] th[scope=row]`)!.textContent;
+    expect(label('detected')).toBe('Vision read');
+    expect(label('final')).toBe('Final');
+    const heads = Array.from(container.querySelectorAll('thead th'));
+    expect(heads.length).toBeGreaterThan(0);
+    expect(heads.every((th) => th.getAttribute('scope') === 'col')).toBe(true);
   });
 
   it('names both in Korean', () => {

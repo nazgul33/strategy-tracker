@@ -10,7 +10,7 @@ interface DefaultFeePromptProps {
   onBack: () => void;
 }
 
-// Asked when Confirm is pressed with a blank fee: the server books the default
+// Asked when Confirm is pressed with a blank fee: the server books the auto
 // fee for it, so show the formula and the amount. Closing the dialog goes back.
 export function DefaultFeePrompt({ rate, price, shares, fee, onUse, onBack }: DefaultFeePromptProps) {
   const t = useT();
@@ -21,7 +21,7 @@ export function DefaultFeePrompt({ rate, price, shares, fee, onUse, onBack }: De
         <Button variant="primary" onClick={onUse}>
           {t('pendingDefaultFeeUse')}
         </Button>
-        <Button autoFocus onClick={onBack}>{t('pendingDefaultFeeBack')}</Button>
+        <Button autoFocus data-autofocus onClick={onBack}>{t('pendingDefaultFeeBack')}</Button>
       </div>
     </Modal>
   );

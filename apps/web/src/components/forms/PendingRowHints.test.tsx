@@ -34,6 +34,7 @@ const ROW: PendingFillDto = {
   createdAt: '2026-11-10T14:30:00Z',
   hasImage: true,
   costPpm: 40,
+  heldBuckets: [],
   detected: { side: 'buy', shares: 10, price: '123450000', filledOn: '2026-11-10', fee: 100 },
 };
 
@@ -98,11 +99,11 @@ describe('edit hints', () => {
     expect(container.querySelectorAll('[data-edit]').length).toBe(1);
   });
 
-  it('a cleared fee gets the dashed hint and says the default fee is booked', async () => {
+  it('a cleared fee gets the dashed hint and says the auto fee is booked', async () => {
     await render(ROW);
     await type('Fee', '');
     expect(field('Fee').getAttribute('data-edit')).toBe('erased');
-    expect(field('Fee').title).toBe('Cleared — the default fee will be booked');
+    expect(field('Fee').title).toBe('Cleared — the auto fee will be booked');
     expect(field('Fee').classList.contains('border-dashed')).toBe(true);
     expect(field('Fee').classList.contains('border-warning')).toBe(true);
   });
@@ -122,7 +123,15 @@ describe('edit hints', () => {
     expect(date.classList.contains('border-dashed')).toBe(false);
 
     await act(async () => setInputValue(date, '2026-11-11'));
-    expect(date.getAttribute('data-edit')).toBe('changed');
+    expect(date.getAttribute('data-edit')).toBe('filled');
+    expect(date.title).toBe('Filled in — vision read nothing here');
     expect(date.classList.contains('border-warning')).toBe(false);
+  });
+
+  it('a second missed field gets its warning border too', async () => {
+    await render({ ...ROW, side: '', price: '', detected: { ...ROW.detected!, side: null, price: null } });
+    const side = container.querySelector('select[aria-label="Side"]') as HTMLSelectElement;
+    expect(side.classList.contains('border-warning')).toBe(true);
+    expect(field('Price').classList.contains('border-warning')).toBe(true);
   });
 });

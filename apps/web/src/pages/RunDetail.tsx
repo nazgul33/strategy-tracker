@@ -12,6 +12,7 @@ import { RecalcResultModal, type RecalcResult } from '../components/RecalcSummar
 import { EditRunModal } from '../components/forms/EditRunModal';
 import { FillDialog } from '../components/forms/FillDialog';
 import { CorrectionList } from '../components/forms/CorrectionList';
+import { useKeepNotices } from '../components/forms/KeepNotices';
 import { PendingTable } from '../components/forms/PendingTable';
 import { FillsPanel, NotificationsPanel, OrdersPanel } from '../components/RunPanels';
 import { RunHistory } from '../components/RunHistory';
@@ -27,7 +28,7 @@ import {
 } from '../components/ui';
 import { centsUsd, costPercentText, gapText, isoDateTime, percent, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
-import { enumLabelKey, pnlBadgeTone, runActions, runStatusTone, toneFor } from '../viewmodels';
+import { enumLabelKey, heldBucketsOf, pnlBadgeTone, runActions, runStatusTone, toneFor } from '../viewmodels';
 
 type Tab = 'orders' | 'pending' | 'fills' | 'history' | 'notifications';
 
@@ -42,6 +43,9 @@ const TABS: { id: Tab; labelKey: string }[] = [
 export function RunDetailPage({ id }: { id: number }) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.getRun(id), [id]);
+  // Owned here, not inside the table: switching tabs remounts the pending
+  // panel, and a warning the operator has not dismissed must survive that.
+  const keepNotices = useKeepNotices();
 
   const [tab, setTab] = useState<Tab>('orders');
   const [panelKey, setPanelKey] = useState(0);
@@ -195,7 +199,8 @@ export function RunDetailPage({ id }: { id: number }) {
         {tab === 'orders' && <OrdersPanel runId={id} />}
         {tab === 'pending' && (
           <div className="space-y-6">
-            {/* Keyed on tabKey (refresh on tab click) but not on panelKey: it reloads itself after an action. */}
+            {/* Both are keyed on tabKey (a tab click remounts them) but not on panelKey: each reloads itself
+                after an action, and the pending table re-reads in place when refreshKey changes. */}
             <CorrectionList
               key={`c${tabKey}`}
               runId={id}
@@ -204,7 +209,12 @@ export function RunDetailPage({ id }: { id: number }) {
                 void reload();
               }}
             />
-            <PendingTable key={`p${panelKey}`} runId={id} />
+            <PendingTable
+              key={`p${tabKey}`}
+              runId={id}
+              notices={keepNotices}
+              refreshKey={`${panelKey}:${run.costPpm}`}
+            />
           </div>
         )}
         {tab === 'fills' && (
@@ -257,6 +267,7 @@ export function RunDetailPage({ id }: { id: number }) {
       )}
       {manualOpen && (
         <FillDialog runId={run.id} costPpm={run.costPpm} initialSide="buy"
+          heldBuckets={heldBucketsOf(run.state.buckets)}
           onClose={() => setManualOpen(false)}
           onSaved={() => { setManualOpen(false); setPanelKey((k) => k + 1); void reload(); }} />
       )}

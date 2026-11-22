@@ -5,7 +5,7 @@ import { ageBuckets } from '@st/strategies'
 import type { ExtractResult, RawFill } from '@st/ingest'
 import {
   ingestCapture, confirmPendingFill, manualFill, rollStale, seedRun, sha256, cancelOrder, runBooking,
-  type FillBookingDeps, type PendingFillRow, type CaptureConflict, type OrderRow,
+  type BookingDeps, type FillBookingDeps, type PendingFillRow, type CaptureConflict, type OrderRow,
 } from '../src/domain/booking'
 import { withRunLock } from '../src/domain/run-lock'
 import { matchSellOrder } from '../src/domain/sell-match'
@@ -16,7 +16,7 @@ type BookedConflict = Extract<CaptureConflict, { matchedKind: 'booked' }>
 describe('booking', () => {
   test('(a) duplicate capture', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r1', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
     const img = { base64: 'AAAA', mime: 'image/png' }
     const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 1, price: '10.00' }] }
@@ -46,7 +46,7 @@ describe('booking', () => {
 
   test('(b) rejected', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r2', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
     const img = { base64: 'BBBB', mime: 'image/png' }
     const ext: ExtractResult = { ok: false, reason: 'unparseable', detail: 'bad' }
@@ -82,6 +82,15 @@ describe('booking', () => {
     const order = f._stores.orders.find((o: any) => o.kind === 'buy_loc')
     expect(order.status).toBe('filled')
     // no-order case: another run no throw already covered by absence; test no-order manually
+  })
+
+  test('a late buy flips a stale buy_loc dated on its fill day', async () => {
+    const f = fakeRepos()
+    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'late-buy', poolCents: 1000000, costPpm: 100, initialRunState: { buckets: emptyState(10).buckets, cashCents: 1000000, closed: [], ages: {} } })
+    await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-05', kind: 'buy_loc', bucketIdx: 0, limitPrice: 100n, shares: 55, status: 'stale' }])
+    await manualFill(runId, { side: 'buy', shares: 55, price: '340.22', filledOn: '2026-11-05' }, deps)
+    expect(f._stores.orders.find((o: any) => o.kind === 'buy_loc').status).toBe('filled')
   })
 
   test('(c2) no-order case no throw', async () => {
@@ -120,7 +129,7 @@ describe('booking', () => {
     expect(st.buckets[1].shares).toBe(5)
     expect(st.buckets[1].state).toBe('held')
     const order = f._stores.orders.find((o: any) => o.bucketIdx === 1 && o.kind === 'sell_loc')
-    expect(order.status).toBe('filled')
+    expect(order.status).toBe('open')
     // full sell closes
   })
 
@@ -165,7 +174,7 @@ describe('booking', () => {
 
   test('(f) rollStale', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'r6', poolCents: 1000, costPpm: 10, initialRunState: emptyState(2) })
     await f.repos.orderRepo.insertMany([
       { runId, tradeDate: '2026-11-04', kind: 'buy_loc', bucketIdx: 0, limitPrice: 100n, shares: 1, status: 'open' },
@@ -255,7 +264,7 @@ describe('booking', () => {
 
   test('race path duplicate', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-06', notify: silentNotifier }
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-06' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'race', poolCents: 1000, costPpm: 100, initialRunState: emptyState(2) })
     const img = { base64: 'RACE', mime: 'image/png' }
     const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 1, price: '1.00' }] }
@@ -350,7 +359,7 @@ describe('booking', () => {
     const st = await f.repos.bucketRepo.loadState(runId)
     expect(st.buckets[2].shares).toBe(6)
     const order = f._stores.orders.find((o: any) => o.kind === 'market_sell')
-    expect(order.status).toBe('filled')
+    expect(order.status).toBe('open')
   })
 
   test('over-size sell with matching order stays open', async () => {
@@ -382,7 +391,7 @@ describe('booking', () => {
 
   test('cancelOrder rejects unknown, foreign-run, and non-open orders', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-11', notify: silentNotifier }
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-11' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'C2', name: 'c2', poolCents: 100, costPpm: 0 })
     const otherRunId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'C3', name: 'c3', poolCents: 100, costPpm: 0 })
     await f.repos.orderRepo.insertMany([
@@ -402,7 +411,7 @@ describe('booking', () => {
 
   test('cancelOrder rejects unknown reason', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-11', notify: silentNotifier }
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-11' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'C4', name: 'c4', poolCents: 100, costPpm: 0 })
     await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 1, limitPrice: 200n, shares: 5, status: 'open' }])
     const id = f._stores.orders[0].id
@@ -469,7 +478,7 @@ describe('buy bucket selection', () => {
 describe('capture dedup against booked fills and pending rows', () => {
   const setup = async (name: string) => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-15', notify: silentNotifier }
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-15' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'SOXL', name, poolCents: 1_000_000, costPpm: 100 })
     return { f, deps, runId }
   }
@@ -839,7 +848,7 @@ describe('capture re-upload', () => {
 describe('capture corrections', () => {
   const setup = async (name: string) => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: '2026-11-15', notify: silentNotifier }
+    const deps: BookingDeps = { repos: f.repos as any, today: '2026-11-15' }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'SOXL', name, poolCents: 1_000_000, costPpm: 100 })
     return { f, deps, runId }
   }
@@ -1194,15 +1203,14 @@ describe('sell matching with target and stop legs', () => {
     expect(lastFill(f).bucketIdx).toBe(4)
   })
 
-  test('a stale stop order never matches', async () => {
-    // Bucket 3's stop would take a 92.50 fill if it were open; as stale it must fall through to the lowest non-empty bucket (0).
+  test('a stale stop dated on the fill day matches like an open one', async () => {
     const { f, deps, runId } = await setup(
       [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 3, shares: 10, buy: '96.00' }],
       [{ idx: 3, kind: 'stop_sell', price: '93.00', status: 'stale' }],
     )
     await sell(runId, 10, '92.50', deps)
-    expect(lastFill(f).bucketIdx).toBe(0)
-    expect(order(f, 3, 'stop_sell').status).toBe('stale')
+    expect(lastFill(f).bucketIdx).toBe(3)
+    expect(order(f, 3, 'stop_sell').status).toBe('filled')
   })
 
   test('orders of another run or another trade date never match', async () => {
@@ -1290,7 +1298,7 @@ describe('sell matching with target and stop legs', () => {
       [
         { idx: 0, kind: 'stop_sell', price: '97.00' },
         { idx: 0, kind: 'sell_loc', price: '103.00', status: 'stale', tradeDate: '2026-11-11' },
-        // Same bucket, same trade date, but already filled by an earlier partial fill: not open, so left alone.
+        // Same bucket, same trade date, but already filled: not open, so left alone.
         { idx: 0, kind: 'sell_loc', price: '103.00', status: 'filled' },
         { idx: 1, kind: 'sell_loc', price: '103.00' },
         { idx: 1, kind: 'stop_sell', price: '97.00' },
@@ -1305,7 +1313,7 @@ describe('sell matching with target and stop legs', () => {
     expect(order(f, 1, 'stop_sell').status).toBe('open')
   })
 
-  test('a partial stop fill cancels nothing and still flips its own order to filled', async () => {
+  test('a partial stop fill cancels nothing and leaves its own order open', async () => {
     const { f, deps, runId } = await setup(
       [{ idx: 0, shares: 10, buy: '100.00' }],
       [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }],
@@ -1315,7 +1323,7 @@ describe('sell matching with target and stop legs', () => {
     const sibling = order(f, 0, 'sell_loc')
     expect(sibling.status).toBe('open')
     expect(sibling.cancelReason).toBeUndefined()
-    expect(order(f, 0, 'stop_sell').status).toBe('filled')
+    expect(order(f, 0, 'stop_sell').status).toBe('open')
     const st = await f.repos.bucketRepo.loadState(runId)
     expect(st.buckets[0]!.shares).toBe(6)
     expect(st.buckets[0]!.state).toBe('held')
@@ -1388,16 +1396,20 @@ describe('sell matching with target and stop legs', () => {
   })
 
   test('a sell reads only the orders from its fill date onwards', async () => {
-    const { f, deps, runId } = await setup(held1, pair)
+    const { f, deps, runId } = await setup(held1, [...pair, { idx: 1, kind: 'sell_loc', price: '103.00', tradeDate: '2026-11-11' }])
     const calls: [number, string][] = []
+    const returned: any[] = []
     const orderRepo = f.repos.orderRepo
     f.repos.orderRepo = {
       ...orderRepo,
       listForRun: async () => { throw new Error('unbounded-read') },
-      listForRunFrom: async (id: number, fromDate: string) => { calls.push([id, fromDate]); return orderRepo.listForRunFrom(id, fromDate) },
+      listForRunFrom: async (id: number, fromDate: string) => { calls.push([id, fromDate]); const rows = await orderRepo.listForRunFrom(id, fromDate); returned.push(...rows); return rows },
     }
     await sell(runId, 10, '96.50', deps)
     expect(calls).toEqual([[runId, D]])
+    expect(returned.length).toBeGreaterThan(0)
+    expect(returned.every((o: any) => o.tradeDate >= D)).toBe(true)
+    expect(f._stores.orders.find((o: any) => o.tradeDate === '2026-11-11')!.status).toBe('open')
     expect(lastFill(f).bucketIdx).toBe(1)
   })
 
@@ -1562,12 +1574,18 @@ describe('matchSellOrder', () => {
   const o = (over: Partial<OrderRow>): OrderRow => ({ id: 1, runId: 1, tradeDate: '2026-11-12', kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00'), shares: 10, status: 'open', ...over })
   const input = { runId: 1, filledOn: '2026-11-12' as ISODate, shares: 10, price: parseUsd('103.00') }
 
-  test('returns null for an empty bucket, a wrong run, a wrong date and a non-open status', () => {
-    // 100.00 is under the 103.00 fill price, so this is a rung 1b candidate and the gate applies.
+  test('returns null for an empty bucket, a wrong run, a wrong date and a filled or cancelled status', () => {
+    // 100.00 is under the 103.00 fill price, so this is a price-distance candidate and the gate applies.
     expect(matchSellOrder([o({ bucketIdx: 0, limitPrice: parseUsd('100.00') })], state, input)).toBeNull()
     expect(matchSellOrder([o({ runId: 2 })], state, input)).toBeNull()
     expect(matchSellOrder([o({ tradeDate: '2026-11-11' })], state, input)).toBeNull()
-    expect(matchSellOrder([o({ status: 'stale' })], state, input)).toBeNull()
+    expect(matchSellOrder([o({ status: 'filled' })], state, input)).toBeNull()
+    expect(matchSellOrder([o({ status: 'cancelled' })], state, input)).toBeNull()
+  })
+
+  test('returns a stale order dated on the fill day, never a filled or cancelled one', () => {
+    expect(matchSellOrder([o({ status: 'stale' })], state, input)?.order.id).toBe(1)
+    expect(matchSellOrder([o({ status: 'filled' })], state, input)).toBeNull()
     expect(matchSellOrder([o({ status: 'cancelled' })], state, input)).toBeNull()
   })
 
@@ -1576,10 +1594,11 @@ describe('matchSellOrder', () => {
     expect(matchSellOrder([o({})], state, input)?.order.id).toBe(1)
   })
 
-  // Rung 1a alone ignores the shares/emptiness gate: the booking must fail loudly
+  // The exact-price rung alone ignores the shares/emptiness gate: the booking must fail loudly
   // rather than attribute an exact-price print to some other bucket.
   test('an exact-price target is returned even when its bucket cannot cover the fill', () => {
     expect(matchSellOrder([o({ bucketIdx: 0 })], state, input)?.order.bucketIdx).toBe(0)
+    expect(matchSellOrder([o({ bucketIdx: 0, status: 'stale' })], state, input)).toBeNull()
     expect(matchSellOrder([o({})], state, { ...input, shares: 99 })?.order.id).toBe(1)
     // the gate still applies to every other rung
     expect(matchSellOrder([o({ kind: 'stop_sell', limitPrice: parseUsd('110.00') })], state, { ...input, shares: 99 })).toBeNull()

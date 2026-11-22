@@ -69,9 +69,9 @@ describe('DefaultFeePrompt', () => {
   it('shows the formula with the rate, price, quantity and fee', async () => {
     await show();
     expect(container.querySelector('[role=dialog]')).toBeTruthy();
-    expect(container.textContent).toContain('Use the default fee?');
+    expect(container.textContent).toContain('Use the auto fee?');
     expect(container.textContent).toContain(
-      'The fee is empty, so the default fee will be booked: 0.004% × $12,345.00 × 10 sh = $4.94.',
+      'The fee is empty, so the auto fee will be booked: 0.004% × $12,345.00 × 10 sh = $4.94.',
     );
   });
 
@@ -82,9 +82,37 @@ describe('DefaultFeePrompt', () => {
     expect(document.activeElement).toBe(back!);
   });
 
-  it('Use default fee calls onUse once and nothing else', async () => {
+  // main.tsx renders under StrictMode: its simulated unmount must not hand
+  // focus back to the row's Confirm, which would send the re-mount to "Use auto fee".
+  it('opens with focus on Go back under StrictMode, opened from a focused button', async () => {
+    function Host() {
+      const [open, setOpen] = React.useState(false);
+      return d(
+        'div',
+        null,
+        d('button', { type: 'button', id: 'confirm', onClick: () => setOpen(true) }, 'Confirm'),
+        open
+          ? d(DefaultFeePrompt, {
+              rate: '0.004%',
+              price: '12,345.00',
+              shares: '10',
+              fee: '4.94',
+              onUse: () => {},
+              onBack: () => setOpen(false),
+            })
+          : null,
+      );
+    }
+    await act(async () => root.render(d(React.StrictMode, null, d(Host))));
+    const confirm = document.getElementById('confirm') as HTMLButtonElement;
+    await act(async () => confirm.focus());
+    await act(async () => confirm.click());
+    expect(document.activeElement?.textContent).toBe('Go back');
+  });
+
+  it('Use auto fee calls onUse once and nothing else', async () => {
     await show();
-    await click('Use default fee');
+    await click('Use auto fee');
     expect(used).toBe(1);
     expect(backs).toBe(0);
   });
@@ -106,7 +134,7 @@ describe('DefaultFeePrompt', () => {
   it('ko copy', () => {
     const params = { rate: '0.004%', price: '12,345.00', shares: '10', fee: '4.94' };
     expect(lookup('ko', 'pendingDefaultFeeBody', params)).toBe(
-      '수수료가 비어 있어 기본 수수료가 적용됩니다: 0.004% × $12,345.00 × 10주 = $4.94.',
+      '수수료가 비어 있어 자동 수수료가 적용됩니다: 0.004% × $12,345.00 × 10주 = $4.94.',
     );
   });
 });

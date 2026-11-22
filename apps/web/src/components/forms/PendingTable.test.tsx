@@ -307,7 +307,7 @@ describe('PendingTable', () => {
     root = createRoot(container);
     stubFetch('conflict', { ...ROW, price: '', detected: { ...ROW.detected!, price: null } });
     await renderTable(root);
-    expect(container.textContent).toContain('fill in the highlighted field');
+    expect(container.textContent).toContain(lookup('en', 'pendingNeedsOverride'));
   });
 
   it('confirm posts the edited values as overrides', async () => {
@@ -349,15 +349,15 @@ describe('PendingTable', () => {
       expect(calls[0]!.body).toEqual({ overrides: { shares: 11 } });
     });
 
-    const NOT_KEPT = 'the screenshot could not be kept for review';
+    const RECORD_FAILED = 'its review record could not be saved';
 
-    it('a keep that did not stick says so', async () => {
+    it('a keep whose review record failed says so', async () => {
       await renderWithConfirmCalls(ROW, { ok: true, archived: false });
       await editQty();
       await clickConfirm();
       await pressButton('Keep for review');
 
-      expect(container.textContent).toContain(NOT_KEPT);
+      expect(container.textContent).toContain(RECORD_FAILED);
     });
 
     it('a keep that stuck shows no note', async () => {
@@ -367,7 +367,7 @@ describe('PendingTable', () => {
       await pressButton('Keep for review');
 
       expect(calls.length).toBe(1);
-      expect(container.textContent).not.toContain(NOT_KEPT);
+      expect(container.textContent).not.toContain(RECORD_FAILED);
     });
 
     it('Discard never shows the note', async () => {
@@ -377,17 +377,17 @@ describe('PendingTable', () => {
       await pressButton('Discard');
 
       expect(calls.length).toBe(1);
-      expect(container.textContent).not.toContain(NOT_KEPT);
+      expect(container.textContent).not.toContain(RECORD_FAILED);
     });
 
-    it('a reject kept for review that did not stick says so', async () => {
+    it('a reject kept for review whose review record failed says so', async () => {
       const calls = await renderWithConfirmCalls(ROW, { ok: true, archived: false });
       await pressButton('Reject');
       await pressButton('Keep for review');
 
       expect(calls.length).toBe(1);
       expect(calls[0]).toMatchObject({ method: 'POST', url: '/api/pending/9/reject' });
-      expect(container.textContent).toContain(NOT_KEPT);
+      expect(container.textContent).toContain(RECORD_FAILED);
     });
 
     it('dismissing the prompt posts nothing and leaves the edit in place', async () => {
@@ -550,7 +550,7 @@ describe('PendingTable', () => {
       const calls = await renderWithConfirmCalls(feeless);
       await type(5, '');
       await clickConfirm();
-      await pressButton('Use default fee');
+      await pressButton('Use auto fee');
       expect(calls[0]!.body).toEqual({});
     });
 
@@ -636,7 +636,7 @@ describe('PendingTable', () => {
       setInputValue(control<HTMLInputElement>(5, 'input'), '');
     });
     await clickConfirm();
-    await pressButton('Use default fee');
+    await pressButton('Use auto fee');
     await pressButton('Keep for review');
     expect((calls[0]!.body as { overrides: object }).overrides).toEqual({ feeCents: null });
   });
@@ -670,7 +670,7 @@ describe('PendingTable', () => {
       await renderTable(root);
       expect(dateInput().value).toBe('');
       expect(dateInput().className).toContain('border-warning');
-      expect(container.textContent).toContain('fill in the highlighted field');
+      expect(container.textContent).toContain(lookup('en', 'pendingNeedsOverride'));
     });
 
     it('blocks the confirm: nothing is posted and the operator is told to fill it in', async () => {

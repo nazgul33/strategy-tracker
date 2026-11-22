@@ -386,29 +386,29 @@ describe('Telegram reject', () => {
     const repos = { ...s.f.repos, pendingRepo: { ...s.f.repos.pendingRepo, get: async (id: number) => s.f._stores.pending.find((p: any) => p.id === id) ?? null } }
     const handlers = makeCaptureHandlers({
       repos: repos as any, vision: { baseUrl: 'http://x', model: 'm' }, getVisionApiKey: async () => 'k',
-      today: () => TODAY, send: async (_chat, text) => { sent.push(text) },
+      today: () => TODAY, allowedChatIds: [], send: async (_chat, text) => { sent.push(text) },
     })
     return { ...s, sent, handlers }
   }
 
   test('rejecting the last pending fill of a capture freezes its row and sweeps the bytes', async () => {
     const { f, ids, sent, handlers } = await telegram()
-    await handlers.onConfirm(`no:${ids[0]}`, false)
+    await handlers.onConfirm('777', `no:${ids[0]}`, false)
     expect(f._stores.captureImages).toHaveLength(1)
     expect(f._stores.visionReviews).toHaveLength(1)
     expect(f._stores.visionReviews[0]).toMatchObject({ pendingFillId: ids[0], outcome: 'rejected', finalShares: null, edited: false })
 
-    await handlers.onConfirm(`no:${ids[1]}`, false)
+    await handlers.onConfirm('777', `no:${ids[1]}`, false)
     expect(f._stores.captureImages).toHaveLength(0)
     expect(f._stores.visionReviews).toHaveLength(0)
     expect(sent).toEqual([t('rejected-line', 'en'), t('rejected-line', 'en')])
   })
 
-  test('a repeat reject sends the duplicate message and archives nothing more', async () => {
+  test('a repeat reject says already handled and archives nothing more', async () => {
     const { f, ids, sent, handlers } = await telegram()
-    await handlers.onConfirm(`no:${ids[0]}`, false)
-    await handlers.onConfirm(`no:${ids[0]}`, false)
-    expect(sent).toEqual([t('rejected-line', 'en'), t('duplicate-capture', 'en')])
+    await handlers.onConfirm('777', `no:${ids[0]}`, false)
+    await handlers.onConfirm('777', `no:${ids[0]}`, false)
+    expect(sent).toEqual([t('rejected-line', 'en'), t('confirm-err-already-handled', 'en')])
     expect(f._stores.visionReviews).toHaveLength(1)
   })
 })

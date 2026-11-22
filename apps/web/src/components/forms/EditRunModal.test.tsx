@@ -233,4 +233,43 @@ describe('EditRunModal cut-loss', () => {
     await type('cutLossInput', '3');
     expect(unknownClose()).toBeNull();
   });
+
+  it('focus starts on the pool top-up input and returns to the opener', async () => {
+    // The modal as RunPanels renders it: a button opens it, and closing —
+    // here via the ✕, exactly what a keyboard user reaches for once Escape
+    // is off — hands focus back to that button.
+    function Host() {
+      const [open, setOpen] = React.useState(false);
+      return d(
+        'div',
+        null,
+        d('button', { id: 'editBtn', onClick: () => setOpen(true) }, 'Edit run'),
+        open &&
+          d(EditRunModal, {
+            runId: 1,
+            poolCents: 100_000,
+            initialBuyPpm: 25_000,
+            initialSellPpm: 10_000,
+            initialCutLossPpm: 0,
+            buckets: BUCKETS,
+            latestClose: '920000',
+            onClose: () => setOpen(false),
+            onSaved: () => {
+              saved += 1;
+            },
+          }),
+      );
+    }
+    await act(async () => root.render(d(Host)));
+    const opener = document.getElementById('editBtn')!;
+    await act(async () => opener.focus());
+    await act(async () => opener.click());
+    expect(document.activeElement).toBe(inputByTestId('poolTopupInput')); // its autoFocus wins
+    await act(async () => {
+      (document.querySelector('[aria-label="Cancel"]') as HTMLButtonElement).click(); // the header ✕
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(saved).toBe(0);
+    expect(document.activeElement).toBe(opener);
+  });
 });

@@ -1,5 +1,5 @@
 import { parseUsd } from '@st/core/money';
-import type { BucketDto, RunStatus } from './api';
+import type { BucketDto, HeldBucketDto, RunStatus } from './api';
 
 /**
  * Presentation logic worth unit testing: bucket cells, badge tones, form
@@ -157,6 +157,14 @@ export interface BucketCell {
   notionalCents: number | null;
   ageDays: number | null;
   forceSell: boolean;
+}
+
+/** Buckets a sell can be booked to (held or force-sell), in index order. */
+export function heldBucketsOf(buckets: BucketDto[]): HeldBucketDto[] {
+  return buckets
+    .filter((b) => b.state !== 'empty')
+    .map((b) => ({ index: b.index, shares: b.shares }))
+    .sort((a, b) => a.index - b.index);
 }
 
 export function bucketCells(

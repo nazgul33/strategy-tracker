@@ -83,7 +83,7 @@ export function EditRunModal({
   };
 
   return (
-    <Modal title={t('poolTitle')} onClose={onClose}>
+    <Modal title={t('poolTitle')} onClose={onClose} closeOnEscape={false}>
       {saved ? (
         <div className="space-y-3">
           <div role="status" className="rounded border border-positive/40 bg-positive/10 px-3 py-2 text-sm text-positive">
@@ -108,6 +108,7 @@ export function EditRunModal({
               inputMode="decimal"
               placeholder="1000"
               autoFocus
+              data-autofocus
             />
           </Field>
           <div className="grid grid-cols-3 gap-3">

@@ -6,6 +6,7 @@ import type { Lang } from '@st/telegram/i18n';
 
 import { confirmPendingFill, ingestCapture, rejectPendingFill } from '../domain/booking';
 import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/booking';
+import { parseId } from '../http/params';
 import { makeBookingNotifier } from './booking-notifier';
 
 type PendingRow = { id: number; side: string; ticker: string; shares: number; price: bigint | string; bucketIdx: number | null; filledOn: string; status: string };
@@ -21,6 +22,7 @@ const CONFIRM_ERROR_KEYS: Record<string, string> = {
   'invalid-side': 'confirm-err-invalid-side',
   'invalid-fee': 'confirm-err-invalid-fee',
   'bucket-not-held': 'confirm-err-bucket-not-held',
+  'bucket-not-found': 'confirm-err-bucket-not-found',
 };
 
 export interface CaptureRepos extends RepoSurface {
@@ -33,15 +35,14 @@ export interface CaptureDeps {
   getVisionApiKey(): Promise<string>;
   today(): string;
   lang?: Lang;
-  // chats told to pull a cancelled sibling leg at the broker; omitted or empty: nobody
-  allowedChatIds?: string[];
+  // chats told about booking notices; empty: recorded for the web only
+  allowedChatIds: string[];
   send(chatId: string, text: string, extra?: Record<string, unknown>): Promise<void>;
   fetchImpl?: typeof fetch;
 }
 
 export function makeCaptureHandlers(deps: CaptureDeps) {
   const lang: Lang = deps.lang ?? 'en';
-  let lastChatId = '';
 
   async function extractOrTell(chatId: string, image: { base64: string; mime: string }) {
     const cfg = {
@@ -62,8 +63,6 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
   }
 
   async function onPhoto(chatId: string, image: { base64: string; mime: string }, caption?: string): Promise<void> {
-    lastChatId = chatId;
-
     let pinned: { id: number; ticker: string } | null = null;
     // the run id must be the caption's FIRST token: `7`, `#7` or `/capture 7`.
     // anything else (e.g. a "NVDA 12/25" note) falls through to ticker auto-route.
@@ -159,8 +158,13 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
         price: row.price,
         date: row.filledOn,
       });
-      if (row.detectedFilledOn === null) text += '\n' + t('capture-date-substituted', lang, { date: row.filledOn });
-      await deps.send(chatId, text, { reply_markup: buildPendingKeyboard(String(row.id)) });
+      if (row.detectedFilledOn === null) {
+        // a substituted date must not be confirmed blind: no buttons, the web Pending view fixes it
+        text += '\n' + t('capture-date-substituted', lang, { date: row.filledOn });
+        await deps.send(chatId, text);
+      } else {
+        await deps.send(chatId, text, { reply_markup: buildPendingKeyboard(String(row.id)) });
+      }
     }
   }
 
@@ -183,17 +187,17 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     return t('confirm-err-unknown', lang, { code: code || 'error' });
   }
 
-  async function onConfirm(cbData: string, approved: boolean): Promise<void> {
-    const chatId = lastChatId;
-    const m = /^(yes|no):(\d+)$/.exec(cbData);
-    if (!m) return;
-    const id = Number(m[2]);
+  async function onConfirm(chatId: string, cbData: string, approved: boolean): Promise<void> {
+    const m = /^(yes|no):(.*)$/s.exec(cbData);
+    const id = m ? parseId(m[2]!) : null;
+    // the bot derives `approved` from the same data; a disagreement is malformed
+    if (!m || id === null || (m[1] === 'yes') !== approved) return;
     if (approved) {
       try {
         await confirmPendingFill(id, null, {
           repos: deps.repos,
           today: deps.today(),
-          notify: makeBookingNotifier({ repos: deps.repos, allowedChatIds: deps.allowedChatIds ?? [], send: deps.send, lang }),
+          notify: makeBookingNotifier({ repos: deps.repos, allowedChatIds: deps.allowedChatIds, send: deps.send, lang }),
         });
       } catch (e) {
         await deps.send(chatId, confirmErrorText(e));
@@ -209,9 +213,15 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     } else {
       // No keep prompt over Telegram: the screenshot is not kept, but the reject
       // still freezes its record and sweeps the bytes when it was the last fill.
-      const rejected = await rejectPendingFill(id, { repos: deps.repos }, { keepImage: false });
+      let rejected;
+      try {
+        rejected = await rejectPendingFill(id, { repos: deps.repos }, { keepImage: false });
+      } catch (e) {
+        await deps.send(chatId, confirmErrorText(e));
+        return;
+      }
       if (!rejected) {
-        await deps.send(chatId, t('duplicate-capture', lang));
+        await deps.send(chatId, t('confirm-err-already-handled', lang));
         return;
       }
       await deps.send(chatId, t('rejected-line', lang));

@@ -40,9 +40,10 @@ describe('i18n catalogs', () => {
   // `lookup` renders the bare key when it is absent — which is how
   // `digest.cut-loss-immediate` reached the sim replay as literal text. The
   // codes come from running the planner itself, so a non-literal code is seen
-  // when a scenario reaches it; the push-site count below (within
-  // `mean-reversion.ts` only) flags a notice that no scenario covers.
-  test('every notice code computeOrders emits resolves in both catalogs', async () => {
+  // when a scenario reaches it; the push-site counts below flag a notice that
+  // no scenario covers. The guard covers both `mean-reversion.ts` and the
+  // morning pipeline's `day.ts`, whose codes are read as literals from source.
+  test('every notice code the planner or the morning pipeline emits resolves in both catalogs', async () => {
     const run: Run = {
       id: 0,
       name: 'x',
@@ -59,11 +60,24 @@ describe('i18n catalogs', () => {
     full.buckets[0] = { index: 0, state: 'held', shares: 10, buyPrice: parseUsd('100'), buyFeeCents: 0, filledOn: '2026-11-02' };
     const planA = computeOrders({ ...run, cutLossPpm: 30_000, poolCents: 1_000_000 }, full, { lastClose: parseUsd('90') });
     const planB = computeOrders({ ...run, cutLossPpm: 0, poolCents: 100 }, emptyState(10), { lastClose: parseUsd('100') });
-    const codes = [...new Set([...planA.notices, ...planB.notices].map((n) => n.code))].sort();
-    expect(codes).toEqual(['cut-loss-immediate', 'no-bucket-available', 'shares-zero']);
+    const plannerCodes = [...new Set([...planA.notices, ...planB.notices].map((n) => n.code))].sort();
+    expect(plannerCodes).toEqual(['cut-loss-immediate', 'no-bucket-available', 'shares-zero']);
 
     const source = await Bun.file(new URL('../../../packages/strategies/src/mean-reversion.ts', import.meta.url)).text();
-    expect(source.match(/notices\.push\(/g)!.length).toBe(codes.length);
+    // Name the call site: a bare `expected 1, got 0` does not say which file lost a push.
+    expect({ 'mean-reversion.ts pushes': source.match(/notices\.push\(/g)?.length ?? 0 }).toEqual({
+      'mean-reversion.ts pushes': plannerCodes.length,
+    });
+
+    const daySource = await Bun.file(new URL('../../../apps/server/src/pipeline/day.ts', import.meta.url)).text();
+    const dayPushes = daySource.match(/notices\.push\(/g)?.length ?? 0;
+    const dayCodes = [...new Set([...daySource.matchAll(/notices\.push\(\{\s*code:\s*'([\w-]+)'/g)].map((m) => m[1]!))].sort();
+    expect({ 'day.ts pushes': dayPushes }).toEqual({
+      'day.ts pushes': [...daySource.matchAll(/notices\.push\(\{\s*code:\s*'([\w-]+)'/g)].length,
+    });
+    expect(dayCodes).toEqual(['unconfirmed']);
+
+    const codes = [...new Set([...plannerCodes, ...dayCodes])].sort();
 
     const enKeys = new Set(Object.keys(en as Record<string, string>));
     const koKeys = new Set(Object.keys(ko as Record<string, string>));

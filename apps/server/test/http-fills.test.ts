@@ -236,7 +236,7 @@ describe('fill edit + delete endpoints', () => {
     expect(f.fills.length).toBe(2)
   })
 
-  test('DELETE non-integer fillId -> 422 not-last', async () => {
+  test('DELETE non-canonical fillId -> 422 no-fill', async () => {
     const f = makeFakes()
     const app = createApp(makeDeps(f))
     const auth = await loginAs(app)
@@ -245,7 +245,7 @@ describe('fill edit + delete endpoints', () => {
     for (const bad of ['abc', '1.5', '-2']) {
       const res = await app.request(`/api/runs/${id}/fills/${bad}`, { method: 'DELETE', headers: auth })
       expect(res.status).toBe(422)
-      expect(await res.json()).toEqual({ error: 'not-last' })
+      expect(await res.json()).toEqual({ error: 'no-fill' })
     }
     expect(f.fills.length).toBe(1)
   })

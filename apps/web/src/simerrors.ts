@@ -1,4 +1,4 @@
-import { ApiError } from './api';
+import { ApiError, NetworkError } from './api';
 
 type T = (key: string, params?: Record<string, string | number>) => string;
 
@@ -18,5 +18,6 @@ export function simErrorText(err: unknown, t: T): string {
     if (/^http-5\d\d$/.test(err.code)) return t('simErr.server', { code: err.code });
     return t('simActionFailed', { code: err.code });
   }
+  if (err instanceof NetworkError) return t('errNetwork');
   return err instanceof Error ? err.message : String(err);
 }

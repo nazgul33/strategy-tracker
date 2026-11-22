@@ -1,8 +1,6 @@
 // Typed client for the Hono JSON API (apps/server/src/http). Bigint fields
 // arrive as decimal *strings* (jsonBig), cents/fees as numbers. Prices and
-// fees the client *sends* are USD strings ("12.34"), parsed via @st/core.
-import { parseUsd } from '@st/core/money';
-
+// fees the client *sends* are USD strings ("12.34"), parsed via ./usd (which wraps @st/core).
 import { simConfigBody } from './api.sim';
 import type {
   CorrectionDto,
@@ -26,6 +24,7 @@ import type {
 } from './api.types';
 
 export type * from './api.types';
+export { usdOrNull, usdFeeOrNull, ungroupUsd, usdToCents } from './usd';
 
 export type Http = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -50,6 +49,7 @@ export type ApiErrorCode =
   | 'bucket-not-empty'
   | 'bucket-not-found'
   | 'bucket-not-held'
+  | 'invalid-bucket'
   | 'invalid-shares'
   | 'too-many-shares'
   | 'correction-not-found'
@@ -62,6 +62,11 @@ export class ApiError extends Error {
   constructor(readonly status: number, readonly code: ApiErrorCode) {
     super(code);
   }
+}
+
+/** The request never got an answer (server down, offline, DNS). The browser's message is kept. */
+export class NetworkError extends Error {
+  override name = 'NetworkError';
 }
 
 // ---------------------------------------------------------------- auth token
@@ -85,45 +90,6 @@ export function getToken(): string | null {
     /* ignore */
   }
   return memoryToken;
-}
-
-/** Parses a USD amount string; returns null when malformed or not > 0. */
-export function usdOrNull(value: string): string | null {
-  const s = value.trim();
-  if (!/^\d{1,9}(\.\d{1,4})?$/.test(s)) return null;
-  try {
-    return parseUsd(s) > 0n ? s : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Parses a USD fee ("0" allowed); returns null when malformed or negative. */
-export function usdFeeOrNull(value: string): string | null {
-  const s = value.trim();
-  if (s === '') return null;
-  if (!/^\d{1,9}(\.\d{1,4})?$/.test(s)) return null;
-  try {
-    return parseUsd(s) >= 0n ? s : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Trimmed text; strictly well-formed grouping ("12,345.90") is stripped (parseUsd rejects commas). */
-export function ungroupUsd(value: string): string {
-  const s = value.trim();
-  return /^\d+(,\d{3})+(\.\d+)?$/.test(s) ? s.replace(/,/g, '') : s;
-}
-
-/** "12.345" USD → integer cents, half-up; null on bad input. */
-export function usdToCents(value: string): number | null {
-  try {
-    const v = parseUsd(ungroupUsd(value));
-    return v < 0n ? null : Number((v + 50n) / 100n);
-  } catch {
-    return null;
-  }
 }
 
 // --------------------------------------------------------------------- api
@@ -241,6 +207,7 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
         filledOn: fill.filledOn,
       };
       if (fill.fee !== undefined && fill.fee !== '') body.fee = fill.fee;
+      if (fill.bucketIdx !== undefined) body.bucketIdx = fill.bucketIdx;
       return send<{ ok: true }>('POST', `/api/runs/${runId}/fills`, body).then(() => undefined);
     },
     updateFill: (runId, fillId, body) =>
@@ -282,7 +249,6 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
     runSim: (input) =>
       send<{ id: number; dayCount: number }>('POST', '/api/sim', {
         ticker: input.ticker.trim().toUpperCase(),
-        name: input.name.trim(),
         ...simConfigBody(input),
       }),
     updateSimRun: (id, input) => send<{ id: number; dayCount: number }>('PUT', `/api/sim/${id}`, simConfigBody(input)),
@@ -294,7 +260,12 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
 }
 
 async function call<T>(http: Http, url: string, init?: RequestInit): Promise<T> {
-  const res = await http(url, init);
+  let res: Response;
+  try {
+    res = await http(url, init);
+  } catch (e) {
+    throw new NetworkError(e instanceof Error ? e.message : String(e), { cause: e });
+  }
   let body: Record<string, unknown> = {};
   try {
     body = (await res.json()) as Record<string, unknown>;
