@@ -17,10 +17,21 @@ export interface ConfirmOverrides {
   bucketIdx?: number | null
 }
 
-// archived is false when the vision-review bookkeeping failed after the fill was
-// booked; the confirm itself still succeeded. archived: true only means the
-// bookkeeping did not throw: it is also true for a row with no capture or image,
-// so it is not a promise that a screenshot is kept.
+// When the operator asks to keep the screenshot, the keep flag is written first
+// inside the lock, before anything is booked or the row flips, so a crash can
+// never leave an unkept image for the boot janitor to delete:
+// - setKeep throws: nothing is booked or decided; the confirm fails as a whole
+//   and the operator retries.
+// - A booking refusal (invalid-bucket, bucket-not-found, bucket-not-held,
+//   too-many-shares, no-empty-bucket, no-bucket-for-sell, a lost decide race)
+//   leaves the row pending and the image kept; the flag is sticky, so a later
+//   confirm or reject, with or without keep, leaves it kept.
+// - A crash or thrown write after decide flipped the row leaves it confirmed
+//   with the image kept; the missing frozen record is rebuilt at the next boot.
+// archived is false when the vision-review bookkeeping (freeze, then keep or
+// sweep) threw after the fill was booked; the confirm itself still succeeded and
+// a requested keep is already in place. archived: true only means the
+// bookkeeping did not throw: it is also true for a row with no capture or image.
 export async function confirmPendingFill(pendingId: number, overrides: ConfirmOverrides | null, deps: FillBookingDeps, opts?: { keepImage?: boolean }): Promise<{ archived: boolean }> {
   const repos = deps.repos
   // Only a peek to learn which run this pending belongs to; everything that
@@ -39,6 +50,7 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
 
     const run = await repos.runRepo.get(pending.runId)
     if (pending.ticker !== run.ticker) throw new Error('ticker-mismatch')
+    if (opts?.keepImage === true && pending.captureId != null) await repos.captureImageRepo.setKeep(pending.captureId)
     const priceStr = overrides?.price ?? formatUsd(pending.price)
     const shares = overrides?.shares ?? pending.shares
     const filledOn = overrides?.filledOn ?? pending.filledOn
@@ -82,11 +94,17 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
 // Resolves null when the row is missing or already handled (the HTTP caller
 // answers 409, the Telegram caller answers "Already handled"). Under the run
 // lock so two siblings resolving at once cannot both see "no pending left" and
-// race the sweep. The reject has taken effect once decide succeeds, so an
-// archive failure is logged and contained, exactly as on the confirm path, and
-// reported as archived: false. As there, archived: true only means the
-// bookkeeping did not throw; it is also true for a row with no capture or
-// image, so it is not a promise that a screenshot is kept.
+// race the sweep. As on the confirm path, a requested keep is written first,
+// before decide flips the row:
+// - setKeep throws: nothing is decided; the reject fails as a whole and the
+//   operator retries.
+// - A lost decide race resolves null with the image kept (the flag is sticky).
+// - A crash after decide leaves the row rejected with the image kept; the
+//   missing frozen record is rebuilt at the next boot.
+// The reject has taken effect once decide succeeds, so an archive failure is
+// logged and contained and reported as archived: false, with a requested keep
+// already in place. archived: true only means the bookkeeping did not throw; it
+// is also true for a row with no capture or image.
 export async function rejectPendingFill(pendingId: number, deps: Pick<BookingDeps, 'repos'>, opts?: { keepImage?: boolean }): Promise<{ archived: boolean } | null> {
   const repos = deps.repos
   // Only a peek to learn the run; the row is re-read inside the lock.
@@ -96,6 +114,7 @@ export async function rejectPendingFill(pendingId: number, deps: Pick<BookingDep
   return withRunLock(known.runId, async () => {
     const pending = (await repos.pendingRepo.listPending()).find((p: any) => p.id === pendingId)
     if (!pending) return null
+    if (opts?.keepImage === true && pending.captureId != null) await repos.captureImageRepo.setKeep(pending.captureId)
     if ((await repos.pendingRepo.decide(pendingId, 'rejected')) === false) return null
     try {
       await resolveReview(repos, {
