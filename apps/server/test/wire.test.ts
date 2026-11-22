@@ -716,6 +716,21 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
     }
   });
 
+  test('a thrown bucket-not-found renders the worded copy in en and ko, not the unknown fallback', async () => {
+    for (const [lang, text] of [
+      ['en', 'That bucket no longer exists on this run; book it from the web Pending view.'],
+      ['ko', '이 런에 해당 버킷이 더 이상 없습니다. 웹의 대기 목록에서 처리하세요.'],
+    ] as const) {
+      const { h, p } = await capturedPending(lang);
+      h.repos.runRepo.get = async () => {
+        throw new Error('bucket-not-found');
+      };
+      await h.handlers.onConfirm('777', `yes:${p.id}`, true);
+      expect(h.sent.at(-1)!.text).toBe(text);
+      expect(h.sent.at(-1)!.text).not.toBe(t('confirm-err-unknown', lang, { code: 'bucket-not-found' }));
+    }
+  });
+
   test('unknown error falls back to a catalog line carrying the raw code', async () => {
     for (const [lang, text] of [
       ['en', 'Could not confirm this fill (boom).'],
