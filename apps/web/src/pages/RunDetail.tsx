@@ -27,7 +27,7 @@ import {
 } from '../components/ui';
 import { centsUsd, costPercentText, gapText, isoDateTime, percent, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
-import { enumLabelKey, pnlBadgeTone, runActions, runStatusTone, toneFor } from '../viewmodels';
+import { enumLabelKey, heldBucketsOf, pnlBadgeTone, runActions, runStatusTone, toneFor } from '../viewmodels';
 
 type Tab = 'orders' | 'pending' | 'fills' | 'history' | 'notifications';
 
@@ -257,6 +257,7 @@ export function RunDetailPage({ id }: { id: number }) {
       )}
       {manualOpen && (
         <FillDialog runId={run.id} costPpm={run.costPpm} initialSide="buy"
+          heldBuckets={heldBucketsOf(run.state.buckets)}
           onClose={() => setManualOpen(false)}
           onSaved={() => { setManualOpen(false); setPanelKey((k) => k + 1); void reload(); }} />
       )}

@@ -37,6 +37,12 @@ export interface BucketDto {
   filledOn: string | null;
 }
 
+/** A non-empty bucket a sell can be booked to. */
+export interface HeldBucketDto {
+  index: number;
+  shares: number;
+}
+
 export interface ClosedBucketDto {
   index: number;
   shares: number;
@@ -260,6 +266,7 @@ export interface PendingOverrides {
   price?: string; // "12.34"
   filledOn?: string; // YYYY-MM-DD
   feeCents?: number | null;
+  bucketIdx?: number; // sell only; omitted = automatic
 }
 
 /** Body of POST /runs/:id/fills — USD strings; the ticker is the run's own, server-stamped. */
@@ -269,6 +276,7 @@ export interface ManualFillInput {
   price: string; // "12.34"
   fee?: string; // "0.50" or omitted
   filledOn: string; // YYYY-MM-DD
+  bucketIdx?: number; // sell only; omitted = automatic
 }
 
 export interface SimInput {

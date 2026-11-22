@@ -3,9 +3,10 @@ import { api, ApiError, usdFeeOrNull, usdOrNull, type FillUpdatePayload, type Ma
 import { autoFeeUsd } from '../../autofee';
 import { useT } from '../../i18n';
 import { centsToUsdText, isoDate, priceInputValue, todayIso, usdTextToCents } from '../../format';
-import type { FillDto } from '../../api.types';
+import type { FillDto, HeldBucketDto } from '../../api.types';
 import { RecalcResultModal, type RecalcResult } from '../RecalcSummary';
 import { Button, Field, Input, Modal, Select } from '../ui';
+import { BucketSelect } from './BucketSelect';
 
 // Kept as an export of this module for its existing importers; the derivation itself
 // is shared with the pending-fill rows.
@@ -26,6 +27,8 @@ export interface FillDialogProps {
   /** Fill lives in a closed bucket: edits re-book cash on a settled bucket. */
   bucketClosed?: boolean;
   initialSide?: 'buy' | 'sell';
+  /** Add mode only: the run's held buckets a sell can be booked to. */
+  heldBuckets?: HeldBucketDto[];
   onClose: () => void;
   onSaved: () => void;
 }
@@ -37,12 +40,14 @@ export function FillDialog({
   deletable = false,
   bucketClosed = false,
   initialSide = 'buy',
+  heldBuckets = [],
   onClose,
   onSaved,
 }: FillDialogProps) {
   const t = useT();
   const modify = fill !== undefined;
   const [side, setSide] = useState<'buy' | 'sell'>(fill ? fill.side : initialSide);
+  const [bucket, setBucket] = useState('');
   const [shares, setShares] = useState(fill ? String(fill.shares) : '');
   const [price, setPrice] = useState(fill ? priceInputValue(fill.price) : '');
   const [fee, setFee] = useState(fill ? centsToUsdText(fill.fee) : '');
@@ -116,7 +121,8 @@ export function FillDialog({
         setError(t('manualInvalidDate'));
         return;
       }
-      input = { side, shares: Number(shares), price: priceUsd, fee: feeUsd ?? undefined, filledOn };
+      const bucketIdx = side === 'sell' && bucket !== '' ? Number(bucket) : undefined;
+      input = { side, shares: Number(shares), price: priceUsd, fee: feeUsd ?? undefined, filledOn, bucketIdx };
     }
     setBusy(true);
     try {
@@ -212,6 +218,10 @@ export function FillDialog({
             <option value="sell">{t('orderSideSell')}</option>
           </Select>
         </Field>
+        {!modify && side === 'sell' && (
+          <Field label={t('fillBucket')}>
+            <BucketSelect data-testid="manualBucketSelect" aria-label={t('fillBucket')} value={bucket} held={heldBuckets} onChange={setBucket} />          </Field>
+        )}
         <Field label={t('manualQty')}>
           <Input
             data-testid="manualSharesInput"

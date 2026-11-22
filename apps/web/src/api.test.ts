@@ -404,3 +404,32 @@ describe('pending review wire contract', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+// A sell can name the bucket it is booked to; omitted means automatic.
+describe('bucketIdx', () => {
+  const sell = { side: 'sell' as const, shares: 5, price: '10', filledOn: '2026-01-02' };
+
+  test('addManualFill sends bucketIdx only when given', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const http: Http = async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return Response.json({ ok: true });
+    };
+    const api = createApi(http, { getToken: () => null });
+    await api.addManualFill(1, { ...sell, bucketIdx: 2 });
+    await api.addManualFill(1, sell);
+    expect(bodies[0]!.bucketIdx).toBe(2);
+    expect('bucketIdx' in bodies[1]!).toBe(false);
+  });
+
+  test('confirmPending carries a bucketIdx override', async () => {
+    const bodies: unknown[] = [];
+    const http: Http = async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return Response.json({ ok: true });
+    };
+    const api = createApi(http, { getToken: () => null });
+    await api.confirmPending(4, { bucketIdx: 3 });
+    expect(bodies[0]).toEqual({ overrides: { bucketIdx: 3 } });
+  });
+});

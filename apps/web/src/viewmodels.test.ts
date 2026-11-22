@@ -7,6 +7,7 @@ import {
   daysBetween,
   enumLabelKey,
   fillSourceTone,
+  heldBucketsOf,
   isRunStatus,
   myriadthsToUsdText,
   notionalCents,
@@ -221,5 +222,22 @@ describe('orderReasonText', () => {
 
   test('CANCEL_REASONS lists the four codes in display order', () => {
     expect([...CANCEL_REASONS]).toEqual(['broker-filled', 'strategy-change', 'stale-price', 'other']);
+  });
+});
+
+describe('heldBucketsOf', () => {
+  test('heldBucketsOf keeps held and force-sell buckets in index order', () => {
+    const bucket = (index: number, state: BucketDto['state'], shares: number): BucketDto => ({
+      index,
+      state,
+      shares,
+      buyPrice: state === 'empty' ? null : '1000000',
+      buyFeeCents: 0,
+      filledOn: state === 'empty' ? null : '2026-11-02',
+    });
+    expect(heldBucketsOf([bucket(1, 'held', 10), bucket(0, 'empty', 0), bucket(2, 'force_sell', 7)])).toEqual([
+      { index: 1, shares: 10 },
+      { index: 2, shares: 7 },
+    ]);
   });
 });

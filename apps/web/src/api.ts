@@ -50,6 +50,7 @@ export type ApiErrorCode =
   | 'bucket-not-empty'
   | 'bucket-not-found'
   | 'bucket-not-held'
+  | 'invalid-bucket'
   | 'invalid-shares'
   | 'too-many-shares'
   | 'correction-not-found'
@@ -241,6 +242,7 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
         filledOn: fill.filledOn,
       };
       if (fill.fee !== undefined && fill.fee !== '') body.fee = fill.fee;
+      if (fill.bucketIdx !== undefined) body.bucketIdx = fill.bucketIdx;
       return send<{ ok: true }>('POST', `/api/runs/${runId}/fills`, body).then(() => undefined);
     },
     updateFill: (runId, fillId, body) =>

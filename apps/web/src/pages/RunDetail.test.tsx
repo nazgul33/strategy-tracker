@@ -302,6 +302,31 @@ describe('RunDetailPage add-fill button', () => {
     expect(side!.disabled).toBe(false);
     expect(side!.value).toBe('buy');
   });
+
+  it("the fill dialog offers the run's held buckets when the side is sell", async () => {
+    runBody = {
+      ...RUN,
+      state: {
+        ...RUN.state,
+        buckets: [{ index: 1, state: 'held', shares: 20, buyPrice: '4700000', buyFeeCents: 0, filledOn: '2026-11-02' }],
+      },
+    };
+    // The page already loaded the empty RUN in beforeEach: remount to fetch this body.
+    act(() => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(d(RunDetailPage, { id: 1 })));
+    await flush();
+    await act(async () => {
+      (document.querySelector('[data-testid="tabManual"]') as HTMLElement).click();
+    });
+    const side = document.querySelector('[data-testid="manualSideSelect"]') as HTMLSelectElement;
+    await act(async () => {
+      side.value = 'sell';
+      side.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const bucket = document.querySelector('[data-testid="manualBucketSelect"]') as HTMLSelectElement;
+    expect(Array.from(bucket.options).map((o) => o.textContent)).toEqual(['Automatic', 'Bucket 1 · 20 sh']);
+  });
 });
 
 const CLOSED_ROW = {
