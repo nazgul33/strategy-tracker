@@ -10,7 +10,7 @@ interface DefaultFeePromptProps {
   onBack: () => void;
 }
 
-// Asked when Confirm is pressed with a blank fee: the server books the default
+// Asked when Confirm is pressed with a blank fee: the server books the auto
 // fee for it, so show the formula and the amount. Closing the dialog goes back.
 export function DefaultFeePrompt({ rate, price, shares, fee, onUse, onBack }: DefaultFeePromptProps) {
   const t = useT();

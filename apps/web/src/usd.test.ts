@@ -9,6 +9,12 @@ describe('ungroupUsd', () => {
     expect(ungroupUsd('1,00')).toBe('1,00');
     expect(ungroupUsd('12,34.00')).toBe('12,34.00');
   });
+
+  test('a leading group longer than three digits is not grouping', () => {
+    expect(ungroupUsd('1234,567')).toBe('1234,567');
+    expect(usdToCents('1234,567')).toBeNull();
+    expect(ungroupUsd('1,234,567.89')).toBe('1234567.89');
+  });
 });
 
 // Users naturally type comma-grouped amounts ("1,000"); core's parseUsd

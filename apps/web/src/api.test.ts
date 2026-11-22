@@ -13,6 +13,8 @@ describe('call() transport failures', () => {
     expect(err).toBeInstanceOf(NetworkError);
     expect(err).not.toBeInstanceOf(ApiError);
     expect((err as Error).message).toBe('Failed to fetch');
+    expect((err as Error).name).toBe('NetworkError');
+    expect((err as Error).cause).toBeInstanceOf(TypeError);
   });
 });
 
@@ -234,6 +236,7 @@ describe('fill mutation deltas', () => {
     await expect(api.recalcRun(1)).resolves.toEqual({ ok: true, deltaCents: 250, fillCount: 4 });
   });
 });
+
 // A sell can name the bucket it is booked to; omitted means automatic.
 describe('bucketIdx', () => {
   const sell = { side: 'sell' as const, shares: 5, price: '10', filledOn: '2026-01-02' };

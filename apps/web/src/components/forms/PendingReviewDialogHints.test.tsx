@@ -60,6 +60,11 @@ describe('PendingReviewDialog hints, as on the row', () => {
     if (!wrap) throw new Error(`field ${label} not found`);
     return wrap.querySelector('input, select') as HTMLInputElement;
   };
+  const selectNamed = (label: string) => {
+    const el: Element = input(label);
+    if (!(el instanceof window.HTMLSelectElement)) throw new Error(`field ${label} is not a select`);
+    return el;
+  };
 
   async function show(row: PendingFillDto = ROW, values: RowValues = VALUES) {
     await act(async () => {
@@ -121,7 +126,7 @@ describe('PendingReviewDialog hints, as on the row', () => {
     await show({ ...ROW, side: '', detected: { ...ROW.detected!, side: null } }, { ...VALUES, side: '' });
     expect(input('Side').hasAttribute('data-edit')).toBe(false);
     await act(async () => {
-      const select = input('Side') as unknown as HTMLSelectElement;
+      const select = selectNamed('Side');
       const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!;
       setter.call(select, 'buy');
       select.dispatchEvent(new Event('change', { bubbles: true }));

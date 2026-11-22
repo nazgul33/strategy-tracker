@@ -1,6 +1,6 @@
 // Typed client for the Hono JSON API (apps/server/src/http). Bigint fields
 // arrive as decimal *strings* (jsonBig), cents/fees as numbers. Prices and
-// fees the client *sends* are USD strings ("12.34"), parsed via @st/core.
+// fees the client *sends* are USD strings ("12.34"), parsed via ./usd (which wraps @st/core).
 import { simConfigBody } from './api.sim';
 import type {
   CorrectionDto,
@@ -65,7 +65,9 @@ export class ApiError extends Error {
 }
 
 /** The request never got an answer (server down, offline, DNS). The browser's message is kept. */
-export class NetworkError extends Error {}
+export class NetworkError extends Error {
+  override name = 'NetworkError';
+}
 
 // ---------------------------------------------------------------- auth token
 let memoryToken: string | null = null;
@@ -262,7 +264,7 @@ async function call<T>(http: Http, url: string, init?: RequestInit): Promise<T> 
   try {
     res = await http(url, init);
   } catch (e) {
-    throw new NetworkError(e instanceof Error ? e.message : String(e));
+    throw new NetworkError(e instanceof Error ? e.message : String(e), { cause: e });
   }
   let body: Record<string, unknown> = {};
   try {

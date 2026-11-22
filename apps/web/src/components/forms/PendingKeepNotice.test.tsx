@@ -265,9 +265,9 @@ describe('pending keep record-failed notices', () => {
     await flush();
 
     await editQty('11'); // dirty, so the keep prompt waits for the row after the fee popup
-    await typeField(t('pendingColFee'), ''); // a blanked fee makes Confirm ask about the default
+    await typeField(t('pendingColFee'), ''); // a blanked fee makes Confirm ask about the auto fee
     const confirmBtn = btn(t('pendingConfirm'));
-    await pressByKeyboard(confirmBtn); // opens the default-fee popup
+    await pressByKeyboard(confirmBtn); // opens the auto-fee popup
     expect(container.querySelector('[role=dialog]')!.textContent).toContain(t('pendingDefaultFeeUse'));
     await pressByKeyboard(btn(t('pendingDefaultFeeUse'))); // and its button hands off to the keep prompt
     expect(container.querySelector('[role=dialog]')!.textContent).toContain(t('keepImageKeep'));

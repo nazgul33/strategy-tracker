@@ -26,7 +26,7 @@ export function usdFeeOrNull(value: string): string | null {
 /** Trimmed text; strictly well-formed grouping ("12,345.90") is stripped (parseUsd rejects commas). */
 export function ungroupUsd(value: string): string {
   const s = value.trim();
-  return /^\d+(,\d{3})+(\.\d+)?$/.test(s) ? s.replace(/,/g, '') : s;
+  return /^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s) ? s.replace(/,/g, '') : s;
 }
 
 /** "12.345" USD → integer cents, half-up; null on bad input. */
