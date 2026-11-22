@@ -134,8 +134,11 @@ function snapshotFor(row: PendingFillDto): DetectedDto {
 
 /**
  * What vision read per field; `null` = it read nothing there. A row that predates
- * the snapshot has no such record, so every field counts as read (its own values):
- * its edits are never called "filled in".
+ * the snapshot has no such record, so each field stands in with its own value.
+ * A field whose own value is empty or unusable (a side that is not buy/sell, an
+ * empty price, a null fee) still reads as `null`, so filling it in reads as
+ * "filled in"; a shares of 0 or an empty date stand in as they are, so editing
+ * them reads as "changed".
  */
 export function detectedFor(row: PendingFillDto): Record<RowField, string | number | null> {
   const d = row.detected;
@@ -186,7 +189,7 @@ export function fieldEditState(
   values: RowValues,
   field: RowField,
 ): 'changed' | 'filled' | 'erased' | null {
-  if (standingIssues(row, values).includes(field as MissedField)) return null;
+  if ((standingIssues(row, values) as readonly string[]).includes(field)) return null;
   if (values[field].trim() === '') {
     const derivable = field === 'fee' && autoFeeUsd(values.shares, values.price, row.costPpm) !== '';
     if (snapshotFor(row)[field] !== null || derivable) return 'erased';

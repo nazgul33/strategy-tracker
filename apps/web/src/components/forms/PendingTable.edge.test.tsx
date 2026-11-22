@@ -158,4 +158,24 @@ describe('PendingTable edge cases', () => {
     expect(promptOpen()).toBe(false);
     expect(container.textContent).toContain('Nothing waiting for confirmation.');
   });
+
+  it('a field vision missed blocks the confirm even when another missed field was filled in', async () => {
+    const missedBoth: PendingFillDto = {
+      ...PENDING_ROW,
+      side: '',
+      price: '',
+      detected: { ...PENDING_ROW.detected!, side: null, price: null },
+    };
+    const calls = await renderWithConfirmCalls(missedBoth);
+    await act(async () => {
+      const side = control<HTMLSelectElement>(2, 'select');
+      side.value = 'buy';
+      side.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await clickConfirm();
+
+    expect(calls.length).toBe(0);
+    expect(promptOpen()).toBe(false);
+    expect(container.querySelector('p.text-destructive')!.textContent).toBe(lookup('en', 'pendingNeedsOverride'));
+  });
 });

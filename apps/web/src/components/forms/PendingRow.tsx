@@ -2,7 +2,7 @@ import { api, type PendingFillDto } from '../../api';
 import { useT } from '../../i18n';
 import { isoDate, priceInputValue } from '../../format';
 import { autoFeeUsd } from '../../autofee';
-import { feeIsDerived, standingIssues, type MissedField, type RowField, type RowValues } from '../../pendingvalues';
+import { feeIsDerived, standingIssues, type RowField, type RowValues } from '../../pendingvalues';
 import { Button, Input, Select, Td } from '../ui';
 import { BucketSelect } from './BucketSelect';
 import { editHint } from './pendingHints';
@@ -69,9 +69,9 @@ export function PendingRow({
   busy,
 }: PendingRowProps) {
   const t = useT();
-  // Flag a field the row is missing until the operator has filled it in.
+  // Every missed field is flagged until the operator has filled it in.
   const issues = standingIssues(row, values);
-  const missing = (f: RowField) => (issues.includes(f as MissedField) ? 'border-warning' : '');
+  const missing = (f: RowField) => ((issues as readonly string[]).includes(f) ? 'border-warning' : '');
   const hintId = (f: RowField) => `pending-${row.id}-${f}-hint`;
   // Props for a field's control: its width classes, the standing-issue border, and the
   // edit hint. Solid vs dashed carries the state without colour; the title is the mouse
@@ -81,7 +81,7 @@ export function PendingRow({
     const className = `${base} ${missing(f)}`.trim();
     if (h === null) return { className };
     const props = {
-      className: `${className} ${h.look} peer`.replace(/\s+/g, ' '),
+      className: `${className} ${h.look} peer`.replace(/\s+/g, ' ').trim(),
       title: t(h.key),
       'aria-describedby': hintId(f),
     };
@@ -162,7 +162,7 @@ export function PendingRow({
           />
           {hint('fee')}
           {feeIsDerived(row, values) && (
-            <div data-auto-fee title={t('pendingFeeAutoHint')} className="text-xs text-muted-foreground">
+            <div data-auto-fee aria-hidden="true" title={t('pendingFeeAutoHint')} className="text-xs text-muted-foreground">
               {t('pendingFeeAuto')}
             </div>
           )}

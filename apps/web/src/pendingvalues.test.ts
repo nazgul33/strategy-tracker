@@ -4,7 +4,6 @@ import {
   feeIsDerived,
   patchRowValues,
   pendingEdits,
-  missingFields,
   pendingIssue,
   standingIssues,
   type RowValues,
@@ -93,18 +92,6 @@ describe('standingIssues', () => {
   test('a missing ticker stands alongside the other missed fields', () => {
     const r = pendingRow({ ticker: '', price: '' });
     expect(standingIssues(r, { ...same, price: '' })).toEqual(['ticker', 'price']);
-  });
-});
-
-describe('missingFields', () => {
-  test('lists all, pendingIssue still names the first', () => {
-    const r = pendingRow({ side: '', price: '' });
-    expect(missingFields(r)).toEqual(['side', 'price']);
-    expect(pendingIssue(r)).toEqual({ field: 'side' });
-  });
-
-  test('a complete row misses nothing', () => {
-    expect(missingFields(row())).toEqual([]);
   });
 });
 

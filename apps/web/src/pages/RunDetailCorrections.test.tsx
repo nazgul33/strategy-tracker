@@ -63,10 +63,12 @@ const CORRECTION: CorrectionDto = {
 let calls: FetchCalls;
 let runGets = 0;
 let correctionGets = 0;
+let pendingGets = 0;
 
 function stubFetch() {
   runGets = 0;
   correctionGets = 0;
+  pendingGets = 0;
   calls = installFetchStub([
     { method: 'POST', url: '/api/corrections/1/apply', json: { ok: true, deltaCents: 5 } },
     {
@@ -79,7 +81,13 @@ function stubFetch() {
     // Sub-resources before the bare run route: matching is by substring.
     { url: '/price-history', json: { start: '2026-11-04', bars: [] } },
     { url: '/orders', json: [] },
-    { url: '/api/pending', json: [{ ...PENDING_ROW, runId: 1 }] },
+    {
+      url: '/api/pending',
+      get json() {
+        pendingGets += 1;
+        return [{ ...PENDING_ROW, runId: 1 }];
+      },
+    },
     {
       url: '/api/runs/1',
       get json() {
@@ -139,6 +147,18 @@ describe('RunDetailPage pending tab corrections', () => {
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['POST /api/corrections/1/apply']);
     expect(correctionGets).toBe(2);
     expect(runGets).toBe(runBefore + 1);
+  });
+
+  it('applying a correction re-reads the pending list exactly once (refreshKey)', async () => {
+    const pendingBefore = pendingGets;
+    expect(pendingBefore).toBeGreaterThan(0);
+
+    await act(async () => {
+      buttonByText('Apply').click();
+    });
+    await flush();
+
+    expect(pendingGets).toBe(pendingBefore + 1);
   });
 
   it('applying a correction keeps an edit typed in the pending table', async () => {

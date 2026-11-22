@@ -155,6 +155,23 @@ describe('pending keep record-failed notices', () => {
     expect(noticeAt(0).textContent).toContain('Rejected AAPL Buy 10 sh @ $12345.00 on 2026-11-10');
   });
 
+  it('the notice survives a failed list read after the booking', async () => {
+    const list: Route = { url: '/api/pending', method: 'GET', status: 200, json: [PENDING_ROW] };
+    installFetchStub([
+      { url: '/api/pending/9/confirm', method: 'POST', status: 200, json: { ok: true, archived: false } },
+      list,
+    ]);
+    container = render();
+    await flush();
+
+    await editQty('11');
+    list.status = 500;
+    list.json = { error: 'boom' };
+    await confirmKeeping(t('keepImageKeep'));
+
+    expect(noticeAt(0).textContent).toContain('Booked AAPL Buy 11 sh');
+  });
+
   it('stays silent when the review record was saved (archived: true)', async () => {
     const state = { rows: [PENDING_ROW] };
     installFetchStub([

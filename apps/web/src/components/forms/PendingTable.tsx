@@ -130,11 +130,11 @@ export function PendingTable({
         action === 'confirm'
           ? await api.confirmPending(row.id, overrides, keepImage)
           : await api.rejectPending(row.id, keepImage);
-      await reload();
       // The server keeps the screenshot before it flips the row, so on a
       // keep-requested action `archived: false` means only the review record
       // failed: name the fill in a warning that outlives the next action,
-      // not an error the next action clears away.
+      // not an error the next action clears away. Added before the reload so
+      // a failed list read can never swallow it.
       if (keepImage === true && !res.archived) {
         notices.add({
           action: action === 'confirm' ? 'book' : 'reject',
@@ -145,6 +145,7 @@ export function PendingTable({
           date: values.filledOn.trim(),
         });
       }
+      await reload();
     } catch (err) {
       await reportError(err);
     } finally {

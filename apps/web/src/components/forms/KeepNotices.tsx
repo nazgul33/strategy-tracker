@@ -10,6 +10,7 @@ import { Button } from '../ui';
  */
 export interface KeepNotice {
   id: number;
+  // Names the outcome (`book`), not the button that led to it (Confirm).
   action: 'book' | 'reject';
   ticker: string;
   side: string;

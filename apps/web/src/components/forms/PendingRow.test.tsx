@@ -231,6 +231,13 @@ describe('PendingRow blank fee', () => {
     expect(container.querySelector('[data-auto-fee]')).toBeNull();
   });
 
+  it('a derived fee marker is hidden from assistive tech; the fee hint carries the meaning', async () => {
+    const input = await feeInput(FEELESS, { fee: '4.94' });
+    const marker = container.querySelector('[data-auto-fee]')!;
+    expect(marker.getAttribute('aria-hidden')).toBe('true');
+    expect(container.querySelector(`#${input.getAttribute('aria-describedby')}`)).toBeTruthy();
+  });
+
   it('a comma-grouped price still derives the placeholder', async () => {
     expect((await feeInput(FEELESS, { price: '12,345.00' })).placeholder).toBe('auto $4.94');
   });
