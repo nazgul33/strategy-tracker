@@ -36,7 +36,7 @@ apps/server/       drizzle.config.ts package.json tsconfig.json
     sim/sim.ts sim/serialize.ts
     http/app.ts http/auth.ts http/booking-deps.ts http/params.ts http/routes/{runs,fills,pending,corrections,sim,settings,vision-review}.ts
   db/              README.md
-  db/migrations/   0000_fantastic_thunderbolts.sql … 0008_material_blue_marvel.sql (+ meta/)
+  db/migrations/   0000_fantastic_thunderbolts.sql … 0009_living_lenny_balinger.sql (+ meta/)
   test/            *.test.ts per area (booking, rebooking, sell-attribution, sell-matching, sell-bucket-override, http-bucket-override, booking-notifier, vision-review, capture-claim, capture-image, corrections, fake-corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, send, calendar-2028, day, migration-sql, sim, wire, http-*, db*) + fake-corrections.ts http-fakes.ts booking-fakes.ts sell-fixture.ts
 apps/web/          package.json tsconfig.json index.html vite.config.ts tailwind.config.ts postcss.config.js .gitignore
 apps/web/src/      main.tsx App.tsx style.css api.ts api.sim.ts api.types.ts autofee.ts defaultcost.ts format.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts priceHistory.ts simconfig.ts simerrors.ts simview.ts (+ colocated *.test.ts(x))

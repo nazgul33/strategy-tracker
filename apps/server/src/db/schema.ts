@@ -47,7 +47,10 @@ export const orders = mysqlTable('orders', {
   status: mysqlEnum('status', ['open', 'filled', 'stale', 'cancelled']).notNull().default('open'),
   skipReason: text('skip_reason'),
   cancelReason: varchar('cancel_reason', { length: 32 }),
-})
+}, (t) => ({
+  runTradeDateIdx: index('orders_run_trade_date_idx').on(t.runId, t.tradeDate),
+  tradeDateIdx: index('orders_trade_date_idx').on(t.tradeDate),
+}))
 
 export const captures = mysqlTable('captures', {
   id: int('id').primaryKey().autoincrement(),
@@ -183,7 +186,9 @@ export const simRuns = mysqlTable('sim_runs', {
   paramsJson: text('params_json').notNull(),
   draft: boolean('draft').notNull().default(true),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
-})
+}, (t) => ({
+  draftCreatedIdx: index('sim_runs_draft_created_idx').on(t.draft, t.createdAt),
+}))
 
 export const simDays = mysqlTable('sim_days', {
   id: int('id').primaryKey().autoincrement(),
@@ -192,7 +197,9 @@ export const simDays = mysqlTable('sim_days', {
   planJson: text('plan_json').notNull(),
   stateJson: text('state_json').notNull(),
   eventsJson: text('events_json').notNull(),
-})
+}, (t) => ({
+  simRunIdx: index('sim_days_sim_run_idx').on(t.simRunId),
+}))
 
 export const settings = mysqlTable('settings', {
   key: varchar('key', { length: 64 }).primaryKey(),
