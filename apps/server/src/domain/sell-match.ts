@@ -20,18 +20,23 @@ export function openSellLegs(orders: OrderRow[], key: { runId: number; bucketIdx
 
 interface SellFillKey { runId: number; filledOn: ISODate; shares: number; price: bigint }
 
-export type LegKind = 'sell_loc' | 'stop_sell'
+export type PriceLegKind = 'sell_loc' | 'stop_sell'
 // distance = |fill price - limitPrice|
-export interface SellLeg { orderId: number; bucketIdx: number; kind: LegKind; limitPrice: bigint; distance: bigint }
-export interface SellAttribution { shares: number; price: bigint; chosen: SellLeg; alternatives: SellLeg[] }
+export interface PriceLeg { orderId: number; bucketIdx: number; kind: PriceLegKind; limitPrice: bigint; distance: bigint }
+export interface MarketLeg { orderId: number; bucketIdx: number; kind: 'market_sell' }
+export type SellLeg = PriceLeg | MarketLeg
+// price: the exact-price rung or price distance decided; market: the market-sell rung.
+// A share-count pick carries no attribution, so it has no rule value.
+export type AttributionRule = 'price' | 'market'
+export interface SellAttribution { shares: number; price: bigint; rule: AttributionRule; chosen: SellLeg; alternatives: SellLeg[] }
 export interface SellMatch { order: OrderRow; attribution: SellAttribution | null }
 
 const cmp = (a: bigint, b: bigint): number => (a < b ? -1 : a > b ? 1 : 0)
-const kindRank = (k: LegKind): number => (k === 'sell_loc' ? 0 : 1)
+const kindRank = (k: PriceLegKind): number => (k === 'sell_loc' ? 0 : 1)
 const absDiff = (a: bigint, b: bigint): bigint => (a > b ? a - b : b - a)
 
-function toLeg(o: OrderRow, price: bigint): SellLeg {
-  return { orderId: o.id, bucketIdx: o.bucketIdx, kind: o.kind as LegKind, limitPrice: o.limitPrice, distance: absDiff(price, o.limitPrice) }
+function toLeg(o: OrderRow, price: bigint): PriceLeg {
+  return { orderId: o.id, bucketIdx: o.bucketIdx, kind: o.kind as PriceLegKind, limitPrice: o.limitPrice, distance: absDiff(price, o.limitPrice) }
 }
 
 // Which open sell order does a sell fill belong to? Every candidate must be open
@@ -63,7 +68,7 @@ export function matchSellOrder(orders: OrderRow[], state: RunState, input: SellF
     const b = state.buckets.find((x: Bucket) => x.index === o.bucketIdx)
     return !!b && b.state !== 'empty' && b.shares >= input.shares
   })
-  const candidates: SellLeg[] = live
+  const candidates: PriceLeg[] = live
     .filter((o) => (o.kind === 'sell_loc' && input.price >= o.limitPrice) || (o.kind === 'stop_sell' && input.price <= o.limitPrice))
     .map((o) => toLeg(o, input.price))
     .sort((a, b) => cmp(a.distance, b.distance) || kindRank(a.kind) - kindRank(b.kind) || a.bucketIdx - b.bucketIdx)
@@ -77,9 +82,9 @@ export function matchSellOrder(orders: OrderRow[], state: RunState, input: SellF
   // Matching it here makes applySellFill throw 'too-many-shares' (a 422 the operator
   // resolves) instead. 1b/1c keep the gate, where it is load-bearing for ranking.
   const exact = onDay.filter((o) => o.kind === 'sell_loc' && o.limitPrice === input.price).sort((a, b) => a.bucketIdx - b.bucketIdx)[0]
-  const attribute = (order: OrderRow, chosen: SellLeg): SellMatch => {
+  const attribute = (order: OrderRow, chosen: PriceLeg): SellMatch => {
     const alternatives = candidates.filter((c) => c.bucketIdx !== order.bucketIdx)
-    return { order, attribution: alternatives.length ? { shares: input.shares, price: input.price, chosen, alternatives } : null }
+    return { order, attribution: alternatives.length ? { shares: input.shares, price: input.price, rule: 'price', chosen, alternatives } : null }
   }
   if (exact) return attribute(exact, toLeg(exact, input.price))
 

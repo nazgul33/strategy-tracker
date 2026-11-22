@@ -26,23 +26,26 @@ export function makeBookingNotifier(deps: BookingNotifierDeps): BookingNotifier 
     }
   }
 
-  const legParams = (leg: SellLeg) => ({
-    bucket: leg.bucketIdx,
-    leg: t(`leg-${leg.kind}`, deps.lang),
-    limit: formatUsd(leg.limitPrice),
-    distance: formatUsd(leg.distance),
-  })
+  const legText = (leg: SellLeg): string =>
+    leg.kind === 'market_sell'
+      ? t('sell-attributed-alt-market', deps.lang, { bucket: leg.bucketIdx, leg: t('leg-market_sell', deps.lang) })
+      : t('sell-attributed-alt', deps.lang, {
+          bucket: leg.bucketIdx,
+          leg: t(`leg-${leg.kind}`, deps.lang),
+          limit: formatUsd(leg.limitPrice),
+          distance: formatUsd(leg.distance),
+        })
 
   return {
     siblingCancelled: (runId, order) =>
       broadcast(runId, t('sibling-cancelled', deps.lang, { kind: order.kind, bucket: order.bucketIdx, price: formatUsd(order.limitPrice) }), `sibling-cancel order ${order.id}`),
     sellAttributed: (runId, attribution) => {
-      const alts = attribution.alternatives.map((a) => t('sell-attributed-alt', deps.lang, legParams(a))).join('; ')
       const text = t('sell-attributed', deps.lang, {
         shares: attribution.shares,
         price: formatUsd(attribution.price),
-        ...legParams(attribution.chosen),
-        alts,
+        chosen: legText(attribution.chosen),
+        alts: attribution.alternatives.map(legText).join('; '),
+        why: t(`sell-attributed-why-${attribution.rule}`, deps.lang, { shares: attribution.shares }),
       })
       return broadcast(runId, text, 'sell-attributed')
     },

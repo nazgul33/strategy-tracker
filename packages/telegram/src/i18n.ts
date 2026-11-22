@@ -62,10 +62,20 @@ export const CATALOG: Record<string, MsgEntry> = {
   'sibling-cancelled': { en: '⚠️ Cancel {kind} bucket {bucket} ({price}) at your broker — the other leg already filled, so this order is no longer needed.', ko: '⚠️ 증권사에서 {kind} 버킷 {bucket} ({price}) 주문을 취소하세요 — 반대편 주문이 이미 체결되어 이 주문은 더 이상 필요하지 않습니다.' },
   'leg-sell_loc': { en: 'target', ko: '목표가 매도' },
   'leg-stop_sell': { en: 'stop', ko: '손절 매도' },
+  'leg-market_sell': { en: 'market sell', ko: '시장가 매도' },
   'sell-attributed-alt': { en: 'bucket {bucket} {leg} (${limit}, ${distance} away)', ko: '버킷 {bucket} {leg} (${limit}, ${distance} 차이)' },
+  'sell-attributed-alt-market': { en: 'bucket {bucket} {leg}', ko: '버킷 {bucket} {leg}' },
   'sell-attributed': {
-    en: 'ℹ️ Sell {shares} sh @ ${price} was booked to bucket {bucket} {leg} (${limit}, ${distance} away). Also possible: {alts}. A target fills at or above its limit and a stop at or below its trigger, so more than one order fit this price; the order whose price is nearest the fill wins.',
-    ko: 'ℹ️ 매도 {shares}주 @ ${price} 체결을 버킷 {bucket} {leg} (${limit}, ${distance} 차이)에 기록했습니다. 다른 후보: {alts}. 목표가 매도는 지정가 이상에서, 손절 매도는 발동가 이하에서 체결되므로 이 가격에 해당하는 주문이 여러 개였고, 체결가에 가장 가까운 주문을 선택했습니다.',
+    en: 'ℹ️ Sell {shares} sh @ ${price} was booked to {chosen}. Also possible: {alts}. {why}',
+    ko: 'ℹ️ 매도 {shares}주 @ ${price} 체결을 {chosen}에 기록했습니다. 다른 후보: {alts}. {why}',
+  },
+  'sell-attributed-why-price': {
+    en: 'A target fills at or above its limit, a stop at or below its trigger and a market sell at any price, so more than one order fit this price. A target at exactly the fill price wins; otherwise the only order for exactly {shares} shares, if there is one; otherwise the order whose price is nearest the fill, a target before a stop at an equal distance, then the lowest bucket.',
+    ko: '목표가 매도는 지정가 이상에서, 손절 매도는 발동가 이하에서, 시장가 매도는 어떤 가격에서도 체결되므로 이 가격에 해당하는 주문이 여러 개였습니다. 지정가가 체결가와 같은 목표가 매도가 우선하고, 없으면 정확히 {shares}주인 주문이 하나뿐일 때 그 주문이, 그것도 아니면 체결가에 가장 가까운 주문이 선택되며, 차이가 같으면 목표가 매도가 손절 매도보다 우선하고 그다음은 낮은 버킷이 우선합니다.',
+  },
+  'sell-attributed-why-market': {
+    en: 'No target or stop fit this price and no single order is for exactly {shares} shares, so the market sell of the lowest bucket wins.',
+    ko: '이 가격에 맞는 목표가 매도나 손절 매도가 없고 정확히 {shares}주인 주문도 하나로 정해지지 않아 가장 낮은 버킷의 시장가 매도를 선택했습니다.',
   },
   'cut-loss-immediate': { en: '⚠️ {n} stop trigger(s) already at or above the last close — the stop may fire as soon as it is placed', ko: '⚠️ 손절 발동가 {n}건이 이미 최근 종가 이상입니다 — 주문하자마자 체결될 수 있습니다' },
   'stop-verb': { en: 'Sell', ko: '매도' },
