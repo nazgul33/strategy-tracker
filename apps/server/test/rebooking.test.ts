@@ -98,7 +98,7 @@ describe('rebookFill', () => {
     const adj = adjustRows(f)
     expect(adj).toHaveLength(1)
     expect(adj[0]).toMatchObject({ runId, kind: 'adjust', amountCents: buyEffect('18.00', 12, 400) - buyEffect('10.00', 10, 500) }) // −22_000 − (−10_500)
-    expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-edit' })
+    expect(JSON.parse(adj[0].ref!)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-edit' })
     expect(res.fill).toMatchObject({ id: 1, runId, bucketIdx: 0, side: 'buy', shares: 12, price: 180_000n, fee: 400, filledOn: '2026-01-08' })
     expect(res.deltaCents).toBe(adj[0].amountCents)
   })
@@ -167,7 +167,7 @@ describe('rebookFill', () => {
     const adj = adjustRows(f)
     expect(adj).toHaveLength(1)
     expect(adj[0].amountCents).toBe(buyEffect('18.00', 12, 400) - buyEffect('10.00', 3, 500))
-    expect(JSON.parse(adj[0].ref).reason).toBe('fill-edit')
+    expect(JSON.parse(adj[0].ref!).reason).toBe('fill-edit')
     expect(res.deltaCents).toBe(adj[0].amountCents)
   })
 
@@ -188,7 +188,7 @@ describe('rebookFill', () => {
     expect(st.cashCents).toBe(100_000 + buyEffect('12.00', 8, 300) + buyEffect('15.00', 5, 250))
     const adj = adjustRows(f)
     expect(adj).toHaveLength(1)
-    expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-edit' })
+    expect(JSON.parse(adj[0].ref!)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-edit' })
     expect(res.fill).toMatchObject({ id: 1, shares: 8, price: 120_000n, fee: 300 })
     expect(res.deltaCents).toBe(adj[0].amountCents)
   })
@@ -215,7 +215,7 @@ describe('rebookFill', () => {
     const adj = adjustRows(f)
     expect(adj).toHaveLength(1)
     expect(adj[0].amountCents).toBe(buyEffect('10.00', 10, 900) - buyEffect('10.00', 10, 500)) // −400
-    expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-edit' })
+    expect(JSON.parse(adj[0].ref!)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-edit' })
     expect(res.deltaCents).toBe(-400)
   })
 
@@ -240,7 +240,7 @@ describe('rebookFill', () => {
     await bookBuy(f, runId, { idx: 1, shares: 8, price: '16.00', filledOn: '2026-01-08' })
     await manualFill(runId, { side: 'sell', shares: 8, price: '17.00', fee: '0.30', filledOn: '2026-01-09' }, deps(f))
 
-    const sell = f._stores.fills.find((x: any) => x.side === 'sell')
+    const sell = f._stores.fills.find((x) => x.side === 'sell')!
     const res = await rebookFill(runId, { fillId: sell.id, shares: 8, priceStr: '15.00', feeCents: 25 }, deps(f))
 
     expect(f._stores.fills.find((x: any) => x.id === sell.id)).toMatchObject({ price: parseUsd('15.00'), fee: 25 })
@@ -249,7 +249,7 @@ describe('rebookFill', () => {
     expect(closed?.soldPrice).toBe(parseUsd('15.00'))
     const adj = adjustRows(f)
     expect(adj).toHaveLength(1)
-    expect(JSON.parse(adj[0].ref).reason).toBe('fill-edit')
+    expect(JSON.parse(adj[0].ref!).reason).toBe('fill-edit')
     expect(res.deltaCents).toBe(sellEffect('15.00', 8, 25) - sellEffect('17.00', 8, 30))
     expect(adj[0].amountCents).toBe(res.deltaCents)
   })
@@ -261,7 +261,7 @@ describe('rebookFill', () => {
     await manualFill(runId, { side: 'sell', shares: 8, price: '17.00', fee: '0.30', filledOn: '2026-01-09' }, deps(f))
 
     const stateBefore = asJson(await getState(f, runId))
-    const sell = f._stores.fills.find((x: any) => x.side === 'sell')
+    const sell = f._stores.fills.find((x) => x.side === 'sell')!
     const sellBefore = asJson(sell)
     const err = await expectKind(() => rebookFill(runId, { fillId: sell.id, shares: 9, priceStr: '17.00', feeCents: 30 }, deps(f)))
 
@@ -341,7 +341,7 @@ describe('deleteFill', () => {
     const adj = adjustRows(f)
     expect(adj).toHaveLength(1)
     expect(adj[0]).toMatchObject({ kind: 'adjust', amountCents: 7_750 }) // the removed buy is refunded
-    expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 2, bookedOn: TODAY, reason: 'fill-delete' })
+    expect(JSON.parse(adj[0].ref!)).toEqual({ fillId: 2, bookedOn: TODAY, reason: 'fill-delete' })
     expect(res.deltaCents).toBe(7_750)
   })
 
@@ -362,7 +362,7 @@ describe('deleteFill', () => {
     const adj = adjustRows(f)
     expect(adj).toHaveLength(1)
     expect(adj[0]).toMatchObject({ kind: 'adjust', amountCents: 10_500 }) // the removed bucket-0 buy is refunded
-    expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-delete' })
+    expect(JSON.parse(adj[0].ref!)).toEqual({ fillId: 1, bookedOn: TODAY, reason: 'fill-delete' })
     expect(res.deltaCents).toBe(10_500)
   })
 
@@ -382,7 +382,7 @@ describe('deleteFill', () => {
     expect(st.buckets[2].state).toBe('empty')
     const adj = adjustRows(f)
     expect(adj[0]).toMatchObject({ amountCents: -buyEffect('20.00', 2, 100) }) // refunds only the id-3 buy
-    expect(JSON.parse(adj[0].ref)).toEqual({ fillId: 3, bookedOn: TODAY, reason: 'fill-delete' })
+    expect(JSON.parse(adj[0].ref!)).toEqual({ fillId: 3, bookedOn: TODAY, reason: 'fill-delete' })
     expect(res.deltaCents).toBe(-buyEffect('20.00', 2, 100))
   })
 
@@ -462,7 +462,7 @@ describe('deleteFill', () => {
     expect(st.cashCents).toBe(100_000 + buyEffect('16.00', 8))
     expect(adjustRows(f)[0].amountCents).toBe(-sellEffect('17.00', 8))
     expect(res.deltaCents).toBe(-sellEffect('17.00', 8))
-    const order = f._stores.orders.find((o: any) => o.kind === 'sell_loc')
+    const order = f._stores.orders.find((o) => o.kind === 'sell_loc')!
     expect(order.status).toBe('filled') // orders never reopen on delete
   })
 

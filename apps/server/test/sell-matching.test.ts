@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { parseUsd } from '@st/core/money'
 import { runBooking, manualFill } from '../src/domain/booking'
+import type { OrderStatus } from '../src/domain/repo-types'
 import { D, Y, book43, held43, sellSetup, sellAt, orderOf, fillsOf, heldShares } from './sell-fixture'
 
 const permutations = <T>(xs: T[]): T[][] => (xs.length <= 1 ? [xs] : xs.flatMap((x, i) => permutations([...xs.slice(0, i), ...xs.slice(i + 1)]).map((rest) => [x, ...rest])))
@@ -146,7 +147,7 @@ describe('stale legs on the fill day (#53)', () => {
 
   test('a stale exact-price target that cannot cover the fill is skipped, where an open one fails loudly', async () => {
     const held = [{ idx: 0, shares: 5, buy: '100.00' }, { idx: 1, shares: 15, buy: '90.00' }]
-    const orders = (status: string, tradeDate: typeof D) => [
+    const orders = (status: OrderStatus, tradeDate: typeof D) => [
       { idx: 0, kind: 'sell_loc' as const, price: '103.00', status, tradeDate },
       { idx: 1, kind: 'sell_loc' as const, price: '92.00', shares: 10, status, tradeDate },
     ]

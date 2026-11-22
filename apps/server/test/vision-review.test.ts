@@ -167,7 +167,7 @@ describe('freeze, keep, sweep', () => {
 
   test('rejecting with keepImage archives the fill with null finals', async () => {
     const { f, deps, ids, captureId } = await setup(1)
-    const row = f._stores.pending.find((p: any) => p.id === ids[0])
+    const row = f._stores.pending.find((p) => p.id === ids[0])!
     await f.repos.pendingRepo.decide(ids[0]!, 'rejected')
     await resolveReview(deps.repos, { pendingRow: row, captureId, outcome: 'rejected', final: null, keepImage: true })
     expect(f._stores.captureImages[0]).toMatchObject({ captureId, keep: true })
@@ -273,7 +273,7 @@ describe('freeze, keep, sweep', () => {
 
   test('fee_overridden is false for a reject', async () => {
     const { f, deps, ids, captureId } = await setup(1)
-    const row = f._stores.pending.find((p: any) => p.id === ids[0])
+    const row = f._stores.pending.find((p) => p.id === ids[0])!
     await f.repos.pendingRepo.decide(ids[0]!, 'rejected')
     await resolveReview(deps.repos, { pendingRow: row, captureId, outcome: 'rejected', final: null, keepImage: true })
     expect(f._stores.visionReviews[0]!.feeOverridden).toBe(false)

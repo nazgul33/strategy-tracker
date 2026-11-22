@@ -102,7 +102,7 @@ describe('recalcRunState', () => {
     expect(rows.length).toBe(1)
     expect(rows[0]!.kind).toBe('adjust')
     expect(rows[0]!.amountCents).toBe(-500)
-    expect(JSON.parse(rows[0]!.ref)).toEqual({ bookedOn: TODAY, reason: 'recalc' })
+    expect(JSON.parse(rows[0]!.ref!)).toEqual({ bookedOn: TODAY, reason: 'recalc' })
     expect(ledgerForRun(f, runId).length).toBe(ledgerLen + 1)
   })
 

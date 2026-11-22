@@ -23,7 +23,7 @@ describe('capture image storage at ingest', () => {
     await ingestCapture(runId, PNG, ext, deps)
     expect(f._stores.captureImages.length).toBe(1)
     const img = f._stores.captureImages[0]!
-    expect(img.captureId).toBe(f._stores.pending[0]!.captureId)
+    expect(img.captureId).toBe(f._stores.pending[0]!.captureId!)
     expect(img.mime).toBe('image/png')
     expect(img.byteLen).toBeGreaterThan(0)
     expect(img.byteLen).toBe(img.bytes.length)
@@ -123,7 +123,7 @@ describe('capture image storage at ingest', () => {
     await ingestCapture(runId, PNG, ext, deps)
     const first = f._stores.pending[0]!
     await f.repos.pendingRepo.decide(first.id, 'rejected')
-    await f.repos.captureImageRepo.setKeep(first.captureId)
+    await f.repos.captureImageRepo.setKeep(first.captureId!)
     const originalBytes = f._stores.captureImages[0]!.bytes
 
     const again = await ingestCapture(runId, PNG, ext, deps) as { pending: PendingFillRow[] }
