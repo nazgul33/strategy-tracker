@@ -1,6 +1,7 @@
 import { describe, test, expect, spyOn } from 'bun:test'
 import { createApp } from '../src/http/app'
 import { makeFakes, makeDeps, json, loginAs, createRun } from './http-fakes'
+import { NO_SNAPSHOT } from './booking-fakes'
 
 const DETECTED = { detectedSide: 'buy', detectedShares: 3, detectedPrice: 100000n, detectedFilledOn: '2026-11-10', detectedFee: 12, detectedAt: '2026-11-10 09:00:00' }
 
@@ -9,7 +10,7 @@ async function setup(costPpm = 5000) {
   const app = createApp(makeDeps(f))
   const auth = await loginAs(app)
   const runId = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm, poolCents: 1000000 })
-  const addPending = (extra: Record<string, unknown> = {}) => f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending', ...extra })
+  const addPending = (extra: Record<string, unknown> = {}) => f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT, ...extra })
   const addImage = (captureId: number) => f.repos.captureImageRepo.insertIgnore({ captureId, mime: 'image/png', bytes: Buffer.from('png-bytes'), byteLen: 9 })
   const post = (path: string, body?: unknown) => app.request(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body), headers: { ...json, ...auth } })
   return { f, app, auth, runId, addPending, addImage, post }
@@ -93,7 +94,7 @@ describe('GET /api/pending run lookup', () => {
     const otherRun = await createRun(app, auth, { name: 'r2', ticker: 'AAPL', costPpm: 250, poolCents: 1000000 })
     await addPending()
     await addPending()
-    await f.repos.pendingRepo.insert({ runId: otherRun, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    await f.repos.pendingRepo.insert({ runId: otherRun, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT })
 
     const calls: number[] = []
     let inFlight = 0

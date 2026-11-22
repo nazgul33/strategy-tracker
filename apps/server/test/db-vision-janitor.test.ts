@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { getDb, applyMigrations } from '../src/db/client'
 import { getRepos } from '../src/db/repos'
+import { NO_SNAPSHOT } from './booking-fakes'
 
 const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 
@@ -48,7 +49,7 @@ describeIf('vision janitor (db)', () => {
   })
   const image = (captureId: number) => repos.captureImageRepo.insertIgnore({ captureId, mime: 'image/png', bytes: Buffer.from('png'), byteLen: 3 })
   const pending = (runId: number, captureId: number, status: 'pending' | 'confirmed' | 'rejected') =>
-    repos.pendingRepo.insert({ runId, captureId, bucketIdx: null, side: 'buy', ticker: 'JJ', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status })
+    repos.pendingRepo.insert({ runId, captureId, bucketIdx: null, side: 'buy', ticker: 'JJ', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status, ...NO_SNAPSHOT })
 
   test('sweepOrphans deletes an unkept image with no live pending row, and its frozen rows', async () => {
     const { runId, captureId } = await newCapture()

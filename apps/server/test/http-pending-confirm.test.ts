@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createApp } from '../src/http/app'
 import { makeFakes, makeDeps, PASSWORD, json, loginAs, createRun } from './http-fakes'
+import { NO_SNAPSHOT } from './booking-fakes'
 
 describe('http pending', () => {
   test('pending list + confirm with overrides + reject non-pending 409', async () => {
@@ -12,7 +13,7 @@ describe('http pending', () => {
     const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 }), headers: { 'content-type': 'application/json', ...auth } })
     const { id } = await cr.json()
     // insert pending manually
-    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT })
     const pl = await app.request('/api/pending', { headers: auth })
     expect(pl.status).toBe(200)
     const arr = await pl.json()
@@ -39,7 +40,7 @@ describe('http pending', () => {
       const app = createApp(makeDeps(f))
       const auth = await loginAs(app)
       const id = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 })
-      const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+      const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT })
       // The row still reads as pending, but another decider wins the atomic flip.
       f.repos.pendingRepo.decide = async () => false
       return { f, app, auth, pid }
@@ -69,7 +70,7 @@ describe('http pending', () => {
     const auth = { Authorization: `Bearer ${token}` }
     const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 }), headers: { 'content-type': 'application/json', ...auth } })
     const { id } = await cr.json()
-    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT })
     const conf1 = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { 'content-type': 'application/json', ...auth } })
     expect(conf1.status).toBe(200)
     const conf2 = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { 'content-type': 'application/json', ...auth } })
@@ -94,7 +95,7 @@ describe('http pending', () => {
     const app = createApp(makeDeps(f))
     const auth = await loginAs(app)
     const id = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 })
-    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT })
     expect((await app.request(`/api/pending/${pid}/reject`, { method: 'POST', headers: auth })).status).toBe(200)
     const res = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { ...json, ...auth } })
     expect(res.status).toBe(409)
@@ -108,7 +109,7 @@ describe('http pending', () => {
     const auth = await loginAs(app)
     const id = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 })
     // a sell with no held bucket -> DomainError('no-bucket-for-sell') from booking
-    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT })
     const res = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { ...json, ...auth } })
     expect(res.status).toBe(422)
     expect(await res.json()).toEqual({ error: 'no-bucket-for-sell' })
@@ -122,7 +123,7 @@ describe('http pending', () => {
     const app = createApp(makeDeps(f))
     const auth = await loginAs(app)
     const id = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 })
-    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT })
     const res = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({ overrides: { shares: 0 } }), headers: { ...json, ...auth } })
     expect(res.status).toBe(422)
     expect(await res.json()).toEqual({ error: 'invalid-shares' })
@@ -135,7 +136,7 @@ describe('http pending', () => {
     const app = createApp(makeDeps(f))
     const auth = await loginAs(app)
     const id = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 })
-    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT })
     for (const [overrides, error] of [[{ side: 'SELL' }, 'invalid-side'], [{ feeCents: -1 }, 'invalid-fee'], [{ feeCents: 1.5 }, 'invalid-fee']] as const) {
       const res = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({ overrides }), headers: { ...json, ...auth } })
       expect(res.status).toBe(422)
@@ -153,7 +154,7 @@ describe('http pending', () => {
     const auth = { Authorization: `Bearer ${token}` }
     const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 }), headers: { 'content-type': 'application/json', ...auth } })
     const { id } = await cr.json()
-    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'ZZZ', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending' })
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'buy', ticker: 'ZZZ', shares: 3, price: 100000n, fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT })
     const conf = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', headers: auth })
     expect(conf.status).toBe(409)
     expect((await conf.json()).error).toBe('ticker-mismatch')

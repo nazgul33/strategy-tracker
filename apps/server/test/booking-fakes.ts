@@ -2,6 +2,9 @@ import type { RunState } from '@st/core'
 import type { BookingNotifier, OrderRow, PendingDecisionPatch, RepoSurface, SellAttribution } from '../src/domain/booking'
 import { fakeCorrectionRepo } from './fake-corrections'
 
+// A pending row without a vision snapshot: the legacy shape (detectedAt null).
+export const NO_SNAPSHOT = { detectedSide: null, detectedShares: null, detectedPrice: null, detectedFilledOn: null, detectedFee: null, detectedAt: null } as const
+
 export const silentNotifier: BookingNotifier = { siblingCancelled: async () => {}, sellAttributed: async () => {} }
 
 export function recordingNotifier() {

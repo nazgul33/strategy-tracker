@@ -33,9 +33,7 @@ export interface PendingRow extends ReviewedPendingRow {
   fee: number | null; filledOn: ISODate; status: PendingStatus; createdAt: string
 }
 
-// The vision snapshot is optional on insert: a row without it is the legacy shape (detectedAt null).
-type DetectedKey = 'detectedSide' | 'detectedShares' | 'detectedPrice' | 'detectedFilledOn' | 'detectedFee' | 'detectedAt'
-export type NewPending = Omit<PendingRow, 'id' | 'createdAt' | DetectedKey> & Partial<Pick<PendingRow, DetectedKey>>
+export type NewPending = Omit<PendingRow, 'id' | 'createdAt'>
 
 export interface PendingRepo {
   insert(p: NewPending): Promise<number>

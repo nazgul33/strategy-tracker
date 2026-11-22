@@ -1,6 +1,7 @@
 import { describe, test, expect, spyOn } from 'bun:test'
 import { createApp } from '../src/http/app'
 import { makeFakes, makeDeps, json, loginAs, createRun } from './http-fakes'
+import { NO_SNAPSHOT } from './booking-fakes'
 
 const D = '2026-11-10' // makeDeps().today()
 const WHY_PRICE_10 = 'A target fills at or above its limit, a stop at or below its trigger and a market sell at any price, so more than one order fit this price. A target at exactly the fill price wins; otherwise the only order for exactly 10 shares, if there is one; otherwise the order whose price is nearest the fill, a target before a stop at an equal distance, then the lowest bucket.'
@@ -102,7 +103,7 @@ describe('sibling-cancel notification over HTTP', () => {
 
   test('confirming a pending sell over HTTP notifies as well', async () => {
     const { f, app, auth, id } = await setup()
-    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: 965000n, fee: null, filledOn: D, status: 'pending' })
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: 965000n, fee: null, filledOn: D, status: 'pending', ...NO_SNAPSHOT })
     const res = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { ...json, ...auth } })
     expect(res.status).toBe(200)
     expect(f.sent).toHaveLength(1)
@@ -116,7 +117,7 @@ describe('sibling-cancel notification over HTTP', () => {
     deps.send = async () => { throw new Error('telegram-down') }
     const errors = spyOn(console, 'error').mockImplementation(() => {})
     try {
-      const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: 965000n, fee: null, filledOn: D, status: 'pending' })
+      const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: 965000n, fee: null, filledOn: D, status: 'pending', ...NO_SNAPSHOT })
       const res = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { ...json, ...auth } })
       expect(res.status).toBe(200)
       expect(f.pending.find((p) => p.id === pid)!.status).toBe('confirmed')
