@@ -130,3 +130,9 @@ Execution order: A, B, C, D, E, on the one branch.
 - #75 the morning digest's `warn-data-error` names no run or ticker (anonymous daily warning for a cached-then-delisted ticker).
 - #76 `sim_days` lacks a `(sim_run_id, trade_date)` index for the replay listing (`listDays` filters by run and filesorts by trade date; 0009 added the single-column index only).
 - #77 boot repair rebuilds frozen review records with `feeOverridden: false` (whole-plan review Minor 3).
+
+## Plan D rulings (as tasks land)
+
+- **[REVIEW] ko `dismiss` = 닫기** (plan D Task 2, plan-pinned copy): 닫기 also means "close", and the dialog ✕ carries `aria-label=cancel`. Assistive tech distinguishes them by context, but a human may prefer 해제/무시 for the notice-dismiss button. Plan copy table verbatim for now.
+- Task 2 kept the plan's notice trigger exactly: only `keepImage === true && !res.archived` warns; a discard never notifies; `archived:true` with no review row keeps the plain `keepImageNotKept` line.
+- Task 2 touched `Modal.tsx` beyond its plan file list (authorized): the opener chain fixes the fee-dialog -> keep-prompt handoff so Escape returns focus to the row's Confirm button (plan Review Focus 1). Reviewer audited it as the minimal correct fix.
