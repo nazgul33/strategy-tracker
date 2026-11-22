@@ -317,6 +317,8 @@ git commit -m "fix: record the operator's keep before a confirm or reject flips 
 
 ---
 
+**Controller amendment (from plan A review) for Task 3:** add a test that a pending confirm with a forced `bucketIdx` naming a bucket that is not held (`bucket-not-held`) leaves the row `pending`, with `keepImage: true` (so the screenshot is kept, per this task) and without (nothing kept); this pins the refusal order against this task's reorder.
+
 **Controller amendment (cross-plan check) for Task 3:** plan A added the error `invalid-bucket` (a malformed or buy-side `bucketIdx`), thrown inside the booking. After this task's reorder it counts among the refusals that come after the keep write: list it with `no-empty-bucket`, `no-bucket-for-sell` and a lost decide race in the comment and in the test that pins "a booking refusal leaves the screenshot kept".
 
 ### Task 4: rebuild a lost review record for a kept screenshot at boot (#64)
