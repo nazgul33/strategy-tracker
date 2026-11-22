@@ -112,6 +112,24 @@ describeIf('vision janitor (db)', () => {
     expect(await repos.visionReviewRepo.listForCaptures([captureId])).toHaveLength(1)
   })
 
+  test('listUnfrozenKept lists resolved rows of kept images that lack a frozen row, and nothing else', async () => {
+    const a = await newCapture()
+    await image(a.captureId); await repos.captureImageRepo.setKeep(a.captureId)
+    const lost = await pending(a.runId, a.captureId, 'confirmed')
+    await pending(a.runId, a.captureId, 'pending')
+    const b = await newCapture()
+    await image(b.captureId); await repos.captureImageRepo.setKeep(b.captureId)
+    const ok = await pending(b.runId, b.captureId, 'confirmed')
+    await repos.visionReviewRepo.insertIgnore(review(b.runId, b.captureId, ok))
+    const c = await newCapture()
+    await image(c.captureId)
+    await pending(c.runId, c.captureId, 'confirmed')
+    const rows = await repos.visionReviewRepo.listUnfrozenKept()
+    const mine = rows.filter((r: any) => [a.captureId, b.captureId, c.captureId].includes(r.captureId))
+    expect(mine.map((r: any) => r.id)).toEqual([lost])
+    expect(mine[0]).toMatchObject({ captureId: a.captureId, status: 'confirmed', shares: 1, price: 100n })
+  })
+
   test('discard removes one capture\'s image and frozen rows and leaves another capture alone', async () => {
     const a = await newCapture()
     const b = await newCapture()

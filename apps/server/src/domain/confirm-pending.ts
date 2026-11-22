@@ -27,7 +27,8 @@ export interface ConfirmOverrides {
 //   leaves the row pending and the image kept; the flag is sticky, so a later
 //   confirm or reject, with or without keep, leaves it kept.
 // - A crash or thrown write after decide flipped the row leaves it confirmed
-//   with the image kept; the missing frozen record is rebuilt at the next boot.
+//   with the image kept; the boot repair (refreezeKept, run by runBootSweeps)
+//   rebuilds the missing frozen record at the next boot.
 // archived is false when the vision-review bookkeeping (freeze, then keep or
 // sweep) threw after the fill was booked; the confirm itself still succeeded and
 // a requested keep is already in place. archived: true only means the
@@ -99,8 +100,9 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
 // - setKeep throws: nothing is decided; the reject fails as a whole and the
 //   operator retries.
 // - A lost decide race resolves null with the image kept (the flag is sticky).
-// - A crash after decide leaves the row rejected with the image kept; the
-//   missing frozen record is rebuilt at the next boot.
+// - A crash after decide leaves the row rejected with the image kept; the boot
+//   repair (refreezeKept, run by runBootSweeps) rebuilds the missing frozen
+//   record at the next boot.
 // The reject has taken effect once decide succeeds, so an archive failure is
 // logged and contained and reported as archived: false, with a requested keep
 // already in place. archived: true only means the bookkeeping did not throw; it

@@ -97,6 +97,23 @@ export async function resolveReview(
   const { pendingRow, captureId, outcome, final, keepImage, feeOverride } = args
   if (captureId === null) return
 
+  await freezeReview(repos, { pendingRow, captureId, outcome, final, feeOverride })
+
+  // Sticky: only ever raised, never lowered.
+  if (keepImage) await repos.captureImageRepo.setKeep(captureId)
+
+  if (await repos.pendingRepo.hasLiveForCapture(captureId)) return
+  if (await repos.captureImageRepo.isKept(captureId)) return
+  await repos.captureImageRepo.deleteFor(captureId)
+  await repos.visionReviewRepo.deleteFor(captureId)
+}
+
+// Writes the frozen detected-vs-final record of one resolved fill (a no-op if it has one).
+export async function freezeReview(
+  repos: { visionReviewRepo: Pick<ReviewRepos['visionReviewRepo'], 'insertIgnore'> },
+  args: { pendingRow: ReviewedPendingRow; captureId: number; outcome: 'confirmed' | 'rejected'; final: FinalValues | null; feeOverride?: number | null },
+): Promise<void> {
+  const { pendingRow, captureId, outcome, final, feeOverride } = args
   const detected: DetectedValues = {
     side: pendingRow.detectedSide ?? null,
     shares: pendingRow.detectedShares ?? null,
@@ -124,12 +141,30 @@ export async function resolveReview(
     edited: isEdited(detected, final, { feeOverride }),
     feeOverridden: feeOverride !== undefined,
   })
+}
 
-  // Sticky: only ever raised, never lowered.
-  if (keepImage) await repos.captureImageRepo.setKeep(captureId)
+// A resolved pending row of a kept capture, as `listUnfrozenKept` returns it: the booked values
+// `decide` wrote onto the row sit beside the untouched detected snapshot.
+export type UnfrozenPendingRow = ReviewedPendingRow & {
+  captureId: number; status: 'confirmed' | 'rejected'
+  side: string; shares: number; price: bigint; fee: number | null; filledOn: string
+}
 
-  if (await repos.pendingRepo.hasLiveForCapture(captureId)) return
-  if (await repos.captureImageRepo.isKept(captureId)) return
-  await repos.captureImageRepo.deleteFor(captureId)
-  await repos.visionReviewRepo.deleteFor(captureId)
+// Boot repair: the keep flag is written before a confirm or reject flips its row, so a crash
+// between the flip and the freeze leaves a kept image with no frozen record, and the review tab
+// lists only kept images that have one. Rebuilds each missing record from the pending row and
+// returns the pending ids it froze, ascending. Known loss: the confirm's fee override is not
+// stored on the row, so a rebuilt record has feeOverridden false and its `edited` ignores the fee.
+export async function refreezeKept(
+  repos: { visionReviewRepo: Pick<ReviewRepos['visionReviewRepo'], 'insertIgnore'> & { listUnfrozenKept(): Promise<UnfrozenPendingRow[]> } },
+): Promise<number[]> {
+  const frozen: number[] = []
+  for (const row of await repos.visionReviewRepo.listUnfrozenKept()) {
+    const final: FinalValues | null = row.status === 'confirmed'
+      ? { side: row.side, shares: row.shares, price: row.price, filledOn: row.filledOn, fee: row.fee ?? 0 }
+      : null
+    await freezeReview(repos, { pendingRow: row, captureId: row.captureId, outcome: row.status, final })
+    frozen.push(row.id)
+  }
+  return frozen
 }
