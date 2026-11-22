@@ -168,3 +168,15 @@ Execution order: A, B, C, D, on the one branch (plan E was dropped, see above).
 - Plan D whole-plan review (Opus 5.5): Spec FAIL on one Critical cross-task seam. In the app, the fill dialog's delete step opened with focus on "Delete for real", so a second Enter deleted the fill (Modal cleanup and opener chain vs the `FillDeleteStep` remount). Also found: focus lost after Delete, Cancel, ✕, and keep notices mounted as per-item live regions. All three are fixed in the final web fix pass.
 - Branch-wide review (Opus 5.5): READY AFTER FIXES, 0 Critical. The cross-plan seams hold: `CONFIRM_ERROR_KEYS` covers every code Telegram can reach, and the `archived` notice, `simErr.*`, `bucketIdx`, the `web` notification rows and migration 0009 agree across plans. The #58 leftovers (`listForRunFrom` typing, `silentNotifier` fixtures that never book) are done in the final server fix pass.
 - Commit `ef89515` uses a `perf:` subject, outside the repo's `feat|fix|docs|test|refactor|chore:` list. Accepted as is rather than rewriting branch history.
+- Final fix passes:
+  - Web (`ae9c032..0eb2135`) fixed the delete-step focus (Critical), opener-chain loss and the keep-notice live region, plus the test-file splits. The Opus re-review re-ran its probe and approved.
+  - Server (`ca21217..0a0f756`) did the #58 leftovers, reject now answers 422 on a keep-write refusal, and a worded `bucket-not-found` Telegram line was added. Approved by Opus.
+- Final verification at `0a0f756`:
+  - full `bun test`: 1557 pass / 64 skip / 0 fail
+  - typecheck: clean
+  - DB suite: 61 pass across 6 files
+  - e2e smoke: 128 assertions
+- Follow-up #81 was filed (split the oversized test files), so #71 and #72 do not lose that item.
+- **[REVIEW] How issues close.** Each issue gets an explanatory comment now. The PR body lists `Closes #N` for the issues this branch resolves, so they close when the PR merges, not before the code is on `main`.
+  - Kept open with a comment: #68 (human browser check), #69 (screen-reader pass; inert background and a resting "changed" mark left with reasons), #67 (repository typing; plan E never written).
+  - Out of scope: #40, #50.
