@@ -21,9 +21,20 @@ export function isDeadlock(e: unknown): boolean {
   return false
 }
 
+// Exponential deadlock backoff: attempts 1..4 wait 5, 10, 20, 40 ms plus 0-4 ms
+// of jitter.
+export function deadlockBackoffMs(attempt: number, random: () => number = Math.random): number {
+  return 5 * 2 ** (attempt - 1) + Math.floor(random() * 5)
+}
+
 export type BarRow = { ticker: string; tradeDate: string; open: bigint; high: bigint; low: bigint; close: bigint }
 
-export function getBarRepos(db: any) {
+export function getBarRepos(
+  db: any,
+  opts: { sleep?: (ms: number) => Promise<void>; random?: () => number } = {},
+) {
+  const sleep = opts.sleep ?? Bun.sleep
+  const random = opts.random ?? Math.random
   const priceHistoryRepo = {
     // Idempotent by (ticker, tradeDate): refetching a day overwrites its close.
     async upsertMany(rows: { ticker: string; tradeDate: string; close: bigint }[]): Promise<number> {
@@ -112,6 +123,8 @@ export function getBarRepos(db: any) {
           // called with a transaction handle, a deadlock would roll back the outer
           // transaction and the retry would run outside it.
           if (!isDeadlock(e) || attempt >= 5) throw e
+          // jitter keeps two first writers from retrying in lockstep
+          await sleep(deadlockBackoffMs(attempt, random))
         }
       }
     },
