@@ -13,7 +13,7 @@ the whole-branch review found and the branch deliberately left.
 
 ## Behaviour an operator could notice
 
-- **Telegram `/orders` prints a blank ticker in production.** The `orders` table
+- **Telegram `/orders` prints a blank ticker in production** (filed as #83). The `orders` table
   has no ticker column and `orderRepo.listForDate` does not join runs, so
   `onOrders` in `wire/capture.ts` reads `ticker` through a cast
   (`o as OrderRecord & { ticker?: string }`) with `?? ''`. That is
