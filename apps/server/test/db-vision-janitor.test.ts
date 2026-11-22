@@ -124,10 +124,15 @@ describeIf('vision janitor (db)', () => {
     const c = await newCapture()
     await image(c.captureId)
     await pending(c.runId, c.captureId, 'confirmed')
+    // a reject that crashed between the flip and the freeze is just as unfrozen as a lost confirm
+    const d = await newCapture()
+    await image(d.captureId); await repos.captureImageRepo.setKeep(d.captureId)
+    const rejected = await pending(d.runId, d.captureId, 'rejected')
     const rows = await repos.visionReviewRepo.listUnfrozenKept()
-    const mine = rows.filter((r: any) => [a.captureId, b.captureId, c.captureId].includes(r.captureId))
-    expect(mine.map((r: any) => r.id)).toEqual([lost])
+    const mine = rows.filter((r: any) => [a.captureId, b.captureId, c.captureId, d.captureId].includes(r.captureId))
+    expect(mine.map((r: any) => r.id)).toEqual([lost, rejected])
     expect(mine[0]).toMatchObject({ captureId: a.captureId, status: 'confirmed', shares: 1, price: 100n })
+    expect(mine[1]).toMatchObject({ captureId: d.captureId, status: 'rejected' })
   })
 
   test('discard removes one capture\'s image and frozen rows and leaves another capture alone', async () => {

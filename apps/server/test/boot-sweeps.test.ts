@@ -4,6 +4,9 @@ import { makeFakes } from './http-fakes'
 
 const now = new Date('2026-11-20T12:00:00Z')
 
+// the zone the process started in — the DST test below must leave it exactly there, whatever it was
+const offsetAtLoad = new Date('2026-07-01T12:00:00Z').getTimezoneOffset()
+
 const noReviews = { listUnfrozenKept: async () => [], insertIgnore: async () => {} }
 
 function unfrozen(id: number) {
@@ -16,26 +19,32 @@ function unfrozen(id: number) {
 function makeRepos(over: { sweepDrafts?: (d: Date) => Promise<number>; sweepOrphans?: () => Promise<number[]>; listUnfrozenKept?: () => Promise<any[]> } = {}) {
   const draftArgs: Date[] = []
   const inserted: number[] = []
+  const calls: string[] = []
   let orphanCalls = 0
   const repos = {
     visionReviewRepo: {
-      listUnfrozenKept: async () => (over.listUnfrozenKept ? over.listUnfrozenKept() : []),
+      listUnfrozenKept: async () => {
+        calls.push('listUnfrozenKept')
+        return over.listUnfrozenKept ? over.listUnfrozenKept() : []
+      },
       insertIgnore: async (row: { pendingFillId: number }) => { inserted.push(row.pendingFillId) },
     },
     simRepo: {
       sweepDrafts: async (d: Date) => {
+        calls.push('sweepDrafts')
         draftArgs.push(d)
         return over.sweepDrafts ? over.sweepDrafts(d) : 0
       },
     },
     captureImageRepo: {
       sweepOrphans: async () => {
+        calls.push('sweepOrphans')
         orphanCalls++
         return over.sweepOrphans ? over.sweepOrphans() : []
       },
     },
   }
-  return { repos, draftArgs, inserted, orphanCalls: () => orphanCalls }
+  return { repos, draftArgs, inserted, calls, orphanCalls: () => orphanCalls }
 }
 
 const DAY_MS = 86_400_000
@@ -73,7 +82,7 @@ describe('runBootSweeps', () => {
   test('the window is 168 elapsed hours even across the fall-back change', async () => {
     // 2026-11-03 12:00 EST minus seven New York calendar days is 2026-10-27 12:00 EDT, 169 h back: a draft 168.5 h old
     // is past the real 168 h window (swept) but inside a calendar-day window (it would be kept)
-    // the test process runs in UTC, which has no fall-back change; calendar-day arithmetic only differs in a zone that does
+    // the default runner zone is UTC, which has no fall-back change; calendar-day arithmetic only differs in a zone that does
     const prevTz = process.env.TZ
     process.env.TZ = 'America/New_York'
     try {
@@ -85,8 +94,8 @@ describe('runBootSweeps', () => {
     }
   })
 
-  test('the DST test leaves the process in UTC', () => {
-    expect(new Date('2026-07-01T12:00:00Z').getTimezoneOffset()).toBe(0)
+  test('the DST test restores the zone the process started in', () => {
+    expect(new Date('2026-07-01T12:00:00Z').getTimezoneOffset()).toBe(offsetAtLoad)
   })
 
   test('both sweeps run; the draft cutoff is exactly seven days before now', async () => {
@@ -155,8 +164,9 @@ describe('runBootSweeps', () => {
   test('the review rebuild runs after both sweeps and logs the ids it rebuilt', async () => {
     const log = spyOn(console, 'log').mockImplementation(() => {})
     try {
-      const { repos, inserted, orphanCalls } = makeRepos({ listUnfrozenKept: async () => [unfrozen(5), unfrozen(8)] })
+      const { repos, inserted, orphanCalls, calls } = makeRepos({ listUnfrozenKept: async () => [unfrozen(5), unfrozen(8)] })
       await runBootSweeps(repos, now)
+      expect(calls).toEqual(['sweepDrafts', 'sweepOrphans', 'listUnfrozenKept'])
       expect(orphanCalls()).toBe(1)
       expect(inserted).toEqual([5, 8])
       expect(log).toHaveBeenCalledWith('[main] rebuilt review records for pending fill ids: 5, 8')

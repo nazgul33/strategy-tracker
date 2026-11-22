@@ -325,7 +325,7 @@ describe('runSim', () => {
     const simRepo = {
       async insertRun(input: any) { const id = runSeq++; runs.push({ id, ...input }); return id },
       async insertDays(rows: any[]) { for (const r of rows) days.push({ id: daySeq++, ...r }) },
-      async listRuns() { return [...runs] },
+      async listRuns() { return [...runs].sort((a, b) => b.id - a.id) },
       async getRun(id: number) { return runs.find((r) => r.id === id) ?? null },
       async listDays(id: number) { return days.filter((d) => d.simRunId === id) },
     }

@@ -1,37 +1,9 @@
 import { describe, test, expect, beforeEach, spyOn } from 'bun:test'
 import { isTradingDay } from '@st/calendar'
-import { MarketDataError, type OHLCBar } from '@st/market-data'
+import { type OHLCBar } from '@st/market-data'
 import { makeCachedBarReader } from '../src/market/bars'
+import { day, mkBar, makeUpstream } from './bars-fakes'
 import { makeFakes } from './http-fakes'
-
-function day(date: string, n = 1): string {
-  const d = new Date(`${date}T12:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + n)
-  return d.toISOString().slice(0, 10)
-}
-
-function mkBar(date: string): OHLCBar {
-  const n = BigInt(date.slice(5, 7)) * 100n + BigInt(date.slice(8))
-  return { date, open: n * 10_000n, high: (n + 2n) * 10_000n, low: (n - 1n) * 10_000n, close: (n + 1n) * 10_000n }
-}
-
-function makeUpstream() {
-  const state = {
-    ranges: [] as [string, string][],
-    missing: new Set<string>(),
-    failFrom: null as string | null,
-    reset() { state.ranges = [] },
-  }
-  const fn = async (_ticker: string, from: string, to: string): Promise<OHLCBar[]> => {
-    state.ranges.push([from, to])
-    if (state.failFrom !== null && from >= state.failFrom) throw new MarketDataError('http')
-    const out: OHLCBar[] = []
-    for (let d = from; d <= to; d = day(d)) if (isTradingDay(d) && !state.missing.has(d)) out.push(mkBar(d))
-    if (out.length === 0) throw new MarketDataError('no-data')
-    return out
-  }
-  return Object.assign(fn, { state })
-}
 
 describe('makeCachedBarReader gap chunking', () => {
   let f: ReturnType<typeof makeFakes>

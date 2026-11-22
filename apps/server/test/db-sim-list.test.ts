@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, spyOn } from 'bun:test'
+import { describe, test, expect, beforeAll, afterAll, spyOn } from 'bun:test'
 import { sql } from 'drizzle-orm'
 import { getDb, applyMigrations } from '../src/db/client'
 import { getRepos } from '../src/db/repos'
@@ -6,13 +6,37 @@ import { runBootSweeps } from '../src/wire/boot-sweeps'
 
 const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 
+// sweepDrafts deletes every stale draft in the whole database, not just this suite's rows,
+// so it runs on its own scratch database (like db-vision-janitor) and never touches the
+// tables other suites share in st_test.
 describeIf('simRepo.listRuns / sweepDrafts', () => {
-  let db: any
+  const SCRATCH = `st_simlist_${Date.now().toString(36)}_${process.pid.toString(36)}`
   let repos: any
+  let db: any
+  let parent: Awaited<ReturnType<typeof getDb>> | undefined
+  let scratch: Awaited<ReturnType<typeof getDb>> | undefined
+  let created = false
+
   beforeAll(async () => {
-    db = await getDb(process.env.TEST_DATABASE_URL!)
-    await applyMigrations(db)
-    repos = getRepos(db)
+    if (!/^st_simlist_[a-z0-9]+_[a-z0-9]+$/.test(SCRATCH)) throw new Error(`unexpected scratch db name '${SCRATCH}'`)
+    const url = new URL(process.env.TEST_DATABASE_URL!)
+    parent = await getDb(url.toString())
+    await parent.$client.query(`CREATE DATABASE \`${SCRATCH}\``)
+    created = true
+    url.pathname = `/${SCRATCH}`
+    scratch = await getDb(url.toString())
+    await applyMigrations(scratch)
+    db = scratch
+    repos = getRepos(scratch)
+  })
+
+  afterAll(async () => {
+    try {
+      if (created) await parent!.$client.query(`DROP DATABASE IF EXISTS \`${SCRATCH}\``)
+    } finally {
+      await scratch?.$client.end()
+      await parent?.$client.end()
+    }
   })
 
   const config = (over: Record<string, unknown> = {}) => ({
@@ -43,8 +67,7 @@ describeIf('simRepo.listRuns / sweepDrafts', () => {
       expect(line).toContain(String(x))
       expect(line).toContain(String(y))
     } finally { log.mockRestore() }
-    // >= 2: st_test is shared, and a crashed earlier run may have left 2001-dated drafts behind
-    expect(swept).toBeGreaterThanOrEqual(2)
+    expect(swept).toBe(2)
     expect(await repos.simRepo.getRun(x)).toBeNull()
     expect(await repos.simRepo.getRun(y)).toBeNull()
     expect(await repos.simRepo.listDays(x)).toEqual([])

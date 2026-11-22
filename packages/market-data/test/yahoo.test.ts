@@ -106,6 +106,18 @@ describe('market-data yahoo', () => {
     await expect(fetchLastClose('ZZZZQ', fetchImpl as any)).rejects.toMatchObject({ kind: 'no-data' });
   });
 
+  test('the no-data exemptions stay narrow: last close keeps a 400 as http, and "Not Found" only rescues a 404', async () => {
+    // fetchLastClose asks for the last 10 days, so a "the range predates listing" 400 is a real failure there
+    const notListed = `{"chart":{"result":null,"error":{"code":"Bad Request","description":"Data doesn't exist for startDate = 1420070400, endDate = 1451606400"}}}`;
+    const lastCloseFetch = () => Promise.resolve(new Response(notListed, { status: 400 }));
+    await expect(fetchLastClose('ABNB', lastCloseFetch as any)).rejects.toMatchObject({ kind: 'http' });
+    // the "Not Found" body is only an answer about the symbol on a 404, not on a server error
+    const notFound = `{"chart":{"result":null,"error":{"code":"Not Found","description":"No data found, symbol may be delisted"}}}`;
+    const serve500 = () => Promise.resolve(new Response(notFound, { status: 500 }));
+    await expect(fetchLastClose('X', serve500 as any)).rejects.toMatchObject({ kind: 'http' });
+    await expect(fetchDailyBars('X', '2026-02-01', '2026-02-05', serve500 as any)).rejects.toMatchObject({ kind: 'http' });
+  });
+
   test('a provider that cannot be reached is an http error carrying the cause', async () => {
     const fetchImpl = () => Promise.reject(new TypeError('Failed to fetch'));
     const err = await fetchDailyBars('X', '2026-02-01', '2026-02-05', fetchImpl as any).catch((e) => e);
