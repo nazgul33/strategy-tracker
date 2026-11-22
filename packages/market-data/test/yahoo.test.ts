@@ -94,9 +94,24 @@ describe('market-data yahoo', () => {
   test('any other non-OK response is still an http error', async () => {
     const respond = (body: string, status: number) => () => Promise.resolve(new Response(body, { status }));
     const badInterval = `{"chart":{"result":null,"error":{"code":"Bad Request","description":"Invalid input - interval=1d is not supported"}}}`;
-    const notFound = `{"chart":{"result":null,"error":{"code":"Not Found","description":"No data found, symbol may be delisted"}}}`;
     await expect(fetchDailyBars('X', '2026-02-01', '2026-02-05', respond(badInterval, 400) as any)).rejects.toMatchObject({ kind: 'http' });
     await expect(fetchDailyBars('X', '2026-02-01', '2026-02-05', respond('upstream down', 500) as any)).rejects.toMatchObject({ kind: 'http' });
-    await expect(fetchDailyBars('X', '2026-02-01', '2026-02-05', respond(notFound, 404) as any)).rejects.toMatchObject({ kind: 'http' });
+    await expect(fetchDailyBars('X', '2026-02-01', '2026-02-05', respond('<html>Not Found</html>', 404) as any)).rejects.toMatchObject({ kind: 'http' });
+  });
+
+  test("Yahoo's 404 for an unknown or delisted symbol is no-data, for bars and for the last close", async () => {
+    const notFound = `{"chart":{"result":null,"error":{"code":"Not Found","description":"No data found, symbol may be delisted"}}}`;
+    const fetchImpl = () => Promise.resolve(new Response(notFound, { status: 404 }));
+    await expect(fetchDailyBars('ZZZZQ', '2026-02-01', '2026-02-05', fetchImpl as any)).rejects.toMatchObject({ kind: 'no-data' });
+    await expect(fetchLastClose('ZZZZQ', fetchImpl as any)).rejects.toMatchObject({ kind: 'no-data' });
+  });
+
+  test('a provider that cannot be reached is an http error carrying the cause', async () => {
+    const fetchImpl = () => Promise.reject(new TypeError('Failed to fetch'));
+    const err = await fetchDailyBars('X', '2026-02-01', '2026-02-05', fetchImpl as any).catch((e) => e);
+    expect(err).toBeInstanceOf(MarketDataError);
+    expect(err).toMatchObject({ kind: 'http' });
+    expect(err.message).toContain('Failed to fetch');
+    await expect(fetchLastClose('X', fetchImpl as any)).rejects.toMatchObject({ kind: 'http' });
   });
 });
