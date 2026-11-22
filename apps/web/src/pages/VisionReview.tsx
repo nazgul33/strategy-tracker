@@ -109,7 +109,7 @@ export function VisionReviewPage() {
           key={entry.captureId}
           entry={entry}
           busy={busyId === entry.captureId}
-          deleteDisabled={busyId !== null}
+          deleteDisabled={busyId !== null || reloading}
           error={entryError(entry.captureId)}
           onDelete={() => void remove(entry.captureId)}
           onCancel={() => cancel(entry.captureId)}

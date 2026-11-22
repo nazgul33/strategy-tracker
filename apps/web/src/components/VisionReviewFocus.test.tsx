@@ -1,6 +1,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { installFetchStub, restoreFetch, type Route } from '../testing/fetchStub';
+import { holdNext } from '../testing/holdFetch';
 import { EDITED, entry, REJECTED } from '../testing/visionReview';
 
 GlobalRegistrator.register();
@@ -153,6 +154,48 @@ describe('VisionReviewPage focus', () => {
 
     expect(active()!.tagName).not.toBe('H1');
     expect(cards()[0]!.contains(active())).toBe(true);
+  });
+
+  it('a failed delete does not pull focus to the heading even when focus fell to the body meanwhile', async () => {
+    await render([
+      { method: 'DELETE', url: '/api/vision-reviews/3', status: 500, json: { error: 'boom' } },
+      { url: '/api/vision-reviews', json: { entries: two() } },
+    ]);
+    await click('Delete');
+    act(() => button('Delete for real').focus());
+    const held = holdNext('DELETE', '/api/vision-reviews/3');
+    await click('Delete for real');
+    // A disabled button ignores blur() in happy-dom: park focus on a throwaway node and drop it.
+    act(() => {
+      const spot = document.createElement('button');
+      document.body.appendChild(spot);
+      spot.focus();
+      spot.remove();
+    });
+    expect(active()).toBe(document.body);
+
+    held.release();
+    await flush();
+
+    expect(container.querySelector('[role=alert]')).toBeTruthy();
+    expect(active()!.tagName).not.toBe('H1');
+  });
+
+  it('Escape while the delete is in flight leaves the panel armed', async () => {
+    await render([
+      { method: 'DELETE', url: '/api/vision-reviews/3', json: { ok: true } },
+      { url: '/api/vision-reviews', json: { entries: two() } },
+    ]);
+    await click('Delete');
+    const held = holdNext('DELETE', '/api/vision-reviews/3');
+    await click('Delete for real');
+    const ev = await press(cards()[0]!.querySelector('button[disabled]')!, 'Escape');
+
+    expect(ev.defaultPrevented).toBe(false);
+    expect(cards()[0]!.textContent).toContain('This cannot be undone');
+
+    held.release();
+    await flush();
   });
 
   it('dismissing a page-level error moves focus to the page heading', async () => {
