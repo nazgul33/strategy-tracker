@@ -2,6 +2,7 @@ import { dayInfo, prevTradingDay, type ISODate } from '@st/calendar'
 import { advanceDay, type RunState, type Run } from '@st/core'
 import { computeOrders, type MrParams } from '@st/strategies'
 import { rollStale, type RepoSurface, type BookingDeps } from '../domain/booking'
+import type { NewOrder } from '../domain/repo-types'
 import { withRunLock } from '../domain/run-lock'
 import { renderDigest, renderClosed, renderReminder } from '@st/telegram/digest'
 import { t } from '@st/telegram/i18n'
@@ -123,12 +124,12 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
       // unconfirmed stale linkage: date = oldest stale entry's tradeDate
       const staleEntries = stale[run.id]
       if (staleEntries && staleEntries.length > 0) {
-        const oldest = staleEntries.reduce((min: string, e: any) => (e.tradeDate < min ? e.tradeDate : min), staleEntries[0].tradeDate)
+        const oldest = staleEntries.reduce((min, e) => (e.tradeDate < min ? e.tradeDate : min), staleEntries[0].tradeDate)
         plan.notices.push({ code: 'unconfirmed', params: { count: staleEntries.length, date: oldest } })
       }
 
       // persist orders
-      const rows = plan.orders.map((o) => ({
+      const rows = plan.orders.map((o): NewOrder => ({
         runId: run.id,
         tradeDate: today,
         kind: o.kind,

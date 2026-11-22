@@ -48,7 +48,7 @@ describeIf('vision janitor (db)', () => {
   })
   const image = (captureId: number) => repos.captureImageRepo.insertIgnore({ captureId, mime: 'image/png', bytes: Buffer.from('png'), byteLen: 3 })
   const pending = (runId: number, captureId: number, status: 'pending' | 'confirmed' | 'rejected') =>
-    repos.pendingRepo.insert({ runId, captureId, side: 'buy', ticker: 'JJ', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status })
+    repos.pendingRepo.insert({ runId, captureId, bucketIdx: null, side: 'buy', ticker: 'JJ', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status })
 
   test('sweepOrphans deletes an unkept image with no live pending row, and its frozen rows', async () => {
     const { runId, captureId } = await newCapture()

@@ -3,6 +3,7 @@ import { applyBuyFill, emptyState, parseUsd } from '@st/core';
 import { buildPendingKeyboard } from '@st/telegram';
 import { t, type Lang } from '@st/telegram/i18n';
 import type { FillRow, LedgerRow } from '../src/db/schema';
+import type { OrderRecord } from '../src/domain/repo-types';
 import { makeCaptureHandlers } from '../src/wire/capture';
 import { parseEnv, todayEt } from '../src/wire/deps';
 import { fakeCorrectionRepo } from './fake-corrections';
@@ -161,12 +162,12 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
   };
   const orderRepo = {
     insertMany: async () => {},
-    listForDate: async (_date: string) => [] as FakeRow[],
-    listForRun: async (_runId: number, _date?: string) => [] as FakeRow[],
-    listForRunFrom: async (_runId: number, _fromDate: string) => [] as FakeRow[],
-    markStale: async () => [],
+    listForDate: async (_date: string) => [] as OrderRecord[],
+    listForRun: async (_runId: number, _date?: string) => [] as OrderRecord[],
+    listForRunFrom: async (_runId: number, _fromDate: string) => [] as OrderRecord[],
+    markStale: async () => 0,
     setStatus: async () => {},
-    listOpenBefore: async () => [],
+    listOpenBefore: async () => [] as OrderRecord[],
   };
   const fillRepo = {
     insert: async (row: Omit<FillRow, 'id'>) => {
@@ -705,8 +706,8 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
       const { h, p } = await capturedPending(lang);
       p.side = 'sell';
       // an exact-price target on a bucket nothing is held in: the sell match is loud, not silent
-      const orders = [
-        { id: 1, runId: 1, tradeDate: '2026-11-10', kind: 'sell_loc', bucketIdx: 0, limitPrice: parseUsd('180.50'), shares: 10, status: 'open' },
+      const orders: OrderRecord[] = [
+        { id: 1, runId: 1, tradeDate: '2026-11-10', kind: 'sell_loc', bucketIdx: 0, limitPrice: parseUsd('180.50'), shares: 10, status: 'open', skipReason: null, cancelReason: null },
       ];
       h.repos.orderRepo.listForRun = async () => orders;
       h.repos.orderRepo.listForRunFrom = async () => orders;
@@ -902,9 +903,8 @@ describe('capture status and orders', () => {
     await h.handlers.onOrders('777');
     expect(h.sent[0]!.text).toBe('No orders due on 2026-11-10.');
 
-    h.repos.orderRepo.listForDate = async () => [
-      { id: 1, runId: 1, bucketIdx: 0, kind: 'buy_loc', ticker: 'NVDA', side: 'buy', limitPrice: parseUsd('170.00'), shares: 10, tradeDate: '2026-11-10', status: 'open' },
-    ];
+    const order: OrderRecord & { ticker: string } = { id: 1, runId: 1, bucketIdx: 0, kind: 'buy_loc', ticker: 'NVDA', limitPrice: parseUsd('170.00'), shares: 10, tradeDate: '2026-11-10', status: 'open', skipReason: null, cancelReason: null };
+    h.repos.orderRepo.listForDate = async () => [order];
     await h.handlers.onOrders('777');
     expect(h.sent[1]!.text).toContain('#1 buy_loc NVDA 10 sh @ $170.00');
   });

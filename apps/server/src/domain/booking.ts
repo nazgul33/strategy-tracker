@@ -9,14 +9,13 @@ import { withRunLock } from './run-lock'
 import { notifyBookingOutcome, type BookingNotifier, type BookedOutcome } from './booking-notify'
 import { pickSellBucket, openSellLegs, staleSellLegs, type OrderRow, type SellAttribution } from './sell-match'
 import { storeCaptureImage } from './capture-image'
-import type { CorrectionRepo } from './correction-types'
-import type { CaptureImageInsert, CaptureImageListing } from '../db/repos-vision'
-import type { VisionReviewInsert, VisionReviewRow } from './vision-review'
+import type { PendingDecisionPatch, RepoSurface } from './repo-types'
 
-// The conflict shape belongs to the dedup matcher and the order row to the sell
-// matcher; re-exported so the booking surface keeps being the single place its
-// consumers import from.
+// The conflict shape belongs to the dedup matcher, the order row to the sell
+// matcher and the repository surface to repo-types; re-exported so the booking
+// surface keeps being the single place its consumers import from.
 export type { CaptureConflict, OrderRow, BookingNotifier, BookedOutcome, SellAttribution }
+export type { RepoSurface, PendingDecisionPatch, FillRow } from './repo-types'
 
 // confirmPendingFill lives in its own module (this file's size); re-exported so
 // every caller keeps importing the booking surface from here.
@@ -32,46 +31,6 @@ export async function sha256(buf: Uint8Array): Promise<string> {
   return hex
 }
 
-export interface PendingDecisionPatch { side: 'buy' | 'sell'; shares: number; price: bigint; fee: number; filledOn: ISODate; bucketIdx: number }
-
-export interface RepoSurface {
-  runRepo: { list(): Promise<any[]>; get(id: number): Promise<any>; create(input: any): Promise<number>; updateStatus(id: number, status: string): Promise<void> }
-  bucketRepo: { loadState(runId: number): Promise<RunState>; saveState(runId: number, state: RunState): Promise<void> }
-  orderRepo: { insertMany(orders: any[]): Promise<void>; listForDate(date: string): Promise<any[]>; listForRun(runId: number, date?: string): Promise<any[]>; listForRunFrom(runId: number, fromDate: string): Promise<OrderRow[]>; markStale(date: string): Promise<any>; get(id: number): Promise<any | null>; setStatus(id: number, status: string, cancelReason?: string): Promise<void>; listOpenBefore(date: string): Promise<any[]> }
-  fillRepo: {
-    insert(fill: any): Promise<any>
-    listForRun(runId: number): Promise<FillRow[]>
-    // Rebook/delete history surface (Cash Model A rebuild).
-    update?(runId: number, fillId: number, patch: { shares?: number; price?: bigint; fee?: number }): Promise<void>
-    deleteById?(runId: number, fillId: number): Promise<void>
-  }
-  pendingRepo: {
-    insert(p: any): Promise<number>
-    listPending(): Promise<any[]>
-    hasLiveForCapture(captureId: number): Promise<boolean>
-    hasConfirmedForCapture(captureId: number): Promise<boolean>
-    decide(id: number, status: 'confirmed' | 'rejected', edited?: PendingDecisionPatch): Promise<boolean>
-  }
-  correctionRepo: CorrectionRepo
-  captureRepo: { findByHash(runId: number, hash: string): Promise<{ id: number; status: string } | null>; setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void>; insert(c: any): Promise<{ inserted: boolean; id?: number }> }
-  captureImageRepo: {
-    insertIgnore(row: CaptureImageInsert): Promise<boolean>
-    getBytes(captureId: number): Promise<{ mime: string; bytes: Buffer } | null>
-    isKept(captureId: number): Promise<boolean>
-    setKeep(captureId: number): Promise<void>
-    deleteFor(captureId: number): Promise<void>
-    discard(captureId: number): Promise<void>
-    listKept(limit: number): Promise<CaptureImageListing[]>
-  }
-  visionReviewRepo: {
-    insertIgnore(row: VisionReviewInsert): Promise<void>
-    listForCaptures(captureIds: number[]): Promise<VisionReviewRow[]>
-    deleteFor(captureId: number): Promise<void>
-  }
-  ledgerRepo: { insert(l: any): Promise<any>; listForRun(runId: number): Promise<any[]> }
-  notificationRepo: { insert(n: any): Promise<any> }
-}
-
 export interface BookingDeps { repos: RepoSurface; today: ISODate }
 // Every function that books a fill takes a notifier, so the operator is always told about a cancelled leg or an ambiguous attribution.
 export interface FillBookingDeps extends BookingDeps { notify: BookingNotifier }
@@ -84,8 +43,6 @@ export type CaptureOutcome =
   | { conflicts: CaptureConflict[] }
 
 export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; detectedFilledOn: ISODate | null; status: string }
-
-export interface FillRow { id: number; runId: number; bucketIdx: number; side: 'buy' | 'sell'; ticker: string; shares: number; price: bigint; fee: number; filledOn: ISODate; source: string }
 
 export interface BookInput {
   runId: number
@@ -144,7 +101,7 @@ export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise
     next.ages[bucketIdx] = ageBuckets(next.ages, deps.today, { [bucketIdx]: input.filledOn })[bucketIdx]!
     // matching buy_loc order (lookup only; flip after ledger)
     const orders = await repos.orderRepo.listForDate(input.filledOn)
-    const match = orders.find((o: any) => o.runId === input.runId && o.kind === 'buy_loc' && (o.status === 'open' || o.status === 'stale'))
+    const match = orders.find((o) => o.runId === input.runId && o.kind === 'buy_loc' && (o.status === 'open' || o.status === 'stale'))
     if (match) matchedOrderId = match.id
   } else {
     // From the fill date onwards: matching narrows to filledOn, the cancel below needs later dates too.

@@ -6,10 +6,9 @@ import type { Lang } from '@st/telegram/i18n';
 
 import { confirmPendingFill, ingestCapture, rejectPendingFill } from '../domain/booking';
 import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/booking';
+import type { OrderRecord, PendingRepo } from '../domain/repo-types';
 import { parseId } from '../http/params';
 import { makeBookingNotifier } from './booking-notifier';
-
-type PendingRow = { id: number; side: string; ticker: string; shares: number; price: bigint | string; bucketIdx: number | null; filledOn: string; status: string };
 
 const CONFIRM_ERROR_KEYS: Record<string, string> = {
   'ticker-mismatch': 'confirm-err-ticker-mismatch',
@@ -26,7 +25,7 @@ const CONFIRM_ERROR_KEYS: Record<string, string> = {
 };
 
 export interface CaptureRepos extends RepoSurface {
-  pendingRepo: RepoSurface['pendingRepo'] & { get(id: number): Promise<PendingRow | null> };
+  pendingRepo: PendingRepo;
 }
 
 export interface CaptureDeps {
@@ -205,7 +204,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       }
       const row = await deps.repos.pendingRepo.get(id);
       if (!row) return;
-      const price = typeof row.price === 'string' ? row.price : formatUsd(row.price);
+      const price = formatUsd(row.price);
       await deps.send(
         chatId,
         t('booked', lang, { ticker: row.ticker, side: row.side, shares: row.shares, price, bucket: row.bucketIdx ?? 0, date: row.filledOn }),
@@ -262,9 +261,10 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       await deps.send(chatId, t('no-orders', lang, { date }));
       return;
     }
+    // An order row carries no ticker column; the line shows a blank ticker unless a fake adds one.
     const lines = orders.map(
-      (o: { id: number; kind: string; ticker: string; shares: number; limitPrice: bigint }) =>
-        t('orders-line', lang, { id: o.id, kind: o.kind, ticker: o.ticker, shares: o.shares, price: formatUsd(o.limitPrice) }),
+      (o) =>
+        t('orders-line', lang, { id: o.id, kind: o.kind, ticker: (o as OrderRecord & { ticker?: string }).ticker ?? '', shares: o.shares, price: formatUsd(o.limitPrice) }),
     );
     await deps.send(chatId, lines.join('\n'));
   }

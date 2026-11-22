@@ -8,6 +8,7 @@ import type { Db } from '../src/db/db-type'
 import { getRepos } from '../src/db/repos'
 import { ingestCapture, manualFill, type BookingDeps, type FillBookingDeps, type PendingDecisionPatch } from '../src/domain/booking'
 import { listOpenCorrections, applyCorrection } from '../src/domain/corrections'
+import type { NewOrder, NewPending, OrderStatus } from '../src/domain/repo-types'
 import { silentNotifier } from './booking-fakes'
 
 const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
@@ -78,7 +79,7 @@ describeIf('db integration', () => {
 
   test('pending decide merges', async () => {
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'Y'+Date.now(), name: 'run4-'+Date.now(), poolCents: 1000, costPpm: 10 })
-    const id = await repos.pendingRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker: 'Y', shares: 5, price: 100n, fee: 1, filledOn: '2026-02-10', status: 'pending' })
+    const id = await repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: 0, side: 'buy', ticker: 'Y', shares: 5, price: 100n, fee: 1, filledOn: '2026-02-10', status: 'pending' })
     const inserted = (await repos.pendingRepo.get(id))!
     const patch: PendingDecisionPatch = { side: inserted.side, shares: 7, price: inserted.price, fee: inserted.fee ?? 0, filledOn: inserted.filledOn, bucketIdx: inserted.bucketIdx ?? 0 }
     const first = await repos.pendingRepo.decide(id, 'confirmed', patch)
@@ -96,7 +97,7 @@ describeIf('db integration', () => {
 
   test('pendingRepo.insert returns the new row id', async () => {
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'P' + Date.now(), name: 'run-pid-' + Date.now(), poolCents: 1000, costPpm: 10 })
-    const id = await repos.pendingRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker: 'P', shares: 5, price: 100n, fee: 1, filledOn: '2026-02-10', status: 'pending' })
+    const id = await repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: 0, side: 'buy', ticker: 'P', shares: 5, price: 100n, fee: 1, filledOn: '2026-02-10', status: 'pending' })
     expect(Number.isInteger(id) && id > 0).toBe(true)
     expect((await repos.pendingRepo.get(id))!.id).toBe(id)
   })
@@ -204,7 +205,7 @@ describeIf('db integration', () => {
     const uniq = Date.now()
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'LF' + uniq, name: 'from-' + uniq, poolCents: 1000, costPpm: 10 })
     const otherId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'LG' + uniq, name: 'from-other-' + uniq, poolCents: 1000, costPpm: 10 })
-    const mk = (id: number, tradeDate: string, status: string) => ({ runId: id, tradeDate, kind: 'sell_loc', bucketIdx: 0, limitPrice: 35000000n, shares: 5, status })
+    const mk = (id: number, tradeDate: string, status: OrderStatus): NewOrder => ({ runId: id, tradeDate, kind: 'sell_loc', bucketIdx: 0, limitPrice: 35000000n, shares: 5, status })
     await repos.orderRepo.insertMany([
       mk(runId, '2026-11-11', 'open'), mk(runId, '2026-11-09', 'open'), mk(runId, '2026-11-10', 'cancelled'), mk(otherId, '2026-11-10', 'open'),
     ])
@@ -286,7 +287,7 @@ describeIf('db integration', () => {
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'dedup-' + Date.now(), poolCents: 1_000_000, costPpm: 10 })
     // one booked buy (bigint myriadths price) + one pending sell, as the real repos store them
     await repos.fillRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker, shares: 11, price: parseUsd('218.55'), fee: 0, filledOn: '2026-11-12', source: 'capture' })
-    await repos.pendingRepo.insert({ runId, bucketIdx: null, side: 'sell', ticker, shares: 270, price: parseUsd('65.53'), fee: 345, filledOn: '2026-11-12', status: 'pending' })
+    await repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'sell', ticker, shares: 270, price: parseUsd('65.53'), fee: 345, filledOn: '2026-11-12', status: 'pending' })
 
     const deps: BookingDeps = { repos, today: '2026-11-15' }
     // extraction spells the same two trades with string prices — the dedup key
@@ -393,7 +394,7 @@ describeIf('db integration', () => {
     const uniq = Date.now()
     const ticker = 'HL' + uniq
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'haslive-' + uniq, poolCents: 1_000_000, costPpm: 10 })
-    const row = (captureId: number | null) => ({ runId, captureId, bucketIdx: null, side: 'buy', ticker, shares: 1, price: 100n, fee: null, filledOn: '2026-11-12', status: 'pending' })
+    const row = (captureId: number | null): NewPending => ({ runId, captureId, bucketIdx: null, side: 'buy', ticker, shares: 1, price: 100n, fee: null, filledOn: '2026-11-12', status: 'pending' })
     // real capture rows: auto-increment ids are fresh on every run, so a confirmed row left behind in st_test can never collide
     const newCapture = async (tag: string) => (await repos.captureRepo.insert({ runId, chatId: null, imageHash: `HL-${tag}-${uniq}`, status: 'parsed' })).id as number
     const capA = await newCapture('a')
@@ -830,9 +831,9 @@ describeIf('db integration', () => {
 
     test('pending_fills snapshot columns round trip, detectedAt null on rows without a snapshot', async () => {
       const { runId, captureId } = await newCapture()
-      const legacy = await repos.pendingRepo.insert({ runId, captureId, side: 'buy', ticker: 'V', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status: 'pending' })
+      const legacy = await repos.pendingRepo.insert({ runId, captureId, bucketIdx: null, side: 'buy', ticker: 'V', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status: 'pending' })
       const snap = await repos.pendingRepo.insert({
-        runId, captureId, side: 'buy', ticker: 'V', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status: 'pending',
+        runId, captureId, bucketIdx: null, side: 'buy', ticker: 'V', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status: 'pending',
         detectedSide: 'buy', detectedShares: 1, detectedPrice: 100n, detectedFilledOn: null, detectedFee: null, detectedAt: '2026-02-10 12:00:00',
       })
       const l = await repos.pendingRepo.get(legacy)

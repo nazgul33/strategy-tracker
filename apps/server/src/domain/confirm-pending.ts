@@ -37,7 +37,7 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
   const repos = deps.repos
   // Only a peek to learn which run this pending belongs to; everything that
   // reads and writes state happens inside the lock, where the row is re-read.
-  const known = (await repos.pendingRepo.listPending()).find((p: any) => p.id === pendingId)
+  const known = (await repos.pendingRepo.listPending()).find((p) => p.id === pendingId)
   if (!known) throw new Error('pending-not-found-or-not-pending')
   if (overrides?.side !== undefined && overrides.side !== 'buy' && overrides.side !== 'sell') throw new Error('invalid-side')
   const feeOverride = overrides?.feeCents
@@ -46,7 +46,7 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
   // bookUnlocked, not runBooking: the lock is not reentrant.
   const { outcome, archived } = await withRunLock(known.runId, async () => {
     const pendingList = await repos.pendingRepo.listPending()
-    const pending = pendingList.find((p: any) => p.id === pendingId)
+    const pending = pendingList.find((p) => p.id === pendingId)
     if (!pending) throw new Error('pending-not-found-or-not-pending')
 
     const run = await repos.runRepo.get(pending.runId)
@@ -110,11 +110,11 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
 export async function rejectPendingFill(pendingId: number, deps: Pick<BookingDeps, 'repos'>, opts?: { keepImage?: boolean }): Promise<{ archived: boolean } | null> {
   const repos = deps.repos
   // Only a peek to learn the run; the row is re-read inside the lock.
-  const known = (await repos.pendingRepo.listPending()).find((p: any) => p.id === pendingId)
+  const known = (await repos.pendingRepo.listPending()).find((p) => p.id === pendingId)
   if (!known) return null
 
   return withRunLock(known.runId, async () => {
-    const pending = (await repos.pendingRepo.listPending()).find((p: any) => p.id === pendingId)
+    const pending = (await repos.pendingRepo.listPending()).find((p) => p.id === pendingId)
     if (!pending) return null
     if (opts?.keepImage === true && pending.captureId != null) await repos.captureImageRepo.setKeep(pending.captureId)
     if ((await repos.pendingRepo.decide(pendingId, 'rejected')) === false) return null

@@ -2,12 +2,13 @@ import { Hono } from 'hono'
 import { jsonBig, type HttpDeps } from '../app'
 import { DomainError, type RunState } from '@st/core'
 import { confirmPendingFill, rejectPendingFill } from '../../domain/booking'
+import type { PendingRow } from '../../domain/repo-types'
 import { fillBookingDeps } from '../booking-deps'
 import { parseId } from '../params'
 
 // null for a row captured before the snapshot existed ("predates it"), as opposed
 // to an object with null fields ("vision missed that field").
-function detectedDto(row: any) {
+function detectedDto(row: PendingRow) {
   if (row.detectedAt == null) return null
   return { side: row.detectedSide ?? null, shares: row.detectedShares ?? null, price: row.detectedPrice ?? null, filledOn: row.detectedFilledOn ?? null, fee: row.detectedFee ?? null }
 }
@@ -20,15 +21,15 @@ export function pendingRouter(deps: HttpDeps): Hono {
   const r = new Hono()
   r.get('/pending', async (c) => {
     const rows = await deps.repos.pendingRepo.listPending()
-    const withImage = await deps.repos.captureImageRepo.existingIds(rows.map((p: any) => p.captureId).filter((id: number | null) => id != null) as number[])
+    const withImage = await deps.repos.captureImageRepo.existingIds(rows.map((p) => p.captureId).filter((id) => id != null) as number[])
     const perRun = new Map(await Promise.all(
-      [...new Set<number>(rows.map((p: any) => p.runId))].map(async (runId) => {
+      [...new Set<number>(rows.map((p) => p.runId))].map(async (runId) => {
         const run = await deps.repos.runRepo.get(runId)
         const heldBuckets = run ? heldBucketsOf(await deps.repos.bucketRepo.loadState(runId)) : []
         return [runId, { costPpm: run?.costPpm ?? deps.defaultSettings.defaultCostPpm, heldBuckets }] as const
       }),
     ))
-    return c.json(jsonBig(rows.map((p: any) => {
+    return c.json(jsonBig(rows.map((p) => {
       const { detectedSide, detectedShares, detectedPrice, detectedFilledOn, detectedFee, detectedAt, ...row } = p
       const { costPpm, heldBuckets } = perRun.get(p.runId)!
       return {

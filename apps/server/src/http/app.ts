@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import type { RepoSurface } from '../domain/booking'
+import type { OrderRepo, PendingRepo } from '../domain/repo-types'
 import type { SimRepoSurface } from '../sim/sim'
 import { authMiddleware, makeToken } from './auth'
 import type { BarCacheRepos } from '../market/bars'
@@ -13,10 +14,10 @@ export interface HttpRepoSurface extends RepoSurface {
   settingsRepo: { getAll(): Promise<Record<string, string>>; set(key: string, value: string): Promise<void> }
   poolEditRepo: { insert(input: { runId: number; poolCents: number }): Promise<void> }
   runRepo: RepoSurface['runRepo'] & { updatePool(id: number, poolCents: number): Promise<void>; updateStatusMany(ids: number[], from: string[], to: string): Promise<number>; updateOrderShaping(id: number, v: { buyGapPpm: number; sellGapPpm: number; cutLossPpm: number }): Promise<void> }
-  orderRepo: RepoSurface['orderRepo'] & { listForRun(runId: number, date?: string): Promise<any[]> }
+  orderRepo: OrderRepo
   fillRepo: RepoSurface['fillRepo']
   notificationRepo: RepoSurface['notificationRepo'] & { listForRun(runId: number): Promise<any[]> }
-  pendingRepo: RepoSurface['pendingRepo'] & { get(id: number): Promise<any> }
+  pendingRepo: PendingRepo
   captureImageRepo: RepoSurface['captureImageRepo'] & { existingIds(captureIds: number[]): Promise<Set<number>> }
   simRepo: SimRepoSurface
 }

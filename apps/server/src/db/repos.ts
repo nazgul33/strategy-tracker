@@ -6,7 +6,7 @@ import { getSimRepo } from './repos-sim'
 import { getBarRepos } from './repos-bars'
 import { getVisionRepos } from './repos-vision'
 import type { CorrectionRepo } from '../domain/correction-types'
-import type { PendingDecisionPatch } from '../domain/booking'
+import type { OrderRepo, PendingRepo } from '../domain/repo-types'
 
 function serializeState(state: RunState): string {
   return JSON.stringify(state, (_, v) => typeof v === 'bigint' ? v.toString() : v)
@@ -85,37 +85,37 @@ export function getRepos(db: Db) {
   }
 
   const orderRepo = {
-    async insertMany(orders: any[]) {
+    async insertMany(orders) {
       if (!orders.length) return
       await db.insert(s.orders).values(orders)
     },
-    async get(id: number) {
+    async get(id) {
       const rows = await db.select().from(s.orders).where(eq(s.orders.id, id))
       return rows[0] ?? null
     },
-    async listForDate(date: string) {
+    async listForDate(date) {
       return db.select().from(s.orders).where(sql`${s.orders.tradeDate} = ${date}`)
     },
-    async markStale(date: string) {
+    async markStale(date) {
       const [res] = await db.update(s.orders).set({ status: 'stale' }).where(and(eq(s.orders.status, 'open'), sql`${s.orders.tradeDate} < ${date}`))
       return res.affectedRows
     },
-    async setStatus(id: number, status: string, cancelReason?: string) {
+    async setStatus(id, status, cancelReason?) {
       await db.update(s.orders)
-        .set({ status: status as any, ...(cancelReason !== undefined ? { cancelReason } : {}) })
+        .set({ status, ...(cancelReason !== undefined ? { cancelReason } : {}) })
         .where(eq(s.orders.id, id))
     },
-    async listOpenBefore(date: string) {
+    async listOpenBefore(date) {
       return db.select().from(s.orders).where(and(eq(s.orders.status, 'open'), sql`${s.orders.tradeDate} < ${date}`))
     },
-    async listForRun(runId: number, date?: string) {
+    async listForRun(runId, date?) {
       if (date) return db.select().from(s.orders).where(and(eq(s.orders.runId, runId), sql`${s.orders.tradeDate} = ${date}`))
       return db.select().from(s.orders).where(eq(s.orders.runId, runId))
     },
-    async listForRunFrom(runId: number, fromDate: string) {
+    async listForRunFrom(runId, fromDate) {
       return db.select().from(s.orders).where(and(eq(s.orders.runId, runId), sql`${s.orders.tradeDate} >= ${fromDate}`)).orderBy(s.orders.id)
     },
-  }
+  } satisfies OrderRepo
 
   const fillRepo = {
     async insert(fill: any) { await db.insert(s.fills).values(fill) },
@@ -138,17 +138,17 @@ export function getRepos(db: Db) {
   }
 
   const pendingRepo = {
-    async insert(p: any) { const [r] = await db.insert(s.pendingFills).values(p); return r.insertId },
+    async insert(p) { const [r] = await db.insert(s.pendingFills).values(p); return r.insertId },
     async listPending() { return db.select().from(s.pendingFills).where(eq(s.pendingFills.status, 'pending')) },
-    async hasLiveForCapture(captureId: number): Promise<boolean> { return hasPendingWithStatus(captureId, 'pending') },
-    async hasConfirmedForCapture(captureId: number): Promise<boolean> { return hasPendingWithStatus(captureId, 'confirmed') },
-    async get(id: number) { const rows = await db.select().from(s.pendingFills).where(eq(s.pendingFills.id, id)); return rows[0] ?? null },
-    async decide(id: number, status: 'confirmed' | 'rejected', edited?: PendingDecisionPatch): Promise<boolean> {
+    async hasLiveForCapture(captureId) { return hasPendingWithStatus(captureId, 'pending') },
+    async hasConfirmedForCapture(captureId) { return hasPendingWithStatus(captureId, 'confirmed') },
+    async get(id) { const rows = await db.select().from(s.pendingFills).where(eq(s.pendingFills.id, id)); return rows[0] ?? null },
+    async decide(id, status, edited?) {
       const patch = { status, ...edited }
       const [res] = await db.update(s.pendingFills).set(patch).where(and(eq(s.pendingFills.id, id), eq(s.pendingFills.status, 'pending')))
       return res.affectedRows > 0
     },
-  }
+  } satisfies PendingRepo
 
   const correctionRepo: CorrectionRepo = {
     async insert(c) { const [r] = await db.insert(s.fillCorrections).values(c); return r.insertId },

@@ -5,6 +5,7 @@ import type { ExtractResult } from '@st/ingest'
 import { ingestCapture, confirmPendingFill, rejectPendingFill, type FillBookingDeps, type PendingDecisionPatch, type PendingFillRow } from '../src/domain/booking'
 import { isEdited, resolveReview, type DetectedValues, type FinalValues, type ReviewedPendingRow } from '../src/domain/vision-review'
 import type { pendingFills } from '../src/db/schema'
+import type { NewPending } from '../src/domain/repo-types'
 import { createApp } from '../src/http/app'
 import { makeCaptureHandlers } from '../src/wire/capture'
 import { t } from '@st/telegram/i18n'
@@ -419,7 +420,7 @@ describe('reject route', () => {
     const app = createApp(makeDeps(fakes))
     const auth = await loginAs(app)
     const runId = await createRun(app, auth, { strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'rj', poolCents: 1_000_000, costPpm: 100 })
-    const base = { runId, captureId: 5, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 1, price: parseUsd('10.00'), fee: null, filledOn: '2026-11-10', status: 'pending', detectedSide: 'buy', detectedShares: 1, detectedPrice: parseUsd('10.00'), detectedFilledOn: null, detectedFee: null, detectedAt: '2026-11-10 09:00:00' }
+    const base: NewPending = { runId, captureId: 5, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 1, price: parseUsd('10.00'), fee: null, filledOn: '2026-11-10', status: 'pending', detectedSide: 'buy', detectedShares: 1, detectedPrice: parseUsd('10.00'), detectedFilledOn: null, detectedFee: null, detectedAt: '2026-11-10 09:00:00' }
     const a = await fakes.repos.pendingRepo.insert({ ...base })
     const b = await fakes.repos.pendingRepo.insert({ ...base })
     await fakes.repos.captureImageRepo.insertIgnore({ captureId: 5, mime: 'image/png', bytes: Buffer.from('x'), byteLen: 1 })
