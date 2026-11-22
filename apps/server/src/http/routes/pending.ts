@@ -3,6 +3,7 @@ import { jsonBig, type HttpDeps } from '../app'
 import { DomainError, type RunState } from '@st/core'
 import { confirmPendingFill, rejectPendingFill } from '../../domain/booking'
 import { fillBookingDeps } from '../booking-deps'
+import { parseId } from '../params'
 
 // null for a row captured before the snapshot existed ("predates it"), as opposed
 // to an object with null fields ("vision missed that field").
@@ -40,7 +41,8 @@ export function pendingRouter(deps: HttpDeps): Hono {
     })))
   })
   r.post('/pending/:id/confirm', async (c) => {
-    const id = Number(c.req.param('id'))
+    const id = parseId(c.req.param('id'))
+    if (id === null) return c.json({ error: 'not-pending' }, 409)
     const body = await c.req.json().catch(() => ({}))
     const overrides = body?.overrides ?? null
     let archived: boolean
@@ -55,7 +57,8 @@ export function pendingRouter(deps: HttpDeps): Hono {
     return c.json({ ok: true, archived })
   })
   r.post('/pending/:id/reject', async (c) => {
-    const id = Number(c.req.param('id'))
+    const id = parseId(c.req.param('id'))
+    if (id === null) return c.json({ error: 'not-pending' }, 409)
     const body = await c.req.json().catch(() => ({}))
     const rejected = await rejectPendingFill(id, fillBookingDeps(deps), { keepImage: body?.keepImage === true })
     if (!rejected) return c.json({ error: 'not-pending' }, 409)

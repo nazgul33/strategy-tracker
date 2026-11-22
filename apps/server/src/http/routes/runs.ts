@@ -7,6 +7,7 @@ import { seedRun, manualFill, cancelOrder } from '../../domain/booking'
 import type { RawFill } from '@st/ingest'
 import { jsonBig, type HttpDeps } from '../app'
 import { fillBookingDeps } from '../booking-deps'
+import { parseId } from '../params'
 import { MAX_PPM, isValidPpm, isValidCutLossPpm, isValidCostPpm } from '../../domain/ppm'
 import { prevTradingDay, type ISODate } from '@st/calendar'
 
@@ -103,30 +104,31 @@ export function runsRouter(deps: HttpDeps): Hono {
     return c.json({ updated: await deps.repos.runRepo.updateStatusMany(ids, from, status) })
   })
   r.get('/runs/:id', async (c) => {
-    const id = Number(c.req.param('id'))
-    const run = await deps.repos.runRepo.get(id)
-    if (!run) return c.json({ error: 'not found' }, 404)
+    const id = parseId(c.req.param('id'))
+    const run = id === null ? null : await deps.repos.runRepo.get(id)
+    if (id === null || !run) return c.json({ error: 'not found' }, 404)
     const state = await deps.repos.bucketRepo.loadState(id)
     const pv = progressView(state)
     return c.json(jsonBig({ ...run, progressView: pv, state }))
   })
   r.patch('/runs/:id', async (c) => {
-    const id = Number(c.req.param('id'))
+    const id = parseId(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
     const status = body?.status
     if (!(RUN_STATUSES_SERVER as readonly string[]).includes(status)) return c.json({ error: 'invalid status' }, 400)
-    const run = await deps.repos.runRepo.get(id)
-    if (!run) return c.json({ error: 'not found' }, 404)
+    const run = id === null ? null : await deps.repos.runRepo.get(id)
+    if (id === null || !run) return c.json({ error: 'not found' }, 404)
     // `?? []` guards legacy `done` rows until the enum migration lands
     if (!(RUN_TRANSITIONS[run.status] ?? []).includes(status)) return c.json({ error: 'invalid transition' }, 409)
     await deps.repos.runRepo.updateStatus(id, status)
     return c.json({ ok: true })
   })
   r.post('/runs/:id/pool', async (c) => {
-    const id = Number(c.req.param('id'))
+    const id = parseId(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
     const amountCents = body?.amountCents
     if (!Number.isInteger(amountCents) || amountCents <= 0) return c.json({ error: 'invalid amountCents' }, 400)
+    if (id === null || !(await deps.repos.runRepo.get(id))) return c.json({ error: 'not found' }, 404)
     await deps.repos.runRepo.updatePool(id, amountCents)
     await deps.repos.poolEditRepo.insert({ runId: id, poolCents: amountCents })
     return c.json({ ok: true })
@@ -134,12 +136,12 @@ export function runsRouter(deps: HttpDeps): Hono {
   // order shaping (gaps + cut-loss) is editable in any run status (operator ruling): pure price-config edit.
   // cutLossPpm is optional here: absent keeps the stored value, present (even 0 = off) must validate.
   r.post('/runs/:id/gaps', async (c) => {
-    const id = Number(c.req.param('id'))
+    const id = parseId(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
     if (!isValidPpm(body?.buyGapPpm) || !isValidPpm(body?.sellGapPpm)) return c.json({ error: 'invalid gaps' }, 400)
     if (body.cutLossPpm !== undefined && !isValidCutLossPpm(body.cutLossPpm)) return c.json({ error: 'invalid cutLossPpm' }, 400)
-    const run = await deps.repos.runRepo.get(id)
-    if (!run) return c.json({ error: 'not found' }, 404)
+    const run = id === null ? null : await deps.repos.runRepo.get(id)
+    if (id === null || !run) return c.json({ error: 'not found' }, 404)
     await deps.repos.runRepo.updateOrderShaping(id, { buyGapPpm: body.buyGapPpm, sellGapPpm: body.sellGapPpm, cutLossPpm: body.cutLossPpm ?? run.cutLossPpm })
     return c.body(null, 204)
   })
@@ -149,8 +151,8 @@ export function runsRouter(deps: HttpDeps): Hono {
   // days are served from the DB and never refetched — settled closes are final.
   // Persistence belongs to the cached bar reader; this route does not write.
   r.get('/runs/:id/price-history', async (c) => {
-    const id = Number(c.req.param('id'))
-    const run = await deps.repos.runRepo.get(id)
+    const id = parseId(c.req.param('id'))
+    const run = id === null ? null : await deps.repos.runRepo.get(id)
     if (!run) return c.json({ error: 'not found' }, 404)
 
     const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -208,24 +210,28 @@ export function runsRouter(deps: HttpDeps): Hono {
   }
 
   r.get('/runs/:id/orders', async (c) => {
-    const id = Number(c.req.param('id'))
+    const id = parseId(c.req.param('id'))
+    if (id === null) return c.json([])
     const date = c.req.query('date')
     const rows = await deps.repos.orderRepo.listForRun(id, date)
     return c.json(jsonBig(rows))
   })
   r.get('/runs/:id/fills', async (c) => {
-    const id = Number(c.req.param('id'))
+    const id = parseId(c.req.param('id'))
+    if (id === null) return c.json([])
     const rows = await deps.repos.fillRepo.listForRun(id)
     return c.json(jsonBig(rows))
   })
   r.get('/runs/:id/notifications', async (c) => {
-    const id = Number(c.req.param('id'))
+    const id = parseId(c.req.param('id'))
+    if (id === null) return c.json([])
     const rows = await deps.repos.notificationRepo.listForRun(id)
     return c.json(rows)
   })
   r.post('/runs/:id/fills', async (c) => {
-    const id = Number(c.req.param('id'))
+    const id = parseId(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
+    if (id === null || !(await deps.repos.runRepo.get(id))) return c.json({ error: 'not found' }, 404)
     // Type-level cast only: a legacy client's `ticker` key survives at runtime on purpose so old web bundles keep working;
     // manualFill ignores it and stamps the run's ticker (pinned by booking.test.ts and http.test.ts).
     const fill = body as Omit<RawFill, 'ticker'> & { filledOn: string }
@@ -239,8 +245,9 @@ export function runsRouter(deps: HttpDeps): Hono {
   })
 
   r.post('/runs/:id/orders/:orderId/cancel', async (c) => {
-    const id = Number(c.req.param('id'))
-    const orderId = Number(c.req.param('orderId'))
+    const id = parseId(c.req.param('id'))
+    const orderId = parseId(c.req.param('orderId'))
+    if (id === null || orderId === null) return c.json({ error: 'order-not-found' }, 404)
     const body = await c.req.json().catch(() => ({}))
     let order
     try {
