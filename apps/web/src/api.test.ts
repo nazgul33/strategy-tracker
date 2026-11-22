@@ -347,6 +347,12 @@ describe('pending review wire contract', () => {
     expect('keepImage' in body(calls[1]!)).toBe(false);
   });
 
+  test('confirmPending with overrides and keepImage false sends only the overrides', async () => {
+    const { calls, api } = record();
+    await api.confirmPending(3, { shares: 11 }, false);
+    expect(body(calls[0]!)).toEqual({ overrides: { shares: 11 } });
+  });
+
   test('confirmPending carries overrides, including feeCents null, next to keepImage', async () => {
     const { calls, api } = record();
     await api.confirmPending(3, { side: 'sell', price: '178.4', feeCents: null }, true);

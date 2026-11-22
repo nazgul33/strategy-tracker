@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { emptyState, parseUsd, type Run } from '@st/core';
+import { computeOrders } from '@st/strategies';
 
 import en from './i18n/en.json';
 import ko from './i18n/ko.json';
@@ -37,12 +39,32 @@ describe('i18n catalogs', () => {
   // Key *parity* cannot see a notice code that is missing from both files, and
   // `lookup` renders the bare key when it is absent — which is how
   // `digest.cut-loss-immediate` reached the sim replay as literal text. The
-  // notice codes are read out of the strategy source, so a new
-  // `notices.push({ code })` fails here until both catalogs carry it.
-  test('every notice code computeOrders can emit resolves in both catalogs', async () => {
+  // codes come from running the planner itself, so a non-literal code is seen
+  // when a scenario reaches it; the push-site count below (within
+  // `mean-reversion.ts` only) flags a notice that no scenario covers.
+  test('every notice code computeOrders emits resolves in both catalogs', async () => {
+    const run: Run = {
+      id: 0,
+      name: 'x',
+      ticker: 'T',
+      strategyKey: 'mean-reversion',
+      costPpm: 0,
+      buyGapPpm: 0,
+      sellGapPpm: 0,
+      cutLossPpm: 0,
+      poolCents: 0,
+      status: 'active',
+    };
+    const full = emptyState(1);
+    full.buckets[0] = { index: 0, state: 'held', shares: 10, buyPrice: parseUsd('100'), buyFeeCents: 0, filledOn: '2026-11-02' };
+    const planA = computeOrders({ ...run, cutLossPpm: 30_000, poolCents: 1_000_000 }, full, { lastClose: parseUsd('90') });
+    const planB = computeOrders({ ...run, cutLossPpm: 0, poolCents: 100 }, emptyState(10), { lastClose: parseUsd('100') });
+    const codes = [...new Set([...planA.notices, ...planB.notices].map((n) => n.code))].sort();
+    expect(codes).toEqual(['cut-loss-immediate', 'no-bucket-available', 'shares-zero']);
+
     const source = await Bun.file(new URL('../../../packages/strategies/src/mean-reversion.ts', import.meta.url)).text();
-    const codes = [...source.matchAll(/notices\.push\(\{\s*code:\s*'([^']+)'/g)].map((m) => m[1]!);
-    expect(codes).toEqual(['no-bucket-available', 'shares-zero', 'cut-loss-immediate']);
+    expect(source.match(/notices\.push\(/g)!.length).toBe(codes.length);
+
     const enKeys = new Set(Object.keys(en as Record<string, string>));
     const koKeys = new Set(Object.keys(ko as Record<string, string>));
     const missing = codes.flatMap((code) => [

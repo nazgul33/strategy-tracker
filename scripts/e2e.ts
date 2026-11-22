@@ -265,7 +265,7 @@ async function main(): Promise<void> {
     await checkSimDrafts(ctx, barSource.calls)
 
     // ---- screenshot retention: keep a corrected one, sweep the rest, vision-review list
-    await runVisionReview(ctx)
+    await runVisionReview(ctx, { reviewRowCount: async (id) => (await repos.visionReviewRepo.listForCaptures([id])).length })
 
     // ---- deterministic sim (fixture bars, pure + persisted) ------------------
     const simRun = { id: 0, name: 'E2E Sim', ticker: 'NVDA', strategyKey: 'mean-reversion' as const, costPpm: 1_000, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }

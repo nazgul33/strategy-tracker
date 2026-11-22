@@ -1,5 +1,6 @@
 import { describe, test, expect, spyOn } from 'bun:test'
 import { runBootSweeps } from '../src/wire/boot-sweeps'
+import { makeFakes } from './http-fakes'
 
 const now = new Date('2026-11-20T12:00:00Z')
 
@@ -23,7 +24,57 @@ function makeRepos(over: { sweepDrafts?: (d: Date) => Promise<number>; sweepOrph
   return { repos, draftArgs, orphanCalls: () => orphanCalls }
 }
 
+const DAY_MS = 86_400_000
+const draftConfig = {
+  ticker: 'A', fromDate: '2026-11-02', toDate: '2026-11-06', poolCents: 1_000_000, costPpm: 30,
+  buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, paramsJson: '{}',
+}
+
+// seeds one draft per age (ms before `at`) in the fake sim repo, runs the boot sweep, returns the ids and survivors
+async function sweepDraftsAged(at: Date, agesMs: number[]) {
+  const f = makeFakes()
+  const ids: number[] = []
+  for (const age of agesMs) {
+    const id = await f.repos.simRepo.insertRun(draftConfig)
+    f.simRuns.find((r) => r.id === id)!.createdAt = new Date(at.getTime() - age).toISOString()
+    ids.push(id)
+  }
+  const log = spyOn(console, 'log').mockImplementation(() => {})
+  try {
+    await runBootSweeps({ simRepo: f.repos.simRepo, captureImageRepo: { sweepOrphans: async () => [] } }, at)
+  } finally {
+    log.mockRestore()
+  }
+  return { ids, survivors: f.simRuns.map((r) => r.id) }
+}
+
 describe('runBootSweeps', () => {
+  test('the draft window keeps 6 d and 7 d − 1 s, and sweeps 7 d + 1 s and 8 d', async () => {
+    const { ids, survivors } = await sweepDraftsAged(new Date('2026-11-18T17:00:00Z'), [
+      6 * DAY_MS, 7 * DAY_MS - 1000, 7 * DAY_MS + 1000, 8 * DAY_MS,
+    ])
+    expect(survivors).toEqual([ids[0]!, ids[1]!])
+  })
+
+  test('the window is 168 elapsed hours even across the fall-back change', async () => {
+    // 2026-11-03 12:00 EST minus seven New York calendar days is 2026-10-27 12:00 EDT, 169 h back: a draft 168.5 h old
+    // is past the real 168 h window (swept) but inside a calendar-day window (it would be kept)
+    // the test process runs in UTC, which has no fall-back change; calendar-day arithmetic only differs in a zone that does
+    const prevTz = process.env.TZ
+    process.env.TZ = 'America/New_York'
+    try {
+      const { ids, survivors } = await sweepDraftsAged(new Date('2026-11-03T17:00:00Z'), [168.5 * 3_600_000, 167.5 * 3_600_000])
+      expect(survivors).toEqual([ids[1]!])
+    } finally {
+      // the runner defaults to UTC without setting TZ, so deleting the variable would fall back to the machine's zone
+      process.env.TZ = prevTz ?? 'Etc/UTC'
+    }
+  })
+
+  test('the DST test leaves the process in UTC', () => {
+    expect(new Date('2026-07-01T12:00:00Z').getTimezoneOffset()).toBe(0)
+  })
+
   test('both sweeps run; the draft cutoff is exactly seven days before now', async () => {
     const log = spyOn(console, 'log').mockImplementation(() => {})
     try {

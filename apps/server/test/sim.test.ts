@@ -4,7 +4,8 @@ import { feeCents, parseUsd } from '@st/core/money'
 import { DEFAULT_MR_PARAMS, computeOrders, sellTarget } from '@st/strategies'
 import type { OHLCBar } from '@st/market-data'
 import { simulateDays, resolveDay, runSim } from '../src/sim/sim'
-import { createApp, type HttpDeps, type HttpRepoSurface } from '../src/http/app'
+import { createApp } from '../src/http/app'
+import { makeFakes as makeHttpFakes, makeDeps, loginAs } from './http-fakes'
 
 const bars: OHLCBar[] = [
   { date: '2026-11-01', open: 3500000n, high: 3550000n, low: 3450000n, close: 3500000n },
@@ -268,6 +269,13 @@ describe('cut-loss stops', () => {
     expect(r.events).toEqual([expect.objectContaining({ type: 'fill', side: 'sell', kind: 'market_sell', price: parseUsd('99') })])
   })
 
+  test('a market sell that empties the bucket leaves no stop-preempted, even with the stop and the target in range', () => {
+    const market = { kind: 'market_sell', bucketIndex: 0, limitPrice: 0n, shares: 3 }
+    const r = resolveDay(heldState(), planOf(market, targetOrder, stopOrder), barOf('99', '102', '96'), 30)
+    expect(r.events).toEqual([{ type: 'fill', side: 'sell', kind: 'market_sell', bucketIndex: 0, shares: 3, price: parseUsd('99'), feeCents: feeCents(parseUsd('99'), 3, 30) }])
+    expect(r.state.buckets[0]!.state).toBe('empty')
+  })
+
   test('a buy fill carries kind buy_loc', () => {
     const buy = { kind: 'buy_loc', bucketIndex: 1, limitPrice: parseUsd('98'), shares: 2 }
     const r = resolveDay(heldState((st) => { st.cashCents = 1_000_000 }), planOf(buy), barOf('99', '99.5', '97'), 30)
@@ -419,59 +427,10 @@ describe('runSim', () => {
 })
 
 describe('routes', () => {
-  function makeFakes() {
-    const f: any = { runs: [], days: [], simRuns: [], simDays: [] }
-    let runSeq = 1, daySeq = 1
-    const simRepo = {
-      async insertRun(input: any) { const id = runSeq++; f.simRuns.push({ id, ...input }); return id },
-      async insertDays(rows: any[]) { for (const r of rows) f.simDays.push({ id: daySeq++, ...r }) },
-      async listRuns() { return [...f.simRuns] },
-      async getRun(id: number) { return f.simRuns.find((r: any) => r.id === id) ?? null },
-      async listDays(id: number) { return f.simDays.filter((d: any) => d.simRunId === id) },
-    }
-    const repos: HttpRepoSurface = {
-      runRepo: { list: async () => [], get: async () => null, create: async () => 1, updateStatus: async () => {}, updatePool: async () => {} },
-      bucketRepo: { loadState: async () => emptyState(1), saveState: async () => {} },
-      orderRepo: { insertMany: async () => {}, listForDate: async () => [], markStale: async () => 0, setStatus: async () => {}, listOpenBefore: async () => [], listForRun: async () => [] },
-      fillRepo: { insert: async () => {}, listForRun: async () => [] },
-      pendingRepo: { insert: async () => 1, listPending: async () => [], hasLiveForCapture: async () => false, hasConfirmedForCapture: async () => false, decide: async () => {}, get: async () => null },
-      captureRepo: { findByHash: async () => null, setStatus: async () => {}, insert: async () => ({ inserted: true, id: 1 }) },
-      captureImageRepo: { insertIgnore: async () => true, getBytes: async () => null, isKept: async () => false, setKeep: async () => {}, deleteFor: async () => {}, listKept: async () => [] }, visionReviewRepo: { insertIgnore: async () => {}, listForCaptures: async () => [], deleteFor: async () => {} },
-      ledgerRepo: { insert: async () => {}, listForRun: async () => [] },
-      notificationRepo: { insert: async () => {}, listForRun: async () => [] },
-      settingsRepo: { getAll: async () => ({}), set: async () => {} },
-      poolEditRepo: { insert: async () => {} },
-      simRepo,
-    } as any
-    return { f, repos }
-  }
-
-  const PASSWORD = 'secret'
-  const SECRET = 'session-secret'
-  function makeDeps(fakes: any): HttpDeps {
-    return {
-      repos: fakes.repos,
-      password: PASSWORD,
-      sessionSecret: SECRET,
-      today: () => '2026-11-10',
-      defaultSettings: { visionBaseUrl: 'http://x', visionModel: 'm', digestLang: 'en', defaultCostPpm: 700 },
-      triggerMorning: async () => 'morning-ok',
-      fetchDailyBars: async () => bars,
-      allowedChatIds: [],
-      send: async () => {},
-    }
-  }
-
-  async function auth(app: any) {
-    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
-    return (await lr.json()).token
-  }
-
   test('case 9: POST happy, missing ticker, from>to, params.tick', async () => {
-    const fakes = makeFakes()
-    const app = createApp(makeDeps(fakes))
-    const token = await auth(app)
-    const authh = { Authorization: `Bearer ${token}` }
+    const fakes = makeHttpFakes()
+    const app = createApp({ ...makeDeps(fakes), fetchDailyBars: async () => bars })
+    const authh = await loginAs(app)
     const ok = await app.request('/api/sim', { method: 'POST', body: JSON.stringify({ name: 's', ticker: 'TSLA', from: '2026-11-01', to: '2026-11-03', poolCents: 1000000, costPpm: 30 }), headers: { 'content-type': 'application/json', ...authh } })
     expect(ok.status).toBe(200)
     const body = await ok.json()
@@ -486,10 +445,9 @@ describe('routes', () => {
   })
 
   test('case 10: GET list + GET :id parsed days', async () => {
-    const fakes = makeFakes()
-    const app = createApp(makeDeps(fakes))
-    const token = await auth(app)
-    const authh = { Authorization: `Bearer ${token}` }
+    const fakes = makeHttpFakes()
+    const app = createApp({ ...makeDeps(fakes), fetchDailyBars: async () => bars })
+    const authh = await loginAs(app)
     const ok = await app.request('/api/sim', { method: 'POST', body: JSON.stringify({ name: 's', ticker: 'TSLA', from: '2026-11-01', to: '2026-11-03', poolCents: 1000000, costPpm: 30 }), headers: { 'content-type': 'application/json', ...authh } })
     const { id } = await ok.json()
     const list = await app.request('/api/sim', { headers: authh })
@@ -508,8 +466,8 @@ describe('routes', () => {
   })
 
   test('case 11: unauthenticated POST 401', async () => {
-    const fakes = makeFakes()
-    const app = createApp(makeDeps(fakes))
+    const fakes = makeHttpFakes()
+    const app = createApp({ ...makeDeps(fakes), fetchDailyBars: async () => bars })
     const res = await app.request('/api/sim', { method: 'POST', body: JSON.stringify({ name: 's', ticker: 'TSLA', from: '2026-11-01', to: '2026-11-03', poolCents: 1000000, costPpm: 30 }), headers: { 'content-type': 'application/json' } })
     expect(res.status).toBe(401)
   })

@@ -2,8 +2,9 @@ import { describe, test, expect, spyOn } from 'bun:test'
 import { emptyState } from '@st/core'
 import { parseUsd } from '@st/core/money'
 import type { ExtractResult } from '@st/ingest'
-import { ingestCapture, confirmPendingFill, rejectPendingFill, type FillBookingDeps, type PendingFillRow } from '../src/domain/booking'
-import { isEdited, resolveReview, type DetectedValues, type FinalValues } from '../src/domain/vision-review'
+import { ingestCapture, confirmPendingFill, rejectPendingFill, type FillBookingDeps, type PendingDecisionPatch, type PendingFillRow } from '../src/domain/booking'
+import { isEdited, resolveReview, type DetectedValues, type FinalValues, type ReviewedPendingRow } from '../src/domain/vision-review'
+import type { pendingFills } from '../src/db/schema'
 import { createApp } from '../src/http/app'
 import { makeCaptureHandlers } from '../src/wire/capture'
 import { t } from '@st/telegram/i18n'
@@ -18,6 +19,17 @@ const detected = (over: Partial<DetectedValues> = {}): DetectedValues => ({
 })
 const final = (over: Partial<FinalValues> = {}): FinalValues => ({
   side: 'buy', shares: 10, price: parseUsd('180.50'), filledOn: '2026-11-04', fee: 12, ...over,
+})
+
+// A pending_fills row must carry every column resolveReview reads; a rename fails tsc here.
+const asReviewed = (r: typeof pendingFills.$inferSelect): ReviewedPendingRow => r
+
+// Every key the confirm patch writes must be a pending_fills column; a rename fails tsc here.
+const asPatch = (p: PendingDecisionPatch): Pick<typeof pendingFills.$inferInsert, keyof PendingDecisionPatch> => p
+
+const legacyRow = (): ReviewedPendingRow => ({
+  id: 1, runId: 1, ticker: 'AAPL', detectedSide: null, detectedShares: null, detectedPrice: null,
+  detectedFilledOn: null, detectedFee: null, detectedAt: null,
 })
 
 const NO_FEE = { feeOverride: undefined }
@@ -174,9 +186,18 @@ describe('freeze, keep, sweep', () => {
 
   test('a manual row (no capture) is a no-op', async () => {
     const f = fakeRepos()
-    await resolveReview(f.repos as any, { pendingRow: { id: 1, runId: 1, ticker: 'AAPL' }, captureId: null, outcome: 'confirmed', final: final(), keepImage: true })
+    await resolveReview(f.repos as any, { pendingRow: { ...legacyRow(), id: 1 }, captureId: null, outcome: 'confirmed', final: final(), keepImage: true })
     expect(f._stores.visionReviews).toHaveLength(0)
     expect(f._stores.captureImages).toHaveLength(0)
+  })
+
+  test('a legacy row resolved with a capture freezes edited false', async () => {
+    const f = fakeRepos()
+    await f.repos.captureImageRepo.insertIgnore({ captureId: 7, mime: 'image/png', bytes: Buffer.from('x'), byteLen: 1 })
+    await resolveReview(f.repos as any, { pendingRow: { ...legacyRow(), id: 2 }, captureId: 7, outcome: 'confirmed', final: final({ shares: 99 }), keepImage: true, feeOverride: undefined })
+    expect(f._stores.visionReviews).toHaveLength(1)
+    expect(f._stores.visionReviews[0]!.edited).toBe(false)
+    expect(f._stores.visionReviews[0]!.detectedShares).toBeNull()
   })
 
   test('a booking that fails late archives nothing, and the retry archives exactly once', async () => {

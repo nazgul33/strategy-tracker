@@ -1,5 +1,5 @@
 import type { RunState } from '@st/core'
-import type { BookingNotifier, OrderRow, SellAttribution } from '../src/domain/booking'
+import type { BookingNotifier, OrderRow, PendingDecisionPatch, RepoSurface, SellAttribution } from '../src/domain/booking'
 import { fakeCorrectionRepo } from './fake-corrections'
 
 export const silentNotifier: BookingNotifier = { siblingCancelled: async () => {}, sellAttributed: async () => {} }
@@ -103,7 +103,7 @@ export function fakeRepos() {
     async listPending() { return pending.filter((p) => p.status === 'pending') },
     async hasLiveForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'pending') },
     async hasConfirmedForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'confirmed') },
-    async decide(id: number, status: string, edited?: any): Promise<boolean> {
+    async decide(id: number, status: 'confirmed' | 'rejected', edited?: PendingDecisionPatch): Promise<boolean> {
       const p = pending.find((x) => x.id === id)
       if (!p) throw new Error('not found')
       if (p.status !== 'pending') throw new Error('not pending')
@@ -146,6 +146,11 @@ export function fakeRepos() {
       const i = captureImages.findIndex((x) => x.captureId === captureId)
       if (i >= 0) captureImages.splice(i, 1)
     },
+    async discard(captureId: number) {
+      const i = captureImages.findIndex((x) => x.captureId === captureId)
+      if (i >= 0) captureImages.splice(i, 1)
+      for (let j = visionReviews.length - 1; j >= 0; j--) if (visionReviews[j]!.captureId === captureId) visionReviews.splice(j, 1)
+    },
     async listKept(limit: number) {
       return captureImages.filter((x) => x.keep).slice(0, limit).map((x) => ({ captureId: x.captureId, mime: x.mime, byteLen: x.byteLen, createdAt: '' }))
     },
@@ -161,7 +166,10 @@ export function fakeRepos() {
     },
   }
   return {
-    repos: { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: corrections.repo, captureRepo, ledgerRepo, captureImageRepo, visionReviewRepo },
+    repos: {
+      runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: corrections.repo, captureRepo, ledgerRepo, captureImageRepo, visionReviewRepo,
+      notificationRepo: { async insert(_n: unknown) {} },
+    } satisfies RepoSurface,
     _stores: { runs, orders, fills, pending, captures, ledger, corrections: corrections.store, captureImages, visionReviews },
   }
 }

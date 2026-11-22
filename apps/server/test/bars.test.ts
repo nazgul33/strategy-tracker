@@ -50,7 +50,7 @@ describe('makeCachedBarReader', () => {
     f = makeFakes()
     up = makeUpstream()
     today = '2026-06-01'
-    read = makeCachedBarReader({ upstream: up, repos: f.repos as any, today: () => today })
+    read = makeCachedBarReader({ upstream: up, repos: f.repos, today: () => today })
   })
 
   test('a fully covered range makes no upstream call', async () => {
@@ -223,7 +223,7 @@ describe('makeCachedBarReader', () => {
   test('upstream bars outside the requested gap are never cached', async () => {
     today = '2026-01-09'
     const stray = async (t: string, from: string, to: string) => [...(await up(t, from, to)), mkBar('2026-01-09'), mkBar('2026-01-02')]
-    const r = makeCachedBarReader({ upstream: stray, repos: f.repos as any, today: () => today })
+    const r = makeCachedBarReader({ upstream: stray, repos: f.repos, today: () => today })
     await r('AAPL', '2026-01-05', '2026-01-08')
     expect(f.priceHistory.map((x) => x.tradeDate).sort()).toEqual(['2026-01-05', '2026-01-06', '2026-01-07', '2026-01-08'])
   })

@@ -72,8 +72,9 @@ export const pendingFills = mysqlTable('pending_fills', {
   fee: int('fee'),
   filledOn: date('filled_on', { mode: 'string' }).notNull(),
   status: mysqlEnum('status', ['pending', 'confirmed', 'rejected']).notNull().default('pending'),
-  // Vision snapshot frozen at insert. Nulls are honest "vision missed it";
-  // detectedAt null means the row predates the snapshot.
+  // Vision snapshot frozen at insert. Nulls are honest "vision missed it".
+  // detectedAt is date-granular: ingest writes the ET booking day (deps.today), stored as
+  // midnight of that date. Only its presence is ever read (null = row predates the snapshot).
   detectedSide: varchar('detected_side', { length: 8 }),
   detectedShares: int('detected_shares'),
   detectedPrice: bigint('detected_price', { mode: 'bigint' }),

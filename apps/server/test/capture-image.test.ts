@@ -2,7 +2,7 @@ import { describe, test, expect, spyOn } from 'bun:test'
 import { emptyState } from '@st/core'
 import { parseUsd } from '@st/core/money'
 import type { ExtractResult } from '@st/ingest'
-import { ingestCapture, type BookingDeps, type PendingFillRow } from '../src/domain/booking'
+import { ingestCapture, type BookingDeps, type CaptureConflict, type PendingFillRow } from '../src/domain/booking'
 import { MAX_IMAGE_BYTES, storeCaptureImage } from '../src/domain/capture-image'
 import { fakeRepos } from './booking-fakes'
 
@@ -29,10 +29,22 @@ describe('capture image storage at ingest', () => {
     expect(img.byteLen).toBe(img.bytes.length)
   })
 
-  test('ingestCapture stores no image when the extract produced no pending fills', async () => {
+  test('an unparseable extract stores no image (it returns before the store gate)', async () => {
     const { f, deps, runId } = await setup()
     const ext: ExtractResult = { ok: false, reason: 'unparseable', detail: 'bad' }
     expect(await ingestCapture(runId, PNG, ext, deps)).toBe('rejected')
+    expect(f._stores.captureImages.length).toBe(0)
+  })
+
+  test('a conflicts-only capture stores no image', async () => {
+    const { f, deps, runId } = await setup()
+    await f.repos.fillRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker: 'AAPL', shares: 1, price: parseUsd('10.00'), fee: 0, filledOn: '2026-11-05', source: 'manual' })
+    const ext: ExtractResult = { ok: true, fills: [{ side: 'buy', ticker: 'AAPL', shares: 1, price: '10.50', date: '2026-11-05' }] }
+    const out = await ingestCapture(runId, PNG, ext, deps) as { conflicts: CaptureConflict[] }
+    expect(out.conflicts.length).toBe(1)
+    expect('pending' in out).toBe(false)
+    expect(f._stores.captures.length).toBe(1) // the claim ran, so the extract did not return early
+    expect(f._stores.pending.length).toBe(0)
     expect(f._stores.captureImages.length).toBe(0)
   })
 

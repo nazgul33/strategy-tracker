@@ -166,7 +166,8 @@ describe('default fee popup', () => {
 
     await pressButton('Use default fee');
     expect(calls.length).toBe(1);
-    expect(calls[0]).toMatchObject({ method: 'POST', url: '/api/pending/9/confirm', body: { overrides: { feeCents: null } } });
+    expect(calls[0]).toMatchObject({ method: 'POST', url: '/api/pending/9/confirm' });
+    expect(calls[0]!.body).toEqual({ overrides: { feeCents: null } });
   });
 
   it('validation runs before the popup', async () => {
@@ -184,7 +185,7 @@ describe('default fee popup', () => {
     const calls = await renderWithConfirmCalls(missed);
     await type('Fee', '');
     await pressButton('Confirm');
-    expect(container.textContent).toContain(lookup('en', 'pendingNeedsOverride'));
+    expect(container.querySelector('p.text-destructive')!.textContent).toBe(lookup('en', 'pendingNeedsOverride'));
     expect(container.querySelector('[role=dialog]')).toBeNull();
     expect(calls.length).toBe(0);
   });

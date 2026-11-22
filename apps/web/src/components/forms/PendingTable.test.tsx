@@ -2,6 +2,7 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import type { PendingFillDto } from '../../api.types';
 import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
+import { PENDING_ROW as ROW, setInputValue } from '../../testing/pendingRow';
 
 GlobalRegistrator.register();
 
@@ -12,6 +13,7 @@ const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { act } = await import('react');
 const { PendingTable } = await import('./PendingTable');
+const { lookup } = await import('../../i18n/catalog');
 
 const d = React.createElement;
 
@@ -19,25 +21,6 @@ declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined;
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-
-// One valid, complete pending row (no override highlight) for the table.
-const ROW: PendingFillDto = {
-  id: 9,
-  runId: 7,
-  captureId: 3,
-  bucketIdx: null,
-  side: 'buy',
-  ticker: 'AAPL',
-  shares: 10,
-  price: '123450000', // myriadths → $12,345
-  fee: 100,
-  filledOn: '2026-11-10',
-  status: 'pending',
-  createdAt: '2026-11-10T14:30:00Z',
-  hasImage: true,
-  costPpm: 40,
-  detected: { side: 'buy', shares: 10, price: '123450000', filledOn: '2026-11-10', fee: 100 },
-};
 
 // GET /api/pending always returns [row] (default ROW); every POST (the
 // confirm) replies with the given status (default 409) and server error code.
@@ -65,14 +48,6 @@ function confirmButton(): HTMLButtonElement {
   const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Confirm');
   if (!btn) throw new Error('confirm button not found');
   return btn as HTMLButtonElement;
-}
-
-function setInputValue(el: HTMLInputElement, value: string) {
-  // Bypass React's value tracker so onChange fires (same as user typing).
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
-  setter.call(el, value);
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 async function flush() {
@@ -703,7 +678,7 @@ describe('PendingTable', () => {
       await clickConfirm();
       expect(calls.length).toBe(0);
       expect(promptOpen()).toBe(false);
-      expect(container.textContent).toContain('fill in the highlighted field');
+      expect(container.querySelector('p.text-destructive')!.textContent).toBe(lookup('en', 'pendingNeedsOverride'));
     });
 
     it('once filled in the warning clears and the date is posted as an override', async () => {
