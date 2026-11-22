@@ -123,7 +123,15 @@ describe('edit hints', () => {
     expect(date.classList.contains('border-dashed')).toBe(false);
 
     await act(async () => setInputValue(date, '2026-11-11'));
-    expect(date.getAttribute('data-edit')).toBe('changed');
+    expect(date.getAttribute('data-edit')).toBe('filled');
+    expect(date.title).toBe('Filled in — vision read nothing here');
     expect(date.classList.contains('border-warning')).toBe(false);
+  });
+
+  it('a second missed field gets its warning border too', async () => {
+    await render({ ...ROW, side: '', price: '', detected: { ...ROW.detected!, side: null, price: null } });
+    const side = container.querySelector('select[aria-label="Side"]') as HTMLSelectElement;
+    expect(side.classList.contains('border-warning')).toBe(true);
+    expect(field('Price').classList.contains('border-warning')).toBe(true);
   });
 });

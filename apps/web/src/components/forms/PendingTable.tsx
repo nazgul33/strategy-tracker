@@ -3,7 +3,7 @@ import { ApiError, api, ungroupUsd, usdFeeOrNull, usdOrNull, usdToCents, type Pe
 import { autoFeeUsd } from '../../autofee';
 import { costPercentText } from '../../format';
 import { useT } from '../../i18n';
-import { patchRowValues, pendingEdits, standingIssue, type RowValues } from '../../pendingvalues';
+import { patchRowValues, pendingEdits, standingIssues, type RowValues } from '../../pendingvalues';
 import { useAsync } from '../hooks';
 import { EmptyNote, TableWrap, Th } from '../ui';
 import { DefaultFeePrompt } from './DefaultFeePrompt';
@@ -55,7 +55,7 @@ export function PendingTable({ runId, notices: inherited }: { runId?: number; no
     const invalid = () => new Error(t('pendingInvalidOverride'));
     // A field vision missed stays unbooked until it is filled in: left blank it reads as
     // unedited, and the server would substitute its own value (the capture date for a date).
-    if (standingIssue(r, v) !== null && standingIssue(r, v) !== 'ticker') throw new Error(t('pendingNeedsOverride'));
+    if (standingIssues(r, v).some((f) => f !== 'ticker')) throw new Error(t('pendingNeedsOverride'));
     const body: PendingOverrides = {};
     for (const field of pendingEdits(r, v)) {
       if (field === 'side') {

@@ -307,7 +307,7 @@ describe('PendingTable', () => {
     root = createRoot(container);
     stubFetch('conflict', { ...ROW, price: '', detected: { ...ROW.detected!, price: null } });
     await renderTable(root);
-    expect(container.textContent).toContain('fill in the highlighted field');
+    expect(container.textContent).toContain(lookup('en', 'pendingNeedsOverride'));
   });
 
   it('confirm posts the edited values as overrides', async () => {
@@ -670,7 +670,7 @@ describe('PendingTable', () => {
       await renderTable(root);
       expect(dateInput().value).toBe('');
       expect(dateInput().className).toContain('border-warning');
-      expect(container.textContent).toContain('fill in the highlighted field');
+      expect(container.textContent).toContain(lookup('en', 'pendingNeedsOverride'));
     });
 
     it('blocks the confirm: nothing is posted and the operator is told to fill it in', async () => {

@@ -53,8 +53,8 @@ describe('fieldEditState', () => {
     expect(fieldEditState(row(feeless), { ...same, fee: '', shares: '' }, 'fee')).toBeNull();
   });
 
-  test('a typed fee on a feeless row is changed', () => {
-    expect(fieldEditState(row(feeless), { ...same, fee: '1.00' }, 'fee')).toBe('changed');
+  test('a typed fee on a feeless row is filled', () => {
+    expect(fieldEditState(row(feeless), { ...same, fee: '1.00' }, 'fee')).toBe('filled');
   });
 
   test('a cleared price is erased', () => {
@@ -76,8 +76,18 @@ describe('fieldEditState', () => {
     expect(fieldEditState(missed, { ...same, filledOn: '' }, 'filledOn')).toBeNull();
   });
 
-  test('a missed field that is filled in reads as changed', () => {
+  test('a missed field that is filled in reads as filled', () => {
     const missed = row({ ...detected, filledOn: null });
-    expect(fieldEditState(missed, { ...same, filledOn: '2026-11-03' }, 'filledOn')).toBe('changed');
+    expect(fieldEditState(missed, { ...same, filledOn: '2026-11-03' }, 'filledOn')).toBe('filled');
+  });
+
+  test('a changed field vision did read stays changed', () => {
+    expect(fieldEditState(row(), { ...same, shares: '11' }, 'shares')).toBe('changed');
+  });
+
+  test('a legacy row never claims a field was unread: its edits read changed', () => {
+    const legacy = pendingRow({ fee: 50, price: '1784000', shares: 10 });
+    expect(fieldEditState(legacy, { ...same, price: '179.00' }, 'price')).toBe('changed');
+    expect(fieldEditState(legacy, { ...same, filledOn: '2026-11-03' }, 'filledOn')).toBe('changed');
   });
 });

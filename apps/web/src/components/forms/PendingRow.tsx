@@ -2,7 +2,7 @@ import { api, type PendingFillDto } from '../../api';
 import { useT } from '../../i18n';
 import { isoDate, priceInputValue } from '../../format';
 import { autoFeeUsd } from '../../autofee';
-import { feeIsDerived, fieldEditState, standingIssue, type RowField, type RowValues } from '../../pendingvalues';
+import { feeIsDerived, fieldEditState, standingIssues, type MissedField, type RowField, type RowValues } from '../../pendingvalues';
 import { Button, Input, Select, Td } from '../ui';
 import { BucketSelect } from './BucketSelect';
 
@@ -63,20 +63,25 @@ export function PendingRow({
 }: PendingRowProps) {
   const t = useT();
   // Flag a field the row is missing until the operator has filled it in.
-  const issue = standingIssue(row, values);
-  const missing = (f: RowField) => (issue === f ? 'border-warning' : '');
+  const issues = standingIssues(row, values);
+  const missing = (f: RowField) => (issues.includes(f as MissedField) ? 'border-warning' : '');
   // Props for a field's control: its width classes, the standing-issue border, and the
   // edit hint. Solid vs dashed plus the title carry the hint, so it never rests on colour.
   const control = (f: RowField, base = '') => {
     const state = fieldEditState(row, values, f);
     const className = `${base} ${missing(f)}`.trim();
     if (state === null) return { className };
-    const title = state === 'changed' ? t('pendingFieldChanged') : t(f === 'fee' ? 'pendingFeeErased' : 'pendingFieldErased');
-    const look = state === 'changed' ? 'ring-1 ring-inset ring-primary' : 'border-dashed border-warning';
+    const titleKey = {
+      changed: 'pendingFieldChanged',
+      filled: 'pendingFieldFilled',
+      erased: f === 'fee' ? 'pendingFeeErased' : 'pendingFieldErased',
+    } as const;
+    const title = t(titleKey[state]);
+    const look = state === 'erased' ? 'border-dashed border-warning' : 'ring-1 ring-inset ring-primary';
     return { className: `${className} ${look}`, 'data-edit': state, title };
   };
-  const needsInput = issue !== null;
-  const needsMsg = t(issue === 'ticker' ? 'pendingNeedsTicker' : 'pendingNeedsOverride');
+  const needsInput = issues.length > 0;
+  const needsMsg = t(issues.includes('ticker') ? 'pendingNeedsTicker' : 'pendingNeedsOverride');
   const captureId = row.hasImage ? row.captureId : null;
   // A blank fee books the derived one on the server, so say which amount.
   const blankFee = values.fee.trim() === '' ? autoFeeUsd(values.shares, values.price, row.costPpm) : '';

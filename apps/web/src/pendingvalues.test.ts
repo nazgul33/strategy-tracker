@@ -4,8 +4,9 @@ import {
   feeIsDerived,
   patchRowValues,
   pendingEdits,
+  missingFields,
   pendingIssue,
-  standingIssue,
+  standingIssues,
   type RowValues,
 } from './pendingvalues';
 
@@ -65,22 +66,45 @@ describe('pendingIssue', () => {
   });
 });
 
-describe('standingIssue', () => {
+describe('standingIssues', () => {
   const substituted = pendingRow({ filledOn: '2026-11-09', detected: { ...detected, filledOn: null } });
   const blankDate: RowValues = { ...same, filledOn: '' };
 
   test('a missed date stands while the field is blank and clears once it is filled in', () => {
-    expect(standingIssue(substituted, blankDate)).toBe('filledOn');
-    expect(standingIssue(substituted, { ...blankDate, filledOn: ' ' })).toBe('filledOn');
-    expect(standingIssue(substituted, { ...blankDate, filledOn: '2026-11-09' })).toBeNull();
+    expect(standingIssues(substituted, blankDate)).toEqual(['filledOn']);
+    expect(standingIssues(substituted, { ...blankDate, filledOn: ' ' })).toEqual(['filledOn']);
+    expect(standingIssues(substituted, { ...blankDate, filledOn: '2026-11-09' })).toEqual([]);
   });
 
   test('a row with nothing missing has no standing issue', () => {
-    expect(standingIssue(row(), same)).toBeNull();
+    expect(standingIssues(row(), same)).toEqual([]);
   });
 
   test('a missing ticker has no control, so it always stands', () => {
-    expect(standingIssue(pendingRow({ ticker: '' }), same)).toBe('ticker');
+    expect(standingIssues(pendingRow({ ticker: '' }), same)).toEqual(['ticker']);
+  });
+
+  test('every field vision missed stands, not just the first', () => {
+    const twoMissed = pendingRow({ side: '', price: '', detected: { ...detected, side: null, price: null } });
+    expect(standingIssues(twoMissed, { ...same, side: '', price: '' })).toEqual(['side', 'price']);
+    expect(standingIssues(twoMissed, { ...same, side: 'buy', price: '' })).toEqual(['price']);
+  });
+
+  test('a missing ticker stands alongside the other missed fields', () => {
+    const r = pendingRow({ ticker: '', price: '' });
+    expect(standingIssues(r, { ...same, price: '' })).toEqual(['ticker', 'price']);
+  });
+});
+
+describe('missingFields', () => {
+  test('lists all, pendingIssue still names the first', () => {
+    const r = pendingRow({ side: '', price: '' });
+    expect(missingFields(r)).toEqual(['side', 'price']);
+    expect(pendingIssue(r)).toEqual({ field: 'side' });
+  });
+
+  test('a complete row misses nothing', () => {
+    expect(missingFields(row())).toEqual([]);
   });
 });
 

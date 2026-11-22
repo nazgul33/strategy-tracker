@@ -13,6 +13,7 @@ const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { act } = await import('react');
 const { PendingTable } = await import('./PendingTable');
+const { lookup } = await import('../../i18n/catalog');
 
 const d = React.createElement;
 
@@ -110,7 +111,7 @@ describe('PendingTable edge cases', () => {
 
     expect(calls.length).toBe(0);
     expect(container.textContent).toContain('Check the values');
-    expect(container.textContent).not.toContain('fill in the highlighted field');
+    expect(container.textContent).not.toContain(lookup('en', 'pendingNeedsOverride'));
   });
 
   it('fee text that is not an amount blocks the confirm', async () => {
