@@ -148,6 +148,7 @@
   "manualInvalidQty": "1주 이상 입력하세요.",
   "manualNote": "메모",
   "manualPrice": "단가 (USD)",
+  "manualPriceHint": "쉼표는 천 단위 구분 기호입니다: 1,234.50은 1234.50으로 읽습니다.",
   "manualQty": "수량",
   "manualSide": "구분",
   "manualSubmit": "체결 추가",

@@ -148,6 +148,7 @@
   "manualInvalidQty": "Enter at least 1 share.",
   "manualNote": "Note",
   "manualPrice": "Price (USD)",
+  "manualPriceHint": "Commas group thousands: 1,234.50 is read as 1234.50.",
   "manualQty": "Shares",
   "manualSide": "Side",
   "manualSubmit": "Add fill",

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { api, ApiError, usdFeeOrNull, usdOrNull, type FillUpdatePayload, type ManualFillInput } from '../../api';
+import { api, ApiError, ungroupUsd, usdFeeOrNull, usdOrNull, type FillUpdatePayload, type ManualFillInput } from '../../api';
 import { autoFeeUsd } from '../../autofee';
 import { useT } from '../../i18n';
 import { centsToUsdText, isoDate, priceInputValue, todayIso, usdTextToCents } from '../../format';
@@ -7,6 +7,7 @@ import type { FillDto, HeldBucketDto } from '../../api.types';
 import { RecalcResultModal, type RecalcResult } from '../RecalcSummary';
 import { Button, Field, Input, Modal, Select } from '../ui';
 import { BucketSelect } from './BucketSelect';
+import { FillDeleteStep } from './FillDeleteStep';
 
 // Kept as an export of this module for its existing importers; the derivation itself
 // is shared with the pending-fill rows.
@@ -82,7 +83,7 @@ export function FillDialog({
     let input: ManualFillInput | null = null;
     if (fill) {
       // Client guards mirroring PUT /runs/:id/fills/:fillId (cents payloads).
-      const priceCents = usdTextToCents(price);
+      const priceCents = usdTextToCents(ungroupUsd(price));
       if (priceCents === null) {
         setError(t('manualInvalidPrice'));
         return;
@@ -103,7 +104,7 @@ export function FillDialog({
       payload = { qty: Number(shares), priceCents, feeCents: feeCentsVal, filledOn };
     } else {
       // Client-side guards mirroring the server's checks (same messages as the API docs).
-      const priceUsd = usdOrNull(price);
+      const priceUsd = usdOrNull(ungroupUsd(price));
       if (priceUsd === null) {
         setError(t('manualInvalidPrice'));
         return;
@@ -190,19 +191,16 @@ export function FillDialog({
 
   if (confirming && fill) {
     return (
-      <Modal title={t('dialog.delete')} onClose={onClose} closeOnEscape={false}>
-        <p className="text-sm">{t('dialog.deleteWarning', { n: fill.shares })}</p>
+      <FillDeleteStep
+        shares={fill.shares}
+        busy={busy}
+        onDelete={() => void remove()}
+        onBack={() => setConfirming(false)}
+        onClose={onClose}
+      >
         {closedNote}
         {errorLine}
-        <div className="mt-3 flex items-center gap-3">
-          <Button variant="danger" busy={busy} onClick={() => void remove()}>
-            {t('dialog.deleteConfirm')}
-          </Button>
-          <Button autoFocus onClick={() => setConfirming(false)}>
-            {t('cancel')}
-          </Button>
-        </div>
-      </Modal>
+      </FillDeleteStep>
     );
   }
 
@@ -244,7 +242,7 @@ export function FillDialog({
             required
           />
         </Field>
-        <Field label={t('manualPrice')}>
+        <Field label={t('manualPrice')} hint={t('manualPriceHint')}>
           <Input
             data-testid="manualPriceInput"
             value={price}
