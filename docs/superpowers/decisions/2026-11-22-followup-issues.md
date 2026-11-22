@@ -115,3 +115,18 @@ Execution order: A, B, C, D, E, on the one branch.
 - **#67 (repository surface typing) is still relevant but has no plan:** plan E was never written (it was to be written against the tree plans A-D leave). Ruling: after plan D, do a scoped typing pass for #67 if it stays small, otherwise leave #67 open with a comment naming what this branch already tightened (strict ids, typed `send`), so the next branch can size it against the new tree. **[REVIEW]**
 - **Branch state for the PR (checked 2026-11-22, before plan D):** `origin/main` is at `42795c3`, which is the branch's merge-base; `fix/followup-issues` is 30 ahead / 0 behind, so the PR is a clean fast-forward — an earlier "main diverged" worry was a stale local view of the main repo, not a real divergence. The PR covers plans A, B, C and D plus this decisions document.
 - **Plan D execution shape:** implementers run sequentially because every task edits the two i18n catalogs (parallel implementers would conflict); reviewers are read-only and overlap the next implementer. `bun test apps/web/src` + `bun run typecheck` gate every task; the DB suite and e2e run once at plan end.
+
+## Plan C close-out (whole-plan review)
+
+- Whole-plan review of `0d1d66c..cd11328`: spec PASS, plan quality PASS, 0 Critical, 0 Important, 3 Minor. Fix pass in `1aad544` (clamp `deadlockBackoffMs` attempts 1..4 + pins; drop the dead `isTradingDay` test import) and `201801d` (drop the dead `mkBar` test import; document that a rebuilt review record carries boot-time `createdAt`, so it lists after siblings frozen later).
+- **[REVIEW] Source-text boot pins stay as-is** (reviewer ruling, accepted): `main-boot-order.test.ts` pins boot order by substring search and the boot-sweeps test pins step order by call-name strings; both are refactor-brittle by design and fail loudly. The durable fix is a real seam in `main()`, deliberately not attempted on this branch.
+- The deferred Task 4/Task 7 minors were verified already covered at HEAD (rejected-row pin in `db-vision-janitor.test.ts`; sweep-order assertion in `boot-sweeps.test.ts`; the narrow no-data exemptions pinned in `yahoo.test.ts` "the no-data exemptions stay narrow").
+- The branch-final review's "spec wording — at exactly their target's price" fold item was verified a no-op: the sell-attribution spec already restricts the exact-price rule to rung 1 and **open** orders (table row 1, the gate paragraph, and the tie-break paragraph).
+
+## Follow-up issues filed (branch end, 2026-11-22)
+
+- #73 fill edit/correction emptying a bucket leaves the bucket's other legs open (known limitation item 5 of the sell-attribution spec).
+- #74 a leg's second partial can book silently to another bucket whose leg size equals the remaining shares (ruling-1 recorded limitation).
+- #75 the morning digest's `warn-data-error` names no run or ticker (anonymous daily warning for a cached-then-delisted ticker).
+- #76 `sim_days` lacks a `(sim_run_id, trade_date)` index for the replay listing (`listDays` filters by run and filesorts by trade date; 0009 added the single-column index only).
+- #77 boot repair rebuilds frozen review records with `feeOverridden: false` (whole-plan review Minor 3).
