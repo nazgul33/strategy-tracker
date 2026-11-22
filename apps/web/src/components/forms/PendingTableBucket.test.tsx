@@ -3,7 +3,7 @@ import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test'
 import type { PendingFillDto } from '../../api.types';
 import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
 import type { FetchCalls } from '../../testing/fetchStub';
-import { PENDING_ROW as ROW } from '../../testing/pendingRow';
+import { PENDING_ROW as ROW, setInputValue } from '../../testing/pendingRow';
 
 GlobalRegistrator.register();
 
@@ -159,6 +159,17 @@ describe('PendingTable bucket selector', () => {
     await pressButton('Keep for review');
     expect(calls.length).toBe(1);
     expect((calls[0]!.body as { overrides: unknown }).overrides).toEqual({ side: 'buy' });
+  });
+
+  it('a chosen bucket survives the default-fee popup and the keep prompt', async () => {
+    const calls = await renderRows([SELL_NINE]);
+    await choose(bucketSelect(9), '3');
+    await act(async () => setInputValue(rowOf(9).querySelector('input[aria-label="Fee"]') as HTMLInputElement, ''));
+    await confirmRow(9);
+    await pressButton('Use default fee');
+    await pressButton('Keep for review');
+    expect(calls.length).toBe(1);
+    expect((calls[0]!.body as { overrides: { bucketIdx?: number } }).overrides.bucketIdx).toBe(3);
   });
 
   it('a buy row shows no bucket selector', async () => {

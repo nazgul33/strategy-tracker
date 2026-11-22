@@ -37,12 +37,12 @@ apps/server/       drizzle.config.ts package.json tsconfig.json
     http/app.ts http/auth.ts http/booking-deps.ts http/params.ts http/routes/{runs,fills,pending,corrections,sim,settings,vision-review}.ts
   db/              README.md
   db/migrations/   0000_fantastic_thunderbolts.sql … 0008_material_blue_marvel.sql (+ meta/)
-  test/            *.test.ts per area (booking, rebooking, sell-attribution, booking-notifier, vision-review, capture-claim, capture-image, corrections, fake-corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, calendar-2028, day, migration-sql, sim, wire, http-*, db*) + fake-corrections.ts http-fakes.ts booking-fakes.ts
+  test/            *.test.ts per area (booking, rebooking, sell-attribution, sell-matching, sell-bucket-override, http-bucket-override, booking-notifier, vision-review, capture-claim, capture-image, corrections, fake-corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, calendar-2028, day, migration-sql, sim, wire, http-*, db*) + fake-corrections.ts http-fakes.ts booking-fakes.ts sell-fixture.ts
 apps/web/          package.json tsconfig.json index.html vite.config.ts tailwind.config.ts postcss.config.js .gitignore
 apps/web/src/      main.tsx App.tsx style.css api.ts api.sim.ts api.types.ts autofee.ts defaultcost.ts format.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts priceHistory.ts simconfig.ts simerrors.ts simview.ts (+ colocated *.test.ts(x))
   testing/{fetchStub,pendingRow,visionReview}.ts   (shared test fixtures, no DOM needed at import time; fetchStub.test.ts)
   components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,PriceChart,RecalcSummary,RunPanels,RunHistory,ScreenshotLink,VisionReviewEntry,hooks,ui,forms/*}
-  components/forms/{CorrectionList,CreateRunForm,DefaultFeePrompt,EditRunModal,FillDialog,KeepImagePrompt,PendingReviewDialog,PendingRow,PendingTable,SimConfigFields,SimConfigPanel}
+  components/forms/{BucketSelect,CorrectionList,CreateRunForm,DefaultFeePrompt,EditRunModal,FillDialog,KeepImagePrompt,PendingReviewDialog,PendingRow,PendingTable,SimConfigFields,SimConfigPanel}
   pages/{RunsList,RunDetail,Sim,SimRun,Settings,Login,Pending,VisionReview}.tsx
   i18n/catalog.ts i18n/index.tsx i18n/en.json i18n/ko.json
 scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-sim-drafts.ts e2e-vision-review.ts tsconfig.json
