@@ -35,19 +35,25 @@ added on this branch):
 
 | View | 주문구분 text seen | 주문단가 | 주문수량 |
 | --- | --- | --- | --- |
-| 당일체결 (single day) | `매수/LOC`, `매도/STOP(시장가)`, `매도/STOP(지정가)`, `정정(매도)` | shown | shown |
+| 당일체결 (single day) | `매수/LOC`, `매도/보통(지정가)`, `매도/STOP(시장가)`, `매도/STOP(지정가)`, `정정(매도)` | shown | shown |
 | 기간체결 (date range) | `매수` or `매도` only | not shown | not shown |
 
+- The text has the shape `side/condition(price type)`: `보통` or `STOP` is the
+  condition, `지정가` (limit) or `시장가` (market) the price type. `LOC` carries no
+  price type.
 - **A stop-market row shows 주문단가 `0.0000`.** The trigger is not on the screen.
   A stop-limit row shows its limit there (58.0000, 43.2400), not its trigger.
 - The one filled stop in the samples: `매도/STOP(시장가)`, 주문수량 1, 체결수량 1,
-  미체결수량 0, 체결단가 43.2500 (`IMG_2141` to `IMG_2144`). The same screens carry
-  three rows with 체결수량 0 (two cancelled, one still working); those are not
-  fills.
-- `정정(매도)` is an amended sell. Its original order type is not shown.
-- No sample shows a filled target sell in the single-day view. `매도/LOC` is
-  assumed by analogy with `매수/LOC`; `매도 보통` is the operator's wording for a
-  plain limit sell.
+  미체결수량 0, 체결단가 43.2500. Per file: `IMG_2140` has two rows and no fill;
+  `IMG_2141` and `IMG_2142` have four rows, one of them the fill (the other
+  three have 체결수량 0: two cancelled, one still working); `IMG_2143` and
+  `IMG_2144` have the filled row only.
+- The one filled plain limit sell: `매도/보통(지정가)`, 주문수량 44, 주문단가
+  64.0700, 체결수량 44, 체결단가 64.0700 (`IMG_2112`).
+- `정정(매도)` is an amended sell (`IMG_2103`). Its original order type is not
+  shown.
+- No sample shows a `LOC` sell or a market sell. `매도/LOC` is assumed by analogy
+  with `매수/LOC`, and `매도/보통(시장가)` by the shape above.
 
 ## Goals
 
@@ -168,10 +174,12 @@ A pure function on the server, `classifyOrderType(raw)`, returns `'target'`,
 | does not contain `매도` | unknown |
 | contains `정정` | unknown |
 | contains `STOP` | stop |
+| contains `시장가` | unknown |
 | contains `LOC` or `보통` | target |
-| anything else (bare `매도`, `LOO`, `시장가`, …), or no text | unknown |
+| anything else (bare `매도`, `LOO`, …), or no text | unknown |
 
-The tests are applied in that order, so `매도/STOP(시장가)` is a stop.
+The tests are applied in that order, so `매도/STOP(시장가)` is a stop and a market
+sell (`매도/보통(시장가)`) is never a target.
 
 A target fill is matched against `sell_loc` orders, a stop fill against
 `stop_sell` orders.
@@ -192,8 +200,7 @@ Terms, unchanged from today:
 
 The decision, first match wins:
 
-**A. The operator gave a bucket.** That bucket, as today (`matchForcedLeg`
-picks the order to flip; no notice).
+**A. The operator gave a bucket.** That bucket, as today, with no notice.
 
 **B. The type is target or stop, and at least one order of that kind in the pool
 covers and fits.** Those orders are the candidates. Narrow them step by step; a
@@ -225,9 +232,22 @@ fill.
    the operator chooses.
 2. If there is none, by holdings as in C.
 
-In C and D the order to flip inside the chosen bucket is the one
-`matchForcedLeg` picks (in C, among orders of the fill's kind only); none means
-nothing is flipped.
+**The order that flips to `filled`** when the fill empties its bucket. In B it is
+the order left after step 5. In A, C and D:
+
+- When the fill's type is known and the decided bucket has an order of that kind
+  in the pool, that order flips, **whether or not it fits the price**. The type
+  says it was that order (a stop can fill a little above its trigger; a limit
+  sell can be placed below the planned target). If the bucket has several, the
+  one sized like 주문수량, then the one sized like the fill, then the lowest id.
+- Otherwise the one `matchForcedLeg` picks, as today. None means nothing flips.
+
+This matters for the sibling cancel: every other open sell-side order of the
+emptied bucket is announced as "pull it at your broker", so the order that
+really filled must not be among them.
+
+The edit and delete paths (`recompute.ts`) keep calling `matchForcedLeg`: a
+booked fill does not store its order type.
 
 **"The operator chooses"** is a new `DomainError('choose-bucket')`. Nothing is
 booked. A pending row stays pending, like the other booking refusals.
@@ -306,15 +326,34 @@ A new `DomainError('fill-date-in-future')` when the fill's trade date is after
 | Path | Where |
 | --- | --- |
 | manual fill, pending confirm from the web, Telegram Yes | `bookUnlocked`, before anything is read or written, for buys and sells |
-| fill edit that carries a `filledOn` | `rebookFillUnlocked` (`apps/server/src/domain/recompute.ts`), before the first write |
-| seeding a run | `seedRun`, for every seeded bucket's date |
+| fill edit that **changes** the date | `rebookFillUnlocked` (`apps/server/src/domain/recompute.ts`), before the first write |
+| seeding a run | the `POST /runs` route, before the run row is created; `seedRun` guards as well |
 
-The seed path is not named in the issue. It is included because a seeded buy
-dated after today is exactly the issue's third case (a buy dated after its own
-legs, later deleted).
+**The edit refusal fires only when the date changes.** It applies when the
+edit's `filledOn` differs from the stored date and is after today. The web edit
+dialog always sends `filledOn`, and `applyCorrection` always passes the stored
+date (`corrections.ts`), so a fill that is already stored with a future date
+can still have its price or fee corrected, and can be moved to a valid date.
+Finding and fixing such rows is not part of this change.
 
-HTTP answers 422 with the code, like the other domain errors. Web and Telegram
-get en/ko copy.
+**Seeding.** The seed path is not named in the issue. It is included because a
+seeded buy dated after today is exactly the issue's third case (a buy dated
+after its own legs, later deleted). Today `POST /runs` creates the run before it
+calls `seedRun` and has no catch, so a refusal inside `seedRun` would leave an
+empty run behind and answer 500. The route therefore checks the seed dates
+before `runRepo.create` and answers 422 with the code; the create-run form
+words it.
+
+**The manual-fill dialog's default date.** `FillDialog.tsx` pre-fills a new
+fill's date with the browser's local date (`todayIso()`). The operator's browser
+is in Korea, where the local date is one day ahead of New York's for much of the
+day, so the default itself would be refused (and today it quietly books fills a
+day ahead, which is one way #96 happens). The dialog's default for a new fill
+becomes the server's New York date, delivered with data the run page already
+loads. Editing an existing fill keeps showing its stored date.
+
+On the other paths HTTP answers 422 with the code, like the other domain
+errors. Web and Telegram get en/ko copy.
 
 **A screenshot whose date reads as after today** (operator ruling):
 
@@ -372,8 +411,9 @@ and is never a day ahead of New York's date. The premarket sample (ordered
 - Unit tests for the classifier on the exact strings above.
 - Matcher tests for every row of the examples table and every step of case B,
   plus C and D.
-- Extractor tests with responses shaped like the five stop samples (four rows,
-  one fill) and like the older single-day and date-range samples.
+- Extractor tests with responses shaped like the stop samples (two rows and no
+  fill; four rows and one fill; the filled row alone), like `IMG_2112` (a filled
+  `매도/보통(지정가)`), `IMG_2103` (`정정(매도)`) and the date-range sample.
 - Booking, confirm, edit and seed tests for the future-date refusal, including
   that nothing is written.
 - Capture wiring tests: no buttons for a needs-choice row and for a future-dated
@@ -406,8 +446,14 @@ and is never a day ahead of New York's date. The premarket sample (ordered
 3. **Case C.** A typed fill with no leg of its type is booked when exactly one
    bucket holds enough shares, instead of always waiting for the operator.
 4. **Target notices** stay quiet only on an exact order-price match.
-5. **Seeding** refuses future dates too.
-6. **A market sell is "unknown"** until a sample shows its wording.
+5. **Seeding** refuses future dates too, checked before the run is created.
+6. **A market sell is "unknown"**: any `시장가` text outside `STOP`, so
+   `매도/보통(시장가)` is not a target. (Open question to the operator, see the
+   hand-over.)
 7. **The order columns are shown under the Side control**, not in a new column
    and not in the Compare dialog.
 8. **#96 closes with the refusal only.**
+9. **A fill edit is refused only when it changes the date** to one after today.
+10. **The manual-fill dialog defaults to New York's date**, not the browser's.
+11. **A typed fill flips its bucket's order of that kind even when the price does
+    not fit**, so the order that filled is not announced as one to pull.
