@@ -133,3 +133,11 @@ export interface RepoSurface {
   ledgerRepo: LedgerRepo
   notificationRepo: Pick<NotificationRepo, 'insert'>
 }
+
+/** What the morning pipeline needs beyond RepoSurface. */
+export interface DayRepoSurface extends RepoSurface {
+  bucketRepo: RepoSurface['bucketRepo'] & {
+    /** One transaction, orders first: both are written or neither is. */
+    saveStateWithOrders(runId: number, state: RunState, orders: NewOrder[]): Promise<void>
+  }
+}

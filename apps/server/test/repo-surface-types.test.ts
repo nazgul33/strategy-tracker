@@ -1,6 +1,7 @@
 import { test, expect } from 'bun:test'
 import type { getRepos } from '../src/db/repos'
 import type { RepoSurface } from '../src/domain/booking'
+import type { DayRepoSurface } from '../src/domain/repo-types'
 import type { HttpDeps, HttpRepoSurface } from '../src/http/app'
 import type { CaptureRepos } from '../src/wire/capture'
 import type { Expect, IsNever, ArityMismatches } from './type-assert'
@@ -53,6 +54,7 @@ export async function _restPins(r: HttpRepoSurface, d: HttpDeps) {
 
 export type _real = Expect<IsNever<ArityMismatches<ReturnType<typeof getRepos>, HttpRepoSurface>>>
 export type _realCapture = Expect<IsNever<ArityMismatches<ReturnType<typeof getRepos>, CaptureRepos>>>
+export type _realDay = Expect<IsNever<ArityMismatches<ReturnType<typeof getRepos>, DayRepoSurface>>>
 export type _booking = Expect<IsNever<ArityMismatches<ReturnType<typeof fakeRepos>['repos'], RepoSurface>>>
 export type _http = Expect<IsNever<ArityMismatches<ReturnType<typeof makeFakes>['repos'], HttpRepoSurface>>>
 // @ts-expect-error a fake that drops listForRun's date is caught

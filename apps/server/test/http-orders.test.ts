@@ -15,6 +15,22 @@ describe('http trigger', () => {
     expect(await res.json()).toEqual({ result: 'morning-ok' })
   })
 
+  test('trigger morning answers 500 when the pipeline rejects', async () => {
+    const f = makeFakes()
+    const deps = makeDeps(f)
+    deps.triggerMorning = async () => { throw new Error('boom') }
+    const app = createApp(deps)
+    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
+    const auth = { Authorization: `Bearer ${(await lr.json()).token}` }
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const res = await app.request('/api/trigger/morning', { method: 'POST', headers: auth })
+      expect(res.status).toBe(500)
+    } finally {
+      errors.mockRestore()
+    }
+  })
+
   async function setup() {
     const f = makeFakes()
     const app = createApp(makeDeps(f))

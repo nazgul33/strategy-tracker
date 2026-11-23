@@ -165,7 +165,10 @@ only — nothing on weekends:
 | 16:05 Mon–Fri | Fill-capture reminder (skipped on market holidays). |
 | Dec 1, 08:00 | Calendar-maintenance nudge (see caveat below). |
 
-Manual trigger for the morning pipeline: `POST /api/trigger/morning` (authenticated).
+Manual trigger for the morning pipeline: `POST /api/trigger/morning` (authenticated). It is safe to
+repeat: a run that already has orders for today is not planned again and gets a notice saying so, so
+after a failed-run warning it plans only that run. If the pipeline stops before any run is planned, it
+sends a global warning and the trigger answers 500.
 
 ## Calendar caveat (NYSE data)
 

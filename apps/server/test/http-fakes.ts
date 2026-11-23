@@ -1,7 +1,7 @@
 import { expect } from 'bun:test'
 import type { RunState } from '@st/core'
 import type { HttpDeps, HttpRepoSurface, createApp } from '../src/http/app'
-import type { FillRow, LedgerRow, NewOrder, NotificationRow, OrderRecord, OrderStatus, PendingRow, RunRow, RunStatus } from '../src/domain/repo-types'
+import type { DayRepoSurface, FillRow, LedgerRow, NewOrder, NotificationRow, OrderRecord, OrderStatus, PendingRow, RunRow, RunStatus } from '../src/domain/repo-types'
 import type { CaptureImageInsert } from '../src/db/repos-vision'
 import type { VisionReviewRow } from '../src/domain/vision-review'
 import type { SimRunRow, SimDayRow } from '../src/sim/sim'
@@ -24,7 +24,12 @@ export function makeFakes() {
   const bucketRepo = {
     async loadState(runId: number) { return states.get(runId)! },
     async saveState(runId: number, state: RunState) { states.set(runId, state) },
-  } satisfies HttpRepoSurface['bucketRepo']
+    // calls through the repo objects: tests replace their methods
+    async saveStateWithOrders(runId: number, state: RunState, os: NewOrder[]) {
+      await orderRepo.insertMany(os)
+      await bucketRepo.saveState(runId, state)
+    },
+  } satisfies DayRepoSurface['bucketRepo']
   const runRepo = {
     async list() { return [...runs] },
     async get(id: number) { return runs.find((r) => r.id === id) ?? null },

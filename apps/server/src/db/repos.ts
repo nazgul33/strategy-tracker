@@ -7,7 +7,7 @@ import { getBarRepos } from './repos-bars'
 import { getVisionRepos } from './repos-vision'
 import type { CorrectionRepo, CorrectionRow } from '../domain/correction-types'
 import type {
-  CaptureRepo, CaptureStatus, FillPatch, FillRepo, LedgerRepo, NewCapture, NewFill, NewLedgerEntry, NewNotification, NewRun,
+  CaptureRepo, CaptureStatus, FillPatch, FillRepo, LedgerRepo, NewCapture, NewFill, NewLedgerEntry, NewNotification, NewOrder, NewRun,
   NotificationRepo, OrderRepo, OrderRecord, PendingRepo, PendingRow, RunRepo, RunRow, RunStatus,
 } from '../domain/repo-types'
 
@@ -74,6 +74,12 @@ export function getRepos(db: Db) {
   const bucketRepo = {
     async saveState(runId: number, state: RunState) {
       await db.transaction(async (tx) => saveStateWith(tx, runId, state))
+    },
+    async saveStateWithOrders(runId: number, state: RunState, orders: NewOrder[]) {
+      await db.transaction(async (tx) => {
+        if (orders.length) await tx.insert(s.orders).values(orders)
+        await saveStateWith(tx, runId, state)
+      })
     },
     async loadState(runId: number): Promise<RunState> {
       const rows = await db.select().from(s.strategyRuns).where(eq(s.strategyRuns.id, runId))

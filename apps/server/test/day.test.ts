@@ -6,8 +6,7 @@ import type { DayDeps } from '../src/pipeline/day'
 import { runMorningPipeline, runReminder } from '../src/pipeline/day'
 import { recalcRunState } from '../src/domain/recompute'
 import { withRunLock } from '../src/domain/run-lock'
-import type { RepoSurface } from '../src/domain/booking'
-import type { NewNotification, NewOrder, NewRun, NotificationRow, OrderRecord, OrderStatus, RunRow, RunStatus } from '../src/domain/repo-types'
+import type { DayRepoSurface, NewNotification, NewOrder, NewRun, NotificationRow, OrderRecord, OrderStatus, RunRow, RunStatus } from '../src/domain/repo-types'
 import { fakeCorrectionRepo } from './fake-corrections'
 import { fakeRunRow, rehydrate, serializeState, FAKE_CREATED_AT } from './booking-fakes'
 import type { Expect, IsNever, ArityMismatches } from './type-assert'
@@ -26,6 +25,11 @@ function makeRepos() {
   const bucketRepo = {
     async loadState(runId: number) { return rehydrate(JSON.parse(runs.find((x) => x.id === runId)!.stateJson)) },
     async saveState(runId: number, state: RunState) { runs.find((x) => x.id === runId)!.stateJson = serializeState(state) },
+    // calls through the repo objects: the run-lock tests patch their methods
+    async saveStateWithOrders(runId: number, state: RunState, os: NewOrder[]) {
+      await orderRepo.insertMany(os)
+      await bucketRepo.saveState(runId, state)
+    },
   }
   const orderRepo = {
     async insertMany(os: NewOrder[]) { for (const o of os) orders.push({ id: orderSeq++, ...o, skipReason: null, cancelReason: null }) },
@@ -48,11 +52,11 @@ function makeRepos() {
     captureImageRepo: { insertIgnore: async (_row) => true, getBytes: async (_captureId) => null, isKept: async (_captureId) => false, setKeep: async (_captureId) => {}, deleteFor: async (_captureId) => {}, discard: async (_captureId) => {}, listKept: async (_limit) => [] },
     visionReviewRepo: { insertIgnore: async (_row) => {}, listForCaptures: async (_captureIds) => [], deleteFor: async (_captureId) => {} },
     ledgerRepo: { insert: async (_l) => {}, listForRun: async (_runId) => [] },
-  } satisfies RepoSurface
+  } satisfies DayRepoSurface
   return { repos, runs, orders, notifications }
 }
 
-type _day = Expect<IsNever<ArityMismatches<ReturnType<typeof makeRepos>['repos'], RepoSurface>>>
+type _day = Expect<IsNever<ArityMismatches<ReturnType<typeof makeRepos>['repos'], DayRepoSurface>>>
 
 describe('day pipeline', () => {
   const WARN_EN = (id: number, tk: string) => `Market data error — run #${id} ${tk}: last close unavailable or stale. Today's orders for this run could not be computed.`
