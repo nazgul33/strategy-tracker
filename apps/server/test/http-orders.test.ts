@@ -31,9 +31,11 @@ describe('http trigger', () => {
     }
   })
 
-  async function setup() {
+  async function setup(tweak?: (deps: ReturnType<typeof makeDeps>) => void) {
     const f = makeFakes()
-    const app = createApp(makeDeps(f))
+    const deps = makeDeps(f)
+    tweak?.(deps)
+    const app = createApp(deps)
     const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
     const token = (await lr.json()).token
     const auth = { Authorization: `Bearer ${token}` }
@@ -100,14 +102,7 @@ describe('http trigger', () => {
     expect(f.sent).toHaveLength(0)
   })
   test('cancel order: a failing Telegram send still answers ok and keeps the row', async () => {
-    const f = makeFakes()
-    const deps = makeDeps(f)
-    deps.send = async () => { throw new Error('telegram-down') }
-    const app = createApp(deps)
-    const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
-    const auth = { Authorization: `Bearer ${(await lr.json()).token}` }
-    const cr = await app.request('/api/runs', { method: 'POST', body: JSON.stringify({ name: 'r', ticker: 'A', costPpm: 0, poolCents: 100 }), headers: { 'content-type': 'application/json', ...auth } })
-    const { id: runId } = await cr.json()
+    const { f, app, auth, runId } = await setup((deps) => { deps.send = async () => { throw new Error('telegram-down') } })
     await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-10', kind: 'sell_loc', bucketIdx: 0, limitPrice: 2000000n, shares: 1, status: 'open' }])
     const id = f.orders[f.orders.length - 1].id
     const errors = spyOn(console, 'error').mockImplementation(() => {})

@@ -87,4 +87,16 @@ describe('loadNoticePage', () => {
     expect(p1.nextBefore).toBe(3)
     expect(ids(p2)).toEqual([2, 1])
   })
+
+  test('a group straddling a batch boundary is still one entry', async () => {
+    // limit 1 reads 3 rows per batch: the 4-chat message (ids 5..2) spans two batches
+    const { repo } = feed([[null, 'z', 'old'], [null, 'a', 'm'], [null, 'b', 'm'], [null, 'c', 'm'], [null, 'd', 'm']])
+    const p1 = await loadNoticePage(repo, null, 1)
+    expect(ids(p1)).toEqual([5])
+    expect(chats(p1)).toEqual([['a', 'b', 'c', 'd']])
+    expect(p1.nextBefore).toBe(2)
+    const p2 = await loadNoticePage(repo, p1.nextBefore, 1)
+    expect(ids(p2)).toEqual([1])
+    expect(p2.nextBefore).toBeNull()
+  })
 })

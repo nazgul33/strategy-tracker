@@ -34,4 +34,13 @@ describeIf('db day plan write', () => {
     expect(await repos.orderRepo.listForRun(runId, '2026-02-10')).toEqual([])
     expect((await repos.bucketRepo.loadState(runId)).cashCents).toBe(1000)
   })
+
+  test('a failing order insert leaves no orders and the state unchanged', async () => {
+    const runId = await newRun()
+    // shares: null violates NOT NULL on orders.shares; the valid first row must not survive either
+    const bad = { ...order(runId), bucketIdx: 1, shares: null as unknown as number }
+    await expect(repos.bucketRepo.saveStateWithOrders(runId, { ...emptyState(2), cashCents: 900 }, [order(runId), bad])).rejects.toThrow()
+    expect(await repos.orderRepo.listForRun(runId, '2026-02-10')).toEqual([])
+    expect((await repos.bucketRepo.loadState(runId)).cashCents).toBe(1000)
+  })
 })
