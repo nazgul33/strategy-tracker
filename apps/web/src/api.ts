@@ -58,6 +58,7 @@ export type ApiErrorCode =
   | 'correction-not-open'
   | 'correction-stale'
   | 'sim-finalized'
+  | 'pipeline-error'
   | `http-${number}`;
 
 export class ApiError extends Error {
