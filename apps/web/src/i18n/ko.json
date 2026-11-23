@@ -68,7 +68,7 @@
   "digest.trade-date": "거래일: {date}  최근 종가: {price} ({lastDate})",
   "digest.unconfirmed": "⚠️ {date} 미확인 주문 {count}건",
   "digest.warn-conflict": "캘린더 불일치 — 로컬·원격 캘린더가 엇갈립니다. 오늘 주문을 내지 말고 확인해 주세요",
-  "digest.warn-data-error": "시세 데이터 오류 — 최근 종가를 가져올 수 없습니다. 오늘 주문을 내지 마세요",
+  "digest.warn-data-error": "시세 데이터 오류 — 런 #{id} {ticker}: 최근 종가를 가져올 수 없습니다. 오늘 런의 주문을 계산할 수 없습니다.",
   "dismiss": "닫기",
   "errNetwork": "서버에 연결할 수 없습니다. 연결을 확인하고 다시 시도하세요.",
   "errorInvalidJson": "서버 응답 형식이 올바르지 않습니다.",

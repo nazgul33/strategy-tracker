@@ -65,7 +65,14 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
 
   let numFailed = 0
   let numCompleted = 0
-  let warnedData = false
+  async function warnDataError(run: RunRow): Promise<void> {
+    const text = t('warn-data-error', lang, { id: run.id, ticker: run.ticker })
+    for (const chatId of deps.allowedChatIds) {
+      await deps.send(chatId, text)
+      await deps.repos.notificationRepo.insert({ runId: run.id, chatId, text })
+    }
+  }
+
   for (const run of active) {
     // fetch + sanity close
     let close: bigint
@@ -76,27 +83,13 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
       closeDate = res.date
     } catch (e) {
       numFailed++
-      const text = t('warn-data-error', lang)
-      if (!warnedData) {
-        warnedData = true
-        for (const chatId of deps.allowedChatIds) await deps.send(chatId, text)
-      }
-      for (const chatId of deps.allowedChatIds) {
-        await deps.repos.notificationRepo.insert({ runId: null, chatId, text })
-      }
+      await warnDataError(run)
       continue
     }
     const prevTd = prevTradingDay(today)
     if (closeDate !== prevTd) {
       numFailed++
-      const text = t('warn-data-error', lang)
-      if (!warnedData) {
-        warnedData = true
-        for (const chatId of deps.allowedChatIds) await deps.send(chatId, text)
-      }
-      for (const chatId of deps.allowedChatIds) {
-        await deps.repos.notificationRepo.insert({ runId: null, chatId, text })
-      }
+      await warnDataError(run)
       continue
     }
 

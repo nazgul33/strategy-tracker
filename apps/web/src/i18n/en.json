@@ -68,7 +68,7 @@
   "digest.trade-date": "Trade date: {date}  Last close: {price} ({lastDate})",
   "digest.unconfirmed": "⚠️ {count} unconfirmed orders from {date}",
   "digest.warn-conflict": "Calendar conflict — local and remote calendars disagree. No orders today, please check manually",
-  "digest.warn-data-error": "Market data error — last close unavailable or stale. No orders today",
+  "digest.warn-data-error": "Market data error — run #{id} {ticker}: last close unavailable or stale. Today's orders for this run could not be computed.",
   "dismiss": "Dismiss",
   "errNetwork": "Could not reach the server. Check the connection and try again.",
   "errorInvalidJson": "Malformed response from the server.",

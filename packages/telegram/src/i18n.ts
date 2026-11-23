@@ -21,7 +21,7 @@ export const CATALOG: Record<string, MsgEntry> = {
   'help': { en: 'help', ko: 'help' },
   'december-nudge': { en: 'December — time to load next year\'s NYSE calendar', ko: '12월입니다 — 내년 NYSE 휴장 캘린더를 업데이트하세요' },
   'warn-conflict': { en: 'Calendar conflict — local and remote calendars disagree. No orders today, please check manually', ko: '캘린더 불일치 — 로컬·원격 캘린더가 엇갈립니다. 오늘 주문을 내지 말고 확인해 주세요' },
-  'warn-data-error': { en: 'Market data error — last close unavailable or stale. No orders today', ko: '시세 데이터 오류 — 최근 종가를 가져올 수 없습니다. 오늘 주문을 내지 마세요' },
+  'warn-data-error': { en: 'Market data error — run #{id} {ticker}: last close unavailable or stale. Today\'s orders for this run could not be computed.', ko: '시세 데이터 오류 — 런 #{id} {ticker}: 최근 종가를 가져올 수 없습니다. 오늘 런의 주문을 계산할 수 없습니다.' },
   'capture-booked': { en: 'Booked {ticker} {side} {shares} sh @ ${price} on {date} — confirm?', ko: '{ticker} {side} {shares}주 @ ${price} ({date}) 예약 — 확인하시겠습니까?' },
   'booked': { en: 'Booked {ticker} {side} {shares} sh @ ${price} on {date} into bucket {bucket}', ko: '{ticker} {side} {shares}주 @ ${price} ({date})을(를) 버킷 {bucket}에 예약했습니다' },
   'rejected-line': { en: 'Rejected — fill discarded.', ko: '거부됨 — 체결이 폐기되었습니다.' },
