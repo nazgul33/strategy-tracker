@@ -101,7 +101,6 @@ export function fakeRepos() {
       const o = orders.find((x) => x.id === id)
       if (o) { o.status = status; if (cancelReason !== undefined) o.cancelReason = cancelReason }
     },
-    async listOpenBefore(date: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < date) },
     async listUnreportedStale(runId: number) { return orders.filter((o) => o.runId === runId && o.status === 'stale' && o.reportedAt === null).sort((a, b) => a.id - b.id) },
     async markReported(ids: number[]) { for (const o of orders) if (ids.includes(o.id)) o.reportedAt = FAKE_CREATED_AT },
   }

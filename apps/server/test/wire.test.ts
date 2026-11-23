@@ -172,7 +172,6 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
     listForRunFrom: async (_runId: number, _fromDate: string) => [] as OrderRecord[],
     markStale: async (_date: string) => 0,
     setStatus: async (_id: number, _status: OrderStatus, _cancelReason?: string) => {},
-    listOpenBefore: async (_date: string) => [] as OrderRecord[],
     listUnreportedStale: async (_runId: number) => [] as OrderRecord[],
     markReported: async (_ids: number[]) => {},
   };

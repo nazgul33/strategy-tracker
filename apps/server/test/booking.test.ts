@@ -183,8 +183,8 @@ describe('booking', () => {
       { runId, tradeDate: '2026-11-04', kind: 'buy_loc', bucketIdx: 2, limitPrice: 100n, shares: 1, status: 'filled' },
     ])
     const before = await f.repos.bucketRepo.loadState(runId)
-    const grouped = await rollStale('2026-11-05', deps)
-    expect(grouped[runId].length).toBe(1)
+    const flipped = await rollStale('2026-11-05', deps)
+    expect(flipped).toBe(1)
     const o4 = f._stores.orders.find((o) => o.tradeDate === '2026-11-04' && o.status !== 'filled')!
     expect(o4.status).toBe('stale')
     const o5 = f._stores.orders.find((o) => o.tradeDate === '2026-11-05')!

@@ -122,9 +122,6 @@ export function getRepos(db: Db) {
         .set({ status, ...(cancelReason !== undefined ? { cancelReason } : {}) })
         .where(eq(s.orders.id, id))
     },
-    async listOpenBefore(date) {
-      return db.select().from(s.orders).where(and(eq(s.orders.status, 'open'), sql`${s.orders.tradeDate} < ${date}`))
-    },
     async listForRun(runId, date?) {
       if (date) return db.select().from(s.orders).where(and(eq(s.orders.runId, runId), sql`${s.orders.tradeDate} = ${date}`))
       return db.select().from(s.orders).where(eq(s.orders.runId, runId))

@@ -62,7 +62,6 @@ export function makeFakes() {
       const o = orders.find((x) => x.id === id)
       if (o) { o.status = status; if (cancelReason !== undefined) o.cancelReason = cancelReason }
     },
-    async listOpenBefore(date: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < date).map((o) => ({ ...o })) },
     async listForRun(runId: number, date?: string) {
       let out = orders.filter((o) => o.runId === runId)
       if (date) out = out.filter((o) => o.tradeDate === date)

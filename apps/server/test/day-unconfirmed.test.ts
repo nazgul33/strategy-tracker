@@ -94,7 +94,7 @@ describe('the unconfirmed orders line', () => {
   test('a failing stale roll still reports orders that are already stale', async () => {
     const { f, deps, sent } = await setup()
     await seed(f, 'stale')
-    f.repos.orderRepo.listOpenBefore = async () => { throw new Error('db-down') }
+    f.repos.orderRepo.markStale = async () => { throw new Error('db-down') }
     const errors = spyOn(console, 'error').mockImplementation(() => {})
     try {
       expect(await runMorningPipeline(deps)).toBe('sent')

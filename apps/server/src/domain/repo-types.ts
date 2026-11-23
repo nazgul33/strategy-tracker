@@ -64,7 +64,6 @@ export interface OrderRepo {
   listForDate(date: string): Promise<OrderRecord[]>
   listForRun(runId: number, date?: string): Promise<OrderRecord[]>
   listForRunFrom(runId: number, fromDate: string): Promise<OrderRecord[]>
-  listOpenBefore(date: string): Promise<OrderRecord[]>
   markStale(date: string): Promise<number>
   setStatus(id: number, status: OrderStatus, cancelReason?: string): Promise<void>
   /** The run's stale orders no recorded digest has named yet, lowest id first. */
