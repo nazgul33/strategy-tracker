@@ -153,7 +153,8 @@ Only chat IDs on the allowlist get any response (`packages/telegram/src/bot.ts`)
 - The vision model extracts the fills; each becomes a pending fill with a `Yes`/`No` inline
   keyboard (except when its trade date had to be substituted: that prompt has no buttons and
   points to the web Pending view). `Yes` books it (lowest empty bucket for buys), `No` rejects. Nothing is booked without
-  that tap. Re-sending the identical photo is deduped by content hash.
+  that tap. Re-sending the identical photo is deduped by content hash. A screenshot the vision model
+  cannot read is answered with "Could not read fills…", and that reply is also listed under System notices.
 - A fill-capture reminder goes out at 16:05 ET on trading days (nothing on weekends/holidays).
 
 
