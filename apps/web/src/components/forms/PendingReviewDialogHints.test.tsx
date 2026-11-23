@@ -170,4 +170,51 @@ describe('PendingReviewDialog hints, as on the row', () => {
     expect(input('Fee').hasAttribute('data-edit')).toBe(false);
     expect(dialogText()).toContain(lookup('en', 'pendingFeeAutoHint'));
   });
+
+  describe('a field vision missed', () => {
+    const missedPrice: PendingFillDto = { ...ROW, price: '', detected: { ...ROW.detected!, price: null } };
+    const missedDate: PendingFillDto = { ...ROW, filledOn: '2026-11-09', detected: { ...ROW.detected!, filledOn: null } };
+    const warned = () =>
+      Array.from(container.querySelectorAll('[role=dialog] input, [role=dialog] select'))
+        .filter((el) => el.className.split(' ').includes('border-warning'))
+        .map((el) => el.closest('label')!.querySelector('span')!.textContent);
+
+    it('carries the warning border until it is filled in, like the row', async () => {
+      await show(missedPrice, { ...VALUES, price: '' });
+      expect(warned()).toEqual(['Price']);
+      expect(input('Price').className).toContain('w-full');
+      expect(input('Price').hasAttribute('data-edit')).toBe(false);
+      await act(async () => {
+        setInputValue(input('Price'), '12.50');
+      });
+      expect(warned()).toEqual([]);
+      expect(input('Price').getAttribute('data-edit')).toBe('filled');
+    });
+
+    it('gets the solid warning back, not the dashed erased look, when emptied again', async () => {
+      await show(missedPrice, { ...VALUES, price: '' });
+      await act(async () => {
+        setInputValue(input('Price'), '12.50');
+      });
+      await act(async () => {
+        setInputValue(input('Price'), '');
+      });
+      expect(warned()).toEqual(['Price']);
+      expect(input('Price').className).not.toContain('border-dashed');
+      expect(input('Price').hasAttribute('data-edit')).toBe(false);
+    });
+
+    it('marks every missed field at once: date and side', async () => {
+      await show({ ...missedDate, side: '', detected: { ...missedDate.detected!, side: null } }, { ...VALUES, filledOn: '', side: '' });
+      expect(warned()).toEqual(['Trade date', 'Side']);
+    });
+
+    it('a complete row and a row missing only its ticker mark nothing', async () => {
+      await show();
+      expect(warned()).toEqual([]);
+      await show({ ...ROW, ticker: '' });
+      expect(warned()).toEqual([]);
+      expect(container.querySelector('[role=dialog]')!.getAttribute('aria-label')).toContain('?');
+    });
+  });
 });

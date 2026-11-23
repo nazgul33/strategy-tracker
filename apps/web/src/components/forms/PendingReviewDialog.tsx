@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { PendingFillDto } from '../../api';
 import { useT } from '../../i18n';
 import { autoFeeUsd } from '../../autofee';
-import { patchRowValues, type RowField, type RowValues } from '../../pendingvalues';
+import { patchRowValues, standingIssues, type RowField, type RowValues } from '../../pendingvalues';
 import { ScreenshotLink } from '../ScreenshotLink';
 import { Button, Field, Input, Modal, Select } from '../ui';
 import { editHint } from './pendingHints';
@@ -23,12 +23,14 @@ export function PendingReviewDialog({ row, values, onCancel, onDone }: PendingRe
   const set = (patch: Partial<RowValues>) => setDraft((prev) => patchRowValues(row, prev, patch));
   // The hint text beside a field and the marks on its control, the same as on the row;
   // there is room here, so the text is always visible rather than shown on focus.
+  const issues: readonly string[] = standingIssues(row, draft);
   const hintFor = (f: RowField) => {
     const h = editHint(row, draft, f);
     const text = h ? t(h.key) : undefined;
+    const base = issues.includes(f) ? 'w-full border-warning' : 'w-full';
     const control = h
-      ? { className: `w-full ${h.look}`.trim(), ...(h.state === 'auto' ? {} : { 'data-edit': h.state }) }
-      : { className: 'w-full' };
+      ? { className: `${base} ${h.look}`.trim(), ...(h.state === 'auto' ? {} : { 'data-edit': h.state }) }
+      : { className: base };
     return { text, control };
   };
   const date = hintFor('filledOn');
