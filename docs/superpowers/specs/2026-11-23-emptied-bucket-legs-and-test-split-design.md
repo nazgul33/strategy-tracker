@@ -130,6 +130,10 @@ Rules:
 Acceptance, checked after every commit of this step:
 
 - Without a database: 1736 pass, 81 skip, 0 fail (the baseline at 34ca021).
+  Amended while executing: from Task 3 on the run reports 85 skipped entries,
+  because Bun counts one placeholder entry named `(unnamed)` per `describe.skip`
+  wrapper and the `db.test.ts` split repeated that wrapper in four more files. No
+  test was added or lost; the run with a database stayed at 1805 pass.
 - With `TEST_DATABASE_URL`: 1805 pass, 0 fail.
 - The sorted list of test titles in the moved files is the same before and
   after.

@@ -295,7 +295,7 @@ ruling of the follow-up decisions log:
   bucket cannot cover must still fail loudly instead of booking elsewhere. Cost:
   a partial fill whose share count equals another bucket's leg size is booked
   there without a notice; in particular a second partial of a leg can be booked to
-  another bucket whose leg size equals the shares left.
+  another bucket whose leg size equals the shares left. Still open, tracked as #74.
 - **#53, stale legs (ruling 2).** A fill captured for an earlier day and confirmed
   after the morning re-plan found that day's legs `stale`, fell to the fallback,
   and the sibling cancel pulled the wrong bucket's legs for today. A `stale` leg
@@ -337,15 +337,17 @@ ruling of the follow-up decisions log:
   `packages/telegram/src/i18n.ts` are `sell-attributed`, `sell-attributed-alt`,
   `sell-attributed-alt-market`, `sell-attributed-why-price`,
   `sell-attributed-why-market`, `leg-sell_loc`, `leg-stop_sell` and
-  `leg-market_sell`.
+  `leg-market_sell`. The notice for a deleted buy (see "Sibling cancel") adds
+  `buy-removed-cancelled` and `buy-removed-cancelled-market`; the latter drops the
+  limit, like `sibling-cancelled-market`.
 
-**Known limitations (whole-branch review, 2026-11-20; item 5 is still open, tracked as #73):**
+**Known limitations (whole-branch review, 2026-11-20; every item is addressed; orders that were cancelled are never reopened, see "Sibling cancel"):**
 
 1. Addressed 2026-11-22 (#54): a partial fill no longer flips its order, so the rest of that leg stays a candidate.
 2. Addressed 2026-11-22 (#55): `market_sell` legs on other buckets are listed as alternatives and take part in the share-count rung; price ranking is unchanged.
 3. Addressed 2026-11-22 (#53): a stale leg of the fill's day is a candidate; a late fill that still falls to the fallback pulls that bucket's legs for today only when it empties the fallback bucket.
 4. Addressed 2026-11-22 (#52): the share-count rung separates same-close targets of different sizes.
-5. A fill edit or correction that turns a partial sell into a bucket-emptying one does not flip or cancel that bucket's legs: they stay `open` on an empty bucket for the rest of that day, and a later same-day fill at exactly one of their prices fails `bucket-not-held` (the operator can force the bucket). Tracked as #73.
+5. Addressed 2026-11-23 (#73): a fill edit, an applied correction or a delete that empties a bucket retires that bucket's sell legs through the same rule as a new fill.
 
 **Sibling cancel.** Both legs sit live at the broker, so when one fires the other
 must stop looking live in the tracker *and* the operator must pull it by hand.
@@ -373,6 +375,32 @@ must stop looking live in the tracker *and* the operator must pull it by hand.
   /runs/:id/orders/:orderId/cancel` already uses (`runs.ts:258`), with new en/ko
   copy naming the leg that fired and the leg to pull. The send is fire-and-forget
   *outside* the lock span so a Telegram outage can never fail a booking.
+- **An edit or a correction that empties a bucket** (2026-11-23, #73) retires the
+  legs the same way. `rebookFillUnlocked` compares the state before and after the
+  replay; for each bucket that was held and is now `empty`, whose newest fill by id
+  in the edited history is a sell, it takes that sell as the emptying one. Its leg
+  is the order `matchForcedLeg` picks for it (none: nothing flips); that leg
+  flips to `filled`, and the same cancels apply: every other `open` sell-side order
+  of the bucket dated on or after the sell's trade date with `broker-filled`, the
+  bucket's `stale` ones dated on the sell's trade date silently. The same
+  `sibling-cancelled` notice goes out, after the lock is released and with no
+  attribution. An edit that leaves the bucket held, or an applied correction (it
+  changes price and fee, never shares), touches no order. A failing order write
+  propagates and fails the edit; only a notifier failure is swallowed.
+- **A delete that empties a bucket** (2026-11-23, #73) deletes the bucket's buy,
+  the only way `deleteFillUnlocked` empties one. Nothing flips: no sell happened.
+  Every `open` sell-side order of the bucket dated on or after the deleted buy's
+  trade date is cancelled with reason `other` and announced with the
+  `buy-removed-cancelled` notice (the buy it was placed for was deleted). The
+  bucket's `stale` sell-side orders from that date on are cancelled with `other`
+  without a notice: they belong to a lot that no longer exists, and a later rebuy
+  of the bucket must not let one pass the shares gate and absorb a late fill. The
+  rule is `retireLegs` in `apps/server/src/domain/retire-legs.ts`, the one place
+  that retires sell legs for a new fill, an edit and a delete.
+- **Orders are never reopened.** When an edit or a delete makes a bucket held
+  again (a sell edited down, a deleted sell), the legs a sibling cancel or this rule
+  cancelled stay cancelled; the bucket has no live protection until the next
+  morning's plan places its legs again.
 
 `rollStale` needs no change (it is kind-agnostic).
 
