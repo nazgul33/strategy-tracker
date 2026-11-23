@@ -41,7 +41,7 @@ apps/server/       drizzle.config.ts package.json tsconfig.json
 apps/web/          package.json tsconfig.json index.html vite.config.ts tailwind.config.ts postcss.config.js .gitignore
 apps/web/src/      main.tsx App.tsx style.css api.ts api.sim.ts api.types.ts autofee.ts defaultcost.ts format.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts priceHistory.ts simconfig.ts simerrors.ts simview.ts usd.ts visionreviewerrors.ts (+ colocated *.test.ts(x))
   testing/{fetchStub,holdFetch,pendingRow,visionReview}.ts   (shared test fixtures, no DOM needed at import time; fetchStub.test.ts)
-  components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,PriceChart,RecalcSummary,RunPanels,RunHistory,ScreenshotLink,VisionReviewEntry,Modal,hooks,ui,forms/*}
+  components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,SystemNotices,PriceChart,RecalcSummary,RunPanels,RunHistory,ScreenshotLink,VisionReviewEntry,Modal,hooks,ui,forms/*}
   components/forms/{BucketSelect,CorrectionList,CreateRunForm,DefaultFeePrompt,EditRunModal,FillDeleteStep,FillDialog,KeepImagePrompt,KeepNotices,PendingReviewDialog,PendingRow,PendingTable,SimConfigFields,SimConfigPanel,pendingHints}
   pages/{RunsList,RunDetail,Sim,SimRun,Settings,Login,Pending,VisionReview}.tsx
   i18n/catalog.ts i18n/index.tsx i18n/en.json i18n/ko.json

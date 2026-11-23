@@ -101,6 +101,17 @@ export interface NotificationDto {
   sentAt: string;
 }
 
+/** One message of the global feed: the per-chat rows of one broadcast collapsed; `id` is the newest row's id. */
+export interface NoticeEntryDto extends Omit<NotificationDto, 'chatId'> {
+  ticker: string | null;
+  chatIds: string[];
+}
+
+export interface NoticePageDto {
+  entries: NoticeEntryDto[];
+  nextBefore: number | null;
+}
+
 export interface PendingFillDto {
   id: number;
   runId: number;

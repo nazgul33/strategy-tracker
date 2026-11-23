@@ -6,6 +6,7 @@ import { api } from '../api';
 import type { RunStatus } from '../api';
 import { CreateRunForm } from '../components/forms/CreateRunForm';
 import { useAsync } from '../components/hooks';
+import { SystemNotices } from '../components/SystemNotices';
 import {
   Badge,
   Button,
@@ -36,6 +37,7 @@ export function RunsListPage() {
   const [bulkResult, setBulkResult] = useState<string | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [showBulkClose, setShowBulkClose] = useState(false);
+  const [noticesKey, setNoticesKey] = useState(0);
 
   const runs = useMemo(
     () => (data ?? []).filter((r) => filter === 'all' || r.status === filter),
@@ -91,6 +93,7 @@ export function RunsListPage() {
       setTriggerError(err instanceof Error ? err.message : String(err));
     } finally {
       setTriggerBusy(false);
+      setNoticesKey((k) => k + 1);
     }
   };
 
@@ -237,6 +240,8 @@ export function RunsListPage() {
           </TableWrap>
         )}
       </Card>
+
+      <SystemNotices key={noticesKey} />
 
       {showNew && (
         <Modal title={t('runNew')} onClose={() => setShowNew(false)} closeOnEscape={false}>

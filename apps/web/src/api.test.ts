@@ -18,6 +18,20 @@ describe('call() transport failures', () => {
   });
 });
 
+describe('listNotices', () => {
+  test('sends the before cursor only when given', async () => {
+    const urls: string[] = [];
+    const http: Http = async (url) => {
+      urls.push(url);
+      return Response.json({ entries: [], nextBefore: null });
+    };
+    const api = createApi(http, { getToken: () => null });
+    expect(await api.listNotices()).toEqual({ entries: [], nextBefore: null });
+    await api.listNotices(9);
+    expect(urls).toEqual(['/api/notifications', '/api/notifications?before=9']);
+  });
+});
+
 // Per-run gaps: createRun must carry them when set and omit them entirely
 // when unset (server treats absent as 0; an explicit null would 400).
 describe('createRun gaps', () => {

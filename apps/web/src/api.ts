@@ -7,6 +7,7 @@ import type {
   CreateRunInput,
   FillDto,
   ManualFillInput,
+  NoticePageDto,
   NotificationDto,
   OrderDto,
   PendingFillDto,
@@ -118,6 +119,8 @@ export interface Api {
   cancelOrder(runId: number, orderId: number, reason: string): Promise<void>;
   listFills(id: number): Promise<FillDto[]>;
   listNotifications(id: number): Promise<NotificationDto[]>;
+  /** The global notice feed, newest first; `before` is the previous page's `nextBefore`. */
+  listNotices(before?: number): Promise<NoticePageDto>;
   addManualFill(runId: number, fill: ManualFillInput): Promise<void>;
   updateFill(runId: number, fillId: number, body: FillUpdatePayload): Promise<{ ok: true; deltaCents: number }>;
   deleteFill(runId: number, fillId: number): Promise<{ ok: true; deletedFillId: number; deltaCents: number }>;
@@ -199,6 +202,8 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
       send<{ ok: true }>('POST', `/api/runs/${runId}/orders/${orderId}/cancel`, { reason }).then(() => undefined),
     listFills: (id) => get<FillDto[]>(`/api/runs/${id}/fills`),
     listNotifications: (id) => get<NotificationDto[]>(`/api/runs/${id}/notifications`),
+    listNotices: (before) =>
+      get<NoticePageDto>(`/api/notifications${before === undefined ? '' : `?before=${before}`}`),
     addManualFill: (runId, fill) => {
       const body: Record<string, unknown> = {
         side: fill.side,

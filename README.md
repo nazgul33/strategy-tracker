@@ -134,7 +134,9 @@ Migrations again apply at startup; use the production DB of your choice in `DATA
 ## Telegram
 
 Everything Telegram is optional: with `TELEGRAM_BOT_TOKEN` unset the bot never starts and every
-digest/send is a `[send:<chatId>] …` console line — the web UI stays fully usable. To turn it on,
+digest/send is a `[send:<chatId>] …` console line, and every pipeline, reminder and order notice is
+still recorded (chat `web`) and listed under **System notices** on the Runs page — the web UI stays
+fully usable. To turn it on,
 set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_CHAT_IDS` (plus `VISION_BASE_URL` / `VISION_MODEL` for
 fill extraction; the key may come from `VISION_API_KEY` or the web Settings page, which wins).
 Restart — `main.ts` starts a long-polling bot (no inbound endpoint needed).
