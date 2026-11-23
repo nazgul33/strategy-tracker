@@ -8,7 +8,8 @@ import { recordCorrections } from './capture-corrections'
 import { withRunLock } from './run-lock'
 import { notifyBookingOutcome, type BookingNotifier, type BookedOutcome } from './booking-notify'
 import { attributeSell } from './sell-attribute'
-import type { OrderEvidence } from './order-type'
+import { evidenceOf, type OrderEvidence } from './order-type'
+import { rowsNeedingBucket, type FlagRow } from './pending-flags'
 import type { OrderRow, SellAttribution } from './sell-match'
 import { emptiedBuckets, retireLegs } from './retire-legs'
 import { storeCaptureImage } from './capture-image'
@@ -46,7 +47,7 @@ export type CaptureOutcome =
   | { pending: PendingFillRow[]; conflicts: CaptureConflict[]; bookedEarlier?: true }
   | { conflicts: CaptureConflict[] }
 
-export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; detectedFilledOn: ISODate | null; status: string }
+export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; detectedFilledOn: ISODate | null; status: string; needsBucket: boolean; dateAfterToday: boolean }
 
 export interface BookInput {
   runId: number
@@ -165,9 +166,13 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
     const conflicts = await recordCorrections(repos, runId, captureId, matched)
 
     const pendingRows: PendingFillRow[] = []
+    const flagRows: FlagRow[] = []
     for (const f of fresh) {
       const feeCentsVal = f.fee != null ? centsFromUsd(parseUsd(f.fee)) : null
       const filledOn = f.date ?? deps.today
+      const detectedOrderType = f.orderType ?? null
+      const detectedOrderPrice = f.orderPrice != null ? parseUsd(f.orderPrice) : null
+      const detectedOrderedShares = f.orderedShares ?? null
       const pendingId = await repos.pendingRepo.insert({
         runId, captureId, bucketIdx: null, side: f.side, ticker: f.ticker, shares: f.shares,
         price: parseUsd(f.price), fee: feeCentsVal, filledOn, status: 'pending',
@@ -175,17 +180,19 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
         // rather than taking the filledOn substitute.
         detectedSide: f.side, detectedShares: f.shares, detectedPrice: parseUsd(f.price),
         detectedFilledOn: f.date ?? null, detectedFee: feeCentsVal, detectedAt: deps.today,
-        detectedOrderType: f.orderType ?? null,
-        detectedOrderPrice: f.orderPrice != null ? parseUsd(f.orderPrice) : null,
-        detectedOrderedShares: f.orderedShares ?? null,
+        detectedOrderType, detectedOrderPrice, detectedOrderedShares,
       })
       pendingRows.push({
         id: pendingId, runId, captureId, side: f.side, ticker: f.ticker, shares: f.shares,
         price: formatUsd(parseUsd(f.price)),
         fee: feeCentsVal === null ? null : formatUsd(BigInt(feeCentsVal) * 100n),
         filledOn, detectedFilledOn: f.date ?? null, status: 'pending',
+        needsBucket: false, dateAfterToday: filledOn > deps.today,
       })
+      flagRows.push({ id: pendingId, side: f.side, shares: f.shares, price: parseUsd(f.price), filledOn, evidence: evidenceOf({ detectedOrderType, detectedOrderPrice, detectedOrderedShares }) })
     }
+    const needingBucket = await rowsNeedingBucket(repos, runId, flagRows)
+    for (const row of pendingRows) row.needsBucket = needingBucket.has(row.id)
     if (pendingRows.length > 0) await storeCaptureImage(repos, captureId, image)
     if (fresh.length === 0) return { conflicts }
     const earlier = claim.bookedEarlier ? { bookedEarlier: true as const } : {}

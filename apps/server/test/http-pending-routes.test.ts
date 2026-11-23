@@ -1,6 +1,7 @@
 import { describe, test, expect, spyOn } from 'bun:test'
 import { createApp } from '../src/http/app'
-import { makeFakes, makeDeps, json, loginAs, createRun } from './http-fakes'
+import { applyBuyFill } from '@st/core'
+import { makeFakes, makeDeps, json, loginAs, createRun, seedTwoHeldBuckets } from './http-fakes'
 import { NO_SNAPSHOT } from './booking-fakes'
 
 const DETECTED = { detectedSide: 'buy', detectedShares: 3, detectedPrice: 100000n, detectedFilledOn: '2026-11-10', detectedFee: 12, detectedAt: '2026-11-10 09:00:00' }
@@ -97,6 +98,52 @@ describe('GET /api/pending order columns', () => {
     expect(rows[0].detected).toMatchObject({ orderType: '매도/보통(지정가)', orderPrice: '640700', orderedShares: 44 })
     for (const key of ['detectedOrderType', 'detectedOrderPrice', 'detectedOrderedShares']) expect(key in rows[0]).toBe(false)
     expect(rows[1].detected).toBeNull()
+  })
+})
+
+describe('GET /api/pending needsBucket and today', () => {
+  const SELL = { side: 'sell', shares: 10, price: 965000n, filledOn: '2026-11-10' }
+  const STOP = { detectedOrderType: '매도/STOP(시장가)', detectedOrderPrice: 0n, detectedOrderedShares: 10 }
+  const list = async (app: any, auth: Record<string, string>) => (await app.request('/api/pending', { headers: auth })).json()
+
+  test('an untyped sell among two possible buckets needs one; the typed sell and a buy do not', async () => {
+    const { f, app, auth, runId, addPending } = await setup()
+    await seedTwoHeldBuckets(f, runId)
+    await addPending(SELL)
+    await addPending({ ...SELL, ...STOP })
+    await addPending({ side: 'buy', shares: 3 })
+    const rows = await list(app, auth)
+    expect(rows.map((r: any) => r.needsBucket)).toEqual([true, false, false])
+  })
+
+  test('every row carries the server date', async () => {
+    const { app, auth, addPending } = await setup()
+    await addPending()
+    await addPending(SELL)
+    const rows = await list(app, auth)
+    expect(rows.map((r: any) => r.today)).toEqual(['2026-11-10', '2026-11-10'])
+  })
+
+  test('a row whose run is gone is listed with needsBucket false and nothing is loaded for it', async () => {
+    const { f, app, auth, addPending } = await setup()
+    await f.repos.pendingRepo.insert({ runId: 999, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: 965000n, fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT })
+    await addPending()
+    const stateCalls: number[] = []
+    const loadState = f.repos.bucketRepo.loadState.bind(f.repos.bucketRepo)
+    f.repos.bucketRepo.loadState = async (id: number) => { stateCalls.push(id); return loadState(id) }
+    const rows = await list(app, auth)
+    expect(rows[0]).toMatchObject({ runId: 999, needsBucket: false })
+    expect(stateCalls).not.toContain(999)
+  })
+
+  test('a row captured before the order columns existed lists and confirms', async () => {
+    const { f, app, auth, runId, addPending, post } = await setup()
+    f.states.set(runId, applyBuyFill(f.states.get(runId)!, 3, 10, 1_000_000n, 0, '2026-11-01'))
+    const pid = await addPending({ ...SELL, shares: 3, detectedAt: null })
+    const rows = await list(app, auth)
+    expect(rows[0].detected).toBeNull()
+    expect(typeof rows[0].needsBucket).toBe('boolean')
+    expect((await post(`/api/pending/${pid}/confirm`)).status).toBe(200)
   })
 })
 

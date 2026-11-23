@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import { jsonBig, type HttpDeps } from '../app'
 import { DomainError, type RunState } from '@st/core'
 import { confirmPendingFill, rejectPendingFill } from '../../domain/booking'
+import { evidenceOf } from '../../domain/order-type'
+import { rowsNeedingBucket } from '../../domain/pending-flags'
 import type { PendingRow } from '../../domain/repo-types'
 import { fillBookingDeps } from '../booking-deps'
 import { parseId } from '../params'
@@ -25,20 +27,27 @@ export function pendingRouter(deps: HttpDeps): Hono {
     const perRun = new Map(await Promise.all(
       [...new Set<number>(rows.map((p) => p.runId))].map(async (runId) => {
         const run = await deps.repos.runRepo.get(runId)
-        const heldBuckets = run ? heldBucketsOf(await deps.repos.bucketRepo.loadState(runId)) : []
-        return [runId, { costPpm: run?.costPpm ?? deps.defaultSettings.defaultCostPpm, heldBuckets }] as const
+        const state = run ? await deps.repos.bucketRepo.loadState(runId) : null
+        const flagRows = rows.filter((p) => p.runId === runId).map((p) => ({ id: p.id, side: p.side, shares: p.shares, price: p.price, filledOn: p.filledOn, evidence: evidenceOf(p) }))
+        const needingBucket = state
+          ? await rowsNeedingBucket({ bucketRepo: { ...deps.repos.bucketRepo, loadState: async () => state }, orderRepo: deps.repos.orderRepo }, runId, flagRows)
+          : new Set<number>()
+        return [runId, { costPpm: run?.costPpm ?? deps.defaultSettings.defaultCostPpm, heldBuckets: state ? heldBucketsOf(state) : [], needingBucket }] as const
       }),
     ))
+    const today = deps.today()
     return c.json(jsonBig(rows.map((p) => {
       // feeOverride is server-internal (boot-repair bookkeeping), so it is dropped with the detected* fields.
       const { detectedSide, detectedShares, detectedPrice, detectedFilledOn, detectedFee, detectedOrderType, detectedOrderPrice, detectedOrderedShares, detectedAt, feeOverride, ...row } = p
-      const { costPpm, heldBuckets } = perRun.get(p.runId)!
+      const { costPpm, heldBuckets, needingBucket } = perRun.get(p.runId)!
       return {
         ...row,
         hasImage: p.captureId != null && withImage.has(p.captureId),
         detected: detectedDto(p),
         costPpm,
         heldBuckets,
+        needsBucket: needingBucket.has(p.id),
+        today,
       }
     })))
   })

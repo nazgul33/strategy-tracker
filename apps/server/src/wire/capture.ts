@@ -10,6 +10,7 @@ import type { PendingRepo } from '../domain/repo-types';
 import { parseId } from '../http/params';
 import { makeBookingNotifier } from './booking-notifier';
 import { broadcastNotice } from './broadcast';
+import { pendingMessage } from './capture-pending-message';
 
 const CONFIRM_ERROR_KEYS: Record<string, string> = {
   'ticker-mismatch': 'confirm-err-ticker-mismatch',
@@ -24,6 +25,7 @@ const CONFIRM_ERROR_KEYS: Record<string, string> = {
   'bucket-not-held': 'confirm-err-bucket-not-held',
   'bucket-not-found': 'confirm-err-bucket-not-found',
   'fill-date-in-future': 'confirm-err-fill-date-in-future',
+  'choose-bucket': 'confirm-err-choose-bucket',
 };
 
 export interface CaptureRepos extends RepoSurface {
@@ -159,20 +161,9 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       await deps.send(chatId, t('capture-booked-earlier', lang));
     }
     for (const row of pending) {
-      let text = t('capture-booked', lang, {
-        ticker: row.ticker,
-        side: row.side,
-        shares: row.shares,
-        price: row.price,
-        date: row.filledOn,
-      });
-      if (row.detectedFilledOn === null) {
-        // a substituted date must not be confirmed blind: no buttons, the web Pending view fixes it
-        text += '\n' + t('capture-date-substituted', lang, { date: row.filledOn });
-        await deps.send(chatId, text);
-      } else {
-        await deps.send(chatId, text, { reply_markup: buildPendingKeyboard(String(row.id)) });
-      }
+      const { text, buttons } = pendingMessage(row, lang);
+      if (buttons) await deps.send(chatId, text, { reply_markup: buildPendingKeyboard(String(row.id)) });
+      else await deps.send(chatId, text);
     }
   }
 
