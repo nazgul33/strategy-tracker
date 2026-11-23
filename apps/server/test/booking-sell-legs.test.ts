@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
-import { sellSetup, sellAt, sellTyped, orderOf, lastFill } from './sell-fixture'
+import { parseUsd } from '@st/core/money'
+import { D, sellSetup, sellAt, sellTyped, orderOf, lastFill } from './sell-fixture'
 import { ev } from './sell-attribute-fixture'
 
 const STOP = ev('stop')
@@ -120,6 +121,19 @@ describe('sell matching with target and stop legs', () => {
     await expect(sellTyped(runId, 10, '92.50', deps, STOP)).rejects.toMatchObject({ kind: 'choose-bucket' })
     expect(f._stores.fills).toHaveLength(0)
     expect(f._stores.orders.every((o: any) => o.status === 'open')).toBe(true)
+  })
+
+  test('a buy order is never evidence for a sell, so the bucket with a fitting stop takes it', async () => {
+    // Bucket 0 holds enough and its buy_loc limit (90.00) is under the fill, so a buy order read as a target would fit and make this ambiguous.
+    const { f, deps, runId } = await sellSetup(
+      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 3, shares: 10, buy: '96.00' }],
+      [{ idx: 3, kind: 'stop_sell', price: '93.00' }],
+    )
+    await f.repos.orderRepo.insertMany([{ runId, tradeDate: D, kind: 'buy_loc', bucketIdx: 0, limitPrice: parseUsd('90.00'), shares: 10, status: 'open' }])
+    await sellAt(runId, 10, '92.50', deps)
+    expect(lastFill(f).bucketIdx).toBe(3)
+    expect(orderOf(f, 3, 'stop_sell').status).toBe('filled')
+    expect(orderOf(f, 0, 'buy_loc').status).toBe('open')
   })
 
   test('a candidate whose bucket holds fewer shares than the fill is skipped', async () => {
