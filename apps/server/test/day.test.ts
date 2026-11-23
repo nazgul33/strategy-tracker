@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, spyOn } from 'bun:test'
 import { emptyState, type RunState } from '@st/core'
 import { DEFAULT_MR_PARAMS } from '@st/strategies'
 import { dayInfo } from '@st/calendar'
@@ -213,8 +213,14 @@ describe('day pipeline', () => {
       params: () => DEFAULT_MR_PARAMS,
       digestLang: 'en',
     }
-    const r = await runMorningPipeline(deps)
-    expect(r).toBe('sent')
+    const err = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const r = await runMorningPipeline(deps)
+      expect(r).toBe('sent')
+      expect(err).toHaveBeenCalledWith('last close fetch failed:', 'BADA', 'Error: yahoo down')
+    } finally {
+      err.mockRestore()
+    }
     const badId = f.runs.find((x) => x.ticker === 'BADA')!.id
     expect(f.orders.filter((o) => o.runId === badId).length).toBe(0)
     expect(f.orders.filter((o) => o.runId === okId).length).toBeGreaterThan(0)
@@ -247,8 +253,14 @@ describe('day pipeline', () => {
       params: () => DEFAULT_MR_PARAMS,
       digestLang: 'en',
     }
-    const r = await runMorningPipeline(deps)
-    expect(r).toBe('sent')
+    const err = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const r = await runMorningPipeline(deps)
+      expect(r).toBe('sent')
+      expect(err).toHaveBeenCalledWith('last close fetch failed:', 'BADA', 'Error: yahoo down')
+    } finally {
+      err.mockRestore()
+    }
     const warns = sent.filter((s) => s.text.includes('Market data error'))
     expect(warns).toEqual([
       { chatId: 'c1', text: WARN_EN(1, 'BADA') },
@@ -260,6 +272,28 @@ describe('day pipeline', () => {
       warns.map((w, i) => ({ runId: i < 2 ? 1 : 2, chatId: w.chatId, text: w.text })),
     )
     expect(sent.some((s) => s.text.includes('AAPL') && !s.text.includes('Market data error'))).toBe(true)
+  })
+
+  test('(d5) data-error with no Telegram chat records a web-only row', async () => {
+    const f = makeRepos()
+    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, initialRunState: emptyState(10) })
+    const sends: string[] = []
+    const deps: DayDeps = {
+      today: () => '2026-11-06',
+      fetchLastClose: async () => ({ date: '2026-11-04', close: 3402300n }),
+      crossCheck: async () => ({ agree: true }),
+      send: async (_c, t) => { sends.push(t) },
+      allowedChatIds: [],
+      repos: f.repos,
+      params: () => DEFAULT_MR_PARAMS,
+      digestLang: 'en',
+    }
+    const r = await runMorningPipeline(deps)
+    expect(r).toBe('data-error')
+    expect(sends).toEqual([])
+    expect(f.notifications.map((n) => ({ runId: n.runId, chatId: n.chatId, text: n.text }))).toEqual([
+      { runId: 1, chatId: 'web', text: WARN_EN(1, 'TSLA') },
+    ])
   })
 
   test('(d4) data-error warning in Korean', async () => {

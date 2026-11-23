@@ -19,7 +19,9 @@ Small change, two independent fixes in the Telegram surface.
   get their digests).
 - #75: each warning's notification row is recorded against that run
   (`runId: run.id`), one row per chat actually sent to — no more rows for
-  messages that were never sent.
+  messages that were never sent. With no allowed chat (Telegram not
+  configured), one row with chat id `web` is recorded instead, as booking
+  notices do.
 - #83: every `/orders` line shows the ticker of the order's run.
 - #83: the wire test uses real-shaped order rows (no `ticker`) and fails if the
   run lookup is missing.
@@ -60,6 +62,8 @@ Small change, two independent fixes in the Telegram surface.
   that text with the run's id and ticker, send it to every allowed chat, and
   insert one notification row per chat with `runId: run.id`. The `warnedData`
   once-only flag goes away; the duplicated block becomes one local helper.
+- A thrown last-close fetch is logged
+  (`console.error('last close fetch failed:', ticker, error)`).
 - Mirror the same copy in `apps/web/src/i18n/{en,ko}.json`
   (`digest.warn-data-error`) so the two catalogs stay in sync (my call; the web
   does not render it today).

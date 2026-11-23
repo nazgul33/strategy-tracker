@@ -4,6 +4,7 @@ import { computeOrders, type MrParams } from '@st/strategies'
 import { rollStale, type RepoSurface, type BookingDeps } from '../domain/booking'
 import type { NewOrder, RunRow } from '../domain/repo-types'
 import { withRunLock } from '../domain/run-lock'
+import { WEB_ONLY_CHAT_ID } from '../wire/booking-notifier'
 import { renderDigest, renderClosed, renderReminder } from '@st/telegram/digest'
 import { t } from '@st/telegram/i18n'
 import type { DayPlan } from '@st/core'
@@ -65,8 +66,13 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
 
   let numFailed = 0
   let numCompleted = 0
+
   async function warnDataError(run: RunRow): Promise<void> {
     const text = t('warn-data-error', lang, { id: run.id, ticker: run.ticker })
+    if (deps.allowedChatIds.length === 0) {
+      await deps.repos.notificationRepo.insert({ runId: run.id, chatId: WEB_ONLY_CHAT_ID, text })
+      return
+    }
     for (const chatId of deps.allowedChatIds) {
       await deps.send(chatId, text)
       await deps.repos.notificationRepo.insert({ runId: run.id, chatId, text })
@@ -82,6 +88,7 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
       close = res.close
       closeDate = res.date
     } catch (e) {
+      console.error('last close fetch failed:', run.ticker, String(e))
       numFailed++
       await warnDataError(run)
       continue
