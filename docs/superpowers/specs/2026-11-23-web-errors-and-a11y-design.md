@@ -33,7 +33,7 @@ Make the web app's dialogs and forms complete for keyboard and screen-reader use
 - On unmount (including StrictMode's simulated unmount): decrement, and remove `inert` when the count reaches zero.
 - The outer dialog's own content stays reachable through the inner dialog only where the inner one doesn't cover it. An inner dialog rendered inside the outer panel makes the outer panel's other children inert, which is the intent.
 - Constraint: a live region that must announce while a dialog is open lives inside that dialog (check `KeepNotices`, `role="status"` notes in `EditRunModal`/`CreateRunForm`). If one sits outside, move it in or explain why it can wait until the dialog closes.
-- `Modal.tsx` stays under ~300 lines; the inert bookkeeping may move to its own small module *(builder's call)*.
+- The inert bookkeeping may move to its own small module *(builder's call)*.
 
 ### Field hints as descriptions — `apps/web/src/components/ui.tsx` (#78)
 
@@ -69,7 +69,7 @@ New en/ko keys: `errServer`, `errRequest`, `triggerErr.pipeline-error`. Korean i
 
 ## Constraints
 
-- No source file over ~300 lines. `FillDialog.tsx` is 304 and `RunDetail.tsx` 300 today; edits there must not grow them (net ≤ 0 or a split).
+- File size: the ~300-line convention is not enforced on this branch (operator ruling); files may grow and get split later. Don't split files here.
 - All user-facing copy via en/ko catalogs; the web catalog parity tests stay green.
 - `bun test`, `bun run typecheck` and `scripts/e2e.ts` pass.
 - Close #78, #79 and #80 with the PR; comment on #69 with what is left.
