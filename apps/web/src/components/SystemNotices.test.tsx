@@ -11,6 +11,7 @@ const { createRoot } = await import('react-dom/client');
 const { act } = await import('react');
 const { SystemNotices } = await import('./SystemNotices');
 const { LangProvider } = await import('../i18n');
+const { getToken, setToken } = await import('../api');
 
 const d = React.createElement;
 
@@ -165,6 +166,31 @@ describe('SystemNotices', () => {
     await click(buttonByText('Show older'));
     expect(previews().length).toBe(4);
     expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('Show older on an expired session clears the token and goes to the login page', async () => {
+    setToken('stale-token');
+    window.location.hash = '#/runs';
+    try {
+      await render();
+      older.status = 401;
+      await click(buttonByText('Show older'));
+      expect(getToken()).toBeNull();
+      expect(window.location.hash).toBe('#/login');
+    } finally {
+      setToken(null);
+      window.location.hash = '';
+    }
+  });
+
+  it('keeps the chat order the server sent', async () => {
+    first.json = {
+      nextBefore: null,
+      entries: [{ id: 11, runId: null, ticker: null, text: 'Reminder', sentAt: '2026-11-20T12:30:00.000Z', chatIds: ['43', '42'] }],
+    };
+    await render();
+    await click(container.querySelector('tbody tr button'));
+    expect(container.textContent).toContain('Chat: 43, 42');
   });
 
   it('renders its chrome in Korean', async () => {

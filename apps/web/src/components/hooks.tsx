@@ -14,6 +14,14 @@ export interface AsyncData<T> {
   reload: () => Promise<void>;
 }
 
+/** An expired or revoked session: drop the token and send the operator to the login page. */
+export function handleUnauthorized(e: unknown): void {
+  if (e instanceof ApiError && e.status === 401) {
+    setToken(null);
+    if (window.location.hash !== '#/login') window.location.hash = '#/login';
+  }
+}
+
 export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): AsyncData<T> {
   const [data, setData] = useState<T | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -31,10 +39,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): Asy
         setError(undefined);
         setFailure(undefined);
       } catch (e) {
-        if (e instanceof ApiError && e.status === 401) {
-          setToken(null);
-          if (window.location.hash !== '#/login') window.location.hash = '#/login';
-        }
+        handleUnauthorized(e);
         setError(e instanceof Error ? e.message : String(e));
         setFailure(e);
       } finally {

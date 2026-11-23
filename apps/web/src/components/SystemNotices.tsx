@@ -7,7 +7,7 @@ import { api } from '../api';
 import type { NoticeEntryDto } from '../api';
 import { isoDateTime } from '../format';
 import { useT } from '../i18n';
-import { useAsync } from './hooks';
+import { handleUnauthorized, useAsync } from './hooks';
 import { Button, Card, EmptyNote, ErrorNote, SectionTitle, Spinner, TableWrap, Td, Th } from './ui';
 
 const firstLine = (text: string): string => text.split('\n').find((l) => l.trim() !== '')?.trim() ?? '';
@@ -41,6 +41,7 @@ export function SystemNotices() {
       setOlder((prev) => [...prev, ...page.entries]);
       setCursor(page.nextBefore);
     } catch (err) {
+      handleUnauthorized(err);
       setOlderError(err instanceof Error ? err.message : String(err));
     } finally {
       setOlderBusy(false);
