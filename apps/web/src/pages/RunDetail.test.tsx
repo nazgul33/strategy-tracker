@@ -4,7 +4,8 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { installFetchStub, restoreFetch } from '../testing/fetchStub';
 import type { FetchCalls } from '../testing/fetchStub';
-import { RUN, buttonByText, inputByTestId, runDetailHelpers, runDetailRoutes } from '../testing/runDetail';
+import { inputByTestId } from '../testing/dom';
+import { RUN, buttonByText, runDetailHelpers, runDetailRoutes } from '../testing/runDetail';
 import type { Post } from '../testing/runDetail';
 
 GlobalRegistrator.register();

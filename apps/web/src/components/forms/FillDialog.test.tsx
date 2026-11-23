@@ -2,14 +2,8 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { restoreFetch } from '../../testing/fetchStub';
 import type { FetchCalls } from '../../testing/fetchStub';
-import {
-  elementByTestId,
-  errorText,
-  fillDialogHelpers,
-  fillDto,
-  inputByTestId,
-  installFillDialogStub,
-} from '../../testing/fillDialog';
+import { elementByTestId, inputByTestId } from '../../testing/dom';
+import { errorText, fillDialogHelpers, fillDto, installFillDialogStub } from '../../testing/fillDialog';
 import type { FillDialogCall } from '../../testing/fillDialog';
 
 GlobalRegistrator.register();

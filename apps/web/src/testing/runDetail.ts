@@ -1,4 +1,5 @@
 import type { act as ReactAct } from 'react';
+import { inputByTestId, setInputValue } from './dom';
 import type { FetchCalls, Route } from './fetchStub';
 
 export interface Post {
@@ -70,19 +71,6 @@ export function runDetailRoutes(runBody: () => Record<string, unknown>): Route[]
       },
     },
   ];
-}
-
-export function setInputValue(el: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
-  setter.call(el, value);
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
-export function inputByTestId(id: string): HTMLInputElement {
-  const el = document.querySelector(`[data-testid="${id}"]`);
-  if (!el || !(el instanceof HTMLInputElement)) throw new Error(`input [${id}] not found`);
-  return el;
 }
 
 export function buttonByText(text: string): HTMLButtonElement {

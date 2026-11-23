@@ -2,7 +2,8 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import type { PendingFillDto } from '../../api.types';
 import { restoreFetch } from '../../testing/fetchStub';
-import { PENDING_ROW as ROW, setInputValue } from '../../testing/pendingRow';
+import { setInputValue } from '../../testing/dom';
+import { PENDING_ROW as ROW } from '../../testing/pendingRow';
 import { pendingTableHelpers } from '../../testing/pendingTable';
 
 GlobalRegistrator.register();

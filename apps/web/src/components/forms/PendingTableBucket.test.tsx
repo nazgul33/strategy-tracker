@@ -3,7 +3,8 @@ import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test'
 import type { PendingFillDto } from '../../api.types';
 import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
 import type { FetchCalls } from '../../testing/fetchStub';
-import { PENDING_ROW as ROW, setInputValue } from '../../testing/pendingRow';
+import { setInputValue } from '../../testing/dom';
+import { PENDING_ROW as ROW } from '../../testing/pendingRow';
 
 GlobalRegistrator.register();
 
