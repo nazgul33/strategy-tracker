@@ -83,6 +83,18 @@ describe('RunDetailPage add-fill button', () => {
     expect(side!.value).toBe('buy');
   });
 
+  it("the fill dialog's date defaults to the server's date from the run response", async () => {
+    runBody = { ...RUN, today: '2026-11-22' };
+    act(() => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(d(RunDetailPage, { id: 1 })));
+    await flush();
+    await act(async () => {
+      (document.querySelector('[data-testid="tabManual"]') as HTMLElement).click();
+    });
+    expect((document.querySelector('[data-testid="manualDateInput"]') as HTMLInputElement).value).toBe('2026-11-22');
+  });
+
   it("the fill dialog offers the run's held buckets when the side is sell", async () => {
     runBody = {
       ...RUN,

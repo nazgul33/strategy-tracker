@@ -60,6 +60,8 @@ export interface RunStateDto {
 export interface RunDetailDto extends RunDto {
   progressView: ProgressViewDto;
   state: RunStateDto;
+  /** The server's New York date (YYYY-MM-DD). */
+  today?: string;
 }
 
 export interface OrderDto {

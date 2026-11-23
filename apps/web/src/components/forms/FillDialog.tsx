@@ -31,6 +31,8 @@ export interface FillDialogProps {
   initialSide?: 'buy' | 'sell';
   /** Add mode only: the run's held buckets a sell can be booked to. */
   heldBuckets?: HeldBucketDto[];
+  /** Add mode only: the server's New York date, the default for a new fill. */
+  today?: string;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -43,6 +45,7 @@ export function FillDialog({
   bucketClosed = false,
   initialSide = 'buy',
   heldBuckets = [],
+  today,
   onClose,
   onSaved,
 }: FillDialogProps) {
@@ -53,7 +56,7 @@ export function FillDialog({
   const [shares, setShares] = useState(fill ? String(fill.shares) : '');
   const [price, setPrice] = useState(fill ? priceInputValue(fill.price) : '');
   const [fee, setFee] = useState(fill ? centsToUsdText(fill.fee) : '');
-  const [filledOn, setFilledOn] = useState(fill ? isoDate(fill.filledOn) : todayIso());
+  const [filledOn, setFilledOn] = useState(fill ? isoDate(fill.filledOn) : (today ?? todayIso()));
   const [feeTouched, setFeeTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
