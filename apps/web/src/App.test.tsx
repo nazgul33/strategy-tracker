@@ -137,3 +137,87 @@ describe('App run route', () => {
     expect(document.body.textContent).not.toContain('Corrections');
   });
 });
+
+describe('App notice deep link', () => {
+  const NOTES = [
+    { id: 1, runId: 1, chatId: 'web', text: 'cancel the other leg', sentAt: '2026-11-10T14:30:00.000Z' },
+    { id: 2, runId: 1, chatId: 'web', text: 'sold', sentAt: '2026-11-10T14:31:00.000Z' },
+  ];
+  const marked = () => [...document.querySelectorAll('tbody tr[aria-current="true"]')].map((el) => el.textContent ?? '');
+
+  // happy-dom may not implement scrollIntoView; give the prototype a no-op for these tests.
+  const proto = window.Element.prototype as { scrollIntoView?: unknown };
+  let defined = false;
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+
+  async function open(hash: string) {
+    window.location.hash = hash;
+    setToken('test-token');
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root.render(d(App)));
+    await flush();
+  }
+
+  beforeEach(() => {
+    if (typeof proto.scrollIntoView !== 'function') {
+      proto.scrollIntoView = () => {};
+      defined = true;
+    }
+    installFetchStub([
+      { url: '/price-history', json: { start: '2026-11-04', bars: [] } },
+      { url: '/orders', json: [] },
+      { url: '/fills', json: [] },
+      { url: '/notifications', json: NOTES },
+      { url: '/api/runs/1', json: runDto(1, 'First run') },
+    ]);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    restoreFetch();
+    setToken(null);
+    window.location.hash = '';
+    if (defined) {
+      delete proto.scrollIntoView;
+      defined = false;
+    }
+  });
+
+  it('opens the run on the Notifications tab with the notice highlighted', async () => {
+    await open('#/runs/1?tab=notifications&notice=2');
+    expect(document.body.textContent).toContain('First run');
+    expect(document.body.textContent).toContain('cancel the other leg');
+    const found = marked();
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain('sold');
+    expect(buttonByText('Alerts').className).toContain('bg-primary');
+  });
+
+  it('a second deep link on the same run moves the highlight', async () => {
+    await open('#/runs/1?tab=notifications&notice=2');
+    await act(async () => {
+      window.location.hash = '#/runs/1?tab=notifications&notice=1';
+      window.dispatchEvent(new window.Event('hashchange'));
+    });
+    await flush();
+    const found = marked();
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain('cancel the other leg');
+  });
+
+  it('a notice id the run does not have opens the tab without a highlight', async () => {
+    await open('#/runs/1?tab=notifications&notice=99');
+    expect(document.body.textContent).toContain('sold');
+    expect(marked()).toEqual([]);
+  });
+
+  it('an unknown tab opens on Orders as before', async () => {
+    await open('#/runs/1?tab=bogus&notice=2');
+    expect(document.body.textContent).toContain('First run');
+    expect(document.body.textContent).not.toContain('cancel the other leg');
+  });
+});
