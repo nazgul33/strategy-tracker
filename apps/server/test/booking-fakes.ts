@@ -23,16 +23,18 @@ export function fakeRunRow(id: number, input: NewRun): RunRow {
   }
 }
 
-export const silentNotifier: BookingNotifier = { siblingCancelled: async () => {}, sellAttributed: async () => {} }
+export const silentNotifier: BookingNotifier = { siblingCancelled: async () => {}, sellAttributed: async () => {}, buyRemoved: async () => {} }
 
 export function recordingNotifier() {
   const siblings: Array<{ runId: number; order: OrderRow }> = []
   const attributions: Array<{ runId: number; attribution: SellAttribution }> = []
+  const orphans: Array<{ runId: number; order: OrderRow }> = []
   const notify: BookingNotifier = {
     siblingCancelled: async (runId, order) => { siblings.push({ runId, order: { ...order } }) },
     sellAttributed: async (runId, attribution) => { attributions.push({ runId, attribution }) },
+    buyRemoved: async (runId, order) => { orphans.push({ runId, order: { ...order } }) },
   }
-  return { notify, siblings, attributions }
+  return { notify, siblings, attributions, orphans }
 }
 
 export function serializeState(state: RunState): string {

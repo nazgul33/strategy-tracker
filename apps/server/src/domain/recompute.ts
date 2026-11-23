@@ -117,19 +117,23 @@ export async function rebookFillUnlocked(
 // reopened. Returns the deleted row plus deltaCents: the signed cash effect of
 // the removal (rebuilt cash minus previously stored cash), same amount as the
 // compensating 'adjust' that gets booked. Runs under the per-run lock.
-export function deleteFill(
+// Deleting a buy that empties its bucket retires that bucket's sell legs (retireLegs);
+// the operator is told which open legs to pull once the lock is released.
+export async function deleteFill(
   runId: number,
   fillId: number,
-  deps: BookingDeps,
+  deps: FillBookingDeps,
 ): Promise<{ fill: FillRow; deltaCents: number }> {
-  return withRunLock(runId, () => deleteFillUnlocked(runId, fillId, deps))
+  const { fill, deltaCents, orphanedIds } = await withRunLock(runId, () => deleteFillUnlocked(runId, fillId, deps))
+  await notifyBookingOutcome(runId, { cancelledIds: [], attribution: null, orphanedIds }, deps)
+  return { fill, deltaCents }
 }
 
 async function deleteFillUnlocked(
   runId: number,
   fillId: number,
   deps: BookingDeps,
-): Promise<{ fill: FillRow; deltaCents: number }> {
+): Promise<{ fill: FillRow; deltaCents: number; orphanedIds: number[] }> {
   const repos = deps.repos
   if (!repos.fillRepo.deleteById) throw new Error('fill-history-unavailable')
   const history = byIdAsc(await repos.fillRepo.listForRun(runId))
@@ -148,7 +152,12 @@ async function deleteFillUnlocked(
   if (delta !== 0) {
     await repos.ledgerRepo.insert({ runId, kind: 'adjust', amountCents: delta, ref: JSON.stringify({ fillId, bookedOn: deps.today, reason: 'fill-delete' }) })
   }
-  return { fill, deltaCents: delta }
+  let orphanedIds: number[] = []
+  if (fill.side === 'buy' && emptiedBuckets(state, rebuilt).includes(fill.bucketIdx)) {
+    const orders = await repos.orderRepo.listForRunFrom(runId, fill.filledOn)
+    orphanedIds = await retireLegs(repos, orders, { runId, bucketIdx: fill.bucketIdx }, { kind: 'buy-removed', filledOn: fill.filledOn })
+  }
+  return { fill, deltaCents: delta, orphanedIds }
 }
 
 // Re-derive the run state from the full fill history (Cash Model A) and store

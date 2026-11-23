@@ -15,7 +15,7 @@ export interface BookingNotifierDeps {
   lang: Lang
 }
 
-type Notice = 'sell-attributed' | 'sibling-cancelled'
+type Notice = 'sell-attributed' | 'sibling-cancelled' | 'buy-removed'
 
 // FillBookingDeps.notify for the real server: renders the booking notices and hands
 // delivery (rows, per-chat sends, the web-only row, failure logging) to broadcastNotice.
@@ -51,6 +51,13 @@ export function makeBookingNotifier(deps: BookingNotifierDeps): BookingNotifier 
         ? t('sibling-cancelled-market', deps.lang, params)
         : t('sibling-cancelled', deps.lang, { ...params, limit: formatUsd(order.limitPrice) })
       await broadcastNotice(delivery, runId, text, log('sibling-cancelled', order.id))
+    },
+    buyRemoved: async (runId, order) => {
+      const params = { ...(await runParams(runId)), bucket: order.bucketIdx, leg: t(`leg-${order.kind}`, deps.lang) }
+      const text = order.kind === 'market_sell'
+        ? t('buy-removed-cancelled-market', deps.lang, params)
+        : t('buy-removed-cancelled', deps.lang, { ...params, limit: formatUsd(order.limitPrice) })
+      await broadcastNotice(delivery, runId, text, log('buy-removed', order.id))
     },
     sellAttributed: async (runId, attribution) => {
       const text = t('sell-attributed', deps.lang, {

@@ -93,6 +93,28 @@ describe('booking notifier: siblingCancelled', () => {
   })
 })
 
+describe('booking notifier: buyRemoved', () => {
+  const TAIL = 'at your broker — the buy it was placed for was deleted, so this order is no longer needed.'
+
+  test('buyRemoved names the run, ticker and leg with its price', async () => {
+    const { notifier, sent } = harness(['42'])
+    await notifier.buyRemoved(7, order({ kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') }))
+    expect(sent).toEqual([{ chatId: '42', text: `⚠️ Run #7 AAPL: cancel bucket 1 target ($103.00) ${TAIL}` }])
+  })
+
+  test('buyRemoved names a market leg without a price', async () => {
+    const { notifier, sent } = harness(['42'])
+    await notifier.buyRemoved(7, order({ kind: 'market_sell', bucketIdx: 2, limitPrice: 0n }))
+    expect(sent).toEqual([{ chatId: '42', text: `⚠️ Run #7 AAPL: cancel bucket 2 market sell ${TAIL}` }])
+  })
+
+  test('buyRemoved renders in ko', async () => {
+    const { notifier, sent } = harness(['42'], undefined, 'ko')
+    await notifier.buyRemoved(7, order({ kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') }))
+    expect(sent).toEqual([{ chatId: '42', text: '⚠️ 런 #7 AAPL: 증권사에서 버킷 1 목표가 매도 ($103.00) 주문을 취소하세요 — 이 주문의 근거였던 매수 체결이 삭제되어 더 이상 필요하지 않습니다.' }])
+  })
+})
+
 describe('booking notifier: sellAttributed', () => {
   test('sellAttributed renders every alternative, joined with "; ", and records a row per chat', async () => {
     const { notifier, rows, sent } = harness(['42', '43'])

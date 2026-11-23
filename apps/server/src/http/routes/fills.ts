@@ -52,7 +52,7 @@ export function fillsRouter(deps: HttpDeps): Hono {
     let deleted: { fill: { id: number }; deltaCents: number }
     try {
       // the domain guards per-bucket newness and books the compensating adjust
-      deleted = await deleteFill(runId, fillId, bookingDeps())
+      deleted = await deleteFill(runId, fillId, fillBookingDeps(deps))
     } catch (e) {
       if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
       throw e

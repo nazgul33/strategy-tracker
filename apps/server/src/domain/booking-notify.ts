@@ -3,13 +3,14 @@ import type { OrderRow, SellAttribution } from './sell-match'
 export interface BookingNotifier {
   siblingCancelled(runId: number, order: OrderRow): Promise<void>
   sellAttributed(runId: number, attribution: SellAttribution): Promise<void>
+  buyRemoved(runId: number, order: OrderRow): Promise<void>
 }
 
-export interface BookedOutcome { cancelledIds: number[]; attribution: SellAttribution | null }
+export interface BookedOutcome { cancelledIds: number[]; attribution: SellAttribution | null; orphanedIds?: number[] }
 
 // Tells the operator what a booking needs from them: first that a sell fill was
 // attributed among several admissible orders, then which cancelled orders still
-// need pulling at the broker. Called after the booking committed and the run lock
+// need pulling at the broker, then which orders lost their buy. Called after the booking committed and the run lock
 // was released, so nothing here may fail or undo it: every error is logged and
 // swallowed, per notification, so one bad notification does not hide the next.
 export async function notifyBookingOutcome(
@@ -30,6 +31,14 @@ export async function notifyBookingOutcome(
       if (order) await deps.notify.siblingCancelled(runId, order)
     } catch (e) {
       console.error('booking notification failed:', runId, 'sibling-cancelled', id, String(e))
+    }
+  }
+  for (const id of outcome.orphanedIds ?? []) {
+    try {
+      const order = await deps.repos.orderRepo.get(id)
+      if (order) await deps.notify.buyRemoved(runId, order)
+    } catch (e) {
+      console.error('booking notification failed:', runId, 'buy-removed', id, String(e))
     }
   }
 }
