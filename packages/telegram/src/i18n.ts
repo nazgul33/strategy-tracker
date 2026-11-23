@@ -57,7 +57,7 @@ export const CATALOG: Record<string, MsgEntry> = {
   'status-run-line': { en: 'Run #{id} {ticker}', ko: '런 #{id} {ticker}' },
   'status-cash': { en: 'Cash: ${amount}', ko: '현금: ${amount}' },
   'no-orders': { en: 'No orders due on {date}.', ko: '{date}에 만료된 주문이 없습니다.' },
-  'orders-line': { en: '#{id} {kind} {ticker} {shares} sh @ ${price}', ko: '#{id} {kind} {ticker} {shares}주 @ ${price}' },
+  'orders-line': { en: '#{id} {kind} {shares} sh @ ${price}', ko: '#{id} {kind} {shares}주 @ ${price}' },
   'orders-run-missing': { en: 'run #{id}', ko: '런 #{id}' },
   'bucket-idle': { en: 'Bucket {index}: idle', ko: '버킷 {index}: 유휴' },
   'bucket-held': { en: 'Bucket {index}: held {shares} sh @ ${price}', ko: '버킷 {index}: {shares}주 보유 @ ${price}' },

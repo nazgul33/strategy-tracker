@@ -141,7 +141,7 @@ Restart — `main.ts` starts a long-polling bot (no inbound endpoint needed).
 
 Only chat IDs on the allowlist get any response (`packages/telegram/src/bot.ts`):
 
-- `/status` — current runs with held buckets and cash; `/orders` — today's open orders;
+- `/status` — current runs with held buckets and cash; `/orders` — today's open orders, grouped by run;
   `/help`, `/start`.
 - Send a fill screenshot (mPOP) as a photo. To pick the run explicitly, caption it with the run id
   as the first word: `12 …`, `#12 …`, or `/capture 12 …`. With no run number the fills are
