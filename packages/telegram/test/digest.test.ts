@@ -180,7 +180,7 @@ describe('digest', () => {
       alts: leg(lang, 9, 'sell_loc', '91.00', '5.50'), why: t('sell-attributed-why-price', lang, { shares: 10 }),
     })
     expect(render('en')).toBe(`ℹ️ Run #7 AAPL: sell 10 sh @ $96.50 was booked to bucket 0 stop ($97.00, $0.50 away). Also possible: bucket 9 target ($91.00, $5.50 away). ${WHY_PRICE}`)
-    expect(render('ko')).toBe('ℹ️ 런 #7 AAPL: 매도 10주 @ $96.50 체결을 버킷 0 손절 매도 ($97.00, $0.50 차이)에 기록했습니다. 다른 후보: 버킷 9 목표가 매도 ($91.00, $5.50 차이). 이 유형의 주문이 여러 개 체결되었을 수 있습니다. 가격이 체결가에 가장 가까운 주문을 선택했습니다.')
+    expect(render('ko')).toBe('ℹ️ 런 #7 AAPL: 매도 10주 @ $96.50 체결을 버킷 0 손절 매도 ($97.00, $0.50 차이)에 기록했습니다. 다른 후보: 버킷 9 목표가 매도 ($91.00, $5.50 차이). 체결된 주문으로 볼 수 있는 이 유형의 주문이 둘 이상입니다. 가격이 체결가에 가장 가까운 주문을 선택했습니다.')
     expect(t('sell-attributed-alt', 'en', { bucket: 9, leg: t('leg-sell_loc', 'en'), limit: '91.00', distance: '5.50' })).toBe('bucket 9 target ($91.00, $5.50 away)')
     expect(t('sell-attributed-alt', 'ko', { bucket: 9, leg: t('leg-sell_loc', 'ko'), limit: '91.00', distance: '5.50' })).toBe('버킷 9 목표가 매도 ($91.00, $5.50 차이)')
     expect(t('sell-attributed-alt-market', 'en', { bucket: 3, leg: t('leg-market_sell', 'en') })).toBe('bucket 3 market sell')
@@ -192,7 +192,7 @@ describe('digest', () => {
     expect(why('ordered-shares', 'en')).toBe('More than one order of this type could have filled; the one placed for the ordered quantity on the screenshot was chosen.')
     expect(why('shares', 'en')).toBe('More than one order of this type could have filled; the bucket holding exactly 10 shares was chosen.')
     expect(why('older', 'en')).toBe('More than one order of this type could have filled and nothing else told them apart; the bucket bought earliest was chosen.')
-    expect(why('shares', 'ko')).toBe('이 유형의 주문이 여러 개 체결되었을 수 있습니다. 정확히 10주를 보유한 버킷을 선택했습니다.')
+    expect(why('shares', 'ko')).toBe('체결된 주문으로 볼 수 있는 이 유형의 주문이 둘 이상입니다. 정확히 10주를 보유한 버킷을 선택했습니다.')
     for (const key of ['order-price', 'ordered-shares', 'shares', 'price', 'older']) {
       for (const lang of ['en', 'ko'] as const) expect(why(key, lang)).not.toBe(`sell-attributed-why-${key}`)
       expect(why(key, 'ko')).toMatch(/[가-힣]/)

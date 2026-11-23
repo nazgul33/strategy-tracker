@@ -32,7 +32,7 @@ describe('capture rows the operator must act on', () => {
       expect(msg.extra).toBeUndefined();
       expect(msg.text).toContain(t('capture-needs-bucket', lang));
     }
-    expect(t('capture-needs-bucket', 'en')).toBe("⚠️ More than one bucket could have sold this. Choose the bucket and confirm this fill in the web app's Pending view.");
+    expect(t('capture-needs-bucket', 'en')).toBe("⚠️ The tracker cannot tell which bucket sold this. Choose the bucket and confirm this fill in the web app's Pending view.");
   });
 
   test('a future-dated fill is sent without buttons', async () => {
@@ -86,7 +86,7 @@ describe('capture rows the operator must act on', () => {
     await hold(h, [1]);
     await h.handlers.onConfirm('777', `yes:${h.pending[0]!.id}`, true);
     expect(h.sent.at(-1)).toEqual({ chatId: '777', text: t('confirm-err-choose-bucket', 'en'), extra: undefined });
-    expect(t('confirm-err-choose-bucket', 'en')).toBe("More than one bucket could have sold this — choose the bucket in the web app's Pending view.");
+    expect(t('confirm-err-choose-bucket', 'en')).toBe("The tracker cannot tell which bucket sold this — choose the bucket in the web app's Pending view.");
     expect(h.pending[0]!.status).toBe('pending');
     expect(h.fills).toHaveLength(0);
   });

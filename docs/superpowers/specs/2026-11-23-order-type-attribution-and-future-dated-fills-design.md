@@ -328,7 +328,7 @@ muted small text under the Side control. No new table column.
  [2026-11-23]  SOXL    [Sell ▾]          [1]   [43.25]  [0.03]  [Automatic ▾]  <- warning border
                        매도/STOP(시장가)
                        ordered 1 @ 0.00
- ⚠ More than one bucket could have sold this. Choose the bucket.
+ ⚠ The tracker cannot tell which bucket sold this. Choose the bucket.
 ```
 
 A row with no order data shows nothing there.

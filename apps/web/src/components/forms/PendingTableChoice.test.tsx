@@ -76,11 +76,11 @@ describe('PendingTable refused confirms', () => {
     expect(bucketSelect()!.className).not.toContain('border-warning');
     await confirm();
     expect(calls.length).toBe(1);
-    expect(alertText()).toBe('More than one bucket could have sold this — choose the bucket.');
+    expect(alertText()).toBe('The tracker cannot tell which bucket sold this — choose the bucket.');
     expect(container.querySelectorAll('tbody tr').length).toBe(2);
     expect(bucketSelect()!.className).toContain('border-warning');
     expect(container.querySelector('[data-needs-input]')!.textContent).toBe(
-      'More than one bucket could have sold this. Choose the bucket.',
+      'The tracker cannot tell which bucket sold this. Choose the bucket.',
     );
   });
 

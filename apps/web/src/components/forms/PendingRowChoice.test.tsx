@@ -21,7 +21,7 @@ declare global {
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-const NEEDS_BUCKET = 'More than one bucket could have sold this. Choose the bucket.';
+const NEEDS_BUCKET = 'The tracker cannot tell which bucket sold this. Choose the bucket.';
 const DATE_AFTER_TODAY = 'This date is after today (New York time). Change it before confirming.';
 const NEEDS_TICKER = 'Vision could not read the ticker — reject this row and re-capture.';
 

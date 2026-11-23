@@ -96,7 +96,7 @@ describe('FillDialog date and refusals', () => {
     postFailure = { status: 422, error: 'choose-bucket' };
     await render({ today: '2026-11-22' });
     await addFill();
-    expect(errorText()).toBe('More than one bucket could have sold this — choose the bucket.');
+    expect(errorText()).toBe('The tracker cannot tell which bucket sold this — choose the bucket.');
     expect(closed).toBe(0);
     expect(saved).toBe(0);
   });
