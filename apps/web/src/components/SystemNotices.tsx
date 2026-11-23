@@ -1,6 +1,7 @@
 // Global notice feed under the runs table: run notices link to the run's
-// Notifications tab, global ones (calendar, reminders, pipeline errors) expand
-// in place. The page remounts this component (key) to reload page one.
+// Notifications tab; global ones (calendar, reminders, pipeline errors) and
+// notices whose run no longer exists expand in place. The page remounts this
+// component (key) to reload page one.
 import { useState } from 'react';
 
 import { api } from '../api';
@@ -76,6 +77,7 @@ export function SystemNotices() {
             <tbody>
               {entries.map((e) => {
                 const open = expanded.has(e.id);
+                const inline = e.runId === null || e.ticker === null;
                 return (
                   <tr key={e.id}>
                     <Td className="whitespace-nowrap tabular-nums text-muted-foreground">{isoDateTime(e.sentAt)}</Td>
@@ -83,7 +85,7 @@ export function SystemNotices() {
                       {e.runId === null ? t('systemNoticesSystem') : `#${e.runId}${e.ticker === null ? '' : ` ${e.ticker}`}`}
                     </Td>
                     <Td className="max-w-0 w-full">
-                      {e.runId === null ? (
+                      {inline ? (
                         <button
                           type="button"
                           aria-expanded={open}
@@ -100,7 +102,7 @@ export function SystemNotices() {
                           {firstLine(e.text)}
                         </a>
                       )}
-                      {e.runId === null && open && (
+                      {inline && open && (
                         <>
                           <div className="mt-1 whitespace-pre-wrap">{e.text}</div>
                           <div className="mt-1 text-[11px] text-muted-foreground">
