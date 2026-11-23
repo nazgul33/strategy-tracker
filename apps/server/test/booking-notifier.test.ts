@@ -201,6 +201,25 @@ describe('booking notifier: sellAttributed', () => {
     } finally { errors.mockRestore() }
   })
 
+  test('a chat whose insert fails still gets the message', async () => {
+    const sent: string[] = []
+    const notifier = makeBookingNotifier({
+      repos: {
+        notificationRepo: { insert: async (n) => { if (n.chatId === '42') throw new Error('db-down') } },
+        runRepo: { get: async () => ({ ticker: 'AAPL' }) },
+      },
+      allowedChatIds: ['42', '43'],
+      send: async (chatId) => { sent.push(chatId) },
+      lang: 'en',
+    })
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await notifier.sellAttributed(7, attribution)
+      expect(sent).toEqual(['42', '43'])
+      expect(errors.mock.calls).toEqual([['booking notice failed:', 'sell-attributed', { runId: 7, orderId: null, chatId: '42' }, 'Error: db-down']])
+    } finally { errors.mockRestore() }
+  })
+
   test('a chat whose send fails does not stop the next chat', async () => {
     const { notifier, rows, sent } = harness(['42', '43'], '42')
     const errors = spyOn(console, 'error').mockImplementation(() => {})

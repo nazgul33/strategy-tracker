@@ -3,6 +3,7 @@ import { t } from '@st/telegram/i18n'
 import type { Lang } from '@st/telegram/i18n'
 import type { BookingNotifier } from '../domain/booking'
 import type { SellLeg } from '../domain/sell-match'
+import { broadcastNotice } from './broadcast'
 
 export interface BookingNotifierDeps {
   repos: {
@@ -14,38 +15,13 @@ export interface BookingNotifierDeps {
   lang: Lang
 }
 
-// Notifications rows carry this chat id when no Telegram chat is allowed. The web
-// app compares against the literal 'web' (NoticeList) and cannot import this.
-export const WEB_ONLY_CHAT_ID = 'web'
-
 type Notice = 'sell-attributed' | 'sibling-cancelled'
 
-// FillBookingDeps.notify for the real server: one message per allowed chat, recorded
-// in the notifications table first (the same order as the manual order-cancel
-// route). A run with no allowed chat still gets its row (chat id 'web'), so a
-// web-only operator sees the notice in the Notifications tab. A chat that fails is
-// logged and must not hide the rest.
+// FillBookingDeps.notify for the real server: renders the booking notices and hands
+// delivery (rows, per-chat sends, the web-only row, failure logging) to broadcastNotice.
 export function makeBookingNotifier(deps: BookingNotifierDeps): BookingNotifier {
-  async function broadcast(runId: number, text: string, notice: Notice, orderId: number | null): Promise<void> {
-    const fail = (chatId: string, e: unknown) =>
-      console.error('booking notice failed:', notice, { runId, orderId, chatId }, String(e))
-    if (deps.allowedChatIds.length === 0) {
-      try {
-        await deps.repos.notificationRepo.insert({ runId, chatId: WEB_ONLY_CHAT_ID, text })
-      } catch (e) {
-        fail(WEB_ONLY_CHAT_ID, e)
-      }
-      return
-    }
-    for (const chatId of deps.allowedChatIds) {
-      try {
-        await deps.repos.notificationRepo.insert({ runId, chatId, text })
-        await deps.send(chatId, text)
-      } catch (e) {
-        fail(chatId, e)
-      }
-    }
-  }
+  const delivery = { allowedChatIds: deps.allowedChatIds, send: deps.send, notificationRepo: deps.repos.notificationRepo }
+  const log = (kind: Notice, orderId: number | null) => ({ kind, label: 'booking notice failed:', extra: { orderId } })
 
   const legText = (leg: SellLeg): string =>
     leg.kind === 'market_sell'
@@ -74,7 +50,7 @@ export function makeBookingNotifier(deps: BookingNotifierDeps): BookingNotifier 
       const text = order.kind === 'market_sell'
         ? t('sibling-cancelled-market', deps.lang, params)
         : t('sibling-cancelled', deps.lang, { ...params, limit: formatUsd(order.limitPrice) })
-      await broadcast(runId, text, 'sibling-cancelled', order.id)
+      await broadcastNotice(delivery, runId, text, log('sibling-cancelled', order.id))
     },
     sellAttributed: async (runId, attribution) => {
       const text = t('sell-attributed', deps.lang, {
@@ -85,7 +61,7 @@ export function makeBookingNotifier(deps: BookingNotifierDeps): BookingNotifier 
         alts: attribution.alternatives.map(legText).join('; '),
         why: t(`sell-attributed-why-${attribution.rule}`, deps.lang, { shares: attribution.shares }),
       })
-      return broadcast(runId, text, 'sell-attributed', null)
+      return broadcastNotice(delivery, runId, text, log('sell-attributed', null))
     },
   }
 }
