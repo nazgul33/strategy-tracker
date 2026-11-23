@@ -1,9 +1,9 @@
 import { describe, test, expect } from 'bun:test'
-import { emptyState, applyBuyFill, type ISODate } from '@st/core'
-import { parseUsd } from '@st/core/money'
-import { runBooking, type OrderRow } from '../src/domain/booking'
-import { matchSellOrder } from '../src/domain/sell-match'
-import { sellSetup, sellAt, orderOf, lastFill, bookInput } from './sell-fixture'
+import { sellSetup, sellAt, sellTyped, orderOf, lastFill } from './sell-fixture'
+import { ev } from './sell-attribute-fixture'
+
+const STOP = ev('stop')
+const TARGET = ev('target')
 
 describe('sell matching with target and stop legs', () => {
   test('exact target match still wins', async () => {
@@ -14,31 +14,13 @@ describe('sell matching with target and stop legs', () => {
         { idx: 1, kind: 'sell_loc', price: '92.00' }, { idx: 1, kind: 'stop_sell', price: '87.00' },
       ],
     )
-    await sellAt(runId, 10, '103.00', deps)
+    await sellTyped(runId, 10, '103.00', deps, ev('target', '103.00'))
     expect(lastFill(f).bucketIdx).toBe(0)
     expect(orderOf(f, 0, 'sell_loc').status).toBe('filled')
     expect(orderOf(f, 1, 'sell_loc').status).toBe('open')
   })
 
-  test('an exact target match with impossible shares fails loudly instead of landing elsewhere', async () => {
-    // Bucket 0 holds 10 but its target prints 103.00 for 15 shares: the only honest
-    // answer is a 422 the operator resolves, never a silent booking into bucket 1
-    // (whose 92.00 target also qualifies at 103.00) plus a cancel of bucket 1's legs.
-    const { f, deps, runId } = await sellSetup(
-      [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 1, shares: 15, buy: '90.00' }],
-      [
-        { idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' },
-        { idx: 1, kind: 'sell_loc', price: '92.00', shares: 10 }, { idx: 1, kind: 'stop_sell', price: '87.00', shares: 10 },
-      ],
-    )
-    await expect(runBooking(bookInput(runId, 15, '103.00'), deps)).rejects.toMatchObject({ kind: 'too-many-shares' })
-    expect(f._stores.fills).toHaveLength(0)
-    expect(f._stores.orders.every((o: any) => o.status === 'open')).toBe(true)
-    const st = await f.repos.bucketRepo.loadState(runId)
-    expect(st.buckets.map((b: any) => b.shares)).toEqual([10, 15, ...Array(8).fill(0)])
-  })
-
-  test('a target fill above its limit books to the nearest leg, not a loose stop', async () => {
+  test('a target fill books to a target, not to a loose stop on another bucket', async () => {
     // bucket 0: buy 100.00, stop trigger 97.00; bucket 9: buy 90.00, target limit 91.00. 91.50 is also <= 97.00.
     const { f, deps, runId } = await sellSetup(
       [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 9, shares: 10, buy: '90.00' }],
@@ -47,7 +29,7 @@ describe('sell matching with target and stop legs', () => {
         { idx: 9, kind: 'sell_loc', price: '91.00' }, { idx: 9, kind: 'stop_sell', price: '87.00' },
       ],
     )
-    await sellAt(runId, 10, '91.50', deps)
+    await sellTyped(runId, 10, '91.50', deps, TARGET)
     expect(lastFill(f).bucketIdx).toBe(9)
     expect(orderOf(f, 9, 'sell_loc').status).toBe('filled')
     expect(orderOf(f, 0, 'stop_sell').status).toBe('open')
@@ -63,7 +45,7 @@ describe('sell matching with target and stop legs', () => {
         { idx: 2, kind: 'sell_loc', price: '97.00' },
       ],
     )
-    await sellAt(runId, 10, '93.00', deps)
+    await sellTyped(runId, 10, '93.00', deps, TARGET)
     expect(lastFill(f).bucketIdx).toBe(1)
   })
 
@@ -86,7 +68,7 @@ describe('sell matching with target and stop legs', () => {
         { idx: 3, kind: 'sell_loc', price: '99.00' }, { idx: 3, kind: 'stop_sell', price: '93.00' },
       ],
     )
-    await sellAt(runId, 10, '92.50', deps)
+    await sellTyped(runId, 10, '92.50', deps, STOP)
     expect(lastFill(f).bucketIdx).toBe(3)
     expect(orderOf(f, 3, 'stop_sell').status).toBe('filled')
     expect(orderOf(f, 0, 'stop_sell').status).toBe('open')
@@ -102,7 +84,7 @@ describe('sell matching with target and stop legs', () => {
         { idx: 2, kind: 'stop_sell', price: '97.00' },
       ],
     )
-    await sellAt(runId, 10, '96.00', deps)
+    await sellTyped(runId, 10, '96.00', deps, STOP)
     expect(lastFill(f).bucketIdx).toBe(2)
     expect(orderOf(f, 2, 'stop_sell').status).toBe('filled')
     expect(orderOf(f, 5, 'stop_sell').status).toBe('open')
@@ -113,7 +95,7 @@ describe('sell matching with target and stop legs', () => {
       [{ idx: 4, shares: 10, buy: '90.00' }, { idx: 6, shares: 10, buy: '90.00' }],
       [{ idx: 6, kind: 'sell_loc', price: '92.00' }, { idx: 4, kind: 'sell_loc', price: '92.00' }],
     )
-    await sellAt(runId, 10, '92.50', deps)
+    await sellTyped(runId, 10, '92.50', deps, TARGET)
     expect(lastFill(f).bucketIdx).toBe(4)
   })
 
@@ -135,8 +117,8 @@ describe('sell matching with target and stop legs', () => {
         { idx: 3, kind: 'sell_loc', price: '92.00', tradeDate: '2026-11-11' },
       ],
     )
-    await sellAt(runId, 10, '92.50', deps)
-    expect(lastFill(f).bucketIdx).toBe(0)
+    await expect(sellTyped(runId, 10, '92.50', deps, STOP)).rejects.toMatchObject({ kind: 'choose-bucket' })
+    expect(f._stores.fills).toHaveLength(0)
     expect(f._stores.orders.every((o: any) => o.status === 'open')).toBe(true)
   })
 
@@ -159,53 +141,13 @@ describe('sell matching with target and stop legs', () => {
     expect(orderOf(f, 2, 'market_sell').status).toBe('filled')
   })
 
-  test('a target nearer the fill outranks a looser stop', async () => {
+  test('a target-typed fill is read as the target, not as a looser stop on another bucket', async () => {
     // Bucket 0's stop trigger (105.00) is looser than bucket 1's target (92.00); a 93.00 fill must be read as the target.
     const { f, deps, runId } = await sellSetup(
       [{ idx: 0, shares: 10, buy: '110.00' }, { idx: 1, shares: 10, buy: '90.00' }],
       [{ idx: 0, kind: 'stop_sell', price: '105.00' }, { idx: 1, kind: 'sell_loc', price: '92.00' }],
     )
-    await sellAt(runId, 10, '93.00', deps)
+    await sellTyped(runId, 10, '93.00', deps, TARGET)
     expect(lastFill(f).bucketIdx).toBe(1)
-  })
-})
-
-describe('matchSellOrder', () => {
-  const state = (() => {
-    let s = emptyState(4)
-    s = applyBuyFill(s, 1, 10, parseUsd('100.00'), 0, '2026-11-01')
-    return s
-  })()
-  const o = (over: Partial<OrderRow>): OrderRow => ({ id: 1, runId: 1, tradeDate: '2026-11-12', kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00'), shares: 10, status: 'open', ...over })
-  const input = { runId: 1, filledOn: '2026-11-12' as ISODate, shares: 10, price: parseUsd('103.00') }
-
-  test('returns null for an empty bucket, a wrong run, a wrong date and a filled or cancelled status', () => {
-    // 100.00 is under the 103.00 fill price, so this is a price-distance candidate and the gate applies.
-    expect(matchSellOrder([o({ bucketIdx: 0, limitPrice: parseUsd('100.00') })], state, input)).toBeNull()
-    expect(matchSellOrder([o({ runId: 2 })], state, input)).toBeNull()
-    expect(matchSellOrder([o({ tradeDate: '2026-11-11' })], state, input)).toBeNull()
-    expect(matchSellOrder([o({ status: 'filled' })], state, input)).toBeNull()
-    expect(matchSellOrder([o({ status: 'cancelled' })], state, input)).toBeNull()
-  })
-
-  test('returns a stale order dated on the fill day, never a filled or cancelled one', () => {
-    expect(matchSellOrder([o({ status: 'stale' })], state, input)?.order.id).toBe(1)
-    expect(matchSellOrder([o({ status: 'filled' })], state, input)).toBeNull()
-    expect(matchSellOrder([o({ status: 'cancelled' })], state, input)).toBeNull()
-  })
-
-  test('returns the order on the happy path and ignores buy_loc', () => {
-    expect(matchSellOrder([o({ kind: 'buy_loc' })], state, input)).toBeNull()
-    expect(matchSellOrder([o({})], state, input)?.order.id).toBe(1)
-  })
-
-  // The exact-price rung alone ignores the shares/emptiness gate: the booking must fail loudly
-  // rather than attribute an exact-price print to some other bucket.
-  test('an exact-price target is returned even when its bucket cannot cover the fill', () => {
-    expect(matchSellOrder([o({ bucketIdx: 0 })], state, input)?.order.bucketIdx).toBe(0)
-    expect(matchSellOrder([o({ bucketIdx: 0, status: 'stale' })], state, input)).toBeNull()
-    expect(matchSellOrder([o({})], state, { ...input, shares: 99 })?.order.id).toBe(1)
-    // the gate still applies to every other rung
-    expect(matchSellOrder([o({ kind: 'stop_sell', limitPrice: parseUsd('110.00') })], state, { ...input, shares: 99 })).toBeNull()
   })
 })

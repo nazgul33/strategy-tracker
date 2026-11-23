@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { parseUsd } from '@st/core/money'
 import { manualFill, confirmPendingFill, type FillBookingDeps } from '../src/domain/booking'
-import { sellSetup, orderOf, heldShares, held43, book43, D, Y } from './sell-fixture'
+import { sellSetup, orderOf, heldShares, held43, book43, held1, pair, D, Y } from './sell-fixture'
 import { NO_SNAPSHOT } from './booking-fakes'
 
 type Setup = Awaited<ReturnType<typeof sellSetup>>
@@ -82,11 +82,15 @@ describe('an operator-chosen bucket on a sell', () => {
     await expectUntouched(s, [10, 0, 0, 0, 0, 0, 0, 0, 0, 10])
   })
 
-  test('bucketIdx null books automatically', async () => {
-    const s = await sellSetup(held43, book43())
-    await forced(s, 10, '96.50', null)
-    expect(lastFill(s.f).bucketIdx).toBe(0)
-    expect(s.rec.attributions).toHaveLength(1)
+  test('bucketIdx null is automatic: it books when one bucket is possible and asks when two are', async () => {
+    const one = await sellSetup(held1, pair)
+    await forced(one, 10, '96.50', null)
+    expect(lastFill(one.f).bucketIdx).toBe(1)
+    expect(one.rec.attributions).toEqual([])
+
+    const two = await sellSetup(held43, book43())
+    await expect(forced(two, 10, '96.50', null)).rejects.toMatchObject({ kind: 'choose-bucket' })
+    await expectUntouched(two, [10, 0, 0, 0, 0, 0, 0, 0, 0, 10])
   })
 })
 

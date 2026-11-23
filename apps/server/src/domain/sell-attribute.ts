@@ -1,10 +1,9 @@
 import { DomainError, type Bucket, type RunState } from '@st/core'
 import { kindOfType, NO_EVIDENCE, type OrderEvidence } from './order-type'
-import { byBucket, fits, isPrice, matchForcedLeg, nearestFirst, poolOf, type AttributionRule, type OrderRow, type Pair, type SellAttribution, type SellFillKey, type SellPick } from './sell-match'
+import { absDiff, byBucket, fits, isPrice, matchForcedLeg, nearestFirst, poolOf, type AttributionRule, type OrderRow, type Pair, type SellAttribution, type SellFillKey, type SellPick } from './sell-match'
 
 export interface SellInput extends SellFillKey { bucketIdx?: number | null; evidence?: OrderEvidence }
 
-const absDiff = (a: bigint, b: bigint): bigint => (a > b ? a - b : b - a)
 const bucketsOf = (ps: Pair[]): Set<number> => new Set(ps.map((p) => p.order.bucketIdx))
 const keep = (ps: Pair[], test: (p: Pair) => boolean): Pair[] => { const kept = ps.filter(test); return kept.length ? kept : ps }
 function nearest(ps: Pair[], metric: (p: Pair) => bigint): Pair[] {

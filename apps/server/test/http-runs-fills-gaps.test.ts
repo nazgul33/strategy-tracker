@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { createApp } from '../src/http/app'
-import { makeFakes, makeDeps, PASSWORD, json, loginAs, createRun } from './http-fakes'
+import { makeFakes, makeDeps, PASSWORD, json, loginAs, createRun, seedTwoHeldBuckets } from './http-fakes'
 
 describe('http runs', () => {
   test('manual fill books', async () => {
@@ -45,6 +45,21 @@ describe('http runs', () => {
     expect(fr.status).toBe(422)
     expect(await fr.json()).toEqual({ error: 'no-bucket-for-sell' })
     expect(f.fills.length).toBe(0)
+  })
+  test('manual sell among two possible buckets -> 422 choose-bucket, then 200 with a bucket', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const auth = await loginAs(app)
+    const id = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 })
+    await seedTwoHeldBuckets(f, id)
+    const sell = { side: 'sell', shares: 10, price: '96.5000', filledOn: '2026-11-10' }
+    const fr = await app.request(`/api/runs/${id}/fills`, { method: 'POST', body: JSON.stringify(sell), headers: { ...json, ...auth } })
+    expect(fr.status).toBe(422)
+    expect(await fr.json()).toEqual({ error: 'choose-bucket' })
+    expect(f.fills.length).toBe(0)
+    const ok = await app.request(`/api/runs/${id}/fills`, { method: 'POST', body: JSON.stringify({ ...sell, bucketIdx: 9 }), headers: { ...json, ...auth } })
+    expect(ok.status).toBe(200)
+    expect(f.fills.map((x) => x.bucketIdx)).toEqual([9])
   })
   test('manual fill with zero shares -> 422 invalid-shares', async () => {
     const f = makeFakes()

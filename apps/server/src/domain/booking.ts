@@ -7,7 +7,9 @@ import { claimCapture } from './capture-claim'
 import { recordCorrections } from './capture-corrections'
 import { withRunLock } from './run-lock'
 import { notifyBookingOutcome, type BookingNotifier, type BookedOutcome } from './booking-notify'
-import { pickSellBucket, type OrderRow, type SellAttribution } from './sell-match'
+import { attributeSell } from './sell-attribute'
+import type { OrderEvidence } from './order-type'
+import type { OrderRow, SellAttribution } from './sell-match'
 import { emptiedBuckets, retireLegs } from './retire-legs'
 import { storeCaptureImage } from './capture-image'
 import type { FeeOverrideKind, FillSource, PendingDecisionPatch, RepoSurface } from './repo-types'
@@ -56,6 +58,7 @@ export interface BookInput {
   pendingId?: number | null
   source: FillSource
   bucketIdx?: number | null  // sell only: the operator's bucket; null/undefined = automatic
+  order?: OrderEvidence  // sell only: what the screenshot said about the order; absent = no evidence
   feeOverride?: FeeOverrideKind  // the KIND of fee override, stored on the pending row; read only with pendingId, absent = 'none'
 }
 
@@ -109,7 +112,7 @@ export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise
   } else {
     // From the fill date onwards: matching narrows to filledOn, the cancel below needs later dates too.
     sellOrders = await repos.orderRepo.listForRunFrom(input.runId, input.filledOn)
-    const pick = pickSellBucket(sellOrders, state, { runId: input.runId, filledOn: input.filledOn, shares: input.shares, price: priceBigInt, bucketIdx: input.bucketIdx })
+    const pick = attributeSell(sellOrders, state, { runId: input.runId, filledOn: input.filledOn, shares: input.shares, price: priceBigInt, bucketIdx: input.bucketIdx, evidence: input.order })
     bucketIdx = pick.bucketIdx
     matchedOrderId = pick.orderId
     attribution = pick.attribution

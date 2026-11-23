@@ -77,13 +77,25 @@ export const CATALOG: Record<string, MsgEntry> = {
     en: 'ℹ️ Run #{id} {ticker}: sell {shares} sh @ ${price} was booked to {chosen}. Also possible: {alts}. {why}',
     ko: 'ℹ️ 런 #{id} {ticker}: 매도 {shares}주 @ ${price} 체결을 {chosen}에 기록했습니다. 다른 후보: {alts}. {why}',
   },
-  'sell-attributed-why-price': {
-    en: 'A target fills at or above its limit, a stop at or below its trigger and a market sell at any price, so more than one order fit this price. A target at exactly the fill price wins; otherwise the only order for exactly {shares} shares, if there is one; otherwise the order whose price is nearest the fill, a target before a stop at an equal distance, then the lowest bucket.',
-    ko: '목표가 매도는 지정가 이상에서, 손절 매도는 발동가 이하에서, 시장가 매도는 어떤 가격에서도 체결되므로 이 가격에 해당하는 주문이 여러 개였습니다. 지정가가 체결가와 같은 목표가 매도가 우선하고, 없으면 정확히 {shares}주인 주문이 하나뿐일 때 그 주문이, 그것도 아니면 체결가에 가장 가까운 주문이 선택되며, 차이가 같으면 목표가 매도가 손절 매도보다 우선하고 그다음은 낮은 버킷이 우선합니다.',
+  'sell-attributed-why-order-price': {
+    en: 'More than one order of this type could have filled; the one whose limit is nearest the order price on the screenshot was chosen.',
+    ko: '이 유형의 주문이 여러 개 체결되었을 수 있습니다. 스크린샷의 주문단가에 지정가가 가장 가까운 주문을 선택했습니다.',
   },
-  'sell-attributed-why-market': {
-    en: 'No target or stop fit this price and no single order is for exactly {shares} shares, so the market sell of the lowest bucket wins.',
-    ko: '이 가격에 맞는 목표가 매도나 손절 매도가 없고 정확히 {shares}주인 주문도 하나로 정해지지 않아 가장 낮은 버킷의 시장가 매도를 선택했습니다.',
+  'sell-attributed-why-ordered-shares': {
+    en: 'More than one order of this type could have filled; the one placed for the ordered quantity on the screenshot was chosen.',
+    ko: '이 유형의 주문이 여러 개 체결되었을 수 있습니다. 스크린샷의 주문수량으로 낸 주문을 선택했습니다.',
+  },
+  'sell-attributed-why-shares': {
+    en: 'More than one order of this type could have filled; the bucket holding exactly {shares} shares was chosen.',
+    ko: '이 유형의 주문이 여러 개 체결되었을 수 있습니다. 정확히 {shares}주를 보유한 버킷을 선택했습니다.',
+  },
+  'sell-attributed-why-price': {
+    en: 'More than one order of this type could have filled; the one whose price is nearest the fill price was chosen.',
+    ko: '이 유형의 주문이 여러 개 체결되었을 수 있습니다. 가격이 체결가에 가장 가까운 주문을 선택했습니다.',
+  },
+  'sell-attributed-why-older': {
+    en: 'More than one order of this type could have filled and nothing else told them apart; the bucket bought earliest was chosen.',
+    ko: '이 유형의 주문이 여러 개 체결되었을 수 있고 다른 단서로는 구분할 수 없어, 가장 먼저 매수한 버킷을 선택했습니다.',
   },
   'cut-loss-immediate': { en: '⚠️ {n} stop trigger(s) already at or above the last close — the stop may fire as soon as it is placed', ko: '⚠️ 손절 발동가 {n}건이 이미 최근 종가 이상입니다 — 주문하자마자 체결될 수 있습니다' },
   'stop-verb': { en: 'Sell', ko: '매도' },

@@ -103,7 +103,7 @@ describe('booking', () => {
     expect(serializeState(await f.repos.bucketRepo.loadState(runId))).toBe(stateBefore)
   })
 
-  test('fallback lowest-index multiple candidates', async () => {
+  test('several holders and no order evidence need the operator\'s choice', async () => {
     const f = fakeRepos()
     const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const state = emptyState(10)
@@ -114,7 +114,11 @@ describe('booking', () => {
     const img = { base64: 'FB', mime: 'image/png' }
     const ext: ExtractResult = { ok: true, fills: [{ side: 'sell', ticker: 'AAPL', shares: 5, price: '5.00' }] }
     const out = await ingestCapture(runId, img, ext, deps) as any
-    await confirmPendingFill(out.pending[0].id, { filledOn: '2026-11-06', price: '5.00' }, deps)
+    const pid = out.pending[0].id
+    await expect(confirmPendingFill(pid, { filledOn: '2026-11-06', price: '5.00' }, deps)).rejects.toMatchObject({ kind: 'choose-bucket' })
+    expect(f._stores.pending.find((p) => p.id === pid)!.status).toBe('pending')
+    expect(f._stores.fills).toHaveLength(0)
+    await confirmPendingFill(pid, { filledOn: '2026-11-06', price: '5.00', bucketIdx: 0 }, deps)
     const st = await f.repos.bucketRepo.loadState(runId)
     expect(st.buckets[0].shares).toBe(5)
   })

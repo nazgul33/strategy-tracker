@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { runBooking } from '../src/domain/booking'
-import { D, sellSetup, sellAt, orderOf, lastFill, bookInput, pair, held1 } from './sell-fixture'
+import { D, sellSetup, sellAt, sellTyped, orderOf, lastFill, bookInput, pair, held1 } from './sell-fixture'
+import { ev } from './sell-attribute-fixture'
 
 describe('sell matching with target and stop legs', () => {
   test('a bucket-emptying stop fill cancels the sibling sell_loc', async () => {
@@ -52,7 +53,7 @@ describe('sell matching with target and stop legs', () => {
         { idx: 1, kind: 'stop_sell', price: '97.00' },
       ],
     )
-    expect((await runBooking(bookInput(runId, 10, '96.00'), deps)).cancelledIds).toEqual([])
+    expect((await sellTyped(runId, 10, '96.00', deps, ev('stop'))).cancelledIds).toEqual([])
     expect(f._stores.orders.filter((o: any) => o.status === 'cancelled')).toEqual([])
     const filledLeg = f._stores.orders.find((o) => o.bucketIdx === 0 && o.kind === 'sell_loc' && o.tradeDate === D)!
     expect(filledLeg.status).toBe('filled')
@@ -77,8 +78,8 @@ describe('sell matching with target and stop legs', () => {
     expect(st.buckets[0]!.state).toBe('held')
   })
 
-  test('a sell between every trigger and every limit reaches the old fallback', async () => {
-    // Buckets 4 and 6 carry live pairs (97/103); 100.00 is neither <= a trigger nor >= a limit.
+  test('a sell between every trigger and every limit needs the operator\'s choice when several buckets hold enough', async () => {
+    // Buckets 4 and 6 carry live pairs (97/103); 100.00 is neither <= a trigger nor >= a limit, so no order fits.
     const { f, deps, runId } = await sellSetup(
       [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 4, shares: 10, buy: '100.00' }, { idx: 6, shares: 10, buy: '100.00' }],
       [
@@ -86,14 +87,16 @@ describe('sell matching with target and stop legs', () => {
         { idx: 6, kind: 'sell_loc', price: '103.00' }, { idx: 6, kind: 'stop_sell', price: '97.00' },
       ],
     )
-    const { cancelledIds } = await runBooking(bookInput(runId, 10, '100.00'), deps)
+    await expect(runBooking(bookInput(runId, 10, '100.00'), deps)).rejects.toMatchObject({ kind: 'choose-bucket' })
+    expect(f._stores.fills).toHaveLength(0)
+    const { cancelledIds } = await runBooking({ ...bookInput(runId, 10, '100.00'), bucketIdx: 0 }, deps)
     expect(lastFill(f).bucketIdx).toBe(0)
     expect(cancelledIds).toEqual([])
     expect(f._stores.orders.every((o: any) => o.status === 'open')).toBe(true)
   })
 
-  test('a fallback fill that empties its bucket cancels every open sell leg of that bucket', async () => {
-    // 100.00 sits in the gap (97 < 100 < 103): nothing matches, the guess lands on bucket 0 and empties it.
+  test('a fill in the price gap on the operator\'s bucket that empties it cancels every open sell leg of that bucket', async () => {
+    // 100.00 sits in the gap (97 < 100 < 103): no order fits, the operator's bucket 0 takes it and empties.
     const { f, deps, runId } = await sellSetup(
       [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 4, shares: 10, buy: '100.00' }],
       [
@@ -101,7 +104,7 @@ describe('sell matching with target and stop legs', () => {
         { idx: 4, kind: 'sell_loc', price: '103.00' }, { idx: 4, kind: 'stop_sell', price: '97.00' },
       ],
     )
-    const { cancelledIds } = await runBooking(bookInput(runId, 10, '100.00'), deps)
+    const { cancelledIds } = await runBooking({ ...bookInput(runId, 10, '100.00'), bucketIdx: 0 }, deps)
     expect(lastFill(f).bucketIdx).toBe(0)
     const legs = [orderOf(f, 0, 'sell_loc'), orderOf(f, 0, 'stop_sell')]
     expect(cancelledIds).toEqual(legs.map((o: any) => o.id))
