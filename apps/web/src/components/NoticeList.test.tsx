@@ -1,5 +1,6 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { installScrollShim, restoreScrollShim } from '../testing/scrollShim';
 
 GlobalRegistrator.register();
 
@@ -67,21 +68,8 @@ describe('NoticeList', () => {
 describe('NoticeList highlight', () => {
   const marked = () => [...container.querySelectorAll('tbody tr[aria-current="true"]')].map((el) => el.textContent ?? '');
 
-  // happy-dom may not implement scrollIntoView; make sure the prototype has one to spy on.
-  const proto = window.Element.prototype as { scrollIntoView?: unknown };
-  let defined = false;
-  beforeEach(() => {
-    if (typeof proto.scrollIntoView !== 'function') {
-      proto.scrollIntoView = () => {};
-      defined = true;
-    }
-  });
-  afterEach(() => {
-    if (defined) {
-      delete proto.scrollIntoView;
-      defined = false;
-    }
-  });
+  beforeEach(installScrollShim);
+  afterEach(restoreScrollShim);
 
   it('marks the highlighted notice and scrolls it into view once', async () => {
     const spy = spyOn(window.Element.prototype, 'scrollIntoView').mockImplementation(() => {});
