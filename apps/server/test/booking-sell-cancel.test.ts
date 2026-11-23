@@ -113,7 +113,7 @@ describe('sell matching with target and stop legs', () => {
     expect(orderOf(f, 4, 'stop_sell').status).toBe('open')
   })
 
-  test('a partial fallback fill cancels nothing', async () => {
+  test('a partial fill of a lone bucket cancels nothing and leaves its orders open', async () => {
     const { f, deps, runId } = await sellSetup(
       [{ idx: 0, shares: 10, buy: '100.00' }],
       [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }],

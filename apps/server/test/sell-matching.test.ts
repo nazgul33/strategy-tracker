@@ -125,7 +125,7 @@ describe('a partial fill keeps its order open (#54)', () => {
   })
 
   test('three partials of one target', async () => {
-    const { f, deps, runId } = await sellSetup(held43, book43())
+    const { f, deps, rec, runId } = await sellSetup(held43, book43())
     await sellTyped(runId, 3, '103.50', deps, TARGET_103)
     await sellTyped(runId, 3, '103.50', deps, TARGET_103)
     expect(orderOf(f, 0, 'sell_loc').status).toBe('open')
@@ -134,6 +134,7 @@ describe('a partial fill keeps its order open (#54)', () => {
     expect(fillsOf(f)).toEqual([[3, 0], [3, 0], [4, 0]])
     expect(orderOf(f, 0, 'sell_loc').status).toBe('filled')
     expect(orderOf(f, 0, 'stop_sell').status).toBe('cancelled')
+    expect(rec.attributions).toEqual([])
   })
 
   test('two buckets sharing a target price take partials in bucket order', async () => {

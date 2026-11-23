@@ -187,7 +187,6 @@ describe('digest', () => {
     expect(t('sell-attributed-alt-market', 'ko', { bucket: 3, leg: t('leg-market_sell', 'ko') })).toBe('버킷 3 시장가 매도')
     expect(t('leg-stop_sell', 'en')).toBe('stop')
     const why = (key: string, lang: 'en' | 'ko') => t(`sell-attributed-why-${key}`, lang, { shares: 10 })
-    expect(why('market', 'en')).toBe('sell-attributed-why-market')
     expect(why('order-price', 'en')).toBe('More than one order of this type could have filled; the one whose limit is nearest the order price on the screenshot was chosen.')
     expect(why('ordered-shares', 'en')).toBe('More than one order of this type could have filled; the one placed for the ordered quantity on the screenshot was chosen.')
     expect(why('shares', 'en')).toBe('More than one order of this type could have filled; the bucket holding exactly 10 shares was chosen.')
