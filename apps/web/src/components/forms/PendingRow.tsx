@@ -83,14 +83,15 @@ export function PendingRow({
   // Props for a field's control: its width classes, the standing-issue border, and the
   // edit hint. Solid vs dashed carries the state without colour; the title is the mouse
   // hover, and aria-describedby points at the hint span `hint(f)` renders after it.
-  const control = (f: RowField, base = '') => {
+  const control = (f: RowField, base = '', extraId?: string) => {
     const h = editHint(row, values, f);
     const className = `${base} ${missing(f)}`.trim();
-    if (h === null) return { className };
+    const describedBy = [h === null ? null : hintId(f), extraId].filter(Boolean).join(' ') || undefined;
+    if (h === null) return describedBy ? { className, 'aria-describedby': describedBy } : { className };
     const props = {
       className: `${className} ${h.look} peer`.replace(/\s+/g, ' ').trim(),
       title: t(h.key),
-      'aria-describedby': hintId(f),
+      'aria-describedby': describedBy,
     };
     return h.state === 'auto' ? props : { ...props, 'data-edit': h.state };
   };
@@ -108,6 +109,7 @@ export function PendingRow({
   const needsInput = issues.length > 0 || dateLate || bucketAsked;
   const needsMsg = t(issues.includes('ticker') ? 'pendingNeedsTicker' : 'pendingNeedsOverride');
   const needsId = `pending-${row.id}-needs`;
+  const dateNeedsId = `pending-${row.id}-date-needs`;
   const bucketNeedsId = `pending-${row.id}-bucket-needs`;
   const order = orderLine(row.detected);
   const captureId = row.hasImage ? row.captureId : null;
@@ -119,7 +121,7 @@ export function PendingRow({
         <Td className="whitespace-nowrap tabular-nums">
           <Input
             type="date"
-            {...control('filledOn', 'w-36')}
+            {...control('filledOn', 'w-36', dateLate ? dateNeedsId : undefined)}
             value={values.filledOn}
             aria-label={t('pendingColDate')}
             onChange={(e) => onChange({ filledOn: e.target.value })}
@@ -231,7 +233,11 @@ export function PendingRow({
           <Td colSpan={COLUMNS}>
             <div id={needsId} className="sticky left-0 w-fit max-w-[80vw] text-xs text-warning">
               {issues.length > 0 && <div data-needs-line="fields">{needsMsg}</div>}
-              {dateLate && <div data-needs-line="date">{t('pendingDateAfterToday')}</div>}
+              {dateLate && (
+                <div id={dateNeedsId} data-needs-line="date">
+                  {t('pendingDateAfterToday')}
+                </div>
+              )}
               {bucketAsked && (
                 <div id={bucketNeedsId} data-needs-line="bucket">
                   {t('pendingNeedsBucket')}

@@ -142,6 +142,22 @@ describe('PendingRow order and standing choices', () => {
     expect(needsRow()).toBeNull();
   });
 
+  it('a date after today describes the date input, beside the edit hint when there is one', async () => {
+    const future = { ...PENDING_ROW, today: '2026-11-12', filledOn: '2026-11-13', detected: { ...PENDING_ROW.detected!, filledOn: '2026-11-13' } };
+    await render(future);
+    expect(describedBy(dateInput())!.textContent).toBe(DATE_AFTER_TODAY);
+
+    await act(async () => setInputValue(dateInput(), '2026-11-14'));
+    const ids = dateInput().getAttribute('aria-describedby')!.split(' ');
+    expect(ids).toHaveLength(2);
+    const texts = ids.map((id) => container.querySelector(`#${id}`)!.textContent);
+    expect(texts).toContain(DATE_AFTER_TODAY);
+    expect(container.querySelector(`#${ids[0]}`)!.hasAttribute('data-hint')).toBe(true);
+
+    await act(async () => setInputValue(dateInput(), '2026-11-12'));
+    expect(dateInput().getAttribute('aria-describedby')).toBe(ids[0]);
+  });
+
   it('a date after today does not stand without the server date', async () => {
     await render({ ...PENDING_ROW, filledOn: '2099-01-01', detected: { ...PENDING_ROW.detected!, filledOn: '2099-01-01' } });
     expect(dateInput().className).not.toContain('border-warning');
