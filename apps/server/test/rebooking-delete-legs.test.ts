@@ -55,6 +55,28 @@ describe('deleteFill retires the legs of a bucket whose buy it removes', () => {
     expect(rec.siblings).toEqual([])
   })
 
+  test('a failing order read fails the delete before anything is stored', async () => {
+    const { f, deps, rec, runId } = await heldRun([...BUYS], [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }])
+    const buyId = f._stores.fills.find((x) => x.bucketIdx === 0)!.id
+    const run = f._stores.runs.get(runId)!
+    const before = {
+      state: run.stateJson,
+      fills: structuredClone(f._stores.fills),
+      ledger: structuredClone(f._stores.ledger),
+      orders: f._stores.orders.map((o) => [o.id, o.status, o.cancelReason]),
+    }
+    f.repos.orderRepo.listForRunFrom = async () => { throw new Error('db-down') }
+
+    await expect(deleteFill(runId, buyId, deps)).rejects.toThrow('db-down')
+
+    expect(run.stateJson).toBe(before.state)
+    expect(f._stores.fills).toEqual(before.fills)
+    expect(f._stores.fills.some((x) => x.id === buyId)).toBe(true)
+    expect(f._stores.ledger).toEqual(before.ledger)
+    expect(f._stores.orders.map((o) => [o.id, o.status, o.cancelReason])).toEqual(before.orders)
+    expect([rec.siblings, rec.attributions, rec.orphans]).toEqual([[], [], []])
+  })
+
   test('a notifier that throws does not fail the delete', async () => {
     const { f, deps, runId } = await heldRun([...BUYS], [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }])
     deps.notify.buyRemoved = async () => { throw new Error('telegram-down') }
@@ -64,7 +86,10 @@ describe('deleteFill retires the legs of a bucket whose buy it removes', () => {
       await deleteFill(runId, buyId, deps)
       expect(orderOf(f, 0, 'sell_loc').status).toBe('cancelled')
       expect(orderOf(f, 0, 'stop_sell').status).toBe('cancelled')
-      expect(errors).toHaveBeenCalled()
+      expect(errors.mock.calls).toEqual([
+        ['booking notification failed:', runId, 'buy-removed', orderOf(f, 0, 'sell_loc').id, 'Error: telegram-down'],
+        ['booking notification failed:', runId, 'buy-removed', orderOf(f, 0, 'stop_sell').id, 'Error: telegram-down'],
+      ])
     } finally { errors.mockRestore() }
   })
 })

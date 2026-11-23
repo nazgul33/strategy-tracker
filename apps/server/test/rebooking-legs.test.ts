@@ -33,6 +33,22 @@ describe('rebookFill retires the legs of a bucket it empties', () => {
     expect(rec.attributions).toEqual([])
   })
 
+  test('a failing order read fails the edit before anything is stored', async () => {
+    const { f, deps, rec, runId, sellId } = await partialSell([...LEGS, STALE_104])
+    const run = f._stores.runs.get(runId)!
+    const before = { state: run.stateJson, fills: structuredClone(f._stores.fills), ledger: structuredClone(f._stores.ledger), orders: statuses(f) }
+    f.repos.orderRepo.listForRunFrom = async () => { throw new Error('db-down') }
+
+    await expect(rebookFill(runId, { fillId: sellId, ...edit(10, '96.50') }, deps)).rejects.toThrow('db-down')
+
+    expect(run.stateJson).toBe(before.state)
+    expect(f._stores.fills).toEqual(before.fills)
+    expect(f._stores.fills.find((x) => x.id === sellId)!.shares).toBe(6)
+    expect(f._stores.ledger).toEqual(before.ledger)
+    expect(statuses(f)).toEqual(before.orders)
+    expect([rec.siblings, rec.attributions, rec.orphans]).toEqual([[], [], []])
+  })
+
   test('a buy edited down to what was sold empties the bucket the same way', async () => {
     const { f, deps, rec, runId } = await partialSell(LEGS)
     const buyId = f._stores.fills.find((x) => x.side === 'buy')!.id

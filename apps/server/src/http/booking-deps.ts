@@ -2,8 +2,9 @@ import type { BookingDeps, FillBookingDeps } from '../domain/booking'
 import { makeBookingNotifier } from '../wire/booking-notifier'
 import type { HttpDeps } from './app'
 
-// The FillBookingDeps for routes that book fills (manual fill, pending confirm). Built per
-// request so the settings and send hook are read when the fill arrives.
+// The FillBookingDeps for routes that book or change fills (manual fill, pending confirm,
+// fill edit, fill delete, correction apply). Built per request so the settings and send
+// hook are read when the request arrives.
 export function fillBookingDeps(deps: HttpDeps): FillBookingDeps {
   return {
     repos: deps.repos,

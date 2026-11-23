@@ -3,8 +3,8 @@ import { feeCents } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { BookingDeps, FillBookingDeps, FillRow } from './booking'
 import { notifyBookingOutcome } from './booking-notify'
-import { emptiedBuckets, retireLegs } from './retire-legs'
-import { matchForcedLeg } from './sell-match'
+import { emptiedBuckets, retireLegs, type EmptyCause } from './retire-legs'
+import { matchForcedLeg, type OrderRow } from './sell-match'
 import { withRunLock } from './run-lock'
 import { requireRun } from './require-run'
 
@@ -89,6 +89,17 @@ export async function rebookFillUnlocked(
   const patched = history.map((f) => (f.id === edit.fillId ? { ...f, ...patch } : f))
   const rebuilt = rebuildState(patched, run.poolCents, deps.today, state.buckets.length)
 
+  // Read what the retirements need before the first write: a failing read then
+  // fails the edit with nothing stored, so a retry can simply repeat it.
+  const retirements: Array<{ orders: OrderRow[]; bucketIdx: number; cause: EmptyCause }> = []
+  for (const bucketIdx of emptiedBuckets(state, rebuilt)) {
+    const last = patched.filter((f) => f.bucketIdx === bucketIdx).at(-1)
+    if (last?.side !== 'sell') continue
+    const orders = await repos.orderRepo.listForRunFrom(runId, last.filledOn)
+    const leg = matchForcedLeg(orders, { runId, filledOn: last.filledOn, shares: last.shares, price: last.price, bucketIdx })
+    retirements.push({ orders, bucketIdx, cause: { kind: 'sold', filledOn: last.filledOn, legId: leg?.id ?? null } })
+  }
+
   const delta = rebuilt.cashCents - state.cashCents
   await repos.bucketRepo.saveState(runId, rebuilt)
   await repos.fillRepo.update(runId, edit.fillId, patch)
@@ -102,13 +113,7 @@ export async function rebookFillUnlocked(
     await repos.ledgerRepo.insert({ runId, kind: 'adjust', amountCents: delta, ref: JSON.stringify(ref) })
   }
   const cancelledIds: number[] = []
-  for (const bucketIdx of emptiedBuckets(state, rebuilt)) {
-    const last = patched.filter((f) => f.bucketIdx === bucketIdx).at(-1)
-    if (last?.side !== 'sell') continue
-    const orders = await repos.orderRepo.listForRunFrom(runId, last.filledOn)
-    const leg = matchForcedLeg(orders, { runId, filledOn: last.filledOn, shares: last.shares, price: last.price, bucketIdx })
-    cancelledIds.push(...await retireLegs(repos, orders, { runId, bucketIdx }, { kind: 'sold', filledOn: last.filledOn, legId: leg?.id ?? null }))
-  }
+  for (const r of retirements) cancelledIds.push(...await retireLegs(repos, r.orders, { runId, bucketIdx: r.bucketIdx }, r.cause))
   return { fill: { ...match, ...patch }, deltaCents: delta, cancelledIds }
 }
 
@@ -146,6 +151,10 @@ async function deleteFillUnlocked(
   const state = await repos.bucketRepo.loadState(runId)
   const rebuilt = rebuildState(history.filter((f) => f.id !== fillId), run.poolCents, deps.today, state.buckets.length)
 
+  // As in rebookFillUnlocked: read the orders before the first write.
+  const retiring = fill.side === 'buy' && emptiedBuckets(state, rebuilt).includes(fill.bucketIdx)
+  const orders = retiring ? await repos.orderRepo.listForRunFrom(runId, fill.filledOn) : []
+
   const delta = rebuilt.cashCents - state.cashCents
   await repos.bucketRepo.saveState(runId, rebuilt)
   await repos.fillRepo.deleteById(runId, fillId)
@@ -153,8 +162,7 @@ async function deleteFillUnlocked(
     await repos.ledgerRepo.insert({ runId, kind: 'adjust', amountCents: delta, ref: JSON.stringify({ fillId, bookedOn: deps.today, reason: 'fill-delete' }) })
   }
   let orphanedIds: number[] = []
-  if (fill.side === 'buy' && emptiedBuckets(state, rebuilt).includes(fill.bucketIdx)) {
-    const orders = await repos.orderRepo.listForRunFrom(runId, fill.filledOn)
+  if (retiring) {
     orphanedIds = await retireLegs(repos, orders, { runId, bucketIdx: fill.bucketIdx }, { kind: 'buy-removed', filledOn: fill.filledOn })
   }
   return { fill, deltaCents: delta, orphanedIds }

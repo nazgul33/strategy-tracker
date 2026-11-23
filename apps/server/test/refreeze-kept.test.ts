@@ -130,8 +130,7 @@ describe('refreezeKept carries the confirm\'s fee override', () => {
   test('a row decided before the column existed rebuilds as before', async () => {
     const { f, deps, ids } = await setup(1)
     await crashConfirm(f, deps, ids[0]!, { feeCents: 7 })
-    const stored = f._stores.pending.find((p) => p.id === ids[0])! as unknown as { feeOverride: null }
-    stored.feeOverride = null
+    f._stores.pending.find((p) => p.id === ids[0])!.feeOverride = null
     expect(await refreezeKept(f.repos)).toEqual([ids[0]])
     expect(f._stores.visionReviews[0]).toMatchObject({ feeOverridden: false })
   })

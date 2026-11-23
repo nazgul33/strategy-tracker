@@ -8,11 +8,12 @@ export interface BookingNotifier {
 
 export interface BookedOutcome { cancelledIds: number[]; attribution: SellAttribution | null; orphanedIds?: number[] }
 
-// Tells the operator what a booking needs from them: first that a sell fill was
-// attributed among several admissible orders, then which cancelled orders still
-// need pulling at the broker, then which orders lost their buy. Called after the booking committed and the run lock
-// was released, so nothing here may fail or undo it: every error is logged and
-// swallowed, per notification, so one bad notification does not hide the next.
+// Tells the operator what a change to the fills needs from them, in this order:
+// that a sell fill was attributed among several admissible orders, which cancelled
+// orders still need pulling at the broker, and which orders lost their buy.
+// Called after a booking, an edit, a correction or a delete committed and the run
+// lock was released, so nothing here may fail or undo it: every error is logged
+// and swallowed, per notification, so one bad notification does not hide the next.
 export async function notifyBookingOutcome(
   runId: number,
   outcome: BookedOutcome,
