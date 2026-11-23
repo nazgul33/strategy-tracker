@@ -32,6 +32,7 @@ import { CATALOG } from '../packages/telegram/src/i18n'
 import { makeCachedBarReader } from '../apps/server/src/market/bars'
 import { jsonOf, type E2eCtx, type VisionFill } from './e2e-ctx'
 import { CUT_LOSS_PPM, checkPlannedStops, checkStopBooking } from './e2e-cutloss'
+import { checkOrderType } from './e2e-order-type'
 import { countingUpstream, checkSimDrafts } from './e2e-sim-drafts'
 import { runVisionReview } from './e2e-vision-review'
 
@@ -261,6 +262,9 @@ async function main(): Promise<void> {
 
     // ---- cut-loss: sell booked at a trigger lands in its bucket, sibling sell_loc cancelled
     await checkStopBooking(ctx, runId, TODAY, httpSends)
+
+    // ---- order-type attribution + refusing future-dated fills, on runs of their own
+    await checkOrderType(ctx, TODAY, PREV, () => runMorningPipeline(dayDeps))
 
     // ---- sim drafts: create -> apply (cache hit) -> save / discard
     await checkSimDrafts(ctx, barSource.calls)

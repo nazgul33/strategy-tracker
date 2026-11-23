@@ -1,5 +1,5 @@
 /** Shared plumbing for the e2e step modules (scripts/e2e.ts drives them in order). */
-export interface VisionFill { side: string; ticker: string; shares: number; price: string; fee?: string; date?: string }
+export interface VisionFill { side: string; ticker: string; shares: number; price: string; fee?: string; date?: string; orderType?: string; orderPrice?: string; orderedShares?: number | string }
 
 export interface E2eCtx {
   ok: (cond: unknown, label: string) => void
