@@ -83,6 +83,7 @@ export function runsRouter(deps: HttpDeps): Hono {
     }
     const seed = body?.seed
     if (seed && !validSeed(seed, bucketCount)) return c.json({ error: 'invalid seed' }, 400)
+    if (seed?.buckets.some((b: { filledOn: string }) => b.filledOn > deps.today())) return c.json({ error: 'fill-date-in-future' }, 422)
     const state = emptyState(bucketCount)
     state.cashCents = poolCents
     const id = await deps.repos.runRepo.create({
@@ -113,7 +114,7 @@ export function runsRouter(deps: HttpDeps): Hono {
     if (id === null || !run) return c.json({ error: 'not found' }, 404)
     const state = await deps.repos.bucketRepo.loadState(id)
     const pv = progressView(state)
-    return c.json(jsonBig({ ...run, progressView: pv, state }))
+    return c.json(jsonBig({ ...run, progressView: pv, state, today: deps.today() }))
   })
   r.patch('/runs/:id', async (c) => {
     const id = parseId(c.req.param('id'))

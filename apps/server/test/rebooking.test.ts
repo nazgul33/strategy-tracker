@@ -10,7 +10,7 @@ import {
 
 test('manualFill on a missing run rejects with run-not-found', async () => {
   const f = fakeRepos()
-  await expect(manualFill(42, { side: 'buy', shares: 1, price: '1.00', filledOn: '2026-11-06' }, deps(f))).rejects.toThrow('run-not-found')
+  await expect(manualFill(42, { side: 'buy', shares: 1, price: '1.00', filledOn: '2026-01-06' }, deps(f))).rejects.toThrow('run-not-found')
 })
 
 describe('rebuildState', () => {

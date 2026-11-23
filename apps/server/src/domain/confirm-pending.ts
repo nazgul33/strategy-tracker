@@ -25,7 +25,7 @@ export interface ConfirmOverrides {
 // - setKeep throws: nothing is booked or decided; the confirm fails as a whole
 //   and the operator retries.
 // - A booking refusal (invalid-bucket, bucket-not-found, bucket-not-held,
-//   too-many-shares, no-empty-bucket, no-bucket-for-sell, choose-bucket, a lost decide race)
+//   too-many-shares, no-empty-bucket, no-bucket-for-sell, choose-bucket, fill-date-in-future, a lost decide race)
 //   leaves the row pending and the image kept; the flag is sticky, so a later
 //   confirm or reject, with or without keep, leaves it kept.
 // - A crash or thrown write after decide flipped the row leaves it confirmed

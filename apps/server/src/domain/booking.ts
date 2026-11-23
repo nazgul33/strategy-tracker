@@ -1,4 +1,4 @@
-import { applyBuyFill, applySellFill, nextBuyBucketIndex, parseUsd, type ISODate, type RunState } from '@st/core'
+import { applyBuyFill, applySellFill, DomainError, nextBuyBucketIndex, parseUsd, type ISODate, type RunState } from '@st/core'
 import { feeCents, centsFromUsd, formatUsd } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { ExtractResult, RawFill } from '@st/ingest'
@@ -87,6 +87,7 @@ export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise
     const usable = input.side === 'sell' && Number.isInteger(input.bucketIdx) && input.bucketIdx >= 0
     if (!usable) throw new Error('invalid-bucket')
   }
+  if (input.filledOn > deps.today) throw new DomainError('fill-date-in-future')
   const repos = deps.repos
   const run = await requireRun(repos, input.runId)
   const state: RunState = await repos.bucketRepo.loadState(input.runId)
@@ -222,6 +223,7 @@ export function seedRun(runId: number, seed: SeedInput, deps: BookingDeps): Prom
 
 async function seedUnlocked(runId: number, seed: SeedInput, deps: BookingDeps): Promise<void> {
   if (!Number.isInteger(seed.cashCents) || seed.cashCents < 0) throw new Error('invalid seed cash')
+  if (seed.buckets.some((b) => b.filledOn > deps.today)) throw new DomainError('fill-date-in-future')
   const repos = deps.repos
   const run = await requireRun(repos, runId)
   let state: RunState = await repos.bucketRepo.loadState(runId)

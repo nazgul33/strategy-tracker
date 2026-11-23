@@ -166,6 +166,21 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
     }
   });
 
+  test('Yes on a future-dated row is refused with its own text', async () => {
+    for (const lang of ['en', 'ko'] as const) {
+      const { h, p } = await capturedPending(lang);
+      p.filledOn = '2026-11-11';
+      const sentBefore = h.sent.length;
+      await h.handlers.onConfirm('777', `yes:${p.id}`, true);
+      expect(h.sent.slice(sentBefore)).toEqual([{ chatId: '777', text: t('confirm-err-fill-date-in-future', lang), extra: undefined }]);
+      expect(h.sent.at(-1)!.text).not.toStartWith('Booked');
+      expect(h.sent.at(-1)!.text).not.toBe(t('confirm-err-unknown', lang, { code: 'fill-date-in-future' }));
+      expect(p.status).toBe('pending');
+      expect(h.fills.length).toBe(0);
+    }
+    expect(t('confirm-err-fill-date-in-future', 'en')).toBe("The trade date is after today — fix the date in the web app's Pending view.");
+  });
+
   test('unknown error falls back to a catalog line carrying the raw code', async () => {
     for (const [lang, text] of [
       ['en', 'Could not confirm this fill (boom).'],
