@@ -54,8 +54,10 @@ out of 1,700-line files.
   pass unchanged after the rule is moved.
 - A notice that tells the operator to pull an order that is not live (`stale`).
 - A test dropped, renamed or weakened by the split.
-- A write to orders that can fail a booking, an edit or a delete after the
-  state was saved, or a notice failure that reaches the caller.
+- A notice failure that reaches the caller. (A failing order write is
+  different: it propagates, as it does on the booking path today. The edit is
+  already stored by then, and a loud error is what sends the operator to look
+  at the run's orders. Amended while planning, 2026-11-23.)
 
 ## Approaches
 
