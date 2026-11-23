@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, ApiError, usdToCents } from '../../api';
 import type { BucketDto } from '../../api';
+import { errorText } from '../../errortext';
 import { useT } from '../../i18n';
 import { cutLossToPpm, gapToPpm, isCutLossText, isGapText, ppmToPercentText } from '../../gaps';
 import { priceUsd } from '../../format';
@@ -76,7 +77,7 @@ export function EditRunModal({
       onSaved();
     } catch (err) {
       if (err instanceof ApiError) setSubmitError(`${t('runDetail.gapSaveFailed')} (${err.code})`);
-      else setSubmitError(err instanceof Error ? err.message : String(err));
+      else setSubmitError(errorText(err, t));
     } finally {
       setBusy(false);
     }

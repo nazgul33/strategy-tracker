@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ApiError, api, type CorrectionDto } from '../../api';
+import { errorText } from '../../errortext';
 import { useT } from '../../i18n';
 import { centsUsd, isoDate, priceUsd } from '../../format';
 import { useAsync } from '../hooks';
@@ -46,14 +47,8 @@ export function CorrectionList({
         setActionError(t('correctionAlreadyHandled'));
         await reload();
         onChanged?.();
-      } else if (err instanceof ApiError) {
-        // Same rule as FillDialog: known fillErr.* codes read localized, the
-        // rest fall back to the raw server code (ApiError.message).
-        const key = `fillErr.${err.code}`;
-        const msg = t(key);
-        setActionError(msg === key ? err.message : msg);
       } else {
-        setActionError(err instanceof Error ? err.message : String(err));
+        setActionError(errorText(err, t, 'fillErr'));
       }
     } finally {
       setBusyId(null);

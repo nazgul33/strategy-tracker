@@ -62,3 +62,18 @@ describe('errorText', () => {
     );
   });
 });
+
+// One helper words every failed request. A screen that formats the caught value itself
+// brings back the browser's "Failed to fetch"; api.ts only stores that text on NetworkError.
+describe('raw error text', () => {
+  it('no screen formats a caught error by hand', async () => {
+    const src = new URL('.', import.meta.url).pathname;
+    const raw = /\b(err|e|error)\.message\b|String\((err|e|error)\)|=== key \? err\./;
+    const offenders: string[] = [];
+    for (const file of new Bun.Glob('**/*.{ts,tsx}').scanSync({ cwd: src })) {
+      if (/\.test\.tsx?$/.test(file) || file.startsWith('testing/') || file === 'api.ts' || file === 'errortext.ts') continue;
+      if (raw.test(await Bun.file(src + file).text())) offenders.push(file);
+    }
+    expect(offenders.sort()).toEqual([]);
+  });
+});

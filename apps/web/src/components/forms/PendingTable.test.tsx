@@ -2,6 +2,7 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import type { PendingFillDto } from '../../api.types';
 import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
+import { goOffline } from '../../testing/offline';
 import { PENDING_ROW as ROW, setInputValue } from '../../testing/pendingRow';
 
 GlobalRegistrator.register();
@@ -156,11 +157,22 @@ describe('PendingTable', () => {
     });
   }
 
-  it('falls back to the raw code for an unknown 422 confirm error', async () => {
+  const actionError = () => container.querySelector('[data-testid="pendingActionError"]')?.textContent;
+
+  it('an unknown 422 confirm error keeps its code in worded copy', async () => {
     stubFetch('weird-code', ROW, 422);
     await renderTable(root);
     await clickConfirm();
-    expect(container.textContent).toContain('weird-code');
+    expect(actionError()).toBe('The request failed (weird-code).');
+  });
+
+  it('a confirm with the server unreachable is worded and keeps the row', async () => {
+    stubFetch('conflict');
+    await renderTable(root);
+    goOffline('POST', '/api/pending');
+    await clickConfirm();
+    expect(actionError()).toBe('Could not reach the server. Check the connection and try again.');
+    expect(container.textContent).toContain('AAPL');
   });
 
   const cells = () => Array.from(container.querySelectorAll('tbody tr td'));

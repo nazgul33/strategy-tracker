@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, api, ungroupUsd, usdFeeOrNull, usdOrNull, usdToCents, type PendingFillDto, type PendingOverrides } from '../../api';
 import { autoFeeUsd } from '../../autofee';
+import { errorText } from '../../errortext';
 import { costPercentText } from '../../format';
 import { useT } from '../../i18n';
 import { patchRowValues, pendingEdits, standingIssues, type RowValues } from '../../pendingvalues';
@@ -112,14 +113,8 @@ export function PendingTable({
     } else if (err instanceof ApiError && err.status === 409) {
       setActionError(t('pendingAlreadyHandled'));
       await reload();
-    } else if (err instanceof ApiError) {
-      // Same rule as FillDialog: known fillErr.* codes read localized, the
-      // rest fall back to the raw server code (ApiError.message).
-      const key = `fillErr.${err.code}`;
-      const msg = t(key);
-      setActionError(msg === key ? err.message : msg);
     } else {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(errorText(err, t, 'fillErr'));
     }
   };
 

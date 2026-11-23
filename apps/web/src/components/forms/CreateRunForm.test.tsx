@@ -4,6 +4,7 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
 import type { FetchCalls } from '../../testing/fetchStub';
+import { goOffline } from '../../testing/offline';
 
 GlobalRegistrator.register();
 
@@ -222,5 +223,33 @@ describe('CreateRunForm gap fields', () => {
     await type('cutLossInput', '50');
     expect(inputByTestId('cutLossInput').getAttribute('aria-invalid')).toBeNull();
     expect(createButton().disabled).toBe(false);
+  });
+
+  const alertText = () => document.querySelector('[role="alert"]')?.textContent;
+  const fillAndSubmit = async () => {
+    await act(async () => {
+      root.render(d(CreateRunForm));
+    });
+    await act(async () => {
+      setInputValue(inputByLabel('Ticker'), 'QQQ');
+      setInputValue(inputByLabel('Pool'), '10000');
+    });
+    await submitForm();
+  };
+
+  it('a refused create keeps its code in worded copy', async () => {
+    restoreFetch();
+    stub = installFetchStub([
+      { url: '/api/settings', json: { visionBaseUrl: '', visionModel: '', digestLang: 'en', hasVisionApiKey: false, defaultCostPpm: 700 } },
+      { method: 'POST', url: '/api/runs', status: 400, json: { error: 'invalid-body' } },
+    ]);
+    await fillAndSubmit();
+    expect(alertText()).toBe('The request failed (invalid-body).');
+  });
+
+  it('a create with the server unreachable is worded', async () => {
+    goOffline('POST', '/api/runs');
+    await fillAndSubmit();
+    expect(alertText()).toBe('Could not reach the server. Check the connection and try again.');
   });
 });
