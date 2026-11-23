@@ -2,7 +2,7 @@ import { dayInfo, prevTradingDay, type ISODate } from '@st/calendar'
 import { advanceDay, type RunState, type Run } from '@st/core'
 import { computeOrders, type MrParams } from '@st/strategies'
 import { rollStale, type BookingDeps } from '../domain/booking'
-import type { DayRepoSurface, NewOrder, RunRow } from '../domain/repo-types'
+import type { DayRepoSurface, NewOrder, OrderRecord, RunRow } from '../domain/repo-types'
 import { withRunLock } from '../domain/run-lock'
 import { broadcastNotice, type NoticeText } from '../wire/broadcast'
 import { renderDigest, renderClosed, renderReminder } from '@st/telegram/digest'
@@ -35,6 +35,7 @@ function notify(deps: DayDeps, runId: number | null, text: NoticeText, kind: str
   )
 }
 
+type StaleRoll = Awaited<ReturnType<typeof rollStale>>
 type RunOutcome = 'completed' | 'failed'
 
 export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> {
@@ -70,10 +71,11 @@ async function morningPipeline(deps: DayDeps): Promise<MorningResult> {
   }
 
   // stale roll from last trading day: orders dated before today roll up. A failure
-  // is logged and the morning carries on: each run's "unconfirmed" line is read from
-  // the stored orders at plan time, so it does not depend on this roll's result.
+  // is logged and the morning carries on without that part of each run's "unconfirmed"
+  // line; the part read from stored orders at plan time does not depend on this roll.
+  let stale: StaleRoll = {}
   try {
-    await rollStale(today, { repos: deps.repos, today } as BookingDeps)
+    stale = await rollStale(today, { repos: deps.repos, today } as BookingDeps)
   } catch (e) {
     console.error('stale roll failed:', String(e))
   }
@@ -84,7 +86,7 @@ async function morningPipeline(deps: DayDeps): Promise<MorningResult> {
   let numFailed = 0
   let numCompleted = 0
   for (const run of active) {
-    if ((await processRun(deps, run, today)) === 'completed') numCompleted++
+    if ((await processRun(deps, run, today, stale)) === 'completed') numCompleted++
     else numFailed++
   }
 
@@ -92,9 +94,9 @@ async function morningPipeline(deps: DayDeps): Promise<MorningResult> {
 }
 
 // One run never takes the others down: any throw is logged and warned about here.
-async function processRun(deps: DayDeps, run: RunRow, today: ISODate): Promise<RunOutcome> {
+async function processRun(deps: DayDeps, run: RunRow, today: ISODate, stale: StaleRoll): Promise<RunOutcome> {
   try {
-    return await planRun(deps, run, today)
+    return await planRun(deps, run, today, stale)
   } catch (e) {
     console.error('morning run failed:', { runId: run.id, ticker: run.ticker }, String(e))
     await notify(deps, run.id, t('warn-run-error', deps.digestLang, { id: run.id, ticker: run.ticker }), 'run-error')
@@ -110,18 +112,19 @@ async function skipPlanned(deps: DayDeps, run: RunRow): Promise<RunOutcome> {
   return 'completed'
 }
 
-// The run's stale orders from its most recent order date before today: the set the
-// morning roll flips on a normal day. Read from storage, so a retry (or a failed roll)
-// reports the same line; older stale orders were reported on earlier mornings.
-async function unconfirmedFromLastOrderDay(deps: DayDeps, runId: number, today: ISODate): Promise<{ count: number; date: ISODate } | null> {
+// Orders this run reports as unconfirmed: what this morning's roll just flipped for it
+// (covers a missed roll on an earlier morning), plus its stale orders from its most
+// recent order date before today (a retry, or a failed roll, flips nothing now but the
+// orders are stored). De-duplicated by id. Older stale orders were reported earlier.
+async function unconfirmedOrders(deps: DayDeps, runId: number, today: ISODate, rolled: OrderRecord[]): Promise<OrderRecord[]> {
   const past = (await deps.repos.orderRepo.listForRun(runId)).filter((o) => o.tradeDate < today)
-  if (past.length === 0) return null
-  const date = past.reduce((max, o) => (o.tradeDate > max ? o.tradeDate : max), past[0]!.tradeDate)
-  const count = past.filter((o) => o.tradeDate === date && o.status === 'stale').length
-  return count > 0 ? { count, date } : null
+  const last = past.reduce((max, o) => (o.tradeDate > max ? o.tradeDate : max), '')
+  const byId = new Map<number, OrderRecord>()
+  for (const o of [...rolled, ...past.filter((o) => o.tradeDate === last && o.status === 'stale')]) byId.set(o.id, o)
+  return [...byId.values()]
 }
 
-async function planRun(deps: DayDeps, run: RunRow, today: ISODate): Promise<RunOutcome> {
+async function planRun(deps: DayDeps, run: RunRow, today: ISODate, stale: StaleRoll): Promise<RunOutcome> {
   const lang = deps.digestLang
   const hasOrdersToday = async () => (await deps.repos.orderRepo.listForRun(run.id, today)).length > 0
   const warnDataError = () => notify(deps, run.id, t('warn-data-error', lang, { id: run.id, ticker: run.ticker }), 'data-error')
@@ -169,8 +172,11 @@ async function planRun(deps: DayDeps, run: RunRow, today: ISODate): Promise<RunO
     const state = advanceDay(state0, mrParams.maxAgeDays)
     const plan: DayPlan = computeOrders(run as Run, state, { lastClose: close }, mrParams)
 
-    const unconfirmed = await unconfirmedFromLastOrderDay(deps, run.id, today)
-    if (unconfirmed) plan.notices.push({ code: 'unconfirmed', params: { count: unconfirmed.count, date: unconfirmed.date } })
+    const unconfirmed = await unconfirmedOrders(deps, run.id, today, stale[run.id] ?? [])
+    if (unconfirmed.length > 0) {
+      const oldest = unconfirmed.reduce((min, o) => (o.tradeDate < min ? o.tradeDate : min), unconfirmed[0]!.tradeDate)
+      plan.notices.push({ code: 'unconfirmed', params: { count: unconfirmed.length, date: oldest } })
+    }
 
     const rows = plan.orders.map((o): NewOrder => ({
       runId: run.id,
