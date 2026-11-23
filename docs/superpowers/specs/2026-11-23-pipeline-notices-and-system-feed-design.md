@@ -6,7 +6,9 @@ Notifications tab, and a Telegram copy change.
 
 Amended after the plan review (2026-11-23): per-run failure isolation with an
 atomic plan write and a same-day guard, capture replies stay in the feed, and a
-multi-part digest is recorded as one notification.
+multi-part digest is recorded as one notification. Amended again the same day:
+a skipped run gets a visible notice, and a failure outside any run sends a
+global warning before the pipeline rejects.
 
 ## Why
 
@@ -44,7 +46,9 @@ multi-part digest is recorded as one notification.
 - A failed run leaves nothing behind (its orders and its aged state are written
   together or not at all), and running the morning pipeline again the same day
   plans only the runs that have no orders for today. It never duplicates orders
-  or ages a run twice.
+  or ages a run twice. Each run it skips gets a notice saying so.
+- A failure that belongs to no run (before the first run is processed) sends one
+  global warning, so the operator is told even when nothing was planned.
 - With no allowed chat, every pipeline / cron / cancel message is still recorded
   as one row with chat id `web` (`WEB_ONLY_CHAT_ID`).
 - A digest is one notification per chat, however many Telegram messages it took.
@@ -64,9 +68,9 @@ multi-part digest is recorded as one notification.
   means every active run failed, `'sent'` anything else on an open day. What
   changes is that a run which throws now counts as one failed run instead of
   aborting the pipeline.
-- No isolation for failures that belong to no run: a failing `runRepo.list()` or
-  cross-check still rejects the whole pipeline (the cron logs it, the trigger
-  route answers 500).
+- No new `MorningResult` value for a failure that belongs to no run: the
+  pipeline still rejects (the cron logs it, the trigger route answers 500), now
+  after sending a global warning.
 - No way to re-plan a run that already has orders for today (after a gap edit,
   say). The trigger used to do that by accident, with duplicate orders.
 - No filter on the feed: every notification row is listed, including the bot's
@@ -173,13 +177,25 @@ Multi-part digest (picked by the user)
   today" means "this run was planned and aged today" (a run with no order has no
   held bucket, so aging it is a no-op; planning it again only repeats its
   digest). A run with an order dated today is
-  skipped: no fetch, no write, no digest, no notice, and it counts as completed.
+  skipped: no fetch, no write, no digest.
   The check runs before the close fetch (an already planned run cannot raise a
   data-error warning) and again as the first step inside the run lock (two
   pipelines running at once cannot both plan a run).
+- **A skipped run is told.** It gets the per-run notice `run-already-planned`
+  through the helper (Telegram chats, or a `web` row when there are none), so it
+  shows in the run's Notifications tab and in System notices, and one server log
+  line. The two checks are alternatives on one path (the pre-fetch check leaves
+  before the lock is taken), so a skipped run gets exactly one notice per
+  pipeline run. Copy (telegram catalog, mirrored as `digest.run-already-planned`):
+  - en: `ℹ️ Run #{id} {ticker}: today's orders were already planned, so this run
+    was not planned again.`
+  - ko: `ℹ️ 런 #{id} {ticker}: 오늘 주문이 이미 계획되어 있어 다시 계획하지
+    않았습니다.`
+- A skipped run counts as **completed**: it has its orders for today, so it must
+  not push the result towards `'data-error'` ("every run failed").
 - So after a morning where one run failed, **Run morning pipeline** plans that
-  run and leaves the others alone. The scheduled run after a manual one on the
-  same day is quiet for the same reason.
+  run and tells the operator the others were left alone. The scheduled run
+  after a manual one on the same day sends only those notices.
 - **Stale roll.** `rollStale` runs once before the loop. If it throws, the
   failure is logged and the pipeline carries on with no stale linkage. This is
   safe: planning reads only the run state and the close; booking matches a fill
@@ -189,6 +205,34 @@ Multi-part digest (picked by the user)
 - `MorningResult`: failed = data-error runs + runs that threw; completed = runs
   planned now + runs skipped as already planned. `'data-error'` when at least
   one failed and none completed, else `'sent'` — the existing rule.
+
+### Server — a failure outside any run (`pipeline/day.ts`)
+
+- What is left outside the per-run `try`: `today()`, the cross-check and
+  `runRepo.list()`. (The production cross-check never throws, it answers
+  `agree: true` with an `error`; an injected one may. `rollStale` degrades as
+  above. The helper never throws.) All of these run before the first run is
+  processed, so such a failure means no run was planned by this pipeline run.
+- `runMorningPipeline` catches it, logs it, sends one global warning
+  (`runId: null`) through the helper, and **rethrows**. Rethrowing is picked
+  over a new `MorningResult` value such as `'error'`: the cron keeps logging
+  `morning pipeline error: …`, the trigger route keeps answering 500, and the web
+  then shows its red error note instead of the blue "Morning run: …" result
+  banner, which would present a failure in the place and colour of a result. The
+  web maps no `MorningResult` values to copy (the banner prints the raw value),
+  so no web copy changes. The System notices panel reloads after a trigger,
+  failed or not, and shows the warning under the error note.
+- If the warning itself cannot be recorded or sent, the helper logs that and the
+  original error is still the one rethrown.
+- Copy `warn-pipeline-error` (telegram catalog, mirrored as
+  `digest.warn-pipeline-error`):
+  - en: `Morning pipeline error — the pipeline stopped before any run was
+    planned. Check the server log, then run the morning pipeline again.`
+  - ko: `아침 파이프라인 오류 — 런을 하나도 계획하지 못하고 중단되었습니다.
+    서버 로그를 확인한 뒤 아침 파이프라인을 다시 실행하세요.`
+- The 16:05 reminder and the Dec 1 nudge need nothing like it: each is one
+  rendered text and one helper call, with nothing that reads the database
+  before it, and their cron wrappers already log a throw.
 
 ### Server — global feed route
 
@@ -266,6 +310,13 @@ Multi-part digest (picked by the user)
   the same day plans only the failed run, with no duplicate order and no second
   aging for the others; two pipelines at once plan each run once; a failing
   stale roll does not stop the morning.
+- Skipped runs: each gets exactly one notice per pipeline run, on the pre-fetch
+  path and on the in-lock path; a pipeline run that skips every run returns
+  `'sent'`, and so does one that skips a run while another fails.
+- Failure outside any run: `runRepo.list()` or the cross-check throwing → one
+  global warning (`web` row with no chat), the error logged and rethrown; the
+  trigger route answers 500; the Runs page shows the error and still reloads the
+  notices panel.
 - DB suite: the plan write stores orders and state together, and a failing state
   write rolls the orders back.
 - Order-cancel route: Telegram failure still returns `{ ok: true }`.

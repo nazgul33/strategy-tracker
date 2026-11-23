@@ -4,7 +4,7 @@
 
 **Goal:** No failing send, insert or single run aborts the morning pipeline; a failed run leaves nothing behind and the pipeline is safe to run again the same day; every notice leaves a row even with no Telegram chat; the Runs page lists all notices with deep links into the run; Telegram `/orders` groups orders under a per-run header.
 
-**Architecture:** One never-throwing server helper (`wire/broadcast.ts`) replaces every per-chat send/insert loop (morning pipeline, reminder, December nudge, order-cancel route, booking notifier); it can record one text while sending it in parts. The morning pipeline wraps each run in its own `try`, writes orders and aged state in one DB transaction, and skips a run that already has orders for today. A new read route `GET /api/notifications` pages over all notification rows by descending id and collapses the per-chat rows of one broadcast into one entry (pure grouping in `domain/notice-feed.ts`). The web adds a `SystemNotices` panel under the runs table and a `?tab=notifications&notice=<id>` query on the run hash route.
+**Architecture:** One never-throwing server helper (`wire/broadcast.ts`) replaces every per-chat send/insert loop (morning pipeline, reminder, December nudge, order-cancel route, booking notifier); it can record one text while sending it in parts. The morning pipeline wraps each run in its own `try`, writes orders and aged state in one DB transaction, skips (and says so) a run that already has orders for today, and sends a global warning before rejecting when it fails outside any run. A new read route `GET /api/notifications` pages over all notification rows by descending id and collapses the per-chat rows of one broadcast into one entry (pure grouping in `domain/notice-feed.ts`). The web adds a `SystemNotices` panel under the runs table and a `?tab=notifications&notice=<id>` query on the run hash route.
 
 **Tech Stack:** Bun + TypeScript, Hono, Drizzle (MariaDB), React + Tailwind, `bun:test` + happy-dom.
 
@@ -13,12 +13,18 @@
 ## Global Constraints
 
 - No schema change, no migration. No retry of failed sends. No unread state, no polling. No filter on the feed (capture replies with no run are listed).
-- `MorningResult` values and meaning are unchanged: `'data-error'` when at least one active run failed and none completed, else `'sent'` on an open day. A run that throws counts as failed; a run skipped as already planned counts as completed.
+- `MorningResult` values and meaning are unchanged: `'data-error'` when at least one active run failed and none completed, else `'sent'` on an open day. A run that throws counts as failed; a run skipped as already planned counts as completed. No new value: a failure outside any run still rejects.
 - The web-only chat id is the literal `web` (`WEB_ONLY_CHAT_ID`).
 - Telegram copy, verbatim (`packages/telegram/src/i18n.ts`): `orders-line` en `#{id} {kind} {shares} sh @ ${price}`, ko `#{id} {kind} {shares}주 @ ${price}`. `status-run-line` and `orders-run-missing` are unchanged.
-- New per-run warning, verbatim, key `warn-run-error` in `packages/telegram/src/i18n.ts` (right after `warn-data-error`) and key `digest.warn-run-error` in `apps/web/src/i18n/{en,ko}.json` (right after `digest.warn-data-error`):
+- New per-run warning, verbatim, key `warn-run-error` in `packages/telegram/src/i18n.ts` (after `warn-data-error` and `warn-pipeline-error`) and key `digest.warn-run-error` in `apps/web/src/i18n/{en,ko}.json` (right after `digest.warn-data-error`):
   - en: `Morning pipeline error — run #{id} {ticker}: today's orders could not be planned. Check this run's Orders tab in the web app; if today's orders are missing, run the morning pipeline again.`
   - ko: `아침 파이프라인 오류 — 런 #{id} {ticker}: 오늘 주문을 계획하지 못했습니다. 웹 앱에서 이 런의 주문 탭을 확인하고, 오늘 주문이 없으면 아침 파이프라인을 다시 실행하세요.`
+- New skipped-run notice, verbatim, key `run-already-planned` in `packages/telegram/src/i18n.ts` (right after `warn-run-error`) and key `digest.run-already-planned` in the web catalogs (between `digest.no-bucket-available` and `digest.sell-capped`):
+  - en: `ℹ️ Run #{id} {ticker}: today's orders were already planned, so this run was not planned again.`
+  - ko: `ℹ️ 런 #{id} {ticker}: 오늘 주문이 이미 계획되어 있어 다시 계획하지 않았습니다.`
+- New global warning, verbatim, key `warn-pipeline-error` in `packages/telegram/src/i18n.ts` (right after `warn-data-error`) and key `digest.warn-pipeline-error` in the web catalogs (between `digest.warn-data-error` and `digest.warn-run-error`):
+  - en: `Morning pipeline error — the pipeline stopped before any run was planned. Check the server log, then run the morning pipeline again.`
+  - ko: `아침 파이프라인 오류 — 런을 하나도 계획하지 못하고 중단되었습니다. 서버 로그를 확인한 뒤 아침 파이프라인을 다시 실행하세요.`
 - New web copy, verbatim (`apps/web/src/i18n/{en,ko}.json`, inserted between `statWinRate` and `tabFills`, in this order):
   - `systemNoticesOlder`: en `Show older`, ko `이전 알림 더 보기`
   - `systemNoticesSource`: en `Source`, ko `출처`
@@ -38,7 +44,8 @@
 - Helper text argument: `string | { record: string; send: string[] }`. A failed part's log object also carries `part` (1-based) when there is more than one part.
 - Digest: one helper call per run with `record: chunks.join('\n\n')` and `send: chunks`. No existing test or E2E check counts one row per digest part (`day.test.ts` (c) and `scripts/e2e.ts` use one-part digests), so none changes.
 - Plan write: new `bucketRepo.saveStateWithOrders(runId, state, orders)` — one transaction, orders first, then the state. It is typed on a new `DayRepoSurface` (not on `RepoSurface`), so only the fakes the pipeline uses gain it (`day.test.ts`, `http-fakes.ts`).
-- Same-day guard: a run with an order row dated today is skipped silently (no fetch, no write, no digest, no notice) and counts as completed. Checked before the close fetch and again first thing inside the run lock.
+- Same-day guard: a run with an order row dated today is skipped (no fetch, no write, no digest) and counts as completed — it has its orders, so it must not push the result towards `'data-error'`. Checked before the close fetch and again first thing inside the run lock. Both checks lead to one shared "already planned" outcome that sends the `run-already-planned` notice (kind `'already-planned'`) and logs `console.log('morning run skipped, already planned today:', { runId, ticker })` — once per skipped run per pipeline run, because the pre-fetch check leaves before the lock is taken.
+- Failure outside any run (`today()`, the cross-check, `runRepo.list()`): log `console.error('morning pipeline failed:', String(e))`, one global `warn-pipeline-error` notice (`runId` `null`, kind `'pipeline-error'`), then **rethrow** the original error. No `'error'` result value: the cron log and the trigger's 500 stay, and the web shows its red error note (`http-500`) instead of the blue result banner. The web maps no `MorningResult` values to copy, so no web copy changes. `runReminder` and `runDecemberNudge` need nothing similar.
 - Per-run failure: one `try` around everything done for a run; log `console.error('morning run failed:', { runId, ticker }, String(e))`; one warning (`warn-run-error`, kind `'run-error'`) through the helper.
 - A failing `rollStale` is logged (`console.error('stale roll failed:', String(e))`) and the pipeline carries on with no stale linkage and no notice (why this is safe: spec, "Stale roll").
 - The December nudge becomes `runDecemberNudge(deps)` in `day.ts` (next to `runReminder`) so it is testable; the cron in `pipeline/wire.ts` only calls it.
@@ -53,7 +60,7 @@
 ## Review Focus
 
 1. The operator presses **Run morning pipeline** on the Runs page (the conflict case, or after a failed-run warning): the System notices panel must show the new notice without a browser reload. Pinned in Task 6.
-2. The scheduled run and a manual trigger overlap, or the pipeline is run again while quotes are down: no run is planned twice, and a run that already has today's orders raises no data-error warning. Pinned in Task 3.
+2. The scheduled run and a manual trigger overlap, or the pipeline is run again while quotes are down: no run is planned twice, a run that already has today's orders raises no data-error warning, and each skipped run gets its notice exactly once. Pinned in Task 3.
 3. The same text sent twice in a row to the same chat (two daily reminders with no digest between, a web-only operator with no active run): two entries, never one. Pinned in Task 5.
 4. The database and Telegram are both down for a chat, the insert fails right after a successful order cancel, or one part of a long digest is refused: nothing throws, each failure is logged, the later parts and chats still go out and the cancel still answers `{ ok: true }`. Pinned in Tasks 1 and 2.
 5. A deep link whose notice id is not in the run's list, or a second deep link followed while the same run is already open: the Notifications tab opens without a highlight in the first case, and the highlight moves in the second. Pinned in Task 7.
@@ -66,7 +73,7 @@
 | --- | --- |
 | `apps/server/src/wire/broadcast.ts` (new) | `WEB_ONLY_CHAT_ID`, `broadcastNotice`: record + send one notice (in one or more parts) to every allowed chat, never throws |
 | `apps/server/src/wire/booking-notifier.ts` | renders booking notices; delegates delivery to `broadcastNotice` |
-| `apps/server/src/pipeline/day.ts` | morning pipeline (per-run isolation, same-day guard), reminder, December nudge; all notices via `broadcastNotice` |
+| `apps/server/src/pipeline/day.ts` | morning pipeline (per-run isolation, same-day guard with notice, global warning on a failure outside any run), reminder, December nudge; all notices via `broadcastNotice` |
 | `apps/server/src/domain/repo-types.ts`, `db/repos.ts` | `DayRepoSurface`, `bucketRepo.saveStateWithOrders` (orders + state in one transaction) |
 | `apps/server/src/pipeline/wire.ts` | cron schedule only |
 | `apps/server/src/http/routes/runs.ts` | order-cancel notice via `broadcastNotice` |
@@ -340,16 +347,17 @@ git commit -m "fix: pipeline, reminder, nudge and order-cancel notices never thr
 
 ---
 
-### Task 3: One failing run never stops the others; a failed run leaves nothing behind; the pipeline is safe to run again
+### Task 3: One failing run never stops the others; a failed run leaves nothing behind; the pipeline is safe to run again and says what it skipped or why it stopped
 
 **Files:**
 - Modify: `apps/server/src/domain/repo-types.ts` (new `DayRepoSurface`, after `RepoSurface`)
 - Modify: `apps/server/src/db/repos.ts:74-92` (`bucketRepo.saveStateWithOrders`)
-- Modify: `apps/server/src/pipeline/day.ts` (`DayDeps.repos`, stale roll, per-run `try`, same-day guard, plan write)
-- Modify: `packages/telegram/src/i18n.ts` (`warn-run-error`), `apps/web/src/i18n/en.json`, `apps/web/src/i18n/ko.json` (`digest.warn-run-error`) — copy in Global Constraints
+- Modify: `apps/server/src/pipeline/day.ts` (`DayDeps.repos`, outer catch, stale roll, per-run `try`, same-day guard with notice, plan write)
+- Modify: `packages/telegram/src/i18n.ts` (`warn-pipeline-error`, `warn-run-error`, `run-already-planned`), `apps/web/src/i18n/en.json`, `apps/web/src/i18n/ko.json` (the three `digest.*` mirrors) — copy and positions in Global Constraints
 - Modify: `apps/server/test/http-fakes.ts:24-27`, `apps/server/test/day.test.ts:26-29,43-55` (the two fakes the pipeline uses gain the method)
 - Modify: `apps/server/test/repo-surface-types.test.ts` (one arity pin)
 - Create: `apps/server/test/day-failures.test.ts`, `apps/server/test/db-day-plan.test.ts`
+- Modify: `apps/server/test/http-orders.test.ts` (one test in `http trigger`)
 - Modify: `README.md:168` (manual trigger: safe to repeat), `AGENTS.md` (test list: `day-failures`)
 
 **Interfaces:**
@@ -370,7 +378,9 @@ export interface DayRepoSurface extends RepoSurface {
 export interface DayDeps { repos: DayRepoSurface /* was RepoSurface; every other field unchanged */ }
 ```
 
-- Log lines: `console.error('stale roll failed:', String(e))` and `console.error('morning run failed:', { runId: run.id, ticker: run.ticker }, String(e))`. Warning kind for the helper: `'run-error'`.
+- Log lines: `console.error('stale roll failed:', String(e))`; `console.error('morning run failed:', { runId: run.id, ticker: run.ticker }, String(e))`; `console.log('morning run skipped, already planned today:', { runId: run.id, ticker: run.ticker })`; `console.error('morning pipeline failed:', String(e))`.
+- Helper kinds: `'run-error'`, `'already-planned'`, `'pipeline-error'`.
+- `runMorningPipeline` still resolves to `MorningResult`; on a failure outside any run it rejects with the original error after the global warning.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -406,6 +416,8 @@ type Fakes = ReturnType<typeof makeFakes>
 const orderCount = (f: Fakes, runId: number) => f.orders.filter((o) => o.runId === runId).length
 const age = async (f: Fakes, runId: number) => (await f.repos.bucketRepo.loadState(runId)).ages[1]
 const RUN_ERR = (id: number, tk: string) => `Morning pipeline error — run #${id} ${tk}: today's orders could not be planned. Check this run's Orders tab in the web app; if today's orders are missing, run the morning pipeline again.`
+const SKIP = (id: number, tk: string) => `ℹ️ Run #${id} ${tk}: today's orders were already planned, so this run was not planned again.`
+const PIPE_ERR = 'Morning pipeline error — the pipeline stopped before any run was planned. Check the server log, then run the morning pipeline again.'
 // Makes the plan write fail for the given runs; returns a function that undoes it.
 function failPlanWrite(f: Fakes, runIds: number[]) {
   const real = f.repos.bucketRepo.saveStateWithOrders
@@ -417,7 +429,7 @@ function failPlanWrite(f: Fakes, runIds: number[]) {
 }
 ```
 
-Tests (each spies `console.error`):
+Tests (each spies `console.error`; "run" means `await runMorningPipeline(deps)`):
 
 | Test name | Arrange and act | Assertions |
 | --- | --- | --- |
@@ -425,10 +437,15 @@ Tests (each spies `console.error`):
 | `a run whose planning throws is reported the same way` | `params: (run) => { if (run.id === 1) throw new Error('bad-params'); return DEFAULT_MR_PARAMS }` | result `'sent'`; `orderCount(f, 1)` 0; `orderCount(f, 2)` 2; `sent` equals `[RUN_ERR(1, 'TSLA'), 'A  AAPL']`; `errors` called with `'morning run failed:', { runId: 1, ticker: 'TSLA' }, 'Error: bad-params'` |
 | `the warning is rendered in Korean` | `digestLang: 'ko'`, `failPlanWrite(f, [1])` | `sent[0]` is `'아침 파이프라인 오류 — 런 #1 TSLA: 오늘 주문을 계획하지 못했습니다. 웹 앱에서 이 런의 주문 탭을 확인하고, 오늘 주문이 없으면 아침 파이프라인을 다시 실행하세요.'` |
 | `data-error only when every active run failed` | (a) `failPlanWrite(f, [1, 2])`; (b) fresh setup: `fetchLastClose` returns date `'2026-11-04'` for `TSLA`, and `failPlanWrite(f, [2])` | (a) result `'data-error'`, `sent` equals `[RUN_ERR(1, 'TSLA'), RUN_ERR(2, 'AAPL')]`; (b) result `'data-error'`, `f.orders` equals `[]` |
-| `running again after a failure plans only the failed run` | `const undo = failPlanWrite(f, [1])`; run; `undo()`; `sent.length = 0`; run again | second result `'sent'`; `orderCount(f, 1)` 2 and `age(f, 1)` 4; `orderCount(f, 2)` still 2 and `age(f, 2)` still 4; `sent` equals `['T  TSLA']` |
-| `two pipelines at once plan each run once` | `await Promise.all([runMorningPipeline(deps), runMorningPipeline(deps)])` | both results `'sent'`; `f.orders.length` 4; `age(f, 1)` 4 and `age(f, 2)` 4; `[...sent].sort()` equals `['A  AAPL', 'T  TSLA']` |
-| `a run already planned today is not touched when the close fetch fails later` | run once; `sent.length = 0`; run again with `fetchLastClose: async () => { throw new Error('yahoo down') }` | second result `'sent'`; `sent` equals `[]`; `f.notifications.length` unchanged; `f.orders.length` 4 |
+| `running again after a failure plans only the failed run` | `const undo = failPlanWrite(f, [1])`; run; `undo()`; `sent.length = 0`; run again | second result `'sent'`; `orderCount(f, 1)` 2 and `age(f, 1)` 4; `orderCount(f, 2)` still 2 and `age(f, 2)` still 4; `sent` equals `['T  TSLA', SKIP(2, 'AAPL')]`; the last notification matches `{ runId: 2, chatId: 'c1', text: SKIP(2, 'AAPL') }`; `console.log` (spied) called with `'morning run skipped, already planned today:', { runId: 2, ticker: 'AAPL' }` |
+| `two pipelines at once plan each run once` | `await Promise.all([runMorningPipeline(deps), runMorningPipeline(deps)])` | both results `'sent'`; `f.orders.length` 4; `age(f, 1)` 4 and `age(f, 2)` 4; `[...sent].sort()` equals `['A  AAPL', 'T  TSLA', SKIP(1, 'TSLA'), SKIP(2, 'AAPL')].sort()` (each run planned once and skipped once, through the in-lock check) |
+| `a pipeline run that skips every run returns sent and tells each run once` | run once; `sent.length = 0`; run again with `fetchLastClose: async () => { throw new Error('yahoo down') }` (the pre-fetch check must leave before it is called) | second result `'sent'`; `sent` equals `[SKIP(1, 'TSLA'), SKIP(2, 'AAPL')]`; `f.notifications.length` grew by 2; `f.orders.length` 4 |
+| `a skipped run counts as completed while another run fails` | `failPlanWrite(f, [1])`; run; `sent.length = 0`; run again (still failing) | second result `'sent'`, not `'data-error'`; `sent` equals `[RUN_ERR(1, 'TSLA'), SKIP(2, 'AAPL')]` |
+| `the skip notice is rendered in Korean and recorded for the web with no chat` | `digestLang: 'ko'`, `allowedChatIds: []`; run twice | the last two notifications equal, as `[runId, chatId, text]`: `[1, 'web', 'ℹ️ 런 #1 TSLA: 오늘 주문이 이미 계획되어 있어 다시 계획하지 않았습니다.']` and `[2, 'web', 'ℹ️ 런 #2 AAPL: 오늘 주문이 이미 계획되어 있어 다시 계획하지 않았습니다.']` |
 | `a failing stale roll does not stop the morning` | `f.repos.orderRepo.listOpenBefore = async () => { throw new Error('db-down') }` | result `'sent'`; `f.orders.length` 4; `sent` equals `['T  TSLA', 'A  AAPL']`; `errors` called with `'stale roll failed:', 'Error: db-down'` |
+| `a failure outside any run sends one global warning and rejects` | `f.repos.runRepo.list = async () => { throw new Error('db-down') }` | `await expect(runMorningPipeline(deps)).rejects.toThrow('db-down')`; `sent` equals `[PIPE_ERR]`; `f.notifications` holds one row matching `{ runId: null, chatId: 'c1', text: PIPE_ERR }`; `f.orders` equals `[]`; `errors` called with `'morning pipeline failed:', 'Error: db-down'` |
+| `a throwing cross-check is reported the same way, on the web with no chat, in Korean` | `crossCheck: async () => { throw new Error('cc-down') }`, `allowedChatIds: []`, `digestLang: 'ko'` | rejects with `'cc-down'`; `f.notifications` holds one row: `runId` `null`, `chatId` `'web'`, text `'아침 파이프라인 오류 — 런을 하나도 계획하지 못하고 중단되었습니다. 서버 로그를 확인한 뒤 아침 파이프라인을 다시 실행하세요.'` |
+| `a global warning that cannot be delivered does not mask the error` | `runRepo.list` throws `Error('db-down')`; `notificationRepo.insert` and `send` both throw `Error('also-down')` | rejects with `'db-down'` |
 
 `apps/server/test/db-day-plan.test.ts` — `describeIf` + `beforeAll` as in `apps/server/test/db.test.ts:14-23`; imports `emptyState` and `type RunState` from `@st/core`, `type NewOrder` from `../src/domain/repo-types`:
 
@@ -455,10 +472,12 @@ test('a failing state write rolls the orders back', async () => {
 })
 ```
 
+In `apps/server/test/http-orders.test.ts`, describe `http trigger`, add `trigger morning answers 500 when the pipeline rejects` (this pins the path the web error note relies on; it passes before any change): `deps.triggerMorning = async () => { throw new Error('boom') }`; spy `console.error` (Hono's default handler logs the error); `POST /api/trigger/morning` with auth → `res.status` 500.
+
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun test apps/server/test/day-failures.test.ts apps/server/test/db-day-plan.test.ts`
-Expected: FAIL — `saveStateWithOrders` is not a function in the DB tests; in `day-failures.test.ts` `failPlanWrite` has nothing to wrap, the pipeline rejects with `bad-params` / `db-down`, the second run doubles the orders (4 per run) and ages to 5.
+Expected: FAIL — `saveStateWithOrders` is not a function in the DB tests; in `day-failures.test.ts` `failPlanWrite` has nothing to wrap, the pipeline rejects with `bad-params` / `db-down`, the second run doubles the orders (4 per run) and ages to 5, no skip notice or global warning is sent.
 
 - [ ] **Step 3: Add the plan write**
 
@@ -468,21 +487,23 @@ Expected: FAIL — `saveStateWithOrders` is not a function in the DB tests; in `
 - `test/day.test.ts` `makeRepos`: the same method on `bucketRepo`; `satisfies DayRepoSurface`; the `_day` pin compares against `DayRepoSurface`. The two run-lock tests must pass unchanged (they patch `bucketRepo.saveState` and `orderRepo.insertMany`, which the fake still calls).
 - `repo-surface-types.test.ts`: `export type _realDay = Expect<IsNever<ArityMismatches<ReturnType<typeof getRepos>, DayRepoSurface>>>`.
 
-- [ ] **Step 4: Add the warning copy** (`warn-run-error` and `digest.warn-run-error`, Global Constraints).
+- [ ] **Step 4: Add the copy** — `warn-pipeline-error`, `warn-run-error`, `run-already-planned` and their three `digest.*` mirrors (text and positions in Global Constraints).
 
-- [ ] **Step 5: Restructure the per-run loop in `runMorningPipeline`**
+- [ ] **Step 5: Restructure `runMorningPipeline`**
 
 - `DayDeps.repos` becomes `DayRepoSurface`.
+- Outer catch: the whole body of `runMorningPipeline` runs inside one `try` (simplest: move today's body into a module-level function and `return await` it). On a throw: the `morning pipeline failed:` log, `await notify(deps, null, t('warn-pipeline-error', deps.digestLang), 'pipeline-error')`, then `throw e`. Nothing inside the per-run `try` below can reach this catch.
 - Stale roll: wrap `rollStale` in a `try`; on a throw log `stale roll failed:` and use `{}`.
 - Everything done for one run is inside one `try`, in this order:
-  1. Guard: `(await deps.repos.orderRepo.listForRun(run.id, today)).length > 0` → the run is already planned: `numCompleted++`, next run. No fetch, no notice.
+  1. Guard: `(await deps.repos.orderRepo.listForRun(run.id, today)).length > 0` → the run is already planned (see below), next run. No fetch.
   2. Close fetch, sanity check and `persistClose` exactly as today (the data-error path keeps its own `numFailed++` and warning).
-  3. Inside `withRunLock`: the same guard again first (already planned → same outcome as 1); then `loadState`, `advanceDay`, `computeOrders`, the `unconfirmed` notice, and **one** `deps.repos.bucketRepo.saveStateWithOrders(run.id, state, rows)` in place of `insertMany` + `saveState`.
+  3. Inside `withRunLock`: the same guard again first (already planned → leave the lock, then the same outcome as 1); then `loadState`, `advanceDay`, `computeOrders`, the `unconfirmed` notice, and **one** `deps.repos.bucketRepo.saveStateWithOrders(run.id, state, rows)` in place of `insertMany` + `saveState`.
   4. `renderDigest` and the digest `notify`; `numCompleted++`.
+- Already planned, one shared code path for both guards, run outside the lock: the `morning run skipped, already planned today:` log, `await notify(deps, run.id, t('run-already-planned', lang, { id: run.id, ticker: run.ticker }), 'already-planned')`, `numCompleted++`.
 - `catch (e)`: the `morning run failed:` log, `numFailed++`, `await notify(deps, run.id, t('warn-run-error', lang, { id: run.id, ticker: run.ticker }), 'run-error')`.
 - The return expression is unchanged. Keep `day.ts` under ~300 lines: move the per-run body into a module-level function if the loop gets hard to read.
 
-- [ ] **Step 6: Document the trigger** — `README.md`, after the manual-trigger line: it is safe to repeat; a run that already has orders for today is not planned again, so after a failed-run warning it plans only that run.
+- [ ] **Step 6: Document the trigger** — `README.md`, after the manual-trigger line: it is safe to repeat; a run that already has orders for today is not planned again and gets a notice saying so, so after a failed-run warning it plans only that run. If the pipeline stops before any run, it sends a global warning and the trigger answers 500.
 
 - [ ] **Step 7: Run to verify they pass**
 
@@ -492,8 +513,8 @@ Expected: PASS, 0 fail — including the unchanged `day.test.ts` (run-lock tests
 - [ ] **Step 8: Commit**
 
 ```bash
-git add apps/server/src/domain/repo-types.ts apps/server/src/db/repos.ts apps/server/src/pipeline/day.ts packages/telegram/src/i18n.ts apps/web/src/i18n/en.json apps/web/src/i18n/ko.json apps/server/test/http-fakes.ts apps/server/test/day.test.ts apps/server/test/repo-surface-types.test.ts apps/server/test/day-failures.test.ts apps/server/test/db-day-plan.test.ts README.md AGENTS.md
-git commit -m "fix: isolate each run in the morning pipeline, write its plan atomically and skip runs already planned today (#87)"
+git add apps/server/src/domain/repo-types.ts apps/server/src/db/repos.ts apps/server/src/pipeline/day.ts packages/telegram/src/i18n.ts apps/web/src/i18n/en.json apps/web/src/i18n/ko.json apps/server/test/http-fakes.ts apps/server/test/day.test.ts apps/server/test/repo-surface-types.test.ts apps/server/test/day-failures.test.ts apps/server/test/db-day-plan.test.ts apps/server/test/http-orders.test.ts README.md AGENTS.md
+git commit -m "fix: isolate each run in the morning pipeline, write its plan atomically, skip runs already planned today and warn when the pipeline stops (#87)"
 ```
 
 ---
@@ -804,11 +825,11 @@ Reset `first` / `older` to these values in `beforeEach`, then `installFetchStub(
 | `a failed Show older keeps the loaded rows and can be retried` | `older.status = 500`, click `Show older`, flush; set `older.status = 200`, click `Show older`, flush | after the failure: `role="alert"` present, `previews()` still 3 items, the button still there; after the retry: 4 items, no alert |
 | `renders its chrome in Korean` | `localStorage.setItem('st-lang', 'ko')`, render, flush | text contains `시스템 알림` and `이전 알림 더 보기`; `cells(2)[1]` is `'시스템'` |
 
-`apps/web/src/pages/RunsList.test.tsx` — change the `beforeEach` stub to the routes below (module-level `let noticeGets = 0; let page = …`, reset in `beforeEach`), keep the existing test, add two:
+`apps/web/src/pages/RunsList.test.tsx` — change the `beforeEach` stub to the routes below (module-level `let noticeGets = 0; let page = …`, reset in `beforeEach`), keep the existing test, add three:
 
 ```ts
 installFetchStub([
-  { method: 'POST', url: '/api/trigger/morning', json: { result: '"conflict"' } },
+  trigger, // module-level: { method: 'POST', url: '/api/trigger/morning', status: 200, json: { result: '"conflict"' } }, reset in beforeEach
   { url: '/api/notifications', get json() { noticeGets += 1; return page; } },
   { url: '/api/runs', json: [RUN] },
 ]);
@@ -816,6 +837,7 @@ installFetchStub([
 
 - `shows the System notices panel under the runs table`: `page` holds one global entry with text `'16:05 fill capture reminder'`; text contains `System notices` and `16:05 fill capture reminder`; `noticeGets` is 1.
 - `reloads the notices after the morning trigger`: after the first render set `page` to hold one more global entry `{ id: 2, …, text: 'Calendar conflict — check manually' }`, click the button with text `Run morning pipeline`, flush; `noticeGets` is 2 and the text contains `Calendar conflict — check manually`.
+- `a failed morning trigger shows the error and still reloads the notices`: `trigger.status = 500`; set `page` to hold a global entry whose text is the `warn-pipeline-error` copy (Global Constraints); click `Run morning pipeline`, flush; an element with `role="alert"` contains `http-500`; no element with `role="status"`; `noticeGets` is 2 and the text contains `Morning pipeline error — the pipeline stopped before any run was planned.`
 
 - [ ] **Step 2: Run to verify they fail**
 
