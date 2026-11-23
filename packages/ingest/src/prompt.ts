@@ -15,7 +15,7 @@ Output ONE fill per table row that has 체결수량 > 0:
 - orderType: the 주문구분 text of the row, copied EXACTLY as shown, e.g. "매도/보통(지정가)", "매도/STOP(시장가)", "매도/STOP(지정가)", "매도/LOC", "정정(매도)". Keep the parentheses and slashes; an amended order shows "정정(매도)" or "정정(매수)".
 - orderPrice: the 주문단가 of the row (the price the order was placed at, NOT 체결단가), e.g. "64.0700". A market order may show "0.0000": copy it as is.
 - orderedShares: the 주문수량 of the row (NOT 체결수량).
-- Omit orderType, orderPrice and orderedShares when their column is not in the table (the 기간체결 view usually has none of them). Never guess them.
+- Omit orderType, orderPrice and orderedShares when their column is not in the table. The 기간체결 view has a 주문구분 column that shows only a bare "매수" or "매도": copy it as shown into orderType, and omit orderPrice and orderedShares there because that view has no 주문단가 or 주문수량 column. Never guess them.
 - date: the TRADE date of each fill, as "YYYY-MM-DD".
   - 당일체결 (single-day) view: rows carry no date — take the 일자 (date) field in the top filter bar (e.g. "일자 2026-11-13"). It is usually already "YYYY-MM-DD": copy it verbatim and use the SAME date for every fill.
   - 기간체결 (date-range) view: each row carries its own date(s) — use the row's TRADE date (체결일 / 주문일 / "Trade Date"). NEVER output the SETTLEMENT date (결제일 / 정산일 / "Settlement Date"): it is a later, different date. If a row shows two dates and the labels are unclear, the trade date is the EARLIER one. Ignore the filter-bar 일자 in this view.

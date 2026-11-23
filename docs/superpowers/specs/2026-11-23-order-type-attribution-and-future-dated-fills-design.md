@@ -251,6 +251,8 @@ the order left after step 5. In A, C and D:
   sell can be placed below the planned target). If the bucket has several, the
   one sized like 주문수량, then the one sized like the fill, then the lowest id.
 - Otherwise the one `matchForcedLeg` picks, as today. None means nothing flips.
+  (Amended 2026-11-24, see Amendments: with a known type and no order of that kind, nothing
+  flips; `matchForcedLeg` applies to an unknown type only.)
 
 This matters for the sibling cancel: every other open sell-side order of the
 emptied bucket is announced as "pull it at your broker", so the order that
@@ -474,3 +476,16 @@ and is never a day ahead of New York's date. The premarket sample (ordered
 10. **The manual-fill dialog defaults to New York's date**, not the browser's.
 11. **A typed fill flips its bucket's order of that kind even when the price does
     not fit**, so the order that filled is not announced as one to pull.
+
+## Amendments after the whole-branch review (2026-11-24)
+
+- A typed fill never flips an order of another kind: with no pool order of the fill's kind in
+  the decided bucket nothing flips, so every open leg of an emptied bucket is cancelled and
+  announced. (Section 4 said "Otherwise the one `matchForcedLeg` picks"; that now applies to an
+  unknown type only.)
+- The dry run is failure-tolerant: a failing read is logged and means "no row needs a bucket",
+  at capture and in the pending list; the screenshot is stored before the dry run.
+- A row dated after today is never flagged as needing a bucket; the date warning comes first.
+- The choose-bucket copy no longer claims that several buckets are possible.
+- The two numeric order values are bounded in the extractor (1 to 1,000,000,000 shares; at most
+  9 integer digits of price).

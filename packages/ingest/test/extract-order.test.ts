@@ -47,12 +47,16 @@ describe('extract order columns', () => {
     ]);
   });
 
-  test('a date-range row has no order keys', async () => {
-    const [fill] = await fillsOf([SELL]);
-    expect(fill).toEqual({ side: 'sell', ticker: 'SOXL', shares: 1, price: '43.2500', date: '2026-11-23' });
-    expect('orderType' in fill).toBe(false);
+  test('a date-range row carries the bare order type and nothing else', async () => {
+    const [fill] = await fillsOf([{ ...SELL, orderType: '매도' }]);
+    expect(fill).toEqual({ side: 'sell', ticker: 'SOXL', shares: 1, price: '43.2500', date: '2026-11-23', orderType: '매도' });
     expect('orderPrice' in fill).toBe(false);
     expect('orderedShares' in fill).toBe(false);
+  });
+
+  test('a row with no order columns at all has no order keys', async () => {
+    const [fill] = await fillsOf([SELL]);
+    expect(fill).toEqual({ side: 'sell', ticker: 'SOXL', shares: 1, price: '43.2500', date: '2026-11-23' });
   });
 
   test('thousands separators', async () => {

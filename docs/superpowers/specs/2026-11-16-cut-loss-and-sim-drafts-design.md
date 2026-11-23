@@ -211,6 +211,15 @@ keeps a fat-fingered `99.9` from being indistinguishable from a market sell.
 
 ### Booking a stop fill
 
+> **Superseded 2026-11-23 (#74).** Everything this section says about how a sell fill is
+> matched is replaced by `2026-11-23-order-type-attribution-and-future-dated-fills-design.md`,
+> section 4: the rungs table (`matchSellOrder` and the fallback of `pickSellBucket`), what rung 1
+> does when no bucket can cover the fill, the tie-break, the attribution rule values and the
+> attribution notice copy (including `sell-attributed-why-market`, which no longer exists).
+> Attribution now rests on the broker's order type, and the operator chooses the bucket whenever
+> the tracker cannot tell. Not superseded: the pool, gate and admissible (fit) terms, and
+> "Sibling cancel". The text below is kept as history.
+
 `apps/server/src/domain/booking.ts`, sell path. Before cut-loss the chain was:
 an open `sell_loc` with **exact** `limitPrice === price`, then an open
 `market_sell` for the date ignoring price, then the fallback (lowest non-empty
@@ -244,12 +253,6 @@ The rungs, first hit wins:
 | 3 | Nearest price | admissible `sell_loc` and `stop_sell`, together | smallest `abs(price - limitPrice)`; on an equal distance `sell_loc` before `stop_sell`, then the lowest `bucketIdx` |
 | 4 | Market sell | admissible `market_sell` | lowest `bucketIdx` |
 | 5 | Fallback | no order matched | the lowest non-empty bucket with enough shares, no order flipped; none: `no-bucket-for-sell` |
-
-> **Superseded 2026-11-23 (#74).** The rungs above (`matchSellOrder` and the fallback of
-> `pickSellBucket`) are replaced by attribution on the broker's order type, with the
-> operator choosing the bucket whenever the tracker cannot tell. See
-> `2026-11-23-order-type-attribution-and-future-dated-fills-design.md`, section 4. The pool,
-> gate and admissible terms above are unchanged.
 
 Rung 1 reads the exact-price legs through the gate only to choose among them: an
 exact-price print whose bucket cannot cover it still matches and fails as
