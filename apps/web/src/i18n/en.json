@@ -67,7 +67,7 @@
   "digest.skip": "SKIP",
   "digest.start": "ok",
   "digest.trade-date": "Trade date: {date}  Last close: {price} ({lastDate})",
-  "digest.unconfirmed": "⚠️ {count} unconfirmed orders from {date}",
+  "digest.unconfirmed": "⚠️ Unconfirmed orders from {date}: {count}",
   "digest.warn-conflict": "Calendar conflict — local and remote calendars disagree. No orders today, please check manually",
   "digest.warn-data-error": "Market data error — run #{id} {ticker}: last close unavailable or stale. Today's orders for this run could not be computed.",
   "digest.warn-pipeline-error": "Morning pipeline error — the pipeline stopped before any run was planned. Check the server log, then run the morning pipeline again.",

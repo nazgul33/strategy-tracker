@@ -29,8 +29,29 @@ describe('migration indexes', () => {
       /CREATE INDEX `orders_run_trade_date_idx` ON `orders` \(`run_id`,`trade_date`\)/,
       /CREATE INDEX `orders_trade_date_idx` ON `orders` \(`trade_date`\)/,
       /CREATE INDEX `sim_runs_draft_created_idx` ON `sim_runs` \(`draft`,`created_at`\)/,
-      /CREATE INDEX `sim_days_sim_run_idx` ON `sim_days` \(`sim_run_id`\)/,
+      /CREATE INDEX `sim_days_sim_run_trade_idx` ON `sim_days` \(`sim_run_id`,`trade_date`\)/,
+      /DROP INDEX `sim_days_sim_run_idx` ON `sim_days`/,
     ]
     for (const re of want) expect(all).toMatch(re)
+  })
+})
+
+// The backfill in 0010 is hand-appended, like 0007's: regenerating the migration drops it,
+// and without it the first digest after deploy names every order that ever went stale.
+describe('migration 0010 SQL', () => {
+  const migrationsDir = fileURLToPath(new URL('../db/migrations/', import.meta.url))
+
+  test('there is exactly one 0010 migration', () => {
+    expect([...new Bun.Glob('0010_*.sql').scanSync({ cwd: migrationsDir })]).toHaveLength(1)
+  })
+
+  test('marks every already-stale order as reported, after the column exists', async () => {
+    const [file] = [...new Bun.Glob('0010_*.sql').scanSync({ cwd: migrationsDir })].sort()
+    expect(file).toBeDefined()
+    const chunks = (await Bun.file(migrationsDir + file).text()).split('--> statement-breakpoint').map((c) => c.trim())
+    const add = chunks.findIndex((c) => /ALTER TABLE `orders` ADD `reported_at` timestamp;/.test(c))
+    const backfill = chunks.findIndex((c) => /UPDATE\s+`orders`\s+SET\s+`reported_at`\s*=\s*NOW\(\)\s+WHERE\s+`status`\s*=\s*'stale'/.test(c))
+    expect(add).toBeGreaterThan(-1)
+    expect(backfill).toBeGreaterThan(add)
   })
 })

@@ -33,6 +33,7 @@ export function makeFakes() {
   const runRepo = {
     async list() { return [...runs] },
     async get(id: number) { return runs.find((r) => r.id === id) ?? null },
+    async getMany(ids: number[]) { return runs.filter((r) => ids.includes(r.id)) },
     async create(input) {
       const id = runIdSeq++
       if (input.initialRunState) states.set(id, input.initialRunState)
@@ -53,7 +54,7 @@ export function makeFakes() {
     },
   } satisfies HttpRepoSurface['runRepo']
   const orderRepo = {
-    async insertMany(os: NewOrder[]) { for (const o of os) orders.push({ id: orders.length + 1, ...o, skipReason: null, cancelReason: null }) },
+    async insertMany(os: NewOrder[]) { for (const o of os) orders.push({ id: orders.length + 1, ...o, skipReason: null, cancelReason: null, reportedAt: null }) },
     async listForDate(date: string) { return orders.filter((o) => o.tradeDate === date) },
     async markStale(date: string) { let c = 0; for (const o of orders) if (o.status === 'open' && o.tradeDate < date) { o.status = 'stale'; c++ } return c },
     async get(id: number) { return orders.find((x) => x.id === id) ?? null },
@@ -61,7 +62,6 @@ export function makeFakes() {
       const o = orders.find((x) => x.id === id)
       if (o) { o.status = status; if (cancelReason !== undefined) o.cancelReason = cancelReason }
     },
-    async listOpenBefore(date: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < date).map((o) => ({ ...o })) },
     async listForRun(runId: number, date?: string) {
       let out = orders.filter((o) => o.runId === runId)
       if (date) out = out.filter((o) => o.tradeDate === date)
@@ -70,6 +70,8 @@ export function makeFakes() {
     async listForRunFrom(runId: number, fromDate: string) {
       return orders.filter((o) => o.runId === runId && o.tradeDate >= fromDate).sort((a, b) => a.id - b.id)
     },
+    async listUnreportedStale(runId: number) { return orders.filter((o) => o.runId === runId && o.status === 'stale' && o.reportedAt === null).sort((a, b) => a.id - b.id) },
+    async markReported(ids: number[]) { for (const o of orders) if (ids.includes(o.id)) o.reportedAt = FAKE_CREATED_AT },
   } satisfies HttpRepoSurface['orderRepo']
   const fillRepo = {
     async insert(f) { fills.push({ id: fills.length + 1, ...f }) },

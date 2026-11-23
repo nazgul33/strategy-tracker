@@ -149,7 +149,7 @@ describe('broadcastNotice', () => {
 })
 
 describe('broadcastNotice result', () => {
-  async function failedOf(allowed: string[], fail: Parameters<typeof harness>[1], text: Parameters<typeof broadcastNotice>[2] = 'hi') {
+  async function resultOf(allowed: string[], fail: Parameters<typeof harness>[1], text: Parameters<typeof broadcastNotice>[2] = 'hi') {
     const h = harness(allowed, fail)
     const errors = spyOn(console, 'error').mockImplementation(() => {})
     try {
@@ -157,24 +157,36 @@ describe('broadcastNotice result', () => {
     } finally { errors.mockRestore() }
   }
 
-  test('all ok: no failure', async () => {
-    expect(await failedOf(['a', 'b'], {})).toEqual({ failed: 0 })
+  test('all ok: every chat recorded', async () => {
+    expect(await resultOf(['a', 'b'], {})).toEqual({ failed: 0, recorded: 2 })
   })
 
-  test('one failing send counts 1', async () => {
-    expect(await failedOf(['a', 'b'], { send: ['a'] })).toEqual({ failed: 1 })
+  test('one failing send still counts its row', async () => {
+    expect(await resultOf(['a', 'b'], { send: ['a'] })).toEqual({ failed: 1, recorded: 2 })
   })
 
-  test('insert and send failing for one chat count 2', async () => {
-    expect(await failedOf(['a', 'b'], { insert: ['a'], send: ['a'] })).toEqual({ failed: 2 })
+  test('insert and send failing for one chat', async () => {
+    expect(await resultOf(['a', 'b'], { insert: ['a'], send: ['a'] })).toEqual({ failed: 2, recorded: 1 })
   })
 
-  test('a failing web-only insert counts 1', async () => {
-    expect(await failedOf([], { insert: ['web'] })).toEqual({ failed: 1 })
+  test('a failing web-only insert records nothing', async () => {
+    expect(await resultOf([], { insert: ['web'] })).toEqual({ failed: 1, recorded: 0 })
   })
 
-  test('one failing part of two counts 1', async () => {
-    expect(await failedOf(['a', 'b'], { send: ['a:p1'] }, PARTS)).toEqual({ failed: 1 })
+  test('one failing part of two', async () => {
+    expect(await resultOf(['a', 'b'], { send: ['a:p1'] }, PARTS)).toEqual({ failed: 1, recorded: 2 })
+  })
+
+  test('no allowed chat: the web row counts', async () => {
+    expect(await resultOf([], {})).toEqual({ failed: 0, recorded: 1 })
+  })
+
+  test('every insert failing records nothing even when the sends go out', async () => {
+    expect(await resultOf(['a', 'b'], { insert: ['a', 'b'] })).toEqual({ failed: 2, recorded: 0 })
+  })
+
+  test('every send failing still records every row', async () => {
+    expect(await resultOf(['a', 'b'], { send: ['a', 'b'] })).toEqual({ failed: 2, recorded: 2 })
   })
 })
 

@@ -172,7 +172,8 @@ function makeCaptureFakes(opts: FakeOpts = {}) {
     listForRunFrom: async (_runId: number, _fromDate: string) => [] as OrderRecord[],
     markStale: async (_date: string) => 0,
     setStatus: async (_id: number, _status: OrderStatus, _cancelReason?: string) => {},
-    listOpenBefore: async (_date: string) => [] as OrderRecord[],
+    listUnreportedStale: async (_runId: number) => [] as OrderRecord[],
+    markReported: async (_ids: number[]) => {},
   };
   const fillRepo = {
     insert: async (row: NewFill) => {
@@ -711,7 +712,7 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
       p.side = 'sell';
       // an exact-price target on a bucket nothing is held in: the sell match is loud, not silent
       const orders: OrderRecord[] = [
-        { id: 1, runId: 1, tradeDate: '2026-11-10', kind: 'sell_loc', bucketIdx: 0, limitPrice: parseUsd('180.50'), shares: 10, status: 'open', skipReason: null, cancelReason: null },
+        { id: 1, runId: 1, tradeDate: '2026-11-10', kind: 'sell_loc', bucketIdx: 0, limitPrice: parseUsd('180.50'), shares: 10, status: 'open', skipReason: null, cancelReason: null, reportedAt: null },
       ];
       h.repos.orderRepo.listForRun = async () => orders;
       h.repos.orderRepo.listForRunFrom = async () => orders;
@@ -907,7 +908,7 @@ describe('capture status and orders', () => {
     await h.handlers.onOrders('777');
     expect(h.sent[0]!.text).toBe('No orders due on 2026-11-10.');
 
-    const base = { bucketIdx: 0, tradeDate: '2026-11-10', status: 'open', skipReason: null, cancelReason: null } as const;
+    const base = { bucketIdx: 0, tradeDate: '2026-11-10', status: 'open', skipReason: null, cancelReason: null, reportedAt: null } as const;
     const orders: OrderRecord[] = [
       { ...base, id: 1, runId: 1, kind: 'buy_loc', limitPrice: parseUsd('170.00'), shares: 10 },
       { ...base, id: 2, runId: 2, kind: 'sell_loc', limitPrice: parseUsd('200.00'), shares: 5 },
@@ -922,7 +923,7 @@ describe('capture status and orders', () => {
 
   test('onOrders tells two runs on the same ticker apart, ordered by run id', async () => {
     const h = makeCapture({ runs: [activeRun(3, 'NVDA'), activeRun(1, 'NVDA')] });
-    const base = { bucketIdx: 0, tradeDate: '2026-11-10', status: 'open', skipReason: null, cancelReason: null } as const;
+    const base = { bucketIdx: 0, tradeDate: '2026-11-10', status: 'open', skipReason: null, cancelReason: null, reportedAt: null } as const;
     const orders: OrderRecord[] = [
       { ...base, id: 1, runId: 3, kind: 'buy_loc', limitPrice: parseUsd('170.00'), shares: 10 },
       { ...base, id: 2, runId: 1, kind: 'sell_loc', limitPrice: parseUsd('200.00'), shares: 5 },
@@ -938,7 +939,7 @@ describe('capture status and orders', () => {
 
   test('onOrders renders the run header in Korean', async () => {
     const h = makeCapture({ runs: [activeRun(1, 'NVDA')], lang: 'ko' });
-    const order: OrderRecord = { id: 1, runId: 1, bucketIdx: 0, kind: 'buy_loc', limitPrice: parseUsd('170.00'), shares: 10, tradeDate: '2026-11-10', status: 'open', skipReason: null, cancelReason: null };
+    const order: OrderRecord = { id: 1, runId: 1, bucketIdx: 0, kind: 'buy_loc', limitPrice: parseUsd('170.00'), shares: 10, tradeDate: '2026-11-10', status: 'open', skipReason: null, cancelReason: null, reportedAt: null };
     h.repos.orderRepo.listForDate = async () => [order];
     await h.handlers.onOrders('777');
     expect(h.sent[0]!.text).toBe('런 #1 NVDA\n#1 buy_loc 10주 @ $170.00');
@@ -946,7 +947,7 @@ describe('capture status and orders', () => {
 
   test('onOrders names a missing run in Korean', async () => {
     const h = makeCapture({ runs: [], lang: 'ko' });
-    const order: OrderRecord = { id: 3, runId: 9, bucketIdx: 0, kind: 'buy_loc', limitPrice: parseUsd('50.00'), shares: 1, tradeDate: '2026-11-10', status: 'open', skipReason: null, cancelReason: null };
+    const order: OrderRecord = { id: 3, runId: 9, bucketIdx: 0, kind: 'buy_loc', limitPrice: parseUsd('50.00'), shares: 1, tradeDate: '2026-11-10', status: 'open', skipReason: null, cancelReason: null, reportedAt: null };
     h.repos.orderRepo.listForDate = async () => [order];
     await h.handlers.onOrders('777');
     expect(h.sent[0]!.text).toBe('런 #9\n#3 buy_loc 1주 @ $50.00');

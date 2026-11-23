@@ -106,7 +106,26 @@ describe('SystemNotices', () => {
   it("a run row links to the run's Notifications tab with the notice id", async () => {
     await render();
     expect(container.querySelector('a[href="#/runs/3?tab=notifications&notice=12"]')!.textContent).toBe('Growth  NVDA');
-    expect(container.querySelector('a[href="#/runs/8?tab=notifications&notice=9"]')).not.toBeNull();
+    expect(container.querySelector('a[href^="#/runs/8"]')).toBeNull();
+  });
+
+  it('a notice whose run is gone expands in place and keeps its run number', async () => {
+    await render();
+    const button = () => container.querySelector('tbody tr:nth-child(3) button') as HTMLButtonElement;
+    const cell = () => container.querySelector('tbody tr:nth-child(3) td:nth-child(3)')!.textContent ?? '';
+    expect(button().textContent).toBe('orphan');
+    expect(button().getAttribute('aria-expanded')).toBe('false');
+    expect(cell()).not.toContain('second line');
+    await click(button());
+    expect(button().getAttribute('aria-expanded')).toBe('true');
+    expect(cell()).toContain('second line');
+    expect(cell()).toContain('Chat: 42');
+    expect(cells(2)[2]).toBe('#8');
+    // the neighbours are untouched: the global row stays collapsed, the live run keeps its link
+    expect(container.querySelector('tbody tr:nth-child(2) button')!.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('a[href="#/runs/3?tab=notifications&notice=12"]')).not.toBeNull();
+    await click(button());
+    expect(cell()).not.toContain('second line');
   });
 
   it('a system row expands in place to its full text and chats, and collapses again', async () => {

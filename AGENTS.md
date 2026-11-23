@@ -36,8 +36,8 @@ apps/server/       drizzle.config.ts package.json tsconfig.json
     sim/sim.ts sim/serialize.ts
     http/app.ts http/auth.ts http/booking-deps.ts http/params.ts http/routes/{runs,fills,pending,corrections,sim,settings,notifications,vision-review}.ts
   db/              README.md
-  db/migrations/   0000_fantastic_thunderbolts.sql … 0009_living_lenny_balinger.sql (+ meta/)
-  test/            *.test.ts per area (booking, rebooking, sell-attribution, sell-matching, sell-bucket-override, http-bucket-override, booking-notifier, broadcast, vision-review, notice-feed, capture-claim, capture-image, corrections, fake-corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, send, calendar-2028, day, day-notices, day-failures, migration-sql, sim, wire, http-*, db*, confirm-keep-order, refreeze-kept, main-boot-order, repo-surface-types) + fake-corrections.ts fake-sim.ts http-fakes.ts booking-fakes.ts bars-fakes.ts sell-fixture.ts type-assert.ts
+  db/migrations/   0000_fantastic_thunderbolts.sql … 0010_eager_tyger_tiger.sql (+ meta/)
+  test/            *.test.ts per area (booking, rebooking, sell-attribution, sell-matching, sell-bucket-override, http-bucket-override, booking-notifier, broadcast, vision-review, notice-feed, capture-claim, capture-image, capture-replies, corrections, fake-corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, send, calendar-2028, day, day-notices, day-failures, day-unconfirmed, migration-sql, sim, wire, http-*, db*, confirm-keep-order, refreeze-kept, main-boot-order, repo-surface-types) + fake-corrections.ts fake-sim.ts http-fakes.ts booking-fakes.ts bars-fakes.ts sell-fixture.ts type-assert.ts
 apps/web/          package.json tsconfig.json index.html vite.config.ts tailwind.config.ts postcss.config.js .gitignore
 apps/web/src/      main.tsx App.tsx style.css api.ts api.sim.ts api.notices.ts api.types.ts autofee.ts defaultcost.ts format.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts priceHistory.ts simconfig.ts simerrors.ts simview.ts usd.ts visionreviewerrors.ts (+ colocated *.test.ts(x))
   testing/{fetchStub,holdFetch,pendingRow,scrollShim,visionReview}.ts   (shared test fixtures, no DOM needed at import time; fetchStub.test.ts)
@@ -58,7 +58,7 @@ scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-sim-drafts.ts e2e-vision
 - `bun run dev` is a pointer, not a server — run `bun run --cwd apps/server dev` (or `bun run --cwd apps/web dev`)
 - `docker compose up` (app listens on 127.0.0.1:8080 by default)
 - E2E smoke (see Test matrix for the scratch DB): `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun scripts/e2e.ts`
-- Drizzle migrations: edit `apps/server/src/db/schema.ts`, then `bun run --cwd apps/server db:generate` (writes SQL + `meta/` snapshots into `apps/server/db/migrations/`). They are applied automatically at server startup (`applyMigrations` in `db/client.ts`, resolves from `process.cwd()` — hence all entry points run from the repo root); `db:migrate` exists for a manual apply.
+- Drizzle migrations: edit `apps/server/src/db/schema.ts`, then `bun run --cwd apps/server db:generate` (writes SQL + `meta/` snapshots into `apps/server/db/migrations/`). They are applied automatically at server startup (`applyMigrations` in `db/client.ts`, resolves from `process.cwd()` — hence all entry points run from the repo root); `db:migrate` exists for a manual apply. Hand-appended statements (the backfills in 0007 and 0010) are pinned in `apps/server/test/migration-sql.test.ts`, because regenerating a migration drops them.
 
 ## Test matrix
 

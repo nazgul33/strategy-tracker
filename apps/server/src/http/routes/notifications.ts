@@ -13,10 +13,9 @@ export function notificationsRouter(deps: HttpDeps): Hono {
     const parsedLimit = rawLimit === undefined ? NOTICE_PAGE_DEFAULT : parseId(rawLimit)
     if (parsedLimit === null) return c.json({ error: 'invalid limit' }, 400)
     const page = await loadNoticePage(deps.repos.notificationRepo, before, Math.min(parsedLimit, NOTICE_PAGE_MAX))
+    const runIds = [...new Set(page.entries.flatMap((e) => (e.runId === null ? [] : [e.runId])))]
     const tickers = new Map<number, string>()
-    if (page.entries.some((e) => e.runId !== null)) {
-      for (const run of await deps.repos.runRepo.list()) tickers.set(run.id, run.ticker)
-    }
+    for (const run of await deps.repos.runRepo.getMany(runIds)) tickers.set(run.id, run.ticker)
     return c.json({
       entries: page.entries.map((e) => ({ ...e, ticker: e.runId === null ? null : (tickers.get(e.runId) ?? null) })),
       nextBefore: page.nextBefore,

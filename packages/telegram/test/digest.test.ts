@@ -42,7 +42,7 @@ describe('digest', () => {
       notices: [{ code: 'unconfirmed', params: { count: 3, date: '2026-11-05' } }],
     }
     const out = renderDigest(run, plan, ctx, 'en').join('\n')
-    expect(out).toContain('⚠️ 3 unconfirmed orders from 2026-11-05')
+    expect(out).toContain('⚠️ Unconfirmed orders from 2026-11-05: 3')
   })
   test('skip reason pairs with string bucket param (legacy stored plans)', () => {
     // The old sell-cap producer wrote params.bucket as String(b.index) while

@@ -24,13 +24,22 @@ export type NoticeText = string | { record: string; send: string[] }
 // so a broadcast's rows stay adjacent in the feed) and then sends it to every allowed chat.
 // With no allowed chat the notice still gets one row (chat id 'web') so a web-only
 // operator sees it. Every failure (insert, or each part's send) is logged
-// and never hides the rest; this function never rejects. It resolves to the number of
-// failed inserts plus failed part sends, so a caller can tell a fully delivered notice.
+// and never hides the rest; this function never rejects. The result tells a caller
+// whether the notice was fully delivered (failed) and whether any copy of it was
+// recorded (recorded), e.g. before it marks what the notice named as reported.
+export interface NoticeResult {
+  /** failed inserts plus part sends that threw */
+  failed: number
+  /** notification rows written; 0 means no copy of the notice exists */
+  recorded: number
+}
+
 export async function broadcastNotice<R extends number | null>(
   deps: BroadcastDeps<R>, runId: R, text: NoticeText, log: NoticeLog,
-): Promise<{ failed: number }> {
+): Promise<NoticeResult> {
   const { record, send } = typeof text === 'string' ? { record: text, send: [text] } : text
   let failed = 0
+  let recorded = 0
   const fail = (chatId: string, e: unknown, part?: number) => {
     failed++
     console.error(
@@ -43,14 +52,16 @@ export async function broadcastNotice<R extends number | null>(
   if (deps.allowedChatIds.length === 0) {
     try {
       await deps.notificationRepo.insert({ runId, chatId: WEB_ONLY_CHAT_ID, text: record })
+      recorded++
     } catch (e) {
       fail(WEB_ONLY_CHAT_ID, e)
     }
-    return { failed }
+    return { failed, recorded }
   }
   for (const chatId of deps.allowedChatIds) {
     try {
       await deps.notificationRepo.insert({ runId, chatId, text: record })
+      recorded++
     } catch (e) {
       fail(chatId, e)
     }
@@ -64,5 +75,5 @@ export async function broadcastNotice<R extends number | null>(
       }
     }
   }
-  return { failed }
+  return { failed, recorded }
 }

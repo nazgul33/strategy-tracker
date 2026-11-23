@@ -54,7 +54,7 @@ export interface NotificationRepo {
 export type OrderKind = 'buy_loc' | 'sell_loc' | 'market_sell' | 'stop_sell'
 export type OrderStatus = 'open' | 'filled' | 'stale' | 'cancelled'
 
-export interface OrderRecord extends OrderRow { kind: OrderKind; status: OrderStatus; skipReason: string | null; cancelReason: string | null }
+export interface OrderRecord extends OrderRow { kind: OrderKind; status: OrderStatus; skipReason: string | null; cancelReason: string | null; reportedAt: string | null }
 
 export interface NewOrder { runId: number; tradeDate: ISODate; kind: OrderKind; bucketIdx: number; limitPrice: bigint; shares: number; status: OrderStatus }
 
@@ -64,9 +64,12 @@ export interface OrderRepo {
   listForDate(date: string): Promise<OrderRecord[]>
   listForRun(runId: number, date?: string): Promise<OrderRecord[]>
   listForRunFrom(runId: number, fromDate: string): Promise<OrderRecord[]>
-  listOpenBefore(date: string): Promise<OrderRecord[]>
   markStale(date: string): Promise<number>
   setStatus(id: number, status: OrderStatus, cancelReason?: string): Promise<void>
+  /** The run's stale orders no recorded digest has named yet, lowest id first. */
+  listUnreportedStale(runId: number): Promise<OrderRecord[]>
+  /** Stamps reported_at on these orders; an empty list writes nothing. */
+  markReported(ids: number[]): Promise<void>
 }
 
 export type PendingStatus = 'pending' | 'confirmed' | 'rejected'
@@ -102,6 +105,8 @@ export interface NewRun {
 export interface RunRepo {
   list(): Promise<RunRow[]>
   get(id: number): Promise<RunRow | null>
+  /** The runs with these ids, in no particular order; unknown ids are skipped; an empty list runs no query. */
+  getMany(ids: number[]): Promise<RunRow[]>
   create(input: NewRun): Promise<number>
   updateStatus(id: number, status: RunStatus): Promise<void>
   updateStatusMany(ids: number[], from: RunStatus[], to: RunStatus): Promise<number>

@@ -32,14 +32,15 @@ function makeRepos() {
     },
   }
   const orderRepo = {
-    async insertMany(os: NewOrder[]) { for (const o of os) orders.push({ id: orderSeq++, ...o, skipReason: null, cancelReason: null }) },
+    async insertMany(os: NewOrder[]) { for (const o of os) orders.push({ id: orderSeq++, ...o, skipReason: null, cancelReason: null, reportedAt: null }) },
     async listForDate(d: string) { return orders.filter((o) => o.tradeDate === d) },
     async listForRun(runId: number, d?: string) { return orders.filter((o) => o.runId === runId && (d === undefined || o.tradeDate === d)) },
     async listForRunFrom(runId: number, fromDate: string) { return orders.filter((o) => o.runId === runId && o.tradeDate >= fromDate).sort((a, b) => a.id - b.id) },
     async get(id: number) { return orders.find((x) => x.id === id) ?? null },
     async markStale(d: string) { let c = 0; for (const o of orders) if (o.status === 'open' && o.tradeDate < d) { o.status = 'stale'; c++ } return c },
     async setStatus(id: number, s: OrderStatus, _cancelReason?: string) { const o = orders.find((x) => x.id === id); if (o) o.status = s },
-    async listOpenBefore(d: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < d) },
+    async listUnreportedStale(runId: number) { return orders.filter((o) => o.runId === runId && o.status === 'stale' && o.reportedAt === null).sort((a, b) => a.id - b.id) },
+    async markReported(ids: number[]) { for (const o of orders) if (ids.includes(o.id)) o.reportedAt = FAKE_CREATED_AT },
   }
   const notificationRepo = {
     async insert(n: NewNotification) { notifications.push({ id: notifications.length + 1, sentAt: FAKE_CREATED_AT, ...n }) },
@@ -358,9 +359,9 @@ describe('day pipeline', () => {
     }
     const r = await runMorningPipeline(deps)
     expect(r).toBe('sent')
-    expect(sends.some((s) => s.includes('unconfirmed orders from 2026-11-03'))).toBe(true)
-    // count 2
-    expect(sends.some((s) => s.includes('⚠️ 2 unconfirmed'))).toBe(true)
+    const digest = sends.find((s) => /unconfirmed/i.test(s))!
+    const lines = digest.split('\n').filter((l) => /unconfirmed/i.test(l))
+    expect(lines).toEqual(['⚠️ Unconfirmed orders from 2026-11-03: 1', '⚠️ Unconfirmed orders from 2026-11-05: 1'])
     // seeded orders now stale
     const staleCount = f.orders.filter((o) => o.status === 'stale').length
     expect(staleCount).toBe(2)

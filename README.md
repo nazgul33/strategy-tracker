@@ -153,7 +153,8 @@ Only chat IDs on the allowlist get any response (`packages/telegram/src/bot.ts`)
 - The vision model extracts the fills; each becomes a pending fill with a `Yes`/`No` inline
   keyboard (except when its trade date had to be substituted: that prompt has no buttons and
   points to the web Pending view). `Yes` books it (lowest empty bucket for buys), `No` rejects. Nothing is booked without
-  that tap. Re-sending the identical photo is deduped by content hash.
+  that tap. Re-sending the identical photo is deduped by content hash. A screenshot the vision model
+  cannot read is answered with "Could not read fills…", and that reply is also listed under System notices.
 - A fill-capture reminder goes out at 16:05 ET on trading days (nothing on weekends/holidays).
 
 
@@ -168,6 +169,8 @@ only — nothing on weekends:
 | 16:05 Mon–Fri | Fill-capture reminder (skipped on market holidays). |
 | Dec 1, 08:00 | Calendar-maintenance nudge (see caveat below). |
 
+The digest carries one "⚠️ Unconfirmed orders from <date>: N" line per trade date, oldest first, naming every order left unresolved that no recorded digest has named yet, each exactly once; if a morning's digest could not be recorded, or the orders could not be marked afterwards, they are named again the next morning.
+
 Manual trigger for the morning pipeline: `POST /api/trigger/morning` (authenticated). It is safe to
 repeat: a run that already has orders for today is not planned again and gets a notice saying so, so
 after a failed-run warning it plans only that run. If the pipeline stops before any run is planned, it
@@ -175,7 +178,7 @@ sends a global warning and the trigger answers 500.
 
 ## Calendar caveat (NYSE data)
 
-The NYSE holiday/early-close calendar is committed **static data covering 2025–2027**
+The NYSE holiday/early-close calendar is committed **static data covering 2025–2028**
 (`NYSE_YEARS` in `packages/calendar/src/nyse-data.ts`). For a year outside that range `dayInfo()`
 knows only weekends — every weekday counts as a trading day, so holidays would be missed silently.
 That is why the app sends a "December — time to load next year's NYSE calendar" nudge to all allowed

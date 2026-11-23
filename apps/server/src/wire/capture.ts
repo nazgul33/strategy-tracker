@@ -9,6 +9,7 @@ import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/boo
 import type { PendingRepo } from '../domain/repo-types';
 import { parseId } from '../http/params';
 import { makeBookingNotifier } from './booking-notifier';
+import { broadcastNotice } from './broadcast';
 
 const CONFIRM_ERROR_KEYS: Record<string, string> = {
   'ticker-mismatch': 'confirm-err-ticker-mismatch',
@@ -43,6 +44,15 @@ export interface CaptureDeps {
 export function makeCaptureHandlers(deps: CaptureDeps) {
   const lang: Lang = deps.lang ?? 'en';
 
+  // "Could not read fills": recorded for System notices (no run) and then sent, to the asking chat only.
+  // broadcastNotice logs a failing insert or send and never throws, so the photo handler resolves.
+  async function tellBadExtract(chatId: string, detail: string): Promise<void> {
+    await broadcastNotice(
+      { allowedChatIds: [chatId], send: deps.send, notificationRepo: deps.repos.notificationRepo },
+      null, t('capture-bad-extract', lang, { detail }), { kind: 'capture-bad-extract' },
+    );
+  }
+
   async function extractOrTell(chatId: string, image: { base64: string; mime: string }) {
     const cfg = {
       baseUrl: deps.vision.baseUrl,
@@ -53,9 +63,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     };
     const extract = await extractFills([image], cfg, deps.fetchImpl);
     if (!extract.ok) {
-      const text = t('capture-bad-extract', lang, { detail: extract.detail });
-      await deps.send(chatId, text);
-      await deps.repos.notificationRepo.insert({ runId: null, chatId, text });
+      await tellBadExtract(chatId, extract.detail);
       return null;
     }
     return extract;
@@ -109,7 +117,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       else groups.set(fill.ticker, [fill]);
     }
     if (groups.size === 0) {
-      await deps.send(chatId, t('capture-bad-extract', lang, { detail: 'no fills recognized' }));
+      await tellBadExtract(chatId, 'no fills recognized');
       return;
     }
     const active = (await deps.repos.runRepo.list()).filter((r) => r.status === 'active');
@@ -137,7 +145,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       return;
     }
     if (outcome === 'rejected') {
-      await deps.send(chatId, t('capture-bad-extract', lang, { detail: 'no fills recognized' }));
+      await tellBadExtract(chatId, 'no fills recognized');
       return;
     }
     const pending = 'pending' in outcome ? outcome.pending : [];

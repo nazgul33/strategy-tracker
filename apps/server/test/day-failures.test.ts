@@ -208,7 +208,7 @@ describe('the pipeline is safe to run again', () => {
 describe('a failure outside any run', () => {
   test('a failing stale roll does not stop the morning', async () => {
     const { f, deps, sent } = await setup()
-    f.repos.orderRepo.listOpenBefore = async () => { throw new Error('db-down') }
+    f.repos.orderRepo.markStale = async () => { throw new Error('db-down') }
     const errors = spyOn(console, 'error').mockImplementation(() => {})
     try {
       expect(await runMorningPipeline(deps)).toBe('sent')

@@ -2,16 +2,8 @@ import type { ISODate } from '@st/core'
 import type { BookingDeps } from './booking'
 import type { OrderRecord } from './repo-types'
 
-export async function rollStale(tradeDate: ISODate, deps: BookingDeps): Promise<Record<number, OrderRecord[]>> {
-  const repos = deps.repos
-  const rows = await repos.orderRepo.listOpenBefore(tradeDate)
-  if (rows.length) await repos.orderRepo.markStale(tradeDate)
-  const grouped: Record<number, OrderRecord[]> = {}
-  for (const r of rows) {
-    if (!grouped[r.runId]) grouped[r.runId] = []
-    grouped[r.runId]!.push(r)
-  }
-  return grouped
+export function rollStale(tradeDate: ISODate, deps: BookingDeps): Promise<number> {
+  return deps.repos.orderRepo.markStale(tradeDate)
 }
 
 export const CANCEL_REASONS = ['broker-filled', 'strategy-change', 'stale-price', 'other'] as const

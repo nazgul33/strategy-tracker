@@ -1,5 +1,5 @@
 import type { Bucket, ClosedBucket, RunState } from '@st/core'
-import { eq, and, sql, inArray, lt, desc } from 'drizzle-orm'
+import { eq, and, sql, inArray, isNull, lt, desc } from 'drizzle-orm'
 import * as s from './schema'
 import type { Db, DbOrTx } from './db-type'
 import { getSimRepo } from './repos-sim'
@@ -37,6 +37,10 @@ export function getRepos(db: Db) {
     async get(id: number): Promise<RunRow | null> {
       const rows = await db.select().from(s.strategyRuns).where(eq(s.strategyRuns.id, id))
       return rows[0] ?? null
+    },
+    async getMany(ids: number[]): Promise<RunRow[]> {
+      if (ids.length === 0) return []
+      return db.select().from(s.strategyRuns).where(inArray(s.strategyRuns.id, ids))
     },
     async create(input: NewRun): Promise<number> {
       const state = input.initialRunState ?? { buckets: [], cashCents: input.poolCents, closed: [], ages: {} }
@@ -118,15 +122,21 @@ export function getRepos(db: Db) {
         .set({ status, ...(cancelReason !== undefined ? { cancelReason } : {}) })
         .where(eq(s.orders.id, id))
     },
-    async listOpenBefore(date) {
-      return db.select().from(s.orders).where(and(eq(s.orders.status, 'open'), sql`${s.orders.tradeDate} < ${date}`))
-    },
     async listForRun(runId, date?) {
       if (date) return db.select().from(s.orders).where(and(eq(s.orders.runId, runId), sql`${s.orders.tradeDate} = ${date}`))
       return db.select().from(s.orders).where(eq(s.orders.runId, runId))
     },
     async listForRunFrom(runId, fromDate) {
       return db.select().from(s.orders).where(and(eq(s.orders.runId, runId), sql`${s.orders.tradeDate} >= ${fromDate}`)).orderBy(s.orders.id)
+    },
+    async listUnreportedStale(runId) {
+      return db.select().from(s.orders)
+        .where(and(eq(s.orders.runId, runId), eq(s.orders.status, 'stale'), isNull(s.orders.reportedAt)))
+        .orderBy(s.orders.id)
+    },
+    async markReported(ids) {
+      if (!ids.length) return
+      await db.update(s.orders).set({ reportedAt: sql`now()` }).where(inArray(s.orders.id, ids))
     },
   } satisfies OrderRepo
 
