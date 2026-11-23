@@ -56,6 +56,8 @@ export function PendingTable({
   const own = useKeepNotices();
   const notices = inherited ?? own;
   const [buckets, setBuckets] = useState<Record<number, string>>({});
+  // Rows whose last confirm the server refused with `choose-bucket`.
+  const [refused, setRefused] = useState<Record<number, true>>({});
   const [edited, setEdited] = useState<Record<number, RowValues>>({});
   const [reviewId, setReviewId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -105,8 +107,11 @@ export function PendingTable({
     return Object.keys(body).length > 0 ? body : undefined;
   };
 
-  const reportError = async (err: unknown) => {
-    if (err instanceof ApiError && err.code === 'ticker-mismatch') {
+  const reportError = async (err: unknown, row?: PendingFillDto) => {
+    if (err instanceof ApiError && err.code === 'choose-bucket' && row) {
+      setRefused((prev) => ({ ...prev, [row.id]: true }));
+      setActionError(errorText(err, t, 'fillErr'));
+    } else if (err instanceof ApiError && err.code === 'ticker-mismatch') {
       // The row is untouched — do NOT reload; it must stay visible so the
       // user can reject it.
       setActionError(t('pendingTickerMismatch'));
@@ -143,7 +148,7 @@ export function PendingTable({
       }
       await reload();
     } catch (err) {
-      await reportError(err);
+      await reportError(err, row);
     } finally {
       setBusyId(null);
     }
@@ -219,7 +224,15 @@ export function PendingTable({
                 values={valuesFor(r)}
                 onChange={(patch) => patchValues(r, patch)}
                 bucket={buckets[r.id] ?? ''}
-                onBucketChange={(value) => setBuckets((prev) => ({ ...prev, [r.id]: value }))}
+                onBucketChange={(value) => {
+                  setBuckets((prev) => ({ ...prev, [r.id]: value }));
+                  setRefused((prev) => {
+                    const next = { ...prev };
+                    delete next[r.id];
+                    return next;
+                  });
+                }}
+                bucketRefused={refused[r.id] === true}
                 onOpenSideBySide={() => setReviewId(r.id)}
                 onConfirm={() => void act(r, 'confirm')}
                 onReject={() => void act(r, 'reject')}

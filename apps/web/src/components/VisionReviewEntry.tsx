@@ -5,8 +5,8 @@ import { useT } from '../i18n';
 import { ScreenshotLink } from './ScreenshotLink';
 import { Badge, Button, Card, ErrorNote, TableWrap, Td, Th } from './ui';
 
-type Field = keyof DetectedDto;
-const FIELDS: readonly Field[] = ['side', 'shares', 'filledOn', 'price', 'fee'];
+const FIELDS = ['side', 'shares', 'filledOn', 'price', 'fee'] as const satisfies readonly (keyof DetectedDto)[];
+type Field = (typeof FIELDS)[number];
 const FIELD_LABEL: Record<Field, string> = {
   side: 'pendingColSide',
   shares: 'pendingColQty',

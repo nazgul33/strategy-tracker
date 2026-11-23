@@ -205,6 +205,7 @@ describe('PendingRow blank fee', () => {
                 onConfirm: () => {},
                 bucket: '',
                 onBucketChange: () => {},
+                bucketRefused: false,
                 onReject: () => {},
                 busy: false,
               }),

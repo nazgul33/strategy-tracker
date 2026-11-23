@@ -52,6 +52,8 @@ export type ApiErrorCode =
   | 'bucket-not-found'
   | 'bucket-not-held'
   | 'invalid-bucket'
+  | 'choose-bucket'
+  | 'fill-date-in-future'
   | 'invalid-shares'
   | 'too-many-shares'
   | 'correction-not-found'

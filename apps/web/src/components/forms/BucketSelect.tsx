@@ -9,19 +9,30 @@ export function BucketSelect({
   value,
   held,
   onChange,
+  invalid,
   'aria-label': ariaLabel,
+  'aria-describedby': describedBy,
   'data-testid': testId,
 }: {
   value: string;
   held: HeldBucketDto[];
   onChange: (value: string) => void;
+  invalid?: boolean;
   'aria-label': string;
+  'aria-describedby'?: string;
   'data-testid'?: string;
 }) {
   const t = useT();
   const stale = value !== '' && !held.some((b) => String(b.index) === value);
   return (
-    <Select aria-label={ariaLabel} data-testid={testId} value={value} onChange={(e) => onChange(e.target.value)}>
+    <Select
+      aria-label={ariaLabel}
+      aria-describedby={describedBy}
+      className={invalid ? 'border-warning' : undefined}
+      data-testid={testId}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
       <option value="">{t('fillBucketAuto')}</option>
       {held.map((b) => (
         <option key={b.index} value={String(b.index)}>
