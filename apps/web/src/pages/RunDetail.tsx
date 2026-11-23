@@ -43,7 +43,7 @@ const TABS: { id: Tab; labelKey: string }[] = [
 export function RunDetailPage({
   id,
   initialTab,
-  highlightNoticeId,
+  highlightNoticeId: deepLinkNoticeId,
 }: {
   id: number;
   initialTab?: 'notifications';
@@ -56,6 +56,8 @@ export function RunDetailPage({
   const keepNotices = useKeepNotices();
 
   const [tab, setTab] = useState<Tab>(initialTab ?? 'orders');
+  // Only the deep-linked visit highlights; the first tab switch drops it for good.
+  const [highlightNoticeId, setHighlightNoticeId] = useState(deepLinkNoticeId);
   const [panelKey, setPanelKey] = useState(0);
   const [tabKey, setTabKey] = useState(0);
   const [busyStatus, setBusyStatus] = useState<RunStatus | null>(null);
@@ -68,6 +70,7 @@ export function RunDetailPage({
 
   const selectTab = (next: Tab) => {
     setTab(next);
+    setHighlightNoticeId(undefined);
     setPanelKey((k) => k + 1); // remount self-fetching panels so they re-read
     setTabKey((k) => k + 1);
     void reload();

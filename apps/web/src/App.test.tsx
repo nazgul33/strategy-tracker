@@ -4,6 +4,7 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { CorrectionDto } from './api.types';
 import { installFetchStub, restoreFetch } from './testing/fetchStub';
+import { installScrollShim, restoreScrollShim } from './testing/scrollShim';
 
 GlobalRegistrator.register();
 
@@ -145,27 +146,24 @@ describe('App notice deep link', () => {
   ];
   const marked = () => [...document.querySelectorAll('tbody tr[aria-current="true"]')].map((el) => el.textContent ?? '');
 
-  // happy-dom may not implement scrollIntoView; give the prototype a no-op for these tests.
-  const proto = window.Element.prototype as { scrollIntoView?: unknown };
-  let defined = false;
-  let container: HTMLDivElement;
-  let root: ReturnType<typeof createRoot>;
+  let container: HTMLDivElement | undefined;
+  let root: ReturnType<typeof createRoot> | undefined;
 
   async function open(hash: string) {
     window.location.hash = hash;
     setToken('test-token');
     container = document.createElement('div');
     document.body.appendChild(container);
-    root = createRoot(container);
-    await act(async () => root.render(d(App)));
+    const mounted = createRoot(container);
+    root = mounted;
+    await act(async () => mounted.render(d(App)));
     await flush();
   }
 
   beforeEach(() => {
-    if (typeof proto.scrollIntoView !== 'function') {
-      proto.scrollIntoView = () => {};
-      defined = true;
-    }
+    root = undefined;
+    container = undefined;
+    installScrollShim();
     installFetchStub([
       { url: '/price-history', json: { start: '2026-11-04', bars: [] } },
       { url: '/orders', json: [] },
@@ -176,15 +174,12 @@ describe('App notice deep link', () => {
   });
 
   afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
+    act(() => root?.unmount());
+    container?.remove();
     restoreFetch();
     setToken(null);
     window.location.hash = '';
-    if (defined) {
-      delete proto.scrollIntoView;
-      defined = false;
-    }
+    restoreScrollShim();
   });
 
   it('opens the run on the Notifications tab with the notice highlighted', async () => {
@@ -195,6 +190,21 @@ describe('App notice deep link', () => {
     expect(found).toHaveLength(1);
     expect(found[0]).toContain('sold');
     expect(buttonByText('Alerts').className).toContain('bg-primary');
+  });
+
+  it('leaving the Notifications tab drops the highlight for good', async () => {
+    await open('#/runs/1?tab=notifications&notice=2');
+    expect(marked()).toHaveLength(1);
+    await act(async () => {
+      buttonByText('Orders').click();
+    });
+    await flush();
+    await act(async () => {
+      buttonByText('Alerts').click();
+    });
+    await flush();
+    expect(document.body.textContent).toContain('sold');
+    expect(marked()).toEqual([]);
   });
 
   it('a second deep link on the same run moves the highlight', async () => {
