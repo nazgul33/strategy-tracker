@@ -33,6 +33,7 @@ export function makeFakes() {
   const runRepo = {
     async list() { return [...runs] },
     async get(id: number) { return runs.find((r) => r.id === id) ?? null },
+    async getMany(ids: number[]) { return runs.filter((r) => ids.includes(r.id)) },
     async create(input) {
       const id = runIdSeq++
       if (input.initialRunState) states.set(id, input.initialRunState)

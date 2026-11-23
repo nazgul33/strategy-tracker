@@ -15,7 +15,41 @@ async function setup() {
   return { f, app, auth, add, get }
 }
 
+// Rows 1-6; newest first the entries are: 6 (run 1), 5 (run 99), 4 (global), 3 (run 3), 2+1 (run 1).
+async function mixedFeed() {
+  const s = await setup()
+  for (const ticker of ['AAPL', 'MSFT', 'NVDA']) await createRun(s.app, s.auth, { name: ticker, ticker, costPpm: 0, poolCents: 100 })
+  await s.add(1, '42', 'digest'); await s.add(1, '43', 'digest'); await s.add(3, '42', 'digest')
+  await s.add(null, '42', 'closed'); await s.add(99, 'web', 'orphan'); await s.add(1, '42', 'skip')
+  return s
+}
+// Records every getMany call and makes list() throw.
+function watchRuns(f: Awaited<ReturnType<typeof setup>>['f']) {
+  const calls: number[][] = []
+  const getMany = f.repos.runRepo.getMany
+  f.repos.runRepo.getMany = async (ids) => { calls.push([...ids]); return getMany(ids) }
+  f.repos.runRepo.list = async () => { throw new Error('the feed must not list every run') }
+  return calls
+}
+
 describe('GET /api/notifications', () => {
+  test('looks up only the runs on the page, in one call, and never lists every run', async () => {
+    const { f, get } = await mixedFeed()
+    const calls = watchRuns(f)
+    const { status, body } = await get('/api/notifications')
+    expect(status).toBe(200)
+    expect(body.entries.map((e: { runId: number | null; ticker: string | null }) => [e.runId, e.ticker])).toEqual([[1, 'AAPL'], [99, null], [null, null], [3, 'NVDA'], [1, 'AAPL']])
+    expect(calls.map((ids) => [...ids].sort((a, b) => a - b))).toEqual([[1, 3, 99]])
+  })
+
+  test('a page of global notices asks for no run', async () => {
+    const { f, add, get } = await setup()
+    await add(null, '42', 'closed'); await add(null, '42', 'reminder')
+    const calls = watchRuns(f)
+    expect((await get('/api/notifications')).body.entries.map((e: { ticker: string | null }) => e.ticker)).toEqual([null, null])
+    expect(calls).toEqual([[]])
+  })
+
   test('401 without a token', async () => {
     const { app } = await setup()
     expect((await app.request('/api/notifications')).status).toBe(401)

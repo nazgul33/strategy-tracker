@@ -106,6 +106,8 @@ export interface NewRun {
 export interface RunRepo {
   list(): Promise<RunRow[]>
   get(id: number): Promise<RunRow | null>
+  /** The runs with these ids, in no particular order; unknown ids are skipped; an empty list runs no query. */
+  getMany(ids: number[]): Promise<RunRow[]>
   create(input: NewRun): Promise<number>
   updateStatus(id: number, status: RunStatus): Promise<void>
   updateStatusMany(ids: number[], from: RunStatus[], to: RunStatus): Promise<number>

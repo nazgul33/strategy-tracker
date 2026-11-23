@@ -39,6 +39,8 @@ export async function _runPins(r: HttpRepoSurface) {
   await r.runRepo.create({ ticker: 'X' })
   // @ts-expect-error get may return null
   const _t: string = (await r.runRepo.get(1)).ticker
+  // @ts-expect-error getMany takes a list of run ids
+  await r.runRepo.getMany(1)
 }
 
 export async function _restPins(r: HttpRepoSurface, d: HttpDeps) {

@@ -38,6 +38,10 @@ export function getRepos(db: Db) {
       const rows = await db.select().from(s.strategyRuns).where(eq(s.strategyRuns.id, id))
       return rows[0] ?? null
     },
+    async getMany(ids: number[]): Promise<RunRow[]> {
+      if (ids.length === 0) return []
+      return db.select().from(s.strategyRuns).where(inArray(s.strategyRuns.id, ids))
+    },
     async create(input: NewRun): Promise<number> {
       const state = input.initialRunState ?? { buckets: [], cashCents: input.poolCents, closed: [], ages: {} }
       return db.transaction(async (tx) => {

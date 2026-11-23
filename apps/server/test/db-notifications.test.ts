@@ -12,6 +12,15 @@ describeIf('db notifications', () => {
     repos = getRepos(db)
   })
 
+  test('runRepo.getMany returns exactly the runs asked for', async () => {
+    const mark = `gm-${Date.now()}-${process.pid}`
+    const mk = (n: number, ticker: string) => repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: `${mark}-${n}`, poolCents: 1000, costPpm: 10 })
+    const a = await mk(1, 'GMA'); await mk(2, 'GMB'); const c = await mk(3, 'GMC')
+    const got = await repos.runRepo.getMany([c, a, a, 999999999])
+    expect(got.map((r) => [r.id, r.ticker]).sort((x, y) => Number(x[0]) - Number(y[0]))).toEqual([[a, 'GMA'], [c, 'GMC']])
+    expect(await repos.runRepo.getMany([])).toEqual([])
+  })
+
   test('listBefore pages newest first below the cursor', async () => {
     const mark = `nb-${Date.now()}-${process.pid}`
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'NB', name: mark, poolCents: 1000, costPpm: 10 })
