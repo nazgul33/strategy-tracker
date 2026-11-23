@@ -19,9 +19,10 @@ export interface NoticeLog {
 // and sends every entry of `send` as its own message (a digest longer than one Telegram message).
 export type NoticeText = string | { record: string; send: string[] }
 
-// Records one notice in the notifications table and sends it to every allowed chat, in
-// that order per chat. With no allowed chat the notice still gets one row (chat id 'web')
-// so a web-only operator sees it. Every failure (insert, or each part's send) is logged
+// Records one notice in the notifications table (one row per allowed chat, all rows first,
+// so a broadcast's rows stay adjacent in the feed) and then sends it to every allowed chat.
+// With no allowed chat the notice still gets one row (chat id 'web') so a web-only
+// operator sees it. Every failure (insert, or each part's send) is logged
 // and never hides the rest; this function never rejects.
 export async function broadcastNotice<R extends number | null>(
   deps: BroadcastDeps<R>, runId: R, text: NoticeText, log: NoticeLog,
@@ -48,6 +49,8 @@ export async function broadcastNotice<R extends number | null>(
     } catch (e) {
       fail(chatId, e)
     }
+  }
+  for (const chatId of deps.allowedChatIds) {
     for (const [i, part] of send.entries()) {
       try {
         await deps.send(chatId, part)

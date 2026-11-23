@@ -41,12 +41,12 @@ describe('broadcastNotice', () => {
     } finally { errors.mockRestore() }
   })
 
-  test('each chat is recorded, then sent', async () => {
+  test('every chat is recorded first, then sent', async () => {
     const h = harness(['a', 'b'])
     const errors = spyOn(console, 'error').mockImplementation(() => {})
     try {
       await broadcastNotice(h.deps, 7, 'hi', { kind: 'digest' })
-      expect(h.events).toEqual(['insert:a', 'send:a', 'insert:b', 'send:b'])
+      expect(h.events).toEqual(['insert:a', 'insert:b', 'send:a', 'send:b'])
       expect(h.rows).toEqual([{ runId: 7, chatId: 'a', text: 'hi' }, { runId: 7, chatId: 'b', text: 'hi' }])
     } finally { errors.mockRestore() }
   })
@@ -109,7 +109,7 @@ describe('broadcastNotice', () => {
     const errors = spyOn(console, 'error').mockImplementation(() => {})
     try {
       await broadcastNotice(h.deps, 7, PARTS, { kind: 'digest' })
-      expect(h.events).toEqual(['insert:a', 'send:a', 'send:a', 'insert:b', 'send:b', 'send:b'])
+      expect(h.events).toEqual(['insert:a', 'insert:b', 'send:a', 'send:a', 'send:b', 'send:b'])
       expect(h.rows).toEqual([
         { runId: 7, chatId: 'a', text: 'p1\n\np2' },
         { runId: 7, chatId: 'b', text: 'p1\n\np2' },

@@ -128,7 +128,9 @@ Multi-part digest (picked by the user)
   that, given `{ allowedChatIds, send, notificationRepo }`, a `runId | null`,
   the text and a log context, does:
   - no allowed chat → insert one row with chat id `WEB_ONLY_CHAT_ID`;
-  - otherwise, for each chat: insert the row, then send. The insert and the send
+  - otherwise, insert the row for every allowed chat first, then send to each chat
+    in order. All rows are recorded before any send, so a broadcast's per-chat rows
+    stay adjacent and the feed shows it once. The insert and the send
     are guarded **separately** (my call): a failed insert must not stop the
     Telegram message, and a failed send must not lose the record. Each failure is
     `console.error`-logged with the context (notice kind, run id, chat id).
