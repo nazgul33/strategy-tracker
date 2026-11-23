@@ -1,34 +1,11 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { applyBuyFill, DomainError, emptyState, type RunState } from '@st/core'
-import { parseUsd } from '@st/core/money'
-import { classifyOrderType, NO_EVIDENCE, type OrderEvidence, type SellOrderType } from '../src/domain/order-type'
-import { attributeSell, sellNeedsChoice, type SellInput } from '../src/domain/sell-attribute'
-import type { OrderRow, SellPick } from '../src/domain/sell-match'
+import type { RunState } from '@st/core'
+import { classifyOrderType, NO_EVIDENCE, type OrderEvidence } from '../src/domain/order-type'
+import { attributeSell, sellNeedsChoice } from '../src/domain/sell-attribute'
+import type { OrderRow } from '../src/domain/sell-match'
+import { alts, ev, ord, resetOrderIds, sell, stateOf, throwsKind } from './sell-attribute-fixture'
 
-const D = '2026-11-12'
-
-function stateOf(bs: Array<{ idx: number; shares: number; boughtOn?: string; forced?: boolean }>): RunState {
-  let s = emptyState(10)
-  for (const b of bs) {
-    s = applyBuyFill(s, b.idx, b.shares, parseUsd('100.00'), 0, b.boughtOn ?? '2026-11-01')
-    if (b.forced) s.buckets[b.idx]!.state = 'force_sell'
-  }
-  return s
-}
-let nextId = 1
-beforeEach(() => { nextId = 1 })
-function ord(idx: number, kind: 'sell_loc' | 'stop_sell' | 'market_sell', price: string | null, shares: number, over: Partial<OrderRow> = {}): OrderRow {
-  return { id: nextId++, runId: 1, tradeDate: D, kind, bucketIdx: idx, limitPrice: price === null ? 0n : parseUsd(price), shares, status: 'open', ...over }
-}
-const ev = (type: SellOrderType, orderPrice?: string, orderedShares?: number): OrderEvidence =>
-  ({ type, orderPrice: orderPrice === undefined ? null : parseUsd(orderPrice), orderedShares: orderedShares ?? null })
-const sell = (shares: number, price: string, evidence?: OrderEvidence, bucketIdx?: number): SellInput =>
-  ({ runId: 1, filledOn: D, shares, price: parseUsd(price), evidence, bucketIdx })
-const throwsKind = (fn: () => unknown, kind: string): void => {
-  try { fn() } catch (e) { expect(e).toBeInstanceOf(DomainError); expect((e as DomainError).kind).toBe(kind); return }
-  throw new Error(`expected DomainError(${kind}), nothing thrown`)
-}
-const alts = (p: SellPick): number[] => p.attribution!.alternatives.map((a) => a.orderId)
+beforeEach(resetOrderIds)
 
 const T = 'sell_loc', S = 'stop_sell', M = 'market_sell'
 const held1 = (): RunState => stateOf([{ idx: 1, shares: 10 }])
