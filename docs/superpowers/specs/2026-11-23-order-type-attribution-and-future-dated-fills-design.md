@@ -145,9 +145,11 @@ A value that fails its test is dropped. It never makes the fill invalid.
 
 The prompt (`packages/ingest/src/prompt.ts`) asks for the three values per row,
 tells the model to copy 주문구분 exactly as shown (including `정정(매도)` and both
-`STOP(...)` forms), and to omit a value whose column is not in the table (the
-date-range view). The existing rules stay: `price` is 체결단가 only, `shares` is
-체결수량 only, a row with 체결수량 0 is skipped. The example JSON gains the new keys.
+`STOP(...)` forms), and to omit a value whose column is not in the table. In the
+date-range view 주문구분 is present and carries a bare `매수` / `매도`, so `orderType`
+is returned as shown, while `orderPrice` and `orderedShares` are omitted because
+their columns are absent (amended 2026-11-24). The existing rules stay: `price` is
+체결단가 only, `shares` is 체결수량 only, a row with 체결수량 0 is skipped. The example JSON gains the new keys.
 `side` is still derived from 매수 / 매도 inside the text.
 
 ### 2. Where it is stored
@@ -162,8 +164,9 @@ Three nullable columns on `pending_fills`, written once at insert like the other
 `ingestCapture` writes them. `GET /api/pending` returns them inside the row's
 `detected` object. They are not copied to `fills` or `vision_reviews`.
 
-A row captured before this change, a date-range capture and a manual fill have
-none of them.
+A date-range capture has only the order type (a bare `매수` / `매도`, which
+classifies as unknown) and neither of the two numeric values; a row captured
+before this change and a manual fill have none of the three (amended 2026-11-24).
 
 ### 3. Order type
 
@@ -285,7 +288,7 @@ Examples the tests must pin:
 | Situation | Result |
 | --- | --- |
 | #74: bucket A's stop for 10 took 6; 4 are left. Bucket B's stop is sized 4. A 4-share stop fill arrives with 주문수량 10. | A (step 2), with a notice. |
-| The same, captured from the date-range view (no type). | Operator chooses. |
+| The same, captured from the date-range view (bare `매도`, so the type reads as unknown; amended 2026-11-24). | Operator chooses. |
 | A holds 12 (trigger 97.00), B holds 10 (trigger 99.00). A 10-share stop fill at 96.50, no 주문수량. | B (step 3), with a notice. |
 | Two targets fill at one close; each row's 주문단가 equals its own leg's limit. | Each to its own bucket, no notice. |
 | #43: a `STOP` fill at 96.50; A has a 97.00 stop, B a 91.00 target. | A. B's target is not a candidate; no notice. |
@@ -487,5 +490,8 @@ and is never a day ahead of New York's date. The premarket sample (ordered
   at capture and in the pending list; the screenshot is stored before the dry run.
 - A row dated after today is never flagged as needing a bucket; the date warning comes first.
 - The choose-bucket copy no longer claims that several buckets are possible.
+- The date-range view does carry 주문구분, as a bare side (`매수` / `매도`): it is read and
+  stored as the order type and classified unknown, and only the two numeric values are absent
+  there.
 - The two numeric order values are bounded in the extractor (1 to 1,000,000,000 shares; at most
   9 integer digits of price).
