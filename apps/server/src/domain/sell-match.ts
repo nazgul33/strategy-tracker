@@ -74,10 +74,10 @@ export function poolOf(orders: OrderRow[], input: SellFillKey): Pair[] {
 export const fits = (p: Pair, price: bigint): boolean => p.leg.kind === 'market_sell' || (p.leg.kind === 'sell_loc' ? price >= p.leg.limitPrice : price <= p.leg.limitPrice)
 
 // Which bucket and order a sell fill belongs to is decided in sell-attribute.ts; this file
-// holds the order pool, the price-fit test and the matcher for a bucket the operator chose.
+// holds the order pool, the price-fit test and the matcher for a bucket that is already decided.
 
-// The fill's bucket is the operator's: which of that bucket's orders on the fill day (open or
-// stale, sell-side, fitting the price) did it take? First exactly one with shares === fill.shares,
+// The fill's bucket is decided (the operator's, or the tracker's for an untyped fill): which of
+// that bucket's orders on the fill day (open or stale, sell-side, fitting the price) did it take? First exactly one with shares === fill.shares,
 // then the nearest price leg (sell_loc before stop_sell on a tie), then a market_sell; null when
 // none fits. No gate: applySellFill validates the bucket.
 export function matchForcedLeg(orders: OrderRow[], input: SellFillKey & { bucketIdx: number }): OrderRow | null {

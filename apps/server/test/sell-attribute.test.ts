@@ -131,6 +131,20 @@ describe('attributeSell: spec examples', () => {
       const pick = attributeSell(orders, held1(), sell(6, '98.00', ev('stop', undefined, 6), 1))
       expect([pick.bucketIdx, pick.orderId, pick.attribution]).toEqual([1, orders[1]!.id, null])
     })
+
+    test('19: a typed fill with no order of its kind in the bucket flips nothing', () => {
+      const market = attributeSell(pair1(), held1(), sell(10, '104.00', ev('market'), 1))
+      expect([market.bucketIdx, market.orderId, market.attribution]).toEqual([1, null, null])
+      const orders = [ord(1, T, '103.00', 10)]
+      const stop = attributeSell(orders, held1(), sell(10, '104.00', ev('stop'), 1))
+      expect([stop.bucketIdx, stop.orderId, stop.attribution]).toEqual([1, null, null])
+    })
+
+    test('20: an untyped fill still takes the target that fits by price', () => {
+      const orders = pair1()
+      const pick = attributeSell(orders, held1(), sell(10, '104.00', undefined, 1))
+      expect([pick.bucketIdx, pick.orderId, pick.attribution]).toEqual([1, orders[0]!.id, null])
+    })
   })
 })
 

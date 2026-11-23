@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test'
 import { parseUsd } from '@st/core/money'
 import { confirmPendingFill, manualFill } from '../src/domain/booking'
 import { NO_SNAPSHOT } from './booking-fakes'
-import { D, book43, held43, sellSetup, orderOf, fillsOf, heldShares, lastFill, type Fakes } from './sell-fixture'
+import { D, book43, held1, held43, pair, sellSetup, orderOf, fillsOf, heldShares, lastFill, type Fakes } from './sell-fixture'
 
 const STOP = '매도/STOP(시장가)'
 
@@ -68,6 +68,22 @@ describe('a pending sell is attributed by its screenshot order type', () => {
     expect(lastFill(f)).toMatchObject({ side: 'buy', bucketIdx: 1 })
     expect(f._stores.orders.every((o) => o.status === 'open')).toBe(true)
     expect(rec.attributions).toEqual([])
+  })
+})
+
+describe('a typed sell with no order of its kind', () => {
+  test('a market sell on a bucket holding only a target and a stop needs a choice, then cancels both and flips neither', async () => {
+    const { f, deps, rec, runId } = await sellSetup(held1, pair)
+    const pid = await pendingSell(f, runId, { price: parseUsd('104.00'), detectedOrderType: '매도/보통(시장가)' })
+    await expect(confirmPendingFill(pid, null, deps)).rejects.toMatchObject({ kind: 'choose-bucket' })
+
+    await confirmPendingFill(pid, { bucketIdx: 1 }, deps)
+    expect(fillsOf(f)).toEqual([[10, 1]])
+    for (const kind of ['sell_loc', 'stop_sell']) {
+      expect(orderOf(f, 1, kind)).toMatchObject({ status: 'cancelled', cancelReason: 'broker-filled' })
+    }
+    expect(f._stores.orders.some((o) => o.status === 'filled')).toBe(false)
+    expect(rec.siblings.map((s) => s.order.kind).sort()).toEqual(['sell_loc', 'stop_sell'])
   })
 })
 

@@ -19,7 +19,9 @@ function nearest(ps: Pair[], metric: (p: Pair) => bigint): Pair[] {
 // bucket bought earliest wins. With no candidate the bucket is decided by holdings alone, and
 // the operator chooses (DomainError 'choose-bucket') whenever that is still ambiguous. A
 // bucket the operator gave is never attributed. The order flipped for an emptied bucket is
-// the candidate left, else the bucket's order of the typed kind, else the matchForcedLeg one.
+// the candidate left, else the bucket's order of the typed kind; a typed fill with no such
+// order flips nothing, so every open leg of the emptied bucket is cancelled and announced.
+// An untyped fill takes the matchForcedLeg one.
 export function attributeSell(orders: OrderRow[], state: RunState, input: SellInput): SellPick {
   const ev = input.evidence ?? NO_EVIDENCE
   const kind = kindOfType(ev.type)
@@ -74,5 +76,6 @@ function flippedOrder(orders: OrderRow[], pool: Pair[], input: SellInput, ev: Or
   const kind = kindOfType(ev.type)
   const own = kind ? pool.filter((p) => p.order.bucketIdx === bucketIdx && p.order.kind === kind).map((p) => p.order).sort((a, b) => a.id - b.id) : []
   if (own.length) return (own.find((o) => o.shares === ev.orderedShares) ?? own.find((o) => o.shares === input.shares) ?? own[0]!).id
+  if (kind) return null
   return matchForcedLeg(orders, { ...input, bucketIdx })?.id ?? null
 }
