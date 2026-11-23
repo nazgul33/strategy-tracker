@@ -38,7 +38,8 @@ export interface MarketLeg { orderId: number; bucketIdx: number; kind: 'market_s
 export type SellLeg = PriceLeg | MarketLeg
 // price: the exact-price rung or price distance decided; market: the market-sell rung.
 // A share-count pick carries no attribution, so it has no rule value.
-export type AttributionRule = 'price' | 'market'
+// order-price, ordered-shares, shares, price, older: the steps of the order-type rule (sell-attribute.ts).
+export type AttributionRule = 'price' | 'market' | 'order-price' | 'ordered-shares' | 'shares' | 'older'
 export interface SellAttribution { shares: number; price: bigint; rule: AttributionRule; chosen: SellLeg; alternatives: SellLeg[] }
 export interface SellMatch { order: OrderRow; attribution: SellAttribution | null }
 
@@ -46,7 +47,7 @@ const cmp = (a: bigint, b: bigint): number => (a < b ? -1 : a > b ? 1 : 0)
 const kindRank = (k: PriceLegKind): number => (k === 'sell_loc' ? 0 : 1)
 const absDiff = (a: bigint, b: bigint): bigint => (a > b ? a - b : b - a)
 
-function legOf(o: OrderRow, price: bigint): SellLeg | null {
+export function legOf(o: OrderRow, price: bigint): SellLeg | null {
   switch (o.kind) {
     case 'sell_loc':
     case 'stop_sell':
@@ -58,13 +59,13 @@ function legOf(o: OrderRow, price: bigint): SellLeg | null {
   }
 }
 
-interface Pair { order: OrderRow; leg: SellLeg }
-type PricePair = { order: OrderRow; leg: PriceLeg }
-const isPrice = (p: Pair): p is PricePair => p.leg.kind !== 'market_sell'
-const byBucket = (a: Pair, b: Pair): number => a.order.bucketIdx - b.order.bucketIdx || a.order.id - b.order.id
-const nearestFirst = (a: PricePair, b: PricePair): number => cmp(a.leg.distance, b.leg.distance) || kindRank(a.leg.kind) - kindRank(b.leg.kind) || byBucket(a, b)
+export interface Pair { order: OrderRow; leg: SellLeg }
+export type PricePair = { order: OrderRow; leg: PriceLeg }
+export const isPrice = (p: Pair): p is PricePair => p.leg.kind !== 'market_sell'
+export const byBucket = (a: Pair, b: Pair): number => a.order.bucketIdx - b.order.bucketIdx || a.order.id - b.order.id
+export const nearestFirst = (a: PricePair, b: PricePair): number => cmp(a.leg.distance, b.leg.distance) || kindRank(a.leg.kind) - kindRank(b.leg.kind) || byBucket(a, b)
 
-function poolOf(orders: OrderRow[], input: SellFillKey): Pair[] {
+export function poolOf(orders: OrderRow[], input: SellFillKey): Pair[] {
   const pool: Pair[] = []
   for (const order of orders) {
     if (order.runId !== input.runId || order.tradeDate !== input.filledOn || (order.status !== 'open' && order.status !== 'stale')) continue
@@ -73,7 +74,7 @@ function poolOf(orders: OrderRow[], input: SellFillKey): Pair[] {
   }
   return pool
 }
-const fits = (p: Pair, price: bigint): boolean => p.leg.kind === 'market_sell' || (p.leg.kind === 'sell_loc' ? price >= p.leg.limitPrice : price <= p.leg.limitPrice)
+export const fits = (p: Pair, price: bigint): boolean => p.leg.kind === 'market_sell' || (p.leg.kind === 'sell_loc' ? price >= p.leg.limitPrice : price <= p.leg.limitPrice)
 
 // Which sell-side order does a sell fill belong to?
 //   Pool        orders of this run dated on the fill's trade date, of a sell-side kind
