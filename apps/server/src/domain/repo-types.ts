@@ -4,7 +4,11 @@ import type { CorrectionRepo } from './correction-types'
 import type { OrderRow } from './sell-match'
 import type { ReviewedPendingRow, VisionReviewInsert, VisionReviewRow } from './vision-review'
 
-export interface PendingDecisionPatch { side: 'buy' | 'sell'; shares: number; price: bigint; fee: number; filledOn: ISODate; bucketIdx: number }
+// How a confirm treated the fee: left it alone, cleared it (feeCents: null), or set one.
+export type FeeOverrideKind = 'none' | 'cleared' | 'set'
+
+// feeOverride is optional so that existing patch literals stay as they are; bookUnlocked always sets it.
+export interface PendingDecisionPatch { side: 'buy' | 'sell'; shares: number; price: bigint; fee: number; filledOn: ISODate; bucketIdx: number; feeOverride?: FeeOverrideKind }
 
 export type FillSource = 'capture' | 'manual' | 'seed'
 

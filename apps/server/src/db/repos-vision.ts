@@ -94,7 +94,7 @@ export function getVisionRepos(db: Db) {
       const rows = await db.select({
         id: s.pendingFills.id, runId: s.pendingFills.runId, ticker: s.pendingFills.ticker, captureId: s.pendingFills.captureId,
         status: s.pendingFills.status, side: s.pendingFills.side, shares: s.pendingFills.shares, price: s.pendingFills.price,
-        fee: s.pendingFills.fee, filledOn: s.pendingFills.filledOn,
+        fee: s.pendingFills.fee, filledOn: s.pendingFills.filledOn, feeOverride: s.pendingFills.feeOverride,
         detectedSide: s.pendingFills.detectedSide, detectedShares: s.pendingFills.detectedShares,
         detectedPrice: s.pendingFills.detectedPrice, detectedFilledOn: s.pendingFills.detectedFilledOn,
         detectedFee: s.pendingFills.detectedFee, detectedAt: s.pendingFills.detectedAt,

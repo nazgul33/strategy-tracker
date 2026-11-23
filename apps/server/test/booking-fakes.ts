@@ -1,7 +1,7 @@
 import type { RunState } from '@st/core'
 import type { BookingNotifier, OrderRow, PendingDecisionPatch, RepoSurface, SellAttribution } from '../src/domain/booking'
 import type {
-  FillPatch, FillRow, LedgerRow, NewCapture, NewFill, NewLedgerEntry, NewOrder, NewPending, NewRun, OrderRecord, OrderStatus, PendingRow, RunRow, RunStatus,
+  FeeOverrideKind, FillPatch, FillRow, LedgerRow, NewCapture, NewFill, NewLedgerEntry, NewOrder, NewPending, NewRun, OrderRecord, OrderStatus, PendingRow, RunRow, RunStatus,
 } from '../src/domain/repo-types'
 import type { CaptureImageInsert } from '../src/db/repos-vision'
 import type { UnfrozenPendingRow, VisionReviewInsert, VisionReviewRow } from '../src/domain/vision-review'
@@ -187,6 +187,7 @@ export function fakeRepos() {
         .filter((p): p is PendingRow & { captureId: number; status: 'confirmed' | 'rejected' } => p.captureId !== null && (p.status === 'confirmed' || p.status === 'rejected'))
         .filter((p) => captureImages.some((x) => x.captureId === p.captureId && x.keep) && !visionReviews.some((v) => v.pendingFillId === p.id))
         .sort((a, b) => a.id - b.id)
+        .map((p) => ({ ...p, feeOverride: (p as { feeOverride?: FeeOverrideKind | null }).feeOverride ?? null }))
     },
     async listForCaptures(captureIds: number[]) { return visionReviews.filter((x) => captureIds.includes(x.captureId)) },
     async deleteFor(captureId: number) {

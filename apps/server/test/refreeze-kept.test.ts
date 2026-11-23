@@ -1,7 +1,7 @@
 import { describe, test, expect, spyOn } from 'bun:test'
 import { emptyState } from '@st/core'
 import type { ExtractResult } from '@st/ingest'
-import { ingestCapture, confirmPendingFill, rejectPendingFill, type FillBookingDeps, type PendingFillRow } from '../src/domain/booking'
+import { ingestCapture, confirmPendingFill, rejectPendingFill, type ConfirmOverrides, type FillBookingDeps, type PendingFillRow } from '../src/domain/booking'
 import { refreezeKept } from '../src/domain/vision-review'
 import { fakeRepos, silentNotifier } from './booking-fakes'
 
@@ -20,7 +20,7 @@ async function setup(fills: number) {
 type Fakes = Awaited<ReturnType<typeof setup>>['f']
 
 // fillRepo.insert runs after pendingRepo.decide inside bookUnlocked: a throw there is a crash after the flip
-async function crashConfirm(f: Fakes, deps: FillBookingDeps, id: number, overrides: { shares?: number } | null) {
+async function crashConfirm(f: Fakes, deps: FillBookingDeps, id: number, overrides: ConfirmOverrides | null) {
   const insert = f.repos.fillRepo.insert
   f.repos.fillRepo.insert = async () => { throw new Error('crash') }
   try {
@@ -66,7 +66,7 @@ describe('refreezeKept', () => {
     expect(await refreezeKept(f.repos)).toEqual([ids[0]])
     expect(f._stores.visionReviews).toHaveLength(1)
     expect(f._stores.visionReviews[0]).toMatchObject({
-      pendingFillId: ids[0], captureId, outcome: 'rejected', finalShares: null, finalSide: null, finalPrice: null, edited: false,
+      pendingFillId: ids[0], captureId, outcome: 'rejected', finalShares: null, finalSide: null, finalPrice: null, edited: false, feeOverridden: false,
     })
   })
 
@@ -84,6 +84,56 @@ describe('refreezeKept', () => {
     f._stores.pending.find((p: any) => p.id === ids[0])!.status = 'confirmed'
     expect(await refreezeKept(f.repos)).toEqual([])
     expect(f._stores.visionReviews).toHaveLength(0)
+  })
+})
+
+const strip = ({ id: _id, createdAt: _at, ...rest }: any) => rest
+// The record a live confirm freezes, next to the one the boot repair rebuilds after a crash.
+async function liveAndRebuilt(overrides: ConfirmOverrides | null) {
+  const live = await setup(1)
+  await confirmPendingFill(live.ids[0]!, overrides, live.deps, { keepImage: true })
+  const crashed = await setup(1)
+  await crashConfirm(crashed.f, crashed.deps, crashed.ids[0]!, overrides)
+  await refreezeKept(crashed.f.repos)
+  return { live: strip(live.f._stores.visionReviews[0]), rebuilt: strip(crashed.f._stores.visionReviews[0]) }
+}
+
+describe('refreezeKept carries the confirm\'s fee override', () => {
+  test('a rebuilt record equals the live one when the confirm left the fee alone', async () => {
+    const { live, rebuilt } = await liveAndRebuilt(null)
+    expect(rebuilt).toEqual(live)
+    expect(rebuilt.feeOverridden).toBe(false)
+  })
+
+  test('a rebuilt record equals the live one when the confirm cleared the fee', async () => {
+    const { live, rebuilt } = await liveAndRebuilt({ feeCents: null })
+    expect(rebuilt).toEqual(live)
+    expect(rebuilt.feeOverridden).toBe(true)
+    expect(rebuilt.edited).toBe(true)
+  })
+
+  test('a rebuilt record equals the live one when the confirm set a fee', async () => {
+    const { live, rebuilt } = await liveAndRebuilt({ feeCents: 7 })
+    expect(rebuilt).toEqual(live)
+    expect(rebuilt.feeOverridden).toBe(true)
+    expect(rebuilt.finalFee).toBe(7)
+    expect(rebuilt.edited).toBe(true)
+  })
+
+  test('a rebuilt record equals the live one when the confirm set the fee vision read', async () => {
+    const { live, rebuilt } = await liveAndRebuilt({ feeCents: 5 })
+    expect(rebuilt).toEqual(live)
+    expect(rebuilt.feeOverridden).toBe(true)
+    expect(rebuilt.edited).toBe(false)
+  })
+
+  test('a row decided before the column existed rebuilds as before', async () => {
+    const { f, deps, ids } = await setup(1)
+    await crashConfirm(f, deps, ids[0]!, { feeCents: 7 })
+    const stored = f._stores.pending.find((p) => p.id === ids[0])! as unknown as { feeOverride: null }
+    stored.feeOverride = null
+    expect(await refreezeKept(f.repos)).toEqual([ids[0]])
+    expect(f._stores.visionReviews[0]).toMatchObject({ feeOverridden: false })
   })
 })
 

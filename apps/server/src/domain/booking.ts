@@ -10,7 +10,7 @@ import { notifyBookingOutcome, type BookingNotifier, type BookedOutcome } from '
 import { pickSellBucket, type OrderRow, type SellAttribution } from './sell-match'
 import { emptiedBuckets, retireLegs } from './retire-legs'
 import { storeCaptureImage } from './capture-image'
-import type { FillSource, PendingDecisionPatch, RepoSurface } from './repo-types'
+import type { FeeOverrideKind, FillSource, PendingDecisionPatch, RepoSurface } from './repo-types'
 import { requireRun } from './require-run'
 
 // The conflict shape belongs to the dedup matcher, the order row to the sell
@@ -56,6 +56,7 @@ export interface BookInput {
   pendingId?: number | null
   source: FillSource
   bucketIdx?: number | null  // sell only: the operator's bucket; null/undefined = automatic
+  feeOverride?: FeeOverrideKind  // the KIND of fee override, stored on the pending row; read only with pendingId, absent = 'none'
 }
 
 // The whole decide→write span (read state → pick bucket → flip pending → saveState
@@ -120,7 +121,7 @@ export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise
 
   // persist order: decide -> saveState -> fill -> ledger -> order flip (R15: flip last, only after ledger)
   if (input.pendingId != null) {
-    const edited: PendingDecisionPatch = { side: input.side, shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, bucketIdx }
+    const edited: PendingDecisionPatch = { side: input.side, shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, bucketIdx, feeOverride: input.feeOverride ?? 'none' }
     const flipped = await repos.pendingRepo.decide(input.pendingId, 'confirmed', edited)
     if (flipped === false) throw new Error('pending-not-pending')
   }
