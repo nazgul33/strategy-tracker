@@ -62,6 +62,15 @@ describe('http pending: vision review surface', () => {
     expect(rows[0]).not.toHaveProperty('autoFeeCents')
   })
 
+  test('GET /api/pending leaves the fee_override column out, which the real repository returns on every row', async () => {
+    const { app, auth, addPending } = await setup()
+    await addPending({ captureId: 7, ...DETECTED, feeOverride: null })
+    const rows = await (await app.request('/api/pending', { headers: auth })).json()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).not.toHaveProperty('feeOverride')
+    expect(rows[0].shares).toBe(3)
+  })
+
   test('POST confirm forwards side and feeCents overrides', async () => {
     const { f, addPending, post } = await setup()
     const pid = await addPending({ side: 'sell' })

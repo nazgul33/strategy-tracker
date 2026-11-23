@@ -30,7 +30,8 @@ export function pendingRouter(deps: HttpDeps): Hono {
       }),
     ))
     return c.json(jsonBig(rows.map((p) => {
-      const { detectedSide, detectedShares, detectedPrice, detectedFilledOn, detectedFee, detectedAt, ...row } = p
+      // The database row has the fee_override column (boot-repair bookkeeping) although PendingRow does not declare it.
+      const { detectedSide, detectedShares, detectedPrice, detectedFilledOn, detectedFee, detectedAt, feeOverride, ...row } = p as PendingRow & { feeOverride?: unknown }
       const { costPpm, heldBuckets } = perRun.get(p.runId)!
       return {
         ...row,
