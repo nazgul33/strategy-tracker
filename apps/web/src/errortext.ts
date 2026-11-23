@@ -8,7 +8,7 @@ export function errorText(err: unknown, t: Translate, keyPrefix?: string): strin
   if (err instanceof ApiError) {
     if (keyPrefix) {
       const key = `${keyPrefix}.${err.code}`;
-      const own = t(key);
+      const own = t(key, { code: err.code });
       if (own !== key) return own;
     }
     const server = err.status >= 500 || /^http-5\d\d$/.test(err.code);

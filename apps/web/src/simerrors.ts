@@ -1,7 +1,6 @@
 import { ApiError } from './api';
 import { errorText } from './errortext';
-
-type T = (key: string, params?: Record<string, string | number>) => string;
+import type { Translate } from './errortext';
 
 // An explicit allow-list: a free-text server message can never match a catalog key by accident.
 const KNOWN_CODES: ReadonlySet<string> = new Set([
@@ -13,7 +12,7 @@ const KNOWN_CODES: ReadonlySet<string> = new Set([
 ]);
 
 /** Words for a failed sim request; anything unmapped keeps its raw code. */
-export function simErrorText(err: unknown, t: T): string {
+export function simErrorText(err: unknown, t: Translate): string {
   if (err instanceof ApiError) {
     if (KNOWN_CODES.has(err.code)) return t(`simErr.${err.code}`);
     if (/^http-5\d\d$/.test(err.code)) return t('simErr.server', { code: err.code });

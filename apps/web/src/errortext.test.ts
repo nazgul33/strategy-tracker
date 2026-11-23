@@ -51,6 +51,12 @@ describe('errorText', () => {
     expect(errorText(undefined, en)).toBe('undefined');
   });
 
+  it('substitutes the code into prefixed copy', () => {
+    const t = (key: string, params?: Record<string, string | number>) =>
+      key === 'fillErr.stale' ? 'Stale ({code})'.replace('{code}', params ? String(params.code) : '{code}') : key;
+    expect(errorText(api(409, 'stale'), t, 'fillErr')).toBe('Stale (stale)');
+  });
+
   it('ko copy', () => {
     expect(errorText(new NetworkError('Failed to fetch'), ko)).toBe('서버에 연결할 수 없습니다. 연결을 확인하고 다시 시도하세요.');
     expect(errorText(api(503, 'http-503'), ko)).toBe(
@@ -67,7 +73,7 @@ describe('errorText', () => {
 // brings back the browser's "Failed to fetch"; api.ts only stores that text on NetworkError.
 describe('raw error text', () => {
   it('no screen formats a caught error by hand', async () => {
-    const src = new URL('.', import.meta.url).pathname;
+    const src = `${import.meta.dir}/`;
     const raw = /\b(err|e|error)\.message\b|String\((err|e|error)\)|=== key \? err\./;
     const offenders: string[] = [];
     for (const file of new Bun.Glob('**/*.{ts,tsx}').scanSync({ cwd: src })) {

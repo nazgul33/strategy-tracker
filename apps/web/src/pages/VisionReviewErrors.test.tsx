@@ -1,5 +1,6 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { api } from '../api';
 import type { VisionReviewEntryDto } from '../api.types';
 import { lookup } from '../i18n/catalog';
 import { installFetchStub, restoreFetch, type Route } from '../testing/fetchStub';
@@ -263,5 +264,20 @@ describe('VisionReviewPage error handling', () => {
     await flush();
 
     expect(alerts().map((a) => a.textContent)).toEqual([en('errNetwork')]);
+  });
+
+  it('a list load that rejects with undefined still shows an error and no spinner', async () => {
+    const spy = spyOn(api, 'listVisionReviews').mockRejectedValue(undefined);
+    try {
+      await act(async () => {
+        root.render(d(VisionReviewPage));
+      });
+      await flush();
+
+      expect(alerts().map((a) => a.textContent)).toEqual(['undefined']);
+      expect(container.textContent).not.toContain('…');
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

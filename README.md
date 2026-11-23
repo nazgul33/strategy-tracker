@@ -174,7 +174,7 @@ The digest carries one "⚠️ Unconfirmed orders from <date>: N" line per trade
 Manual trigger for the morning pipeline: `POST /api/trigger/morning` (authenticated). It is safe to
 repeat: a run that already has orders for today is not planned again and gets a notice saying so, so
 after a failed-run warning it plans only that run. If the pipeline stops before any run is planned, it
-sends a global warning and the trigger answers 500.
+sends a global warning and the trigger answers 500 with `{ "error": "pipeline-error" }`.
 
 ## Calendar caveat (NYSE data)
 

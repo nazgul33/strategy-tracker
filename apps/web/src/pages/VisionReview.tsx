@@ -14,7 +14,7 @@ const without = (errors: Record<number, unknown>, id: number) => {
 
 export function VisionReviewPage() {
   const t = useT();
-  const { data, failure, loading, reload } = useAsync(() => api.listVisionReviews(), []);
+  const { data, error, failure, loading, reload } = useAsync(() => api.listVisionReviews(), []);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [lastDeleteId, setLastDeleteId] = useState<number | null>(null);
   const [deleteErrors, setDeleteErrors] = useState<Record<number, unknown>>({});
@@ -74,7 +74,7 @@ export function VisionReviewPage() {
   // otherwise at page level until dismissed. Every reload except Reload follows a delete, so a
   // list error belongs to the card of the last delete, except while that card's own request is in
   // flight.
-  const listText = failure === undefined ? null : visionReviewErrorText(failure, t);
+  const listText = error === undefined ? null : visionReviewErrorText(failure, t);
   const listed = (id: number | null) => id !== null && !!data?.some((e) => e.captureId === id);
   const has = (id: number) => id in deleteErrors;
   const cardListError = listed(lastDeleteId) && busyId !== lastDeleteId && !has(lastDeleteId!);
