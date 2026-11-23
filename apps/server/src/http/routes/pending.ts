@@ -30,7 +30,7 @@ export function pendingRouter(deps: HttpDeps): Hono {
         const state = run ? await deps.repos.bucketRepo.loadState(runId) : null
         const flagRows = rows.filter((p) => p.runId === runId).map((p) => ({ id: p.id, side: p.side, shares: p.shares, price: p.price, filledOn: p.filledOn, evidence: evidenceOf(p) }))
         const needingBucket = state
-          ? await rowsNeedingBucket({ bucketRepo: { ...deps.repos.bucketRepo, loadState: async () => state }, orderRepo: deps.repos.orderRepo }, runId, flagRows)
+          ? await rowsNeedingBucket(deps.repos, runId, flagRows, state)
           : new Set<number>()
         return [runId, { costPpm: run?.costPpm ?? deps.defaultSettings.defaultCostPpm, heldBuckets: state ? heldBucketsOf(state) : [], needingBucket }] as const
       }),

@@ -42,6 +42,17 @@ describe('rowsNeedingBucket', () => {
     expect([loads, reads]).toEqual([1, 1])
   })
 
+  test('a state passed in is used and loadState is not called', async () => {
+    const { f, runId } = await sellSetup(held43, book43())
+    const rows = [row(1, '96.50'), row(2, '96.50', STOP)]
+    const without = await rowsNeedingBucket(f.repos, runId, rows)
+    const state = await f.repos.bucketRepo.loadState(runId)
+    f.repos.bucketRepo.loadState = async () => { throw new Error('loadState called') }
+    const withState = await rowsNeedingBucket(f.repos, runId, rows, state)
+    expect([...withState]).toEqual([...without])
+    expect([...withState]).toEqual([1])
+  })
+
   test('no rows, or no sell rows, read nothing', async () => {
     const { f, runId } = await sellSetup(held43, book43())
     f.repos.bucketRepo.loadState = async () => { throw new Error('loadState called') }
