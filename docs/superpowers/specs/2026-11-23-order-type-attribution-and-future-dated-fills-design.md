@@ -53,14 +53,16 @@ added on this branch):
 - `정정(매도)` is an amended sell (`IMG_2103`). Its original order type is not
   shown.
 - No sample shows a `LOC` sell or a market sell. `매도/LOC` is assumed by analogy
-  with `매수/LOC`, and `매도/보통(시장가)` by the shape above.
+  with `매수/LOC`. A market sell is assumed to carry `시장가` outside a `STOP`
+  (`매도/보통(시장가)` by the shape above; the operator wrote it as `매도(시장가)`).
 
 ## Goals
 
 1. A captured sell carries what the screen says about its order: the 주문구분
    text, 주문단가 and 주문수량.
 2. The order type decides which legs are candidates: a target fill is matched
-   against target legs, a stop fill against stop legs.
+   against target legs, a stop fill against stop legs, a market sell against the
+   market orders of forced-sell buckets.
 3. Nothing is attributed silently among several possible buckets. The tracker
    either has a stated reason and (where the operator asked for it) sends a
    notice, or it asks the operator to choose.
@@ -76,9 +78,6 @@ added on this branch):
 - The buy side. A buy still goes to the next empty bucket.
 - The order columns in the vision-review record (`vision_reviews`) or the
   Compare dialog. They have no "final" value to compare against.
-- Recognising a market sell (a forced-sell bucket) by its 주문구분 text. No sample
-  shows the wording, so it is "unknown" for now. The raw text is stored, so
-  adding it later is a one-line change to the classifier.
 - Dropping the date floor of the sibling cancel (#96 "direction B"). See
   "Why the cancel rule stays".
 
@@ -87,7 +86,8 @@ added on this branch):
 - A sell booked to one of several possible buckets with no notice and no
   operator choice.
 - A sell held back for an operator choice when only one bucket could have sold
-  it.
+  it. The one exception is the operator's own ruling for a market sell with no
+  forced-sell bucket (case C-market).
 - A bucket decided at capture time and stored. One place decides: the booking.
 - The order type classified inside the vision prompt.
 - A refusal that blocks a real fill because of a time-zone difference. "Today"
@@ -126,7 +126,8 @@ added on this branch):
    and a new broker wording would need a re-capture instead of a code change.
 
 The operator picked 1 and fixed the mapping: `LOC` and `보통` are targets, `STOP`
-is a stop.
+is a stop, and a market sell (`시장가`) matches a forced-sell bucket's market
+order if there is one and is otherwise the operator's choice.
 
 ## Design
 
@@ -167,22 +168,25 @@ none of them.
 ### 3. Order type
 
 A pure function on the server, `classifyOrderType(raw)`, returns `'target'`,
-`'stop'` or `'unknown'`. It ignores whitespace and letter case.
+`'stop'`, `'market'` or `'unknown'`. It ignores whitespace and letter case.
 
 | Text | Type |
 | --- | --- |
 | does not contain `매도` | unknown |
 | contains `정정` | unknown |
 | contains `STOP` | stop |
-| contains `시장가` | unknown |
+| contains `시장가` | market |
 | contains `LOC` or `보통` | target |
 | anything else (bare `매도`, `LOO`, …), or no text | unknown |
 
 The tests are applied in that order, so `매도/STOP(시장가)` is a stop and a market
-sell (`매도/보통(시장가)`) is never a target.
+sell (`매도/보통(시장가)`, `매도(시장가)`) is a market sell, never a target.
 
-A target fill is matched against `sell_loc` orders, a stop fill against
-`stop_sell` orders.
+| Type | Matched against orders of kind |
+| --- | --- |
+| target | `sell_loc` |
+| stop | `stop_sell` |
+| market | `market_sell` (planned only for a forced-sell bucket) |
 
 ### 4. Which bucket a sell belongs to
 
@@ -202,29 +206,35 @@ The decision, first match wins:
 
 **A. The operator gave a bucket.** That bucket, as today, with no notice.
 
-**B. The type is target or stop, and at least one order of that kind in the pool
-covers and fits.** Those orders are the candidates. Narrow them step by step; a
-step that would leave nothing is skipped.
+**B. The type is target, stop or market, and at least one order of that kind in
+the pool covers and fits.** Those orders are the candidates. Narrow them step by
+step; a step that would leave nothing is skipped.
 
 | Step | Keeps | Applies to |
 | --- | --- | --- |
 | 1 order price | the candidates whose limit is nearest the screen's 주문단가 | targets, when `orderPrice` was read and is above 0 |
-| 2 ordered shares | the candidates whose own `shares` equal the screen's 주문수량 | both, when `orderedShares` was read |
-| 3 remaining shares | the candidates whose bucket holds exactly the fill's shares | both |
-| 4 fill price | the candidates whose limit or trigger is nearest the fill price | both |
-| 5 older bucket | the bucket with the earliest buy date (`Bucket.filledOn`), then the lowest bucket index, then the lowest order id | both |
+| 2 ordered shares | the candidates whose own `shares` equal the screen's 주문수량 | all, when `orderedShares` was read |
+| 3 remaining shares | the candidates whose bucket holds exactly the fill's shares | all |
+| 4 fill price | the candidates whose limit or trigger is nearest the fill price | targets and stops |
+| 5 older bucket | the bucket with the earliest buy date (`Bucket.filledOn`), then the lowest bucket index, then the lowest order id | all |
 
 The fill books to the bucket of the order left after step 5, and that order is
 the one flipped when the fill empties the bucket.
 
 A stop never uses step 1: its 주문단가 is 0 or a stop-limit's limit, not the
-trigger.
+trigger. A market order has no price at all, so it uses neither price step.
 
 **C. The type is target or stop, and no order of that kind is a candidate.** By
 holdings only: if exactly one non-empty bucket holds at least the fill's shares,
 it takes the fill. If none does, `no-bucket-for-sell` (as today). If several do,
 the operator chooses. Orders of the other kind are never evidence for a typed
 fill.
+
+**C-market. The type is market, and no `market_sell` order is a candidate**
+(operator ruling). The operator chooses, even when only one bucket holds enough
+shares: a market sell with no forced-sell bucket behind it is something the
+tracker did not plan. If no non-empty bucket holds at least the fill's shares it
+is `no-bucket-for-sell`, as today.
 
 **D. The type is unknown.**
 1. The buckets that have at least one sell-side order (any kind) in the pool
@@ -260,8 +270,10 @@ booked. A pending row stays pending, like the other booking refusals.
   targets at one close and stays quiet.
 - A stop fill with candidates on more than one bucket always sends it, whichever
   step decided (operator ruling).
-- Never sent in A, C or D: there is either an operator choice or a single
-  possible bucket.
+- A market sell with forced-sell candidates on more than one bucket sends it
+  too.
+- Never sent in A, C, C-market or D: there is either an operator choice or a
+  single possible bucket.
 - It names the chosen leg, the other candidates, and which step decided. The
   `rule` value and its en/ko "why" line cover the five steps; the existing
   `price` and `market` values and their copy go away with the old ladder.
@@ -278,6 +290,9 @@ Examples the tests must pin:
 | A `STOP` fill above every trigger, two buckets hold enough shares. | Operator chooses. |
 | An unknown-type sell and one held bucket. | That bucket, no notice. |
 | `정정(매도)` with two buckets whose legs fit. | Operator chooses. |
+| A `시장가` sell; one forced-sell bucket with a market order, two other held buckets with enough shares. | The forced-sell bucket, no notice. |
+| A `시장가` sell; two forced-sell buckets, one holding exactly the fill's shares. | That one (step 3), with a notice. |
+| A `시장가` sell; no forced-sell bucket, one held bucket. | Operator chooses. |
 
 ### 5. Where the choice surfaces
 
@@ -447,9 +462,11 @@ and is never a day ahead of New York's date. The premarket sample (ordered
    bucket holds enough shares, instead of always waiting for the operator.
 4. **Target notices** stay quiet only on an exact order-price match.
 5. **Seeding** refuses future dates too, checked before the run is created.
-6. **A market sell is "unknown"**: any `시장가` text outside `STOP`, so
-   `매도/보통(시장가)` is not a target. (Open question to the operator, see the
-   hand-over.)
+6. **A market sell is recognised by `시장가` outside `STOP`.** The rule itself is
+   the operator's (forced-sell bucket if there is one, otherwise the operator
+   chooses). The wording is inferred: no sample shows a market sell yet. Read
+   literally, "otherwise" also covers a single held bucket, so that case waits
+   for a choice.
 7. **The order columns are shown under the Side control**, not in a new column
    and not in the Compare dialog.
 8. **#96 closes with the refusal only.**
