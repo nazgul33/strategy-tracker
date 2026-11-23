@@ -15,7 +15,7 @@ describe('http trigger', () => {
     expect(await res.json()).toEqual({ result: 'morning-ok' })
   })
 
-  test('trigger morning answers 500 when the pipeline rejects', async () => {
+  test('trigger morning answers 500 pipeline-error when the pipeline rejects, and logs why', async () => {
     const f = makeFakes()
     const deps = makeDeps(f)
     deps.triggerMorning = async () => { throw new Error('boom') }
@@ -26,6 +26,8 @@ describe('http trigger', () => {
     try {
       const res = await app.request('/api/trigger/morning', { method: 'POST', headers: auth })
       expect(res.status).toBe(500)
+      expect(await res.json()).toEqual({ error: 'pipeline-error' })
+      expect(errors.mock.calls).toEqual([['morning trigger failed:', 'Error: boom']])
     } finally {
       errors.mockRestore()
     }

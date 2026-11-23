@@ -72,8 +72,13 @@ export function createApp(deps: HttpDeps): Hono {
   app.route('/api', notificationsRouter(deps))
   app.route('/api/sim', simRouter(deps))
   app.post('/api/trigger/morning', async (c) => {
-    const result = await deps.triggerMorning()
-    return c.json({ result })
+    try {
+      const result = await deps.triggerMorning()
+      return c.json({ result })
+    } catch (e) {
+      console.error('morning trigger failed:', String(e))
+      return c.json({ error: 'pipeline-error' }, 500)
+    }
   })
   // NOTE: the static SPA (apps/web/dist) is served by main.ts, not here —
   // createApp stays pure so http tests can run without the web build.
