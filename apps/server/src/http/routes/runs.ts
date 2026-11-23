@@ -10,6 +10,7 @@ import { jsonBig, type HttpDeps } from '../app'
 import { fillBookingDeps } from '../booking-deps'
 import type { RunStatus } from '../../domain/repo-types'
 import { parseId } from '../params'
+import { broadcastNotice } from '../../wire/broadcast'
 import { MAX_PPM, isValidPpm, isValidCutLossPpm, isValidCostPpm } from '../../domain/ppm'
 import { prevTradingDay, type ISODate } from '@st/calendar'
 
@@ -269,10 +270,10 @@ export function runsRouter(deps: HttpDeps): Hono {
       price: formatUsd(order.limitPrice),
       reason: tgT('reason-' + order.cancelReason, lang),
     })
-    for (const chatId of deps.allowedChatIds) {
-      await deps.repos.notificationRepo.insert({ runId: id, chatId, text })
-      await deps.send(chatId, text)
-    }
+    await broadcastNotice(
+      { allowedChatIds: deps.allowedChatIds, send: deps.send, notificationRepo: deps.repos.notificationRepo },
+      id, text, { kind: 'order-cancelled', extra: { orderId } },
+    )
     return c.json({ ok: true })
   })
   return r

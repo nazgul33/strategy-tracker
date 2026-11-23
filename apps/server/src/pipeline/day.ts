@@ -4,7 +4,7 @@ import { computeOrders, type MrParams } from '@st/strategies'
 import { rollStale, type RepoSurface, type BookingDeps } from '../domain/booking'
 import type { NewOrder, RunRow } from '../domain/repo-types'
 import { withRunLock } from '../domain/run-lock'
-import { WEB_ONLY_CHAT_ID } from '../wire/broadcast'
+import { broadcastNotice, type NoticeText } from '../wire/broadcast'
 import { renderDigest, renderClosed, renderReminder } from '@st/telegram/digest'
 import { t } from '@st/telegram/i18n'
 import type { DayPlan } from '@st/core'
@@ -28,6 +28,13 @@ function weekday(t: ISODate): number {
   return new Date(t + 'T12:00:00Z').getUTCDay()
 }
 
+function notify(deps: DayDeps, runId: number | null, text: NoticeText, kind: string): Promise<void> {
+  return broadcastNotice(
+    { allowedChatIds: deps.allowedChatIds, send: deps.send, notificationRepo: deps.repos.notificationRepo },
+    runId, text, { kind },
+  )
+}
+
 export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> {
   const today = deps.today()
   const lang = deps.digestLang
@@ -39,22 +46,14 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
 
   const info = dayInfo(today)
   if (!info.open) {
-    const text = renderClosed(info, lang)
-    for (const chatId of deps.allowedChatIds) {
-      await deps.send(chatId, text)
-      await deps.repos.notificationRepo.insert({ runId: null, chatId, text })
-    }
+    await notify(deps, null, renderClosed(info, lang), 'closed')
     return 'closed'
   }
 
   // crosscheck
   const cc = await deps.crossCheck(today)
   if (cc.agree === false) {
-    const text = t('warn-conflict', lang)
-    for (const chatId of deps.allowedChatIds) {
-      await deps.send(chatId, text)
-      await deps.repos.notificationRepo.insert({ runId: null, chatId, text })
-    }
+    await notify(deps, null, t('warn-conflict', lang), 'conflict')
     return 'conflict'
   }
 
@@ -68,15 +67,7 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
   let numCompleted = 0
 
   async function warnDataError(run: RunRow): Promise<void> {
-    const text = t('warn-data-error', lang, { id: run.id, ticker: run.ticker })
-    if (deps.allowedChatIds.length === 0) {
-      await deps.repos.notificationRepo.insert({ runId: run.id, chatId: WEB_ONLY_CHAT_ID, text })
-      return
-    }
-    for (const chatId of deps.allowedChatIds) {
-      await deps.send(chatId, text)
-      await deps.repos.notificationRepo.insert({ runId: run.id, chatId, text })
-    }
+    await notify(deps, run.id, t('warn-data-error', lang, { id: run.id, ticker: run.ticker }), 'data-error')
   }
 
   for (const run of active) {
@@ -146,12 +137,7 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
 
     const ctx = { tradeDate: today, lastClose: close, lastCloseDate: closeDate }
     const chunks = renderDigest(run as Run, plan, ctx, lang, state.ages)
-    for (const chunk of chunks) {
-      for (const chatId of deps.allowedChatIds) {
-        await deps.send(chatId, chunk)
-        await deps.repos.notificationRepo.insert({ runId: run.id, chatId, text: chunk })
-      }
-    }
+    await notify(deps, run.id, { record: chunks.join('\n\n'), send: chunks }, 'digest')
     numCompleted++
   }
 
@@ -162,10 +148,9 @@ export async function runReminder(deps: DayDeps): Promise<void> {
   const today = deps.today()
   const info = dayInfo(today)
   if (!info.open) return
-  const lang = deps.digestLang
-  const text = renderReminder(lang)
-  for (const chatId of deps.allowedChatIds) {
-    await deps.send(chatId, text)
-    await deps.repos.notificationRepo.insert({ runId: null, chatId, text })
-  }
+  await notify(deps, null, renderReminder(deps.digestLang), 'reminder')
+}
+
+export async function runDecemberNudge(deps: DayDeps): Promise<void> {
+  await notify(deps, null, t('december-nudge', deps.digestLang), 'december-nudge')
 }
