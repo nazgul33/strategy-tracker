@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { emptyState } from '@st/core'
+import { emptyState, type RunState } from '@st/core'
 import { DEFAULT_MR_PARAMS } from '@st/strategies'
 import { dayInfo } from '@st/calendar'
 import type { DayDeps } from '../src/pipeline/day'
@@ -7,53 +7,52 @@ import { runMorningPipeline, runReminder } from '../src/pipeline/day'
 import { recalcRunState } from '../src/domain/recompute'
 import { withRunLock } from '../src/domain/run-lock'
 import type { RepoSurface } from '../src/domain/booking'
+import type { NewNotification, NewOrder, NewRun, NotificationRow, OrderRecord, OrderStatus, RunRow, RunStatus } from '../src/domain/repo-types'
 import { fakeCorrectionRepo } from './fake-corrections'
+import { fakeRunRow, rehydrate, serializeState, FAKE_CREATED_AT } from './booking-fakes'
+import type { Expect, IsNever, ArityMismatches } from './type-assert'
 
 function makeRepos() {
-  const runs: any[] = []
-  const orders: any[] = []
-  const notifications: any[] = []
+  const runs: RunRow[] = []
+  const orders: OrderRecord[] = []
+  const notifications: NotificationRow[] = []
   let orderSeq = 1
   const runRepo = {
     async list() { return runs },
     async get(id: number) { return runs.find((r) => r.id === id) ?? null },
-    async create(input: any) { const id = runs.length + 1; const st = input.initialRunState ?? emptyState(10); const r = { id, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, status: input.status ?? 'active', ...input, stateJson: JSON.stringify(st, (_: any, v: any) => typeof v === 'bigint' ? v.toString() : v) }; runs.push(r); return id },
-    async updateStatus(id: number, s: string) { const r = runs.find((x) => x.id === id); if (r) r.status = s },
+    async create(input: NewRun) { const id = runs.length + 1; runs.push(fakeRunRow(id, input)); return id },
+    async updateStatus(id: number, s: RunStatus) { const r = runs.find((x) => x.id === id); if (r) r.status = s },
   }
   const bucketRepo = {
-    async loadState(runId: number) {
-      const r = runs.find((x) => x.id === runId)
-      const raw = JSON.parse(r.stateJson)
-      const ages: any = {}
-      for (const k of Object.keys(raw.ages ?? {})) ages[Number(k)] = raw.ages[k]
-      return {
-        buckets: (raw.buckets ?? []).map((b: any) => ({ ...b, buyPrice: BigInt(b.buyPrice ?? 0) })),
-        cashCents: raw.cashCents,
-        closed: (raw.closed ?? []).map((c: any) => ({ ...c, buyPrice: BigInt(c.buyPrice), soldPrice: BigInt(c.soldPrice) })),
-        ages,
-      }
-    },
-    async saveState(runId: number, state: any) {
-      const r = runs.find((x) => x.id === runId)
-      r.stateJson = JSON.stringify(state, (_: any, v: any) => typeof v === 'bigint' ? v.toString() : v)
-    },
+    async loadState(runId: number) { return rehydrate(JSON.parse(runs.find((x) => x.id === runId)!.stateJson)) },
+    async saveState(runId: number, state: RunState) { runs.find((x) => x.id === runId)!.stateJson = serializeState(state) },
   }
   const orderRepo = {
-    async insertMany(os: any[]) { for (const o of os) orders.push({ id: orderSeq++, ...o }) },
+    async insertMany(os: NewOrder[]) { for (const o of os) orders.push({ id: orderSeq++, ...o, skipReason: null, cancelReason: null }) },
     async listForDate(d: string) { return orders.filter((o) => o.tradeDate === d) },
     async listForRun(runId: number, d?: string) { return orders.filter((o) => o.runId === runId && (d === undefined || o.tradeDate === d)) },
     async listForRunFrom(runId: number, fromDate: string) { return orders.filter((o) => o.runId === runId && o.tradeDate >= fromDate).sort((a, b) => a.id - b.id) },
     async get(id: number) { return orders.find((x) => x.id === id) ?? null },
     async markStale(d: string) { let c = 0; for (const o of orders) if (o.status === 'open' && o.tradeDate < d) { o.status = 'stale'; c++ } return c },
-    async setStatus(id: number, s: string) { const o = orders.find((x) => x.id === id); if (o) o.status = s },
+    async setStatus(id: number, s: OrderStatus, _cancelReason?: string) { const o = orders.find((x) => x.id === id); if (o) o.status = s },
     async listOpenBefore(d: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < d) },
   }
   const notificationRepo = {
-    async insert(n: any) { notifications.push({ ...n }) },
+    async insert(n: NewNotification) { notifications.push({ id: notifications.length + 1, sentAt: FAKE_CREATED_AT, ...n }) },
   }
-  const repos: RepoSurface = { runRepo, bucketRepo, orderRepo, notificationRepo, correctionRepo: fakeCorrectionRepo().repo, fillRepo: { insert: async () => {}, async listForRun() { return [] as any[] } }, pendingRepo: { insert: async () => 1, listPending: async () => [], hasLiveForCapture: async () => false, hasConfirmedForCapture: async () => false, decide: async () => false }, captureRepo: { findByHash: async () => null, setStatus: async () => {}, insert: async () => ({ inserted: true, id: 1 }) }, captureImageRepo: { insertIgnore: async () => true, getBytes: async () => null, isKept: async () => false, setKeep: async () => {}, deleteFor: async () => {}, discard: async () => {}, listKept: async () => [] }, visionReviewRepo: { insertIgnore: async () => {}, listForCaptures: async () => [], deleteFor: async () => {} }, ledgerRepo: { insert: async () => {}, listForRun: async () => [] } }
+  const repos = {
+    runRepo, bucketRepo, orderRepo, notificationRepo, correctionRepo: fakeCorrectionRepo().repo,
+    fillRepo: { insert: async (_fill) => {}, async listForRun(_runId) { return [] } },
+    pendingRepo: { insert: async (_p) => 1, listPending: async () => [], hasLiveForCapture: async (_captureId) => false, hasConfirmedForCapture: async (_captureId) => false, decide: async (_id, _status, _edited) => false },
+    captureRepo: { findByHash: async (_runId, _hash) => null, setStatus: async (_id, _status) => {}, insert: async (_c) => ({ inserted: true, id: 1 }) },
+    captureImageRepo: { insertIgnore: async (_row) => true, getBytes: async (_captureId) => null, isKept: async (_captureId) => false, setKeep: async (_captureId) => {}, deleteFor: async (_captureId) => {}, discard: async (_captureId) => {}, listKept: async (_limit) => [] },
+    visionReviewRepo: { insertIgnore: async (_row) => {}, listForCaptures: async (_captureIds) => [], deleteFor: async (_captureId) => {} },
+    ledgerRepo: { insert: async (_l) => {}, listForRun: async (_runId) => [] },
+  } satisfies RepoSurface
   return { repos, runs, orders, notifications }
 }
+
+type _day = Expect<IsNever<ArityMismatches<ReturnType<typeof makeRepos>['repos'], RepoSurface>>>
 
 describe('day pipeline', () => {
   test('(a) sat -> weekend', async () => {
@@ -123,12 +122,12 @@ describe('day pipeline', () => {
     st1.buckets[1] = { index: 1, state: 'held', shares: 10, buyPrice: 3402300n, buyFeeCents: 0, filledOn: '2026-11-03' }
     st1.ages[1] = 3
     st1.cashCents = 1000000
-    const runId1 = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: st1 })
+    const runId1 = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, initialRunState: st1 })
     const st2 = emptyState(10)
     st2.buckets[1] = { index: 1, state: 'held', shares: 10, buyPrice: 3402300n, buyFeeCents: 0, filledOn: '2026-11-03' }
     st2.ages[1] = 3
     st2.cashCents = 1000000
-    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'A', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: st2 })
+    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'A', poolCents: 1000000, costPpm: 30, initialRunState: st2 })
 
     const sends: string[] = []
     const deps: DayDeps = {
@@ -149,7 +148,7 @@ describe('day pipeline', () => {
     expect(afterState.ages[1]).toBe(4)
 
     // persisted order rows (buy_loc)
-    const buyOrders = f.orders.filter((o: any) => o.kind === 'buy_loc')
+    const buyOrders = f.orders.filter((o) => o.kind === 'buy_loc')
     expect(buyOrders.length).toBe(2)
     for (const o of buyOrders) {
       expect(o.bucketIdx).toBe(0)
@@ -164,12 +163,12 @@ describe('day pipeline', () => {
     expect(sends.some((s) => s.includes('A  AAPL'))).toBe(true)
     // notifications: 2 rows (runId per run, chat c1)
     expect(f.notifications.length).toBe(2)
-    expect(f.notifications.every((n: any) => n.chatId === 'c1')).toBe(true)
+    expect(f.notifications.every((n) => n.chatId === 'c1')).toBe(true)
   })
 
   test('(d) data-error', async () => {
     const f = makeRepos()
-    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: emptyState(10) })
+    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, initialRunState: emptyState(10) })
     const sends: string[] = []
     const deps: DayDeps = {
       today: () => '2026-11-06',
@@ -190,10 +189,10 @@ describe('day pipeline', () => {
 
   test('(d2) data-error on one run does not silence the other runs', async () => {
     const f = makeRepos()
-    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'BADA', name: 'A', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: emptyState(10) })
+    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'BADA', name: 'A', poolCents: 1000000, costPpm: 30, initialRunState: emptyState(10) })
     const st = emptyState(10)
     st.cashCents = 1000000
-    const okId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'B', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: st })
+    const okId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'B', poolCents: 1000000, costPpm: 30, initialRunState: st })
     const sends: string[] = []
     const deps: DayDeps = {
       today: () => '2026-11-06',
@@ -210,16 +209,16 @@ describe('day pipeline', () => {
     }
     const r = await runMorningPipeline(deps)
     expect(r).toBe('sent')
-    const badId = f.runs.find((x: any) => x.ticker === 'BADA').id
-    expect(f.orders.filter((o: any) => o.runId === badId).length).toBe(0)
-    expect(f.orders.filter((o: any) => o.runId === okId).length).toBeGreaterThan(0)
+    const badId = f.runs.find((x) => x.ticker === 'BADA')!.id
+    expect(f.orders.filter((o) => o.runId === badId).length).toBe(0)
+    expect(f.orders.filter((o) => o.runId === okId).length).toBeGreaterThan(0)
     expect(sends.filter((s) => s.includes('Market data error'))).toHaveLength(1)
     expect(sends.length).toBeGreaterThan(1)
   })
 
   test('(e) conflict', async () => {
     const f = makeRepos()
-    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: emptyState(10) })
+    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, initialRunState: emptyState(10) })
     const sends: string[] = []
     const deps: DayDeps = {
       today: () => '2026-11-06',
@@ -239,7 +238,7 @@ describe('day pipeline', () => {
 
   test('(f) unconfirmed warning line', async () => {
     const f = makeRepos()
-    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: emptyState(10) })
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, initialRunState: emptyState(10) })
     // yesterday's unresolved order
     await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-05', kind: 'buy_loc', bucketIdx: 0, limitPrice: 100n, shares: 1, status: 'open' }])
     // older order
@@ -261,7 +260,7 @@ describe('day pipeline', () => {
     // count 2
     expect(sends.some((s) => s.includes('⚠️ 2 unconfirmed'))).toBe(true)
     // seeded orders now stale
-    const staleCount = f.orders.filter((o: any) => o.status === 'stale').length
+    const staleCount = f.orders.filter((o) => o.status === 'stale').length
     expect(staleCount).toBe(2)
   })
 
@@ -299,7 +298,7 @@ describe('day pipeline run lock', () => {
     st.buckets[1] = { index: 1, state: 'held', shares: 10, buyPrice: 3402300n, buyFeeCents: 0, filledOn: '2026-11-03' }
     st.ages[1] = 3
     st.cashCents = 1000000
-    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, status: 'active', initialRunState: st })
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, initialRunState: st })
     const deps: DayDeps = {
       today: () => '2026-11-06',
       fetchLastClose: async () => ({ date: '2026-11-05', close: 3402300n }),
@@ -349,8 +348,8 @@ describe('day pipeline run lock', () => {
     const saveState = bucketRepo.saveState.bind(bucketRepo)
     const insertMany = orderRepo.insertMany.bind(orderRepo)
     bucketRepo.loadState = async (id: number) => { log.push('load'); return loadState(id) }
-    bucketRepo.saveState = async (id: number, s: any) => { log.push('save'); await saveState(id, s) }
-    orderRepo.insertMany = async (rows: any[]) => { entered.resolve(); await gate.promise; await insertMany(rows) }
+    bucketRepo.saveState = async (id: number, s: RunState) => { log.push('save'); await saveState(id, s) }
+    orderRepo.insertMany = async (rows: NewOrder[]) => { entered.resolve(); await gate.promise; await insertMany(rows) }
 
     const morning = runMorningPipeline(deps)
     let recalc: Promise<unknown> | undefined

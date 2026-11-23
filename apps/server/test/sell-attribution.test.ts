@@ -3,7 +3,7 @@ import { emptyState, applyBuyFill, type ISODate } from '@st/core'
 import { parseUsd } from '@st/core/money'
 import { manualFill, runBooking, confirmPendingFill, type FillBookingDeps } from '../src/domain/booking'
 import { withRunLock } from '../src/domain/run-lock'
-import { fakeRepos, recordingNotifier } from './booking-fakes'
+import { fakeRepos, recordingNotifier, NO_SNAPSHOT } from './booking-fakes'
 
 const D: ISODate = '2026-11-12'
 type Held = { idx: number; shares: number; buy: string }
@@ -12,7 +12,7 @@ type Ord = { idx: number; kind: 'sell_loc' | 'stop_sell' | 'market_sell'; price:
 async function setup(held: Held[], ords: Ord[], notifyOverride?: (base: ReturnType<typeof recordingNotifier>['notify']) => FillBookingDeps['notify']) {
   const f = fakeRepos()
   const rec = recordingNotifier()
-  const deps: FillBookingDeps = { repos: f.repos as any, today: D, notify: notifyOverride ? notifyOverride(rec.notify) : rec.notify }
+  const deps: FillBookingDeps = { repos: f.repos, today: D, notify: notifyOverride ? notifyOverride(rec.notify) : rec.notify }
   let s = emptyState(10)
   for (const h of held) s = applyBuyFill(s, h.idx, h.shares, parseUsd(h.buy), 0, '2026-11-01')
   const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'attr', poolCents: 1000000, costPpm: 0, initialRunState: { buckets: s.buckets, cashCents: s.cashCents, closed: s.closed, ages: s.ages } })
@@ -25,7 +25,7 @@ async function setup(held: Held[], ords: Ord[], notifyOverride?: (base: ReturnTy
 const sell = (runId: number, shares: number, price: string, deps: FillBookingDeps) =>
   manualFill(runId, { side: 'sell', shares, price, filledOn: D }, deps)
 const order = (f: ReturnType<typeof fakeRepos>, idx: number, kind: string) =>
-  f._stores.orders.find((o: any) => o.bucketIdx === idx && o.kind === kind)
+  f._stores.orders.find((o) => o.bucketIdx === idx && o.kind === kind)!
 const lastFill = (f: ReturnType<typeof fakeRepos>) => f._stores.fills[f._stores.fills.length - 1]
 
 const held43: Held[] = [{ idx: 0, shares: 10, buy: '100.00' }, { idx: 9, shares: 10, buy: '88.00' }]
@@ -208,7 +208,7 @@ describe('delivery of the attribution notice', () => {
 
   test('confirming a pending sell sends the attribution notice too', async () => {
     const { f, deps, rec, runId } = await setup(held43, book43)
-    const pid = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: parseUsd('96.50'), fee: null, filledOn: D, status: 'pending' })
+    const pid = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: parseUsd('96.50'), fee: null, filledOn: D, status: 'pending', ...NO_SNAPSHOT })
     await confirmPendingFill(pid, null, deps)
     expect(lastFill(f).bucketIdx).toBe(0)
     expect(rec.attributions).toHaveLength(1)
@@ -225,7 +225,7 @@ describe('delivery of the attribution notice', () => {
         seen = await Promise.race([withRunLock(rid, async () => 'free'), new Promise<string>((r) => setTimeout(() => r('held'), 100))])
       },
     }))
-    const pid = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: parseUsd('96.50'), fee: null, filledOn: D, status: 'pending' })
+    const pid = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: parseUsd('96.50'), fee: null, filledOn: D, status: 'pending', ...NO_SNAPSHOT })
     await confirmPendingFill(pid, null, deps)
     expect(seen).toBe('free')
   })

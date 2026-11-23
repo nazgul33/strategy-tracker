@@ -7,7 +7,7 @@ import { makeCachedBarReader } from '../src/market/bars'
 const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 
 describeIf('cached bar reader on the real repos', () => {
-  let repos: any
+  let repos: ReturnType<typeof getRepos>
   beforeAll(async () => {
     const db = await getDb(process.env.TEST_DATABASE_URL!)
     await applyMigrations(db)
@@ -39,6 +39,6 @@ describeIf('cached bar reader on the real repos', () => {
 
     expect(await repos.barCoverageRepo.list(ticker)).toEqual([{ fromDate: '2026-01-05', toDate: '2026-01-08' }])
     const rows = await repos.priceHistoryRepo.listForTicker(ticker)
-    expect(rows.map((r: any) => r.tradeDate)).toEqual(week.slice(0, 4))
+    expect(rows.map((r) => r.tradeDate)).toEqual(week.slice(0, 4))
   })
 })

@@ -1,5 +1,6 @@
 import { eq, and, gte, lte, isNotNull, inArray, sql } from 'drizzle-orm'
 import * as s from './schema'
+import type { Db } from './db-type'
 
 // Tickers arrive from many places (DB rows, client query params, Yahoo bars);
 // price_history keys must be canonical or the cache would fragment.
@@ -32,7 +33,7 @@ export function deadlockBackoffMs(attempt: number, random: () => number = Math.r
 export type BarRow = { ticker: string; tradeDate: string; open: bigint; high: bigint; low: bigint; close: bigint }
 
 export function getBarRepos(
-  db: any,
+  db: Db,
   opts: { sleep?: (ms: number) => Promise<void>; random?: () => number } = {},
 ) {
   const sleep = opts.sleep ?? Bun.sleep
@@ -74,14 +75,16 @@ export function getBarRepos(
         gte(s.priceHistory.tradeDate, from), lte(s.priceHistory.tradeDate, to),
         isNotNull(s.priceHistory.open), isNotNull(s.priceHistory.high), isNotNull(s.priceHistory.low),
       )).orderBy(s.priceHistory.tradeDate)
-      return rows.map((r: any) => ({ tradeDate: r.tradeDate, open: r.open, high: r.high, low: r.low, close: r.close }))
+      return rows.flatMap((r) => r.open === null || r.high === null || r.low === null
+        ? []
+        : [{ tradeDate: r.tradeDate, open: r.open, high: r.high, low: r.low, close: r.close }])
     },
   }
 
   const barCoverageRepo = {
     async list(ticker: string): Promise<{ fromDate: string; toDate: string }[]> {
       const rows = await db.select().from(s.barCoverage).where(eq(s.barCoverage.ticker, normTicker(ticker))).orderBy(s.barCoverage.fromDate)
-      return rows.map((r: any) => ({ fromDate: r.fromDate, toDate: r.toDate }))
+      return rows.map((r) => ({ fromDate: r.fromDate, toDate: r.toDate }))
     },
     // Keeps the ticker's ranges merged: every stored range that overlaps or
     // touches [fromDate, toDate] (adjacent calendar days) is replaced by the union.
@@ -92,7 +95,7 @@ export function getBarRepos(
       const t = normTicker(ticker)
       for (let attempt = 1; ; attempt++) {
         try {
-          await db.transaction(async (tx: any) => {
+          await db.transaction(async (tx) => {
             const rows: { id: number; fromDate: string; toDate: string }[] =
               await tx.select().from(s.barCoverage).where(eq(s.barCoverage.ticker, t)).for('update')
             let from = fromDate

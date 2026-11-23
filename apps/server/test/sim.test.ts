@@ -3,7 +3,7 @@ import { DomainError, emptyState, type RunState } from '@st/core'
 import { feeCents, parseUsd } from '@st/core/money'
 import { DEFAULT_MR_PARAMS, computeOrders, sellTarget } from '@st/strategies'
 import type { OHLCBar } from '@st/market-data'
-import { simulateDays, resolveDay, runSim } from '../src/sim/sim'
+import { simulateDays, resolveDay, runSim, type SimDayRow, type SimRepoSurface, type SimRunRow } from '../src/sim/sim'
 import { createApp } from '../src/http/app'
 import { makeFakes as makeHttpFakes, makeDeps, loginAs } from './http-fakes'
 
@@ -318,17 +318,17 @@ describe('cut-loss stops', () => {
 
 describe('runSim', () => {
   function makeRepos() {
-    const runs: any[] = []
-    const days: any[] = []
+    const runs: SimRunRow[] = []
+    const days: SimDayRow[] = []
     let runSeq = 1
     let daySeq = 1
     const simRepo = {
-      async insertRun(input: any) { const id = runSeq++; runs.push({ id, ...input }); return id },
-      async insertDays(rows: any[]) { for (const r of rows) days.push({ id: daySeq++, ...r }) },
+      async insertRun(input) { const id = runSeq++; runs.push({ id, draft: true, createdAt: '', ...input }); return id },
+      async insertDays(rows) { for (const r of rows) days.push({ id: daySeq++, ...r }) },
       async listRuns() { return [...runs].sort((a, b) => b.id - a.id) },
       async getRun(id: number) { return runs.find((r) => r.id === id) ?? null },
       async listDays(id: number) { return days.filter((d) => d.simRunId === id) },
-    }
+    } satisfies Pick<SimRepoSurface, 'insertRun' | 'insertDays' | 'listRuns' | 'getRun' | 'listDays'>
     return { simRepo, runs, days }
   }
 

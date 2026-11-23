@@ -5,7 +5,7 @@ import { getRepos } from '../src/db/repos'
 const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 
 describeIf('simRepo.rewriteDraft', () => {
-  let repos: any
+  let repos: ReturnType<typeof getRepos>
   beforeAll(async () => {
     const db = await getDb(process.env.TEST_DATABASE_URL!)
     await applyMigrations(db)
@@ -31,14 +31,14 @@ describeIf('simRepo.rewriteDraft', () => {
     expect(await repos.simRepo.rewriteDraft(id, next, [day(id, '2026-04-01'), day(id, '2026-04-02'), day(id, '2026-04-03')])).toBe(true)
     const after = await snapshot(id)
     expect(after.run).toMatchObject({ id, ...next, draft: true })
-    expect(after.days.map((d: any) => d.tradeDate)).toEqual(['2026-04-01', '2026-04-02', '2026-04-03'])
+    expect(after.days.map((d) => d.tradeDate)).toEqual(['2026-04-01', '2026-04-02', '2026-04-03'])
     expect((await repos.simRepo.listDays(other)).length).toBe(2)
   })
 
   test('re-applying an identical config still counts as a write', async () => {
     const id = await seed()
     expect(await repos.simRepo.rewriteDraft(id, config(), [day(id, '2026-03-09')])).toBe(true)
-    expect((await repos.simRepo.listDays(id)).map((d: any) => d.tradeDate)).toEqual(['2026-03-09'])
+    expect((await repos.simRepo.listDays(id)).map((d) => d.tradeDate)).toEqual(['2026-03-09'])
   })
 
   test('a failing day insert leaves the old config and the old days intact', async () => {

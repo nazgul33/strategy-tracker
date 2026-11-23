@@ -11,7 +11,7 @@ const PNG = { base64: Buffer.from('fake-png-bytes').toString('base64'), mime: 'i
 
 async function setup() {
   const f = fakeRepos()
-  const deps: BookingDeps = { repos: f.repos as any, today: TODAY }
+  const deps: BookingDeps = { repos: f.repos, today: TODAY }
   const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'ci', poolCents: 1_000_000, costPpm: 100, initialRunState: emptyState(4) })
   return { f, deps, runId }
 }
@@ -23,7 +23,7 @@ describe('capture image storage at ingest', () => {
     await ingestCapture(runId, PNG, ext, deps)
     expect(f._stores.captureImages.length).toBe(1)
     const img = f._stores.captureImages[0]!
-    expect(img.captureId).toBe(f._stores.pending[0]!.captureId)
+    expect(img.captureId).toBe(f._stores.pending[0]!.captureId!)
     expect(img.mime).toBe('image/png')
     expect(img.byteLen).toBeGreaterThan(0)
     expect(img.byteLen).toBe(img.bytes.length)
@@ -96,7 +96,7 @@ describe('capture image storage at ingest', () => {
       expect(f._stores.captureImages.length).toBe(0)
       expect(errSpy).toHaveBeenCalledTimes(1)
       expect(String(errSpy.mock.calls[0]!.join(' '))).toContain('packet too large')
-      expect(await storeCaptureImage(f.repos as any, 1, PNG)).toBe(false)
+      expect(await storeCaptureImage(f.repos, 1, PNG)).toBe(false)
     } finally {
       errSpy.mockRestore()
     }
@@ -105,15 +105,15 @@ describe('capture image storage at ingest', () => {
   test('an image exactly at the cap is stored', async () => {
     const { f } = await setup()
     const at = { base64: Buffer.alloc(MAX_IMAGE_BYTES, 1).toString('base64'), mime: 'image/png' }
-    expect(await storeCaptureImage(f.repos as any, 1, at)).toBe(true)
+    expect(await storeCaptureImage(f.repos, 1, at)).toBe(true)
     expect(f._stores.captureImages[0]!.byteLen).toBe(MAX_IMAGE_BYTES)
   })
 
   test('an unexpected mime is stored as image/jpeg; an allowed one is kept', async () => {
     const { f } = await setup()
     const base64 = Buffer.from('x').toString('base64')
-    await storeCaptureImage(f.repos as any, 1, { base64, mime: 'text/html; charset=utf-8; ' + 'x'.repeat(64) })
-    await storeCaptureImage(f.repos as any, 2, { base64, mime: 'image/webp' })
+    await storeCaptureImage(f.repos, 1, { base64, mime: 'text/html; charset=utf-8; ' + 'x'.repeat(64) })
+    await storeCaptureImage(f.repos, 2, { base64, mime: 'image/webp' })
     expect(f._stores.captureImages.map((i: any) => i.mime)).toEqual(['image/jpeg', 'image/webp'])
   })
 
@@ -123,7 +123,7 @@ describe('capture image storage at ingest', () => {
     await ingestCapture(runId, PNG, ext, deps)
     const first = f._stores.pending[0]!
     await f.repos.pendingRepo.decide(first.id, 'rejected')
-    await f.repos.captureImageRepo.setKeep(first.captureId)
+    await f.repos.captureImageRepo.setKeep(first.captureId!)
     const originalBytes = f._stores.captureImages[0]!.bytes
 
     const again = await ingestCapture(runId, PNG, ext, deps) as { pending: PendingFillRow[] }

@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { DomainError, type ISODate } from '@st/core'
+import type { BookingDeps } from '../../domain/booking'
 import { rebookFill, deleteFill, recalcRunState } from '../../domain/recompute'
 import type { HttpDeps } from '../app'
 import { parseId } from '../params'
@@ -10,7 +11,7 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 // app-level middleware. All routes only call domain functions; the domain persists state itself.
 export function fillsRouter(deps: HttpDeps): Hono {
   const r = new Hono()
-  const bookingDeps = () => ({ repos: deps.repos as any, today: deps.today() as any })
+  const bookingDeps = (): BookingDeps => ({ repos: deps.repos, today: deps.today() })
   // cents -> parseUsd string: 5 -> '0.05', 1005 -> '10.05'
   const centsToStr = (cents: number) => `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`
 

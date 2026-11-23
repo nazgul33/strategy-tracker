@@ -19,7 +19,7 @@ function deferred() {
 
 async function setup() {
   const f = fakeRepos()
-  const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: silentNotifier }
+  const deps: FillBookingDeps = { repos: f.repos, today: TODAY, notify: silentNotifier }
   const runId = await f.repos.runRepo.create({
     strategyKey: 'mean-reversion', ticker: 'SPY', name: 'r', poolCents: 1_000_000, costPpm: 0,
     initialRunState: { buckets: emptyState(10).buckets, cashCents: 1_000_000, closed: [], ages: {} },
@@ -78,7 +78,7 @@ describe('run-state writers hold the per-run lock', () => {
 
   test('seedRun waits for a held lock, then seeds', async () => {
     const f = fakeRepos()
-    const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: silentNotifier }
+    const deps: FillBookingDeps = { repos: f.repos, today: TODAY, notify: silentNotifier }
     const runId = await f.repos.runRepo.create({
       strategyKey: 'mean-reversion', ticker: 'SPY', name: 'r', poolCents: 1_000_000, costPpm: 0,
       initialRunState: { buckets: emptyState(10).buckets, cashCents: 1_000_000, closed: [], ages: {} },

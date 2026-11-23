@@ -4,10 +4,10 @@ import type { CorrectionRepo, CorrectionRow } from '../src/domain/correction-typ
 // the booking, wire and http fakes so they expose the store as `corrections`.
 // Reads return shallow copies, like rows read from a database, so a later
 // decide() never mutates a row a caller already holds.
-export function fakeCorrectionRepo(): { repo: CorrectionRepo; store: CorrectionRow[] } {
+export function fakeCorrectionRepo() {
   const store: CorrectionRow[] = []
   let seq = 1
-  const repo: CorrectionRepo = {
+  const repo = {
     async insert(c) {
       const id = seq++
       store.push({ ...c, captureId: c.captureId ?? null, proposedFee: c.proposedFee ?? null, id, status: 'open', createdAt: '2026-11-15 00:00:00' })
@@ -30,6 +30,6 @@ export function fakeCorrectionRepo(): { repo: CorrectionRepo; store: CorrectionR
     async hasOpenForCapture(captureId) {
       return store.some((x) => x.captureId === captureId && x.status === 'open')
     },
-  }
+  } satisfies CorrectionRepo
   return { repo, store }
 }

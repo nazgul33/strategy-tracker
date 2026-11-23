@@ -1,18 +1,20 @@
 import { and, desc, eq, inArray, notExists, sql } from 'drizzle-orm'
+import type { AnyMySqlColumn } from 'drizzle-orm/mysql-core'
 import * as s from './schema'
+import type { Db } from './db-type'
 import type { UnfrozenPendingRow, VisionReviewInsert, VisionReviewRow } from '../domain/vision-review'
 
 export type CaptureImageInsert = { captureId: number; mime: string; bytes: Buffer; byteLen: number }
 export type CaptureImageListing = { captureId: number; mime: string; byteLen: number; createdAt: string }
 
-export function getVisionRepos(db: any) {
+export function getVisionRepos(db: Db) {
   const captureImageRepo = {
     // INSERT IGNORE rather than a no-op ON DUPLICATE KEY UPDATE: mysql2 connects
     // with CLIENT_FOUND_ROWS, so a no-op update still reports affectedRows = 1
     // and could not be told apart from a real insert. First bytes win.
     async insertIgnore(row: CaptureImageInsert): Promise<boolean> {
       const [res] = await db.insert(s.captureImages).ignore().values(row)
-      return (res as any)?.affectedRows === 1
+      return res.affectedRows === 1
     },
     // The only method that reads the blob.
     async getBytes(captureId: number): Promise<{ mime: string; bytes: Buffer } | null> {
@@ -25,7 +27,7 @@ export function getVisionRepos(db: any) {
       if (!captureIds.length) return new Set()
       const rows = await db.select({ captureId: s.captureImages.captureId }).from(s.captureImages)
         .where(inArray(s.captureImages.captureId, captureIds))
-      return new Set<number>(rows.map((r: { captureId: number }) => r.captureId))
+      return new Set<number>(rows.map((r) => r.captureId))
     },
     async isKept(captureId: number): Promise<boolean> {
       const rows = await db.select({ keep: s.captureImages.keep }).from(s.captureImages)
@@ -40,7 +42,7 @@ export function getVisionRepos(db: any) {
     },
     // The image and its frozen rows go together or not at all.
     async discard(captureId: number): Promise<void> {
-      await db.transaction(async (tx: any) => {
+      await db.transaction(async (tx) => {
         await tx.delete(s.visionReviews).where(eq(s.visionReviews.captureId, captureId))
         await tx.delete(s.captureImages).where(eq(s.captureImages.captureId, captureId))
       })
@@ -50,23 +52,23 @@ export function getVisionRepos(db: any) {
     // or reject flips its row, so that image is safe; but a pass between the flip and the freeze
     // of a resolution that asked for no keep would delete an image it is still about to freeze.
     async sweepOrphans(): Promise<number[]> {
-      return db.transaction(async (tx: any) => {
-        const liveFor = (captureId: any) => tx.select({ one: sql`1` }).from(s.pendingFills)
+      return db.transaction(async (tx) => {
+        const liveFor = (captureId: AnyMySqlColumn) => tx.select({ one: sql`1` }).from(s.pendingFills)
           .where(and(eq(s.pendingFills.captureId, captureId), eq(s.pendingFills.status, 'pending')))
         const unkept = await tx.select({ captureId: s.captureImages.captureId }).from(s.captureImages)
           .where(and(eq(s.captureImages.keep, false), notExists(liveFor(s.captureImages.captureId))))
           .for('update')
-        const imageIds: number[] = unkept.map((r: { captureId: number }) => r.captureId)
+        const imageIds: number[] = unkept.map((r) => r.captureId)
         if (imageIds.length) {
           await tx.delete(s.visionReviews).where(inArray(s.visionReviews.captureId, imageIds))
           await tx.delete(s.captureImages).where(inArray(s.captureImages.captureId, imageIds))
         }
-        const imageFor = (captureId: any) => tx.select({ one: sql`1` }).from(s.captureImages)
+        const imageFor = (captureId: AnyMySqlColumn) => tx.select({ one: sql`1` }).from(s.captureImages)
           .where(eq(s.captureImages.captureId, captureId))
         const frozen = await tx.selectDistinct({ captureId: s.visionReviews.captureId }).from(s.visionReviews)
           .where(and(notExists(imageFor(s.visionReviews.captureId)), notExists(liveFor(s.visionReviews.captureId))))
           .for('update')
-        const frozenIds: number[] = frozen.map((r: { captureId: number }) => r.captureId)
+        const frozenIds: number[] = frozen.map((r) => r.captureId)
         if (frozenIds.length) await tx.delete(s.visionReviews).where(inArray(s.visionReviews.captureId, frozenIds))
         return [...new Set([...imageIds, ...frozenIds])].sort((a, b) => a - b)
       })
@@ -89,7 +91,7 @@ export function getVisionRepos(db: any) {
     // confirm's flip and its freeze leaves behind. Siblings are not looked at.
     async listUnfrozenKept(): Promise<UnfrozenPendingRow[]> {
       const frozen = db.select({ one: sql`1` }).from(s.visionReviews).where(eq(s.visionReviews.pendingFillId, s.pendingFills.id))
-      return db.select({
+      const rows = await db.select({
         id: s.pendingFills.id, runId: s.pendingFills.runId, ticker: s.pendingFills.ticker, captureId: s.pendingFills.captureId,
         status: s.pendingFills.status, side: s.pendingFills.side, shares: s.pendingFills.shares, price: s.pendingFills.price,
         fee: s.pendingFills.fee, filledOn: s.pendingFills.filledOn,
@@ -100,6 +102,9 @@ export function getVisionRepos(db: any) {
         .innerJoin(s.captureImages, and(eq(s.captureImages.captureId, s.pendingFills.captureId), eq(s.captureImages.keep, true)))
         .where(and(inArray(s.pendingFills.status, ['confirmed', 'rejected']), notExists(frozen)))
         .orderBy(s.pendingFills.id)
+      // Redundant with the inner join and the status filter; narrows the column types.
+      return rows.filter((r): r is typeof r & { captureId: number; status: 'confirmed' | 'rejected' } =>
+        r.captureId !== null && (r.status === 'confirmed' || r.status === 'rejected'))
     },
     async listForCaptures(captureIds: number[]): Promise<VisionReviewRow[]> {
       if (!captureIds.length) return []

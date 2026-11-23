@@ -9,7 +9,7 @@ const TODAY: ISODate = '2026-11-15'
 type F = ReturnType<typeof fakeRepos>
 
 const adjustRows = (f: F) => f._stores.ledger.filter((l: any) => l.kind === 'adjust')
-const fillById = (f: F, id: number) => f._stores.fills.find((x: any) => x.id === id)
+const fillById = (f: F, id: number) => f._stores.fills.find((x) => x.id === id)!
 const statusOf = (f: F, id: number) => f._stores.corrections.find((c) => c.id === id)!.status
 
 async function kindOf(fn: () => Promise<unknown>): Promise<string> {
@@ -25,7 +25,7 @@ async function kindOf(fn: () => Promise<unknown>): Promise<string> {
 // Run with a buy 44 @ 60.00 (bucket 0) and a manual sell 44 @ 66.03 fee 2.03.
 async function setup() {
   const f = fakeRepos()
-  const deps: FillBookingDeps = { repos: f.repos as any, today: TODAY, notify: silentNotifier }
+  const deps: FillBookingDeps = { repos: f.repos, today: TODAY, notify: silentNotifier }
   const runId = await f.repos.runRepo.create({
     strategyKey: 'mean-reversion', ticker: 'SOXL', name: 'r', poolCents: 1_000_000, costPpm: 0,
     initialRunState: { buckets: emptyState(10).buckets, cashCents: 1_000_000, closed: [], ages: {} },
@@ -61,7 +61,7 @@ describe('applyCorrection', () => {
     expect(statusOf(f, id)).toBe('applied')
     const adjusts = adjustRows(f).slice(adjustsBefore)
     expect(adjusts.length).toBe(1)
-    expect(JSON.parse(adjusts[0].ref)).toMatchObject({ fillId: sell.id, reason: 'capture-correction', correctionId: id })
+    expect(JSON.parse(adjusts[0].ref!)).toMatchObject({ fillId: sell.id, reason: 'capture-correction', correctionId: id })
     const cashAfter = (await f.repos.bucketRepo.loadState(runId)).cashCents
     expect(out.deltaCents).toBe(-8624)
     expect(cashAfter - cashBefore).toBe(-8624)

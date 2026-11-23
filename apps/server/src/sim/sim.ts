@@ -53,7 +53,7 @@ export interface SimRunRow {
   cutLossPpm: number
   paramsJson: string
   draft: boolean
-  createdAt: any
+  createdAt: string
 }
 
 export interface SimDayRow {

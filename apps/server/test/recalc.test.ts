@@ -7,7 +7,7 @@ import { fakeRepos, silentNotifier } from './booking-fakes'
 const TODAY: ISODate = '2026-11-10'
 type F = ReturnType<typeof fakeRepos>
 
-const deps = (f: F): FillBookingDeps => ({ repos: f.repos as any, today: TODAY, notify: silentNotifier })
+const deps = (f: F): FillBookingDeps => ({ repos: f.repos, today: TODAY, notify: silentNotifier })
 const getState = (f: F, runId: number): Promise<RunState> => f.repos.bucketRepo.loadState(runId)
 const ledgerForRun = (f: F, runId: number) => f._stores.ledger.filter((l: any) => l.runId === runId)
 const adjustRows = (f: F) => f._stores.ledger.filter((l: any) => l.kind === 'adjust')
@@ -102,7 +102,7 @@ describe('recalcRunState', () => {
     expect(rows.length).toBe(1)
     expect(rows[0]!.kind).toBe('adjust')
     expect(rows[0]!.amountCents).toBe(-500)
-    expect(JSON.parse(rows[0]!.ref)).toEqual({ bookedOn: TODAY, reason: 'recalc' })
+    expect(JSON.parse(rows[0]!.ref!)).toEqual({ bookedOn: TODAY, reason: 'recalc' })
     expect(ledgerForRun(f, runId).length).toBe(ledgerLen + 1)
   })
 

@@ -1,24 +1,32 @@
 import { describe, test, expect, beforeAll, spyOn } from 'bun:test'
 import { fileURLToPath } from 'node:url'
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
 import { emptyState, parseUsd } from '@st/core'
 import type { ExtractResult } from '@st/ingest'
 import { getDb, applyMigrations } from '../src/db/client'
+import type { Db } from '../src/db/db-type'
 import { getRepos } from '../src/db/repos'
-import { ingestCapture, manualFill, type BookingDeps, type FillBookingDeps } from '../src/domain/booking'
+import { ingestCapture, manualFill, type BookingDeps, type FillBookingDeps, type PendingDecisionPatch } from '../src/domain/booking'
 import { listOpenCorrections, applyCorrection } from '../src/domain/corrections'
-import { silentNotifier } from './booking-fakes'
+import type { NewOrder, NewPending, OrderStatus } from '../src/domain/repo-types'
+import { silentNotifier, NO_SNAPSHOT } from './booking-fakes'
 
 const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 
 describeIf('db integration', () => {
-  let db: any
-  let repos: any
+  let db: Db
+  let repos: ReturnType<typeof getRepos>
   beforeAll(async () => {
     db = await getDb(process.env.TEST_DATABASE_URL!)
     await applyMigrations(db)
     repos = getRepos(db)
   })
+
+  // The driver returns [rows, fields] for a SELECT; drizzle types raw execute as the write header.
+  async function selectRows<T>(q: SQL): Promise<T[]> {
+    const [rows] = (await db.execute(q)) as unknown as [T[], unknown]
+    return rows
+  }
 
   test('round trip run state', async () => {
     const state: any = {
@@ -71,18 +79,35 @@ describeIf('db integration', () => {
 
   test('pending decide merges', async () => {
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'Y'+Date.now(), name: 'run4-'+Date.now(), poolCents: 1000, costPpm: 10 })
-    const id = await repos.pendingRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker: 'Y', shares: 5, price: 100n, fee: 1, filledOn: '2026-02-10', status: 'pending' })
-    const first = await repos.pendingRepo.decide(id, 'confirmed', { shares: 7 })
+    const id = await repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: 0, side: 'buy', ticker: 'Y', shares: 5, price: 100n, fee: 1, filledOn: '2026-02-10', status: 'pending', ...NO_SNAPSHOT })
+    const inserted = (await repos.pendingRepo.get(id))!
+    const patch: PendingDecisionPatch = { side: inserted.side, shares: 7, price: inserted.price, fee: inserted.fee ?? 0, filledOn: inserted.filledOn, bucketIdx: inserted.bucketIdx ?? 0 }
+    const first = await repos.pendingRepo.decide(id, 'confirmed', patch)
     expect(first).toBe(true)
     const rows = await repos.pendingRepo.listPending()
     // the decided row must no longer be pending for this run
-    expect(rows.filter((r: any) => r.runId === runId).length).toBe(0)
+    expect(rows.filter((r) => r.runId === runId).length).toBe(0)
     // second decide (any status) is a no-op: atomic pending-state guard
     const second = await repos.pendingRepo.decide(id, 'rejected')
     expect(second).toBe(false)
     const after = await repos.pendingRepo.get(id)
-    expect(after.status).toBe('confirmed')
-    expect(Number(after.shares)).toBe(7)
+    expect(after!.status).toBe('confirmed')
+    expect(Number(after!.shares)).toBe(7)
+  })
+
+  test('pendingRepo.insert returns the new row id', async () => {
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'P' + Date.now(), name: 'run-pid-' + Date.now(), poolCents: 1000, costPpm: 10 })
+    const id = await repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: 0, side: 'buy', ticker: 'P', shares: 5, price: 100n, fee: 1, filledOn: '2026-02-10', status: 'pending', ...NO_SNAPSHOT })
+    expect(Number.isInteger(id) && id > 0).toBe(true)
+    expect((await repos.pendingRepo.get(id))!.id).toBe(id)
+  })
+
+  test('runRepo.updateStatusMany returns the number of rows it moved', async () => {
+    const mk = (n: string) => repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'M' + Date.now(), name: `run-many-${n}-${Date.now()}`, poolCents: 1000, costPpm: 10 })
+    const a = await mk('a')
+    const b = await mk('b')
+    expect(await repos.runRepo.updateStatusMany([a, b, 999999999], ['active'], 'paused')).toBe(2)
+    expect(await repos.runRepo.updateStatusMany([a, b, 999999999], ['active'], 'paused')).toBe(0)
   })
 
   test('DATE columns come back as date strings, not Date objects', async () => {
@@ -94,7 +119,7 @@ describeIf('db integration', () => {
     // columns into Date instances — the only server-side value that would
     // serialize as a `2026-02-10T00:00:00.000Z` timestamp on the JSON wire.
     const raw = fills[0].filledOn
-    expect(raw instanceof Date).toBe(false)
+    expect((raw as unknown) instanceof Date).toBe(false)
     const wire = JSON.parse(JSON.stringify({ filledOn: raw })).filledOn
     expect(typeof wire).toBe('string')
     expect(wire).toMatch(/^\d{4}-\d{2}-\d{2}$/)
@@ -119,7 +144,7 @@ describeIf('db integration', () => {
       if (stmt === '') continue
       await db.execute(sql.raw(stmt))
     }
-    expect((await repos.runRepo.get(runId)).status).toBe('closed')
+    expect((await repos.runRepo.get(runId))!.status).toBe('closed')
     // enum is really narrower again: writing `done` must now be rejected
     let rejected = false
     try { await db.execute(sql.raw(`UPDATE strategy_runs SET status = 'done' WHERE id = ${runId}`)) } catch { rejected = true }
@@ -140,7 +165,7 @@ describeIf('db integration', () => {
     expect(second).toBe(2)
 
     let rows = await repos.priceHistoryRepo.listForTicker(ticker)
-    expect(rows.map((r: any) => r.tradeDate)).toEqual(['2026-02-10', '2026-02-11'])
+    expect(rows.map((r) => r.tradeDate)).toEqual(['2026-02-10', '2026-02-11'])
     expect(rows[0].close).toBe(11050000n)
 
     const other = await repos.priceHistoryRepo.listForTicker(ticker, '2026-02-11')
@@ -149,7 +174,7 @@ describeIf('db integration', () => {
     expect(await repos.priceHistoryRepo.listForTicker('NOPE' + Date.now())).toEqual([])
 
     // DATE column must arrive as a plain ISO string, never a Date instance
-    expect(rows[0].tradeDate instanceof Date).toBe(false)
+    expect((rows[0].tradeDate as unknown) instanceof Date).toBe(false)
   })
 
   test('order cancel reason round trip', async () => {
@@ -159,9 +184,9 @@ describeIf('db integration', () => {
       limitPrice: 35000000n, shares: 5, status: 'open',
     }])
     const rows = await repos.orderRepo.listForDate('2026-11-11')
-    const open = rows.find((o: any) => o.runId === runId)
+    const open = rows.find((o) => o.runId === runId)!
     expect(open).toBeTruthy()
-    expect(open.cancelReason).toBeNull()
+    expect(open!.cancelReason).toBeNull()
 
     const fetched = await repos.orderRepo.get(open.id)
     expect(fetched!.id).toBe(open.id)
@@ -180,14 +205,14 @@ describeIf('db integration', () => {
     const uniq = Date.now()
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'LF' + uniq, name: 'from-' + uniq, poolCents: 1000, costPpm: 10 })
     const otherId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'LG' + uniq, name: 'from-other-' + uniq, poolCents: 1000, costPpm: 10 })
-    const mk = (id: number, tradeDate: string, status: string) => ({ runId: id, tradeDate, kind: 'sell_loc', bucketIdx: 0, limitPrice: 35000000n, shares: 5, status })
+    const mk = (id: number, tradeDate: string, status: OrderStatus): NewOrder => ({ runId: id, tradeDate, kind: 'sell_loc', bucketIdx: 0, limitPrice: 35000000n, shares: 5, status })
     await repos.orderRepo.insertMany([
       mk(runId, '2026-11-11', 'open'), mk(runId, '2026-11-09', 'open'), mk(runId, '2026-11-10', 'cancelled'), mk(otherId, '2026-11-10', 'open'),
     ])
     const rows = await repos.orderRepo.listForRunFrom(runId, '2026-11-10')
-    expect(rows.map((o: any) => o.tradeDate).sort()).toEqual(['2026-11-10', '2026-11-11'])
-    expect(rows.every((o: any) => o.runId === runId)).toBe(true)
-    expect(rows.map((o: any) => o.id)).toEqual([...rows.map((o: any) => o.id)].sort((a, b) => a - b))
+    expect(rows.map((o) => o.tradeDate).sort()).toEqual(['2026-11-10', '2026-11-11'])
+    expect(rows.every((o) => o.runId === runId)).toBe(true)
+    expect(rows.map((o) => o.id)).toEqual([...rows.map((o) => o.id)].sort((a, b) => a - b))
   })
 
   test('fillRepo: update is run-scoped, listForRun is id-ascending, deleteById is run-scoped', async () => {
@@ -199,18 +224,18 @@ describeIf('db integration', () => {
 
     let fills = await repos.fillRepo.listForRun(runId)
     expect(fills.length).toBe(2)
-    expect(fills.map((f: any) => f.shares)).toEqual([10, 20])
+    expect(fills.map((f) => f.shares)).toEqual([10, 20])
 
     // update the older fill's shares/price/fee — price is bigint myriadths
     const olderId = fills[0].id
     await repos.fillRepo.update(runId, olderId, { shares: 12, price: 1800000n, fee: 400 })
     fills = await repos.fillRepo.listForRun(runId)
-    const updated = fills.find((f: any) => f.id === olderId)
+    const updated = fills.find((f) => f.id === olderId)!
     expect(updated.shares).toBe(12)
     expect(updated.price).toBe(1800000n)
     expect(typeof updated.price).toBe('bigint')
     expect(updated.fee).toBe(400)
-    const untouched = fills.find((f: any) => f.id !== olderId)
+    const untouched = fills.find((f) => f.id !== olderId)!
     expect(untouched.shares).toBe(20)
     expect(untouched.price).toBe(2000000n)
     expect(untouched.fee).toBe(7)
@@ -230,12 +255,12 @@ describeIf('db integration', () => {
     const hi = before[1].id
     await db.execute(sql.raw(`UPDATE fills SET id = ${hi + 10} WHERE id = ${lo}`))
     const shuffled = await repos.fillRepo.listForRun(runId)
-    expect(shuffled.map((f: any) => f.id)).toEqual([hi, hi + 10])
-    expect(shuffled.map((f: any) => f.shares)).toEqual([20, 12])
+    expect(shuffled.map((f) => f.id)).toEqual([hi, hi + 10])
+    expect(shuffled.map((f) => f.shares)).toEqual([20, 12])
 
     // deleteById is run-scoped: a foreign id must not touch either run
     await repos.fillRepo.deleteById(runId, foreignId)
-    expect((await repos.fillRepo.listForRun(runId)).map((f: any) => f.id)).toEqual([hi, hi + 10])
+    expect((await repos.fillRepo.listForRun(runId)).map((f) => f.id)).toEqual([hi, hi + 10])
     expect((await repos.fillRepo.listForRun(otherId)).length).toBe(1)
 
     // own id deletes exactly that row, not merely the newest
@@ -248,7 +273,7 @@ describeIf('db integration', () => {
 
     // a not-present id is a harmless no-op
     await repos.fillRepo.deleteById(runId, 99999999)
-    expect((await repos.fillRepo.listForRun(runId)).map((f: any) => f.id)).toEqual([hi + 10])
+    expect((await repos.fillRepo.listForRun(runId)).map((f) => f.id)).toEqual([hi + 10])
 
     // empties the run, and a repeat call on the now-empty run is a no-op
     await repos.fillRepo.deleteById(runId, hi + 10)
@@ -262,7 +287,7 @@ describeIf('db integration', () => {
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'dedup-' + Date.now(), poolCents: 1_000_000, costPpm: 10 })
     // one booked buy (bigint myriadths price) + one pending sell, as the real repos store them
     await repos.fillRepo.insert({ runId, bucketIdx: 0, side: 'buy', ticker, shares: 11, price: parseUsd('218.55'), fee: 0, filledOn: '2026-11-12', source: 'capture' })
-    await repos.pendingRepo.insert({ runId, bucketIdx: null, side: 'sell', ticker, shares: 270, price: parseUsd('65.53'), fee: 345, filledOn: '2026-11-12', status: 'pending' })
+    await repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'sell', ticker, shares: 270, price: parseUsd('65.53'), fee: 345, filledOn: '2026-11-12', status: 'pending', ...NO_SNAPSHOT })
 
     const deps: BookingDeps = { repos, today: '2026-11-15' }
     // extraction spells the same two trades with string prices — the dedup key
@@ -278,9 +303,9 @@ describeIf('db integration', () => {
     expect(out).toBe('duplicate')
 
     const rows = await repos.pendingRepo.listPending()
-    expect(rows.filter((r: any) => r.runId === runId).length).toBe(1) // the seeded row only
+    expect(rows.filter((r) => r.runId === runId).length).toBe(1) // the seeded row only
 
-    const [capRows] = await db.execute(sql`SELECT status FROM captures WHERE run_id = ${runId}`)
+    const capRows = await selectRows<{ status: string }>(sql`SELECT status FROM captures WHERE run_id = ${runId}`)
     expect(capRows.length).toBe(1)
     expect(capRows[0].status).toBe('parsed')
   })
@@ -306,7 +331,7 @@ describeIf('db integration', () => {
     expect(out.pending[0].price).toBe('65.53')
 
     const rows = await repos.pendingRepo.listPending()
-    const mine = rows.filter((r: any) => r.runId === runId)
+    const mine = rows.filter((r) => r.runId === runId)
     expect(mine.length).toBe(1)
     expect(mine[0].side).toBe('sell')
     expect(Number(mine[0].shares)).toBe(270)
@@ -331,10 +356,10 @@ describeIf('db integration', () => {
       extractedPrice: '64.07', bookedPrice: '66.03', bookedId: bookedRow!.id,
     })
     expect('pendingId' in conflicts[0]!).toBe(false)
-    const left = (await repos.pendingRepo.listPending()).filter((p: any) => p.runId === runId)
+    const left = (await repos.pendingRepo.listPending()).filter((p) => p.runId === runId)
     expect(left.length).toBe(0)
 
-    const [capRows] = await db.execute(sql`SELECT status FROM captures WHERE run_id = ${runId}`)
+    const capRows = await selectRows<{ status: string }>(sql`SELECT status FROM captures WHERE run_id = ${runId}`)
     expect(capRows.length).toBe(1)
     expect(capRows[0].status).toBe('parsed')
   })
@@ -353,13 +378,13 @@ describeIf('db integration', () => {
     const second: any = await ingestCapture(runId, image, ext, deps)
     expect(second.pending.length).toBe(1)
 
-    const [capRows] = await db.execute(sql`SELECT id, status FROM captures WHERE run_id = ${runId}`)
+    const capRows = await selectRows<{ id: number; status: string }>(sql`SELECT id, status FROM captures WHERE run_id = ${runId}`)
     expect(capRows.length).toBe(1)
     expect(capRows[0].status).toBe('parsed')
     const captureId = capRows[0].id
 
-    const [pendRows] = await db.execute(sql`SELECT capture_id, status FROM pending_fills WHERE run_id = ${runId} ORDER BY id`)
-    expect(pendRows.map((r: any) => ({ capture_id: r.capture_id, status: r.status }))).toEqual([
+    const pendRows = await selectRows<{ capture_id: number; status: string }>(sql`SELECT capture_id, status FROM pending_fills WHERE run_id = ${runId} ORDER BY id`)
+    expect(pendRows.map((r) => ({ capture_id: r.capture_id, status: r.status }))).toEqual([
       { capture_id: captureId, status: 'rejected' },
       { capture_id: captureId, status: 'pending' },
     ])
@@ -369,7 +394,7 @@ describeIf('db integration', () => {
     const uniq = Date.now()
     const ticker = 'HL' + uniq
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'haslive-' + uniq, poolCents: 1_000_000, costPpm: 10 })
-    const row = (captureId: number | null) => ({ runId, captureId, bucketIdx: null, side: 'buy', ticker, shares: 1, price: 100n, fee: null, filledOn: '2026-11-12', status: 'pending' })
+    const row = (captureId: number | null): NewPending => ({ runId, captureId, bucketIdx: null, side: 'buy', ticker, shares: 1, price: 100n, fee: null, filledOn: '2026-11-12', status: 'pending', ...NO_SNAPSHOT })
     // real capture rows: auto-increment ids are fresh on every run, so a confirmed row left behind in st_test can never collide
     const newCapture = async (tag: string) => (await repos.captureRepo.insert({ runId, chatId: null, imageHash: `HL-${tag}-${uniq}`, status: 'parsed' })).id as number
     const capA = await newCapture('a')
@@ -424,25 +449,25 @@ describeIf('db integration', () => {
     const id = await repos.correctionRepo.insert(input)
     expect(typeof id).toBe('number')
 
-    const row = await repos.correctionRepo.get(id)
+    const row = (await repos.correctionRepo.get(id))!
     expect(row).toMatchObject({ id, ...input, status: 'open' })
     expect(typeof row.bookedPrice).toBe('bigint')
     expect(typeof row.proposedPrice).toBe('bigint')
     expect(typeof row.createdAt).toBe('string')
-    expect((await repos.correctionRepo.listOpen()).some((c: any) => c.id === id)).toBe(true)
+    expect((await repos.correctionRepo.listOpen()).some((c) => c.id === id)).toBe(true)
 
-    expect((await repos.correctionRepo.listBlocking(fillId, parseUsd('64.07'))).map((c: any) => c.id)).toEqual([id])
+    expect((await repos.correctionRepo.listBlocking(fillId, parseUsd('64.07'))).map((c) => c.id)).toEqual([id])
     expect(await repos.correctionRepo.listBlocking(fillId, parseUsd('64.70'))).toEqual([])
     expect(await repos.correctionRepo.hasOpenForCapture(captureId)).toBe(true)
 
     expect(await repos.correctionRepo.decide(id, 'dismissed')).toBe(true)
     const blocking = await repos.correctionRepo.listBlocking(fillId, parseUsd('64.07'))
-    expect(blocking.map((c: any) => [c.id, c.status])).toEqual([[id, 'dismissed']])
+    expect(blocking.map((c) => [c.id, c.status])).toEqual([[id, 'dismissed']])
     const id3 = await repos.correctionRepo.insert(input)
-    expect((await repos.correctionRepo.listBlocking(fillId, parseUsd('64.07'))).map((c: any) => [c.id, c.status])).toEqual([[id, 'dismissed'], [id3, 'open']])
+    expect((await repos.correctionRepo.listBlocking(fillId, parseUsd('64.07'))).map((c) => [c.id, c.status])).toEqual([[id, 'dismissed'], [id3, 'open']])
     expect(await repos.correctionRepo.decide(id3, 'applied')).toBe(true)
     expect(await repos.correctionRepo.hasOpenForCapture(captureId)).toBe(false)
-    expect((await repos.correctionRepo.listOpen()).some((c: any) => c.id === id)).toBe(false)
+    expect((await repos.correctionRepo.listOpen()).some((c) => c.id === id)).toBe(false)
     expect(await repos.correctionRepo.decide(id, 'applied')).toBe(false)
 
     const id2 = await repos.correctionRepo.insert({ ...input, captureId: null, proposedPrice: parseUsd('63.50'), proposedFee: null })
@@ -493,16 +518,16 @@ describeIf('db integration', () => {
     await applyCorrection(correctionId, deps)
     const after = await repos.fillRepo.listForRun(runId)
     expect(after.length).toBe(bookedBefore.length)
-    const sell1111 = after.find((f: any) => f.side === 'sell' && f.filledOn === '2026-11-11')
+    const sell1111 = after.find((f) => f.side === 'sell' && f.filledOn === '2026-11-11')!
     expect(sell1111).toBeDefined()
     expect(sell1111.price).toBe(parseUsd('64.07'))
-    const buy1110 = after.find((f: any) => f.side === 'buy' && f.filledOn === '2026-11-10')
+    const buy1110 = after.find((f) => f.side === 'buy' && f.filledOn === '2026-11-10')!
     expect(buy1110).toBeDefined()
     expect(buy1110.price).toBe(parseUsd('56.06'))
-    const sell1112 = after.find((f: any) => f.side === 'sell' && f.filledOn === '2026-11-12')
+    const sell1112 = after.find((f) => f.side === 'sell' && f.filledOn === '2026-11-12')!
     expect(sell1112).toBeDefined()
     expect(sell1112.price).toBe(parseUsd('65.53'))
-    expect((await repos.correctionRepo.get(correctionId)).status).toBe('applied')
+    expect((await repos.correctionRepo.get(correctionId))!.status).toBe('applied')
 
     // the capture is no longer live: correction applied, its pending buy rejected
     const pendingBuy = first.pending[0]
@@ -521,19 +546,19 @@ describeIf('db integration', () => {
       buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, paramsJson: '{}', ...over,
     })
     const dayRow = (simRunId: number, tradeDate: string) => ({ simRunId, tradeDate, planJson: '{}', stateJson: '{}', eventsJson: '[]' })
-    const find = async (id: number) => (await repos.simRepo.listRuns()).find((r: any) => r.id === id)
+    const find = async (id: number) => (await repos.simRepo.listRuns()).find((r) => r.id === id)!
 
     test('runRepo: cutLossPpm defaults to 0, create stores it, updateOrderShaping replaces updateGaps', async () => {
       const uniq = Date.now()
       const plain = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'CL' + uniq, name: 'cl-plain-' + uniq, poolCents: 1000, costPpm: 10 })
-      expect((await repos.runRepo.get(plain)).cutLossPpm).toBe(0)
+      expect((await repos.runRepo.get(plain))!.cutLossPpm).toBe(0)
       const withCut = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'CL' + uniq, name: 'cl-cut-' + uniq, poolCents: 1000, costPpm: 10, cutLossPpm: 150_000 })
-      expect((await repos.runRepo.get(withCut)).cutLossPpm).toBe(150_000)
+      expect((await repos.runRepo.get(withCut))!.cutLossPpm).toBe(150_000)
 
       await repos.runRepo.updateOrderShaping(plain, { buyGapPpm: 10_000, sellGapPpm: 20_000, cutLossPpm: 250_000 })
       expect(await repos.runRepo.get(plain)).toMatchObject({ buyGapPpm: 10_000, sellGapPpm: 20_000, cutLossPpm: 250_000 })
       expect(await repos.runRepo.get(withCut)).toMatchObject({ buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 150_000 })
-      expect(repos.runRepo.updateGaps).toBeUndefined()
+      expect((repos.runRepo as Record<string, unknown>).updateGaps).toBeUndefined()
     })
 
     test('stop_sell is a storable order kind', async () => {
@@ -571,7 +596,7 @@ describeIf('db integration', () => {
       const row = await find(id)
       expect(row.draft).toBe(true)
       expect(row.cutLossPpm).toBe(100_000)
-      expect((await repos.simRepo.getRun(id)).draft).toBe(true)
+      expect((await repos.simRepo.getRun(id))!.draft).toBe(true)
     })
 
     test('finalize is once-only', async () => {
@@ -629,7 +654,7 @@ describeIf('db integration', () => {
       expect(await repos.priceHistoryRepo.upsertBars([{ ticker, tradeDate: '2026-03-03', open: 1n, high: 2n, low: 1n, close: 2n }])).toBe(1)
       expect(await repos.priceHistoryRepo.upsertBars([])).toBe(0)
       const bars = await repos.priceHistoryRepo.listBars(ticker, '2026-03-01', '2026-03-31')
-      expect(bars.map((b: any) => b.tradeDate)).toEqual(['2026-03-03'])
+      expect(bars.map((b) => b.tradeDate)).toEqual(['2026-03-03'])
 
       // full bar over the legacy close-only day upgrades it; revised day overwrites in place
       await repos.priceHistoryRepo.upsertBars([
@@ -643,7 +668,7 @@ describeIf('db integration', () => {
       ])
       expect(typeof after[0].open).toBe('bigint')
       // range bounds are inclusive and exclude outside days
-      expect((await repos.priceHistoryRepo.listBars(ticker, '2026-03-03', '2026-03-03')).map((b: any) => b.tradeDate)).toEqual(['2026-03-03'])
+      expect((await repos.priceHistoryRepo.listBars(ticker, '2026-03-03', '2026-03-03')).map((b) => b.tradeDate)).toEqual(['2026-03-03'])
       expect(await repos.priceHistoryRepo.listBars(ticker, '2026-04-01', '2026-04-30')).toEqual([])
       // listForTicker still serves every row, legacy included
       expect((await repos.priceHistoryRepo.listForTicker(ticker)).length).toBe(2)
@@ -720,7 +745,7 @@ describeIf('db integration', () => {
       const { captureId } = await newCapture()
       expect(await repos.captureImageRepo.insertIgnore({ captureId, mime: 'image/png', bytes: Buffer.from('one'), byteLen: 3 })).toBe(true)
       expect(await repos.captureImageRepo.insertIgnore({ captureId, mime: 'image/jpeg', bytes: Buffer.from('two'), byteLen: 3 })).toBe(false)
-      const got = await repos.captureImageRepo.getBytes(captureId)
+      const got = (await repos.captureImageRepo.getBytes(captureId))!
       expect(got.mime).toBe('image/png')
       expect(Buffer.isBuffer(got.bytes)).toBe(true)
       expect(got.bytes.equals(Buffer.from('one'))).toBe(true)
@@ -730,22 +755,22 @@ describeIf('db integration', () => {
       const { captureId } = await newCapture()
       const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i))
       await repos.captureImageRepo.insertIgnore({ captureId, mime: 'image/jpeg', bytes, byteLen: bytes.length })
-      expect((await repos.captureImageRepo.getBytes(captureId)).bytes.equals(bytes)).toBe(true)
+      expect((await repos.captureImageRepo.getBytes(captureId))!.bytes.equals(bytes)).toBe(true)
       expect(await repos.captureImageRepo.getBytes(2_000_000_000)).toBeNull()
     })
 
     test('captureImageRepo: setKeep then deleteFor', async () => {
       const { captureId } = await newCapture()
       await repos.captureImageRepo.insertIgnore({ captureId, mime: 'image/png', bytes: Buffer.from('abcd'), byteLen: 4 })
-      expect((await repos.captureImageRepo.listKept(1000)).some((r: any) => r.captureId === captureId)).toBe(false)
+      expect((await repos.captureImageRepo.listKept(1000)).some((r) => r.captureId === captureId)).toBe(false)
       expect(await repos.captureImageRepo.isKept(captureId)).toBe(false)
       await repos.captureImageRepo.setKeep(captureId)
       expect(await repos.captureImageRepo.isKept(captureId)).toBe(true)
-      const kept = (await repos.captureImageRepo.listKept(1000)).find((r: any) => r.captureId === captureId)
+      const kept = (await repos.captureImageRepo.listKept(1000)).find((r) => r.captureId === captureId)
       expect(kept).toEqual({ captureId, mime: 'image/png', byteLen: 4, createdAt: expect.any(String) })
       expect(kept).not.toHaveProperty('bytes')
       await repos.captureImageRepo.deleteFor(captureId)
-      expect((await repos.captureImageRepo.listKept(1000)).some((r: any) => r.captureId === captureId)).toBe(false)
+      expect((await repos.captureImageRepo.listKept(1000)).some((r) => r.captureId === captureId)).toBe(false)
       expect(await repos.captureImageRepo.getBytes(captureId)).toBeNull()
     })
 
@@ -759,9 +784,9 @@ describeIf('db integration', () => {
           await db.execute(sql`UPDATE capture_images SET created_at = ${at} WHERE capture_id = ${cap.captureId}`)
         }
         const expected = [Math.max(b.captureId, c.captureId), Math.min(b.captureId, c.captureId), a.captureId]
-        expect((await repos.captureImageRepo.listKept(1000)).map((r: any) => r.captureId).filter((id: number) => expected.includes(id))).toEqual(expected)
+        expect((await repos.captureImageRepo.listKept(1000)).map((r) => r.captureId).filter((id: number) => expected.includes(id))).toEqual(expected)
         // 2099 rows outrank anything a sibling test left behind, so the top two are exactly ours.
-        expect((await repos.captureImageRepo.listKept(2)).map((r: any) => r.captureId)).toEqual(expected.slice(0, 2))
+        expect((await repos.captureImageRepo.listKept(2)).map((r) => r.captureId)).toEqual(expected.slice(0, 2))
       } finally {
         for (const cap of [a, b, c]) await repos.captureImageRepo.deleteFor(cap.captureId)
       }
@@ -784,8 +809,8 @@ describeIf('db integration', () => {
       await repos.visionReviewRepo.insertIgnore(review(a.runId, a.captureId, base + 1, { outcome: 'rejected', finalSide: null, finalShares: null, finalPrice: null, finalFilledOn: null, finalFee: null, edited: false }))
       await repos.visionReviewRepo.insertIgnore(review(b.runId, b.captureId, base + 2, { feeOverridden: true }))
       const rows = await repos.visionReviewRepo.listForCaptures([a.captureId, b.captureId])
-      expect(rows.map((r: any) => r.pendingFillId)).toEqual([base, base + 1, base + 2])
-      expect(rows.map((r: any) => r.captureId)).toEqual([a.captureId, a.captureId, b.captureId])
+      expect(rows.map((r) => r.pendingFillId)).toEqual([base, base + 1, base + 2])
+      expect(rows.map((r) => r.captureId)).toEqual([a.captureId, a.captureId, b.captureId])
       expect(rows[0]).toMatchObject({ detectedPrice: 1234567n, detectedFee: null, finalShares: 6, finalFee: 3, edited: true, outcome: 'confirmed', feeOverridden: false })
       expect(rows[1]).toMatchObject({ outcome: 'rejected', finalShares: null, edited: false, feeOverridden: false })
       expect(rows[2]).toMatchObject({ feeOverridden: true })
@@ -806,13 +831,13 @@ describeIf('db integration', () => {
 
     test('pending_fills snapshot columns round trip, detectedAt null on rows without a snapshot', async () => {
       const { runId, captureId } = await newCapture()
-      const legacy = await repos.pendingRepo.insert({ runId, captureId, side: 'buy', ticker: 'V', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status: 'pending' })
+      const legacy = await repos.pendingRepo.insert({ runId, captureId, bucketIdx: null, side: 'buy', ticker: 'V', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status: 'pending', ...NO_SNAPSHOT })
       const snap = await repos.pendingRepo.insert({
-        runId, captureId, side: 'buy', ticker: 'V', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status: 'pending',
+        runId, captureId, bucketIdx: null, side: 'buy', ticker: 'V', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', status: 'pending',
         detectedSide: 'buy', detectedShares: 1, detectedPrice: 100n, detectedFilledOn: null, detectedFee: null, detectedAt: '2026-02-10 12:00:00',
       })
-      const l = await repos.pendingRepo.get(legacy)
-      const s = await repos.pendingRepo.get(snap)
+      const l = (await repos.pendingRepo.get(legacy))!
+      const s = (await repos.pendingRepo.get(snap))!
       expect(l.detectedAt).toBeNull()
       expect(l.detectedSide).toBeNull()
       expect(s).toMatchObject({ detectedSide: 'buy', detectedShares: 1, detectedPrice: 100n, detectedFilledOn: null, detectedFee: null })

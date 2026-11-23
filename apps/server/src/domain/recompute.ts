@@ -3,6 +3,7 @@ import { feeCents } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { BookingDeps, FillRow } from './booking'
 import { withRunLock } from './run-lock'
+import { requireRun } from './require-run'
 
 // SQL listings carry no ORDER BY, so never trust row-return order: id-ascending
 // is the canonical history order (matches the per-bucket MAX(id) guard in deleteFill).
@@ -67,7 +68,7 @@ export async function rebookFillUnlocked(
     throw new DomainError('invalid-fill')
   }
   if (!Number.isInteger(edit.shares) || edit.shares <= 0 || price <= 0n) throw new DomainError('invalid-fill')
-  const run = await repos.runRepo.get(runId)
+  const run = await requireRun(repos, runId)
   const fee = edit.feeCents === null ? feeCents(price, edit.shares, run.costPpm) : edit.feeCents
   if (!Number.isInteger(fee) || fee < 0) throw new DomainError('invalid-fill')
 
@@ -121,7 +122,7 @@ async function deleteFillUnlocked(
   const bucketLast = history.reduce((m, f) => (f.bucketIdx === fill.bucketIdx && f.id > m ? f.id : m), -1)
   if (fill.id !== bucketLast) throw new DomainError('not-last')
 
-  const run = await repos.runRepo.get(runId)
+  const run = await requireRun(repos, runId)
   const state = await repos.bucketRepo.loadState(runId)
   const rebuilt = rebuildState(history.filter((f) => f.id !== fillId), run.poolCents, deps.today, state.buckets.length)
 
@@ -157,7 +158,7 @@ async function recalcUnlocked(
 ): Promise<{ state: RunState; deltaCents: number; fillCount: number }> {
   const repos = deps.repos
   const history = byIdAsc(await repos.fillRepo.listForRun(runId))
-  const run = await repos.runRepo.get(runId)
+  const run = await requireRun(repos, runId)
   const state = await repos.bucketRepo.loadState(runId)
   const rebuilt = rebuildState(history, run.poolCents, deps.today, state.buckets.length)
 

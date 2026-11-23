@@ -38,7 +38,7 @@ describe('http price-history', async () => {
       })
     }
     const deps = makeDeps(f)
-    deps.fetchDailyBars = makeCachedBarReader({ upstream, repos: f.repos as any, today: deps.today })
+    deps.fetchDailyBars = makeCachedBarReader({ upstream, repos: f.repos, today: deps.today })
     const upsertMany = f.repos.priceHistoryRepo.upsertMany
     let closeWrites = 0
     f.repos.priceHistoryRepo.upsertMany = async (rows: any) => {
@@ -91,7 +91,7 @@ describe('http price-history', async () => {
       })
     }
     const deps = makeDeps(f)
-    deps.fetchDailyBars = makeCachedBarReader({ upstream, repos: f.repos as any, today: deps.today })
+    deps.fetchDailyBars = makeCachedBarReader({ upstream, repos: f.repos, today: deps.today })
     const app = createApp(deps)
     const auth = await loginAs(app)
 

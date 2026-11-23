@@ -67,7 +67,7 @@ describe('POST /runs/:id/recalc endpoint', () => {
     const adjusts = adjustRows(f)
     expect(adjusts.length).toBe(1)
     expect(adjusts[0].amountCents).toBe(-777)
-    expect(JSON.parse(adjusts[0].ref)).toEqual({ bookedOn: '2026-11-10', reason: 'recalc' })
+    expect(JSON.parse(adjusts[0].ref!)).toEqual({ bookedOn: '2026-11-10', reason: 'recalc' })
   })
 
   test('recalc unknown run -> 404 no-run', async () => {

@@ -5,20 +5,23 @@ import { progressView } from '@st/strategies'
 import { t as tgT } from '@st/telegram/i18n'
 import { seedRun, manualFill, cancelOrder } from '../../domain/booking'
 import type { RawFill } from '@st/ingest'
+import type { OHLCBar } from '@st/market-data'
 import { jsonBig, type HttpDeps } from '../app'
 import { fillBookingDeps } from '../booking-deps'
+import type { RunStatus } from '../../domain/repo-types'
 import { parseId } from '../params'
 import { MAX_PPM, isValidPpm, isValidCutLossPpm, isValidCostPpm } from '../../domain/ppm'
 import { prevTradingDay, type ISODate } from '@st/calendar'
 
 const SEED_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
-export const RUN_STATUSES_SERVER = ['active', 'paused', 'closed'] as const
-export const RUN_TRANSITIONS: Record<string, string[]> = {
+export const RUN_STATUSES_SERVER = ['active', 'paused', 'closed'] as const satisfies readonly RunStatus[]
+export const RUN_TRANSITIONS: Record<RunStatus, RunStatus[]> = {
   active: ['paused', 'closed'],
   paused: ['active', 'closed'],
   closed: [],
 }
+const isRunStatus = (x: unknown): x is RunStatus => (RUN_STATUSES_SERVER as readonly unknown[]).includes(x)
 
 // booking.seedRun overwrites state.cashCents unconditionally, so a seed
 // missing (or with a fractional/negative) cashCents bricks the run server-side.
@@ -85,7 +88,7 @@ export function runsRouter(deps: HttpDeps): Hono {
       strategyKey: 'mean-reversion', ticker, name, poolCents, costPpm, buyGapPpm, sellGapPpm, cutLossPpm, initialRunState: state,
     })
     if (seed) {
-      await seedRun(id, seed, { repos: deps.repos as any, today: deps.today() as any })
+      await seedRun(id, seed, { repos: deps.repos, today: deps.today() })
     }
     return c.json({ id }, 201)
   })
@@ -97,10 +100,10 @@ export function runsRouter(deps: HttpDeps): Hono {
       || !ids.every((x: unknown) => Number.isInteger(x) && (x as number) > 0)) {
       return c.json({ error: 'invalid ids' }, 400)
     }
-    if (!(RUN_STATUSES_SERVER as readonly string[]).includes(status)) return c.json({ error: 'invalid status' }, 400)
+    if (!isRunStatus(status)) return c.json({ error: 'invalid status' }, 400)
     // eligible sources = every status whose transition table allows -> status;
     // one batched UPDATE applies the same guard in SQL (see runRepo.updateStatusMany)
-    const from = Object.keys(RUN_TRANSITIONS).filter((f) => RUN_TRANSITIONS[f]!.includes(status))
+    const from = RUN_STATUSES_SERVER.filter((f) => RUN_TRANSITIONS[f].includes(status))
     return c.json({ updated: await deps.repos.runRepo.updateStatusMany(ids, from, status) })
   })
   r.get('/runs/:id', async (c) => {
@@ -115,7 +118,7 @@ export function runsRouter(deps: HttpDeps): Hono {
     const id = parseId(c.req.param('id'))
     const body = await c.req.json().catch(() => ({}))
     const status = body?.status
-    if (!(RUN_STATUSES_SERVER as readonly string[]).includes(status)) return c.json({ error: 'invalid status' }, 400)
+    if (!isRunStatus(status)) return c.json({ error: 'invalid status' }, 400)
     const run = id === null ? null : await deps.repos.runRepo.get(id)
     if (id === null || !run) return c.json({ error: 'not found' }, 404)
     // `?? []` guards legacy `done` rows until the enum migration lands
@@ -194,7 +197,7 @@ export function runsRouter(deps: HttpDeps): Hono {
   ): Promise<{ tradeDate: ISODate; close: bigint }[]> {
     if (!deps.fetchDailyBars) return []
     const to = prevTradingDay(today)
-    let bars: any[]
+    let bars: OHLCBar[]
     try {
       bars = await deps.fetchDailyBars(ticker, start, to)
     } catch (e) {
@@ -251,7 +254,7 @@ export function runsRouter(deps: HttpDeps): Hono {
     const body = await c.req.json().catch(() => ({}))
     let order
     try {
-      order = await cancelOrder(id, orderId, body?.reason, { repos: deps.repos as any, today: deps.today() })
+      order = await cancelOrder(id, orderId, body?.reason, { repos: deps.repos, today: deps.today() })
     } catch (e: any) {
       const code = e?.message
       if (code === 'invalid-reason') return c.json({ error: 'invalid-reason' }, 400)

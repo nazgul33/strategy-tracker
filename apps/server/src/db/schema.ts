@@ -68,7 +68,7 @@ export const pendingFills = mysqlTable('pending_fills', {
   runId: int('run_id').notNull(),
   captureId: int('capture_id'),
   bucketIdx: int('bucket_idx'),
-  side: varchar('side', { length: 8 }).notNull(),
+  side: varchar('side', { length: 8 }).$type<'buy' | 'sell'>().notNull(),
   ticker: varchar('ticker', { length: 16 }).notNull(),
   shares: int('shares').notNull(),
   price: bigint('price', { mode: 'bigint' }).notNull(),
@@ -128,7 +128,7 @@ export const fillCorrections = mysqlTable('fill_corrections', {
   runId: int('run_id').notNull(),
   fillId: int('fill_id').notNull(),
   captureId: int('capture_id'),
-  side: varchar('side', { length: 8 }).notNull(),
+  side: varchar('side', { length: 8 }).$type<'buy' | 'sell'>().notNull(),
   ticker: varchar('ticker', { length: 16 }).notNull(),
   bookedShares: int('booked_shares').notNull(),
   bookedFilledOn: date('booked_filled_on', { mode: 'string' }).notNull(),
@@ -146,7 +146,7 @@ export const fills = mysqlTable('fills', {
   id: int('id').primaryKey().autoincrement(),
   runId: int('run_id').notNull(),
   bucketIdx: int('bucket_idx').notNull(),
-  side: varchar('side', { length: 8 }).notNull(),
+  side: varchar('side', { length: 8 }).$type<'buy' | 'sell'>().notNull(),
   ticker: varchar('ticker', { length: 16 }).notNull(),
   shares: int('shares').notNull(),
   price: bigint('price', { mode: 'bigint' }).notNull(),
@@ -232,7 +232,3 @@ export const barCoverage = mysqlTable('bar_coverage', {
 }))
 
 import { uniqueIndex } from 'drizzle-orm/mysql-core'
-
-export type BucketRow = typeof buckets.$inferSelect
-export type FillRow = typeof fills.$inferSelect
-export type LedgerRow = typeof ledger.$inferSelect

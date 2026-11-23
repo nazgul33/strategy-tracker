@@ -37,7 +37,7 @@ describe('http fakes mirror the real repos', () => {
   test('price and coverage fakes key tickers canonically, like the real repos', async () => {
     const { repos } = makeFakes()
     const ph = repos.priceHistoryRepo as any
-    const cov = (repos as any).barCoverageRepo
+    const cov = repos.barCoverageRepo
     await ph.upsertBars([{ ticker: ' aapl ', tradeDate: '2026-03-02', open: 1n, high: 2n, low: 1n, close: 2n }])
     await ph.upsertBars([{ ticker: 'AAPL', tradeDate: '2026-03-02', open: 5n, high: 9n, low: 4n, close: 8n }])
     expect(await ph.listBars('aapl', '2026-03-01', '2026-03-31')).toEqual([{ tradeDate: '2026-03-02', open: 5n, high: 9n, low: 4n, close: 8n }])
@@ -50,7 +50,7 @@ describe('http fakes mirror the real repos', () => {
 
   test('barCoverage fake rejects an inverted range and stores nothing', async () => {
     const { repos, coverage } = makeFakes()
-    const cov = (repos as any).barCoverageRepo
+    const cov = repos.barCoverageRepo
     await expect(cov.add('AAPL', '2026-02-01', '2026-01-01')).rejects.toThrow()
     expect(coverage).toEqual([])
     await cov.add('AAPL', '2026-02-01', '2026-02-01') // single day is valid

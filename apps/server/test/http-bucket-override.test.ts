@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createApp } from '../src/http/app'
 import { makeFakes, makeDeps, json, loginAs, createRun } from './http-fakes'
+import { NO_SNAPSHOT } from './booking-fakes'
 
 const D = '2026-11-10' // makeDeps().today()
 const TWO_BUCKETS = [{ shares: 10, buyPrice: '100.0000', filledOn: '2026-11-02' }, { shares: 10, buyPrice: '88.0000', filledOn: '2026-11-02' }]
@@ -22,7 +23,7 @@ async function setup() {
   const postFill = (body: Record<string, unknown>) =>
     app.request(`/api/runs/${id}/fills`, { method: 'POST', body: JSON.stringify(body), headers: { ...json, ...auth } })
   const addPending = (extra: Record<string, unknown> = {}) =>
-    f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: 965000n, fee: null, filledOn: D, status: 'pending', ...extra })
+    f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: 965000n, fee: null, filledOn: D, status: 'pending', ...NO_SNAPSHOT, ...extra })
   const confirm = (pid: number, body: unknown) =>
     app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify(body), headers: { ...json, ...auth } })
   return { f, app, auth, id, postFill, addPending, confirm }
@@ -96,7 +97,7 @@ describe('GET /api/pending heldBuckets', () => {
       seed: { cashCents: 50000, buckets: [{ shares: 5, buyPrice: '100.0000', filledOn: '2026-11-02' }] },
     })
     await addPending()
-    await f.repos.pendingRepo.insert({ runId: runB, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 5, price: 965000n, fee: null, filledOn: D, status: 'pending' })
+    await f.repos.pendingRepo.insert({ runId: runB, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 5, price: 965000n, fee: null, filledOn: D, status: 'pending', ...NO_SNAPSHOT })
     const rows = await (await app.request('/api/pending', { headers: auth })).json()
     expect(rows.map((r: any) => r.heldBuckets)).toEqual([
       [{ index: 0, shares: 10 }, { index: 1, shares: 10 }],
@@ -114,7 +115,7 @@ describe('GET /api/pending heldBuckets', () => {
 
   test('gives a row whose run is gone no buckets', async () => {
     const { f, app, auth } = await setup()
-    await f.repos.pendingRepo.insert({ runId: 999, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 5, price: 965000n, fee: null, filledOn: D, status: 'pending' })
+    await f.repos.pendingRepo.insert({ runId: 999, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 5, price: 965000n, fee: null, filledOn: D, status: 'pending', ...NO_SNAPSHOT })
     const res = await app.request('/api/pending', { headers: auth })
     expect(res.status).toBe(200)
     const rows = await res.json()

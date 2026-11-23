@@ -33,7 +33,7 @@ describe('fill edit + delete endpoints', () => {
     expect(f.ledger[0].kind).toBe('seed')
     expect(f.ledger[1].kind).toBe('adjust')
     expect(f.ledger[1].amountCents).toBe(-289902) // -204355 - 85547
-    expect(JSON.parse(f.ledger[1].ref)).toEqual({ fillId: 1, bookedOn: '2026-11-10', reason: 'fill-edit' })
+    expect(JSON.parse(f.ledger[1].ref!)).toEqual({ fillId: 1, bookedOn: '2026-11-10', reason: 'fill-edit' })
     // read paths see the new numbers
     const run = await (await app.request(`/api/runs/${id}`, { headers: auth })).json()
     expect(run.progressView.cashCents).toBe(-204355)
@@ -196,7 +196,7 @@ describe('fill edit + delete endpoints', () => {
     const last = f.ledger[f.ledger.length - 1]
     expect(last.kind).toBe('adjust')
     expect(last.amountCents).toBe(2000)
-    expect(JSON.parse(last.ref)).toEqual({ fillId: 1, bookedOn: '2026-11-10', reason: 'fill-delete' })
+    expect(JSON.parse(last.ref!)).toEqual({ fillId: 1, bookedOn: '2026-11-10', reason: 'fill-delete' })
     const rows = await (await app.request(`/api/runs/${id}/fills`, { headers: auth })).json()
     expect(rows.length).toBe(0)
     const run = await (await app.request(`/api/runs/${id}`, { headers: auth })).json()
@@ -218,7 +218,7 @@ describe('fill edit + delete endpoints', () => {
     const last = f.ledger[f.ledger.length - 1]
     expect(last.kind).toBe('adjust')
     expect(last.amountCents).toBe(1000)
-    expect(JSON.parse(last.ref)).toEqual({ fillId: 1, bookedOn: '2026-11-10', reason: 'fill-delete' })
+    expect(JSON.parse(last.ref!)).toEqual({ fillId: 1, bookedOn: '2026-11-10', reason: 'fill-delete' })
     const rows = await (await app.request(`/api/runs/${id}/fills`, { headers: auth })).json()
     expect(rows.length).toBe(1)
   })

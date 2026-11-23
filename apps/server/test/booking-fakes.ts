@@ -1,6 +1,27 @@
 import type { RunState } from '@st/core'
 import type { BookingNotifier, OrderRow, PendingDecisionPatch, RepoSurface, SellAttribution } from '../src/domain/booking'
+import type {
+  FillPatch, FillRow, LedgerRow, NewCapture, NewFill, NewLedgerEntry, NewOrder, NewPending, NewRun, OrderRecord, OrderStatus, PendingRow, RunRow, RunStatus,
+} from '../src/domain/repo-types'
+import type { CaptureImageInsert } from '../src/db/repos-vision'
+import type { UnfrozenPendingRow, VisionReviewInsert, VisionReviewRow } from '../src/domain/vision-review'
 import { fakeCorrectionRepo } from './fake-corrections'
+
+// A pending row without a vision snapshot: the legacy shape (detectedAt null).
+export const NO_SNAPSHOT = { detectedSide: null, detectedShares: null, detectedPrice: null, detectedFilledOn: null, detectedFee: null, detectedAt: null } as const
+
+// created_at / ts of rows the fakes insert; the real columns default to the insert time.
+export const FAKE_CREATED_AT = '2026-11-15 00:00:00'
+
+// The row the real repo inserts for `input`: gaps default to 0, status to active, state to an empty one.
+export function fakeRunRow(id: number, input: NewRun): RunRow {
+  const state: RunState = input.initialRunState ?? { buckets: [], cashCents: input.poolCents, closed: [], ages: {} }
+  return {
+    id, strategyKey: input.strategyKey, ticker: input.ticker, name: input.name, poolCents: input.poolCents, costPpm: input.costPpm,
+    buyGapPpm: input.buyGapPpm ?? 0, sellGapPpm: input.sellGapPpm ?? 0, cutLossPpm: input.cutLossPpm ?? 0,
+    status: 'active', stateJson: serializeState(state), createdAt: FAKE_CREATED_AT,
+  }
+}
 
 export const silentNotifier: BookingNotifier = { siblingCancelled: async () => {}, sellAttributed: async () => {} }
 
@@ -29,42 +50,40 @@ export function rehydrate(raw: any): RunState {
 }
 
 export function fakeRepos() {
-  const runs = new Map<number, any>()
-  const buckets: any[] = []
-  const orders: any[] = []
-  const fills: any[] = []
-  const pending: any[] = []
-  const captures: any[] = []
-  const ledger: any[] = []
-  const captureImages: any[] = []
-  const visionReviews: any[] = []
+  const runs = new Map<number, RunRow>()
+  const orders: OrderRecord[] = []
+  const fills: FillRow[] = []
+  const pending: PendingRow[] = []
+  const captures: Array<NewCapture & { id: number }> = []
+  const ledger: LedgerRow[] = []
+  const captureImages: Array<CaptureImageInsert & { keep: boolean }> = []
+  const visionReviews: VisionReviewRow[] = []
   const corrections = fakeCorrectionRepo()
   let runSeq = 1, orderSeq = 1, fillSeq = 1, pendingSeq = 1, captureSeq = 1, ledgerSeq = 1, visionSeq = 1
 
   const runRepo = {
     async list() { return [...runs.values()] },
     async get(id: number) { return runs.get(id) ?? null },
-    async create(input: any) {
+    async create(input: NewRun) {
       const id = runSeq++
-      const state = input.initialRunState ?? { buckets: [], cashCents: input.poolCents, closed: [], ages: {} }
-      const run = { id, strategyKey: input.strategyKey, ticker: input.ticker, name: input.name, poolCents: input.poolCents, costPpm: input.costPpm, status: 'active', stateJson: serializeState(state) }
+      const run = fakeRunRow(id, input)
       runs.set(id, run)
       if (input.initialRunState) await bucketRepo.saveState(id, input.initialRunState)
       return id
     },
-    async updateStatus(id: number, status: string) { const r = runs.get(id); if (r) r.status = status },
+    async updateStatus(id: number, status: RunStatus) { const r = runs.get(id); if (r) r.status = status },
   }
   const bucketRepo = {
     async saveState(runId: number, state: RunState) {
       const run = runs.get(runId); if (run) run.stateJson = serializeState(state)
     },
     async loadState(runId: number): Promise<RunState> {
-      const run = runs.get(runId)
+      const run = runs.get(runId)!
       return rehydrate(JSON.parse(run.stateJson))
     },
   }
   const orderRepo = {
-    async insertMany(os: any[]) { for (const o of os) { orders.push({ id: orderSeq++, ...o }) } },
+    async insertMany(os: NewOrder[]) { for (const o of os) { orders.push({ id: orderSeq++, ...o, skipReason: null, cancelReason: null }) } },
     async listForDate(date: string) { return orders.filter((o) => o.tradeDate === date) },
     async listForRun(runId: number, date?: string) {
       return orders.filter((o) => o.runId === runId && (date === undefined || o.tradeDate === date))
@@ -78,18 +97,18 @@ export function fakeRepos() {
       for (const o of orders) { if (o.status === 'open' && o.tradeDate < date) { o.status = 'stale'; cnt++ } }
       return cnt
     },
-    async setStatus(id: number, status: string, cancelReason?: string) {
+    async setStatus(id: number, status: OrderStatus, cancelReason?: string) {
       const o = orders.find((x) => x.id === id)
       if (o) { o.status = status; if (cancelReason !== undefined) o.cancelReason = cancelReason }
     },
     async listOpenBefore(date: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < date) },
   }
   const fillRepo = {
-    async insert(fill: any) { fills.push({ id: fillSeq++, ...fill }) },
+    async insert(fill: NewFill) { fills.push({ id: fillSeq++, ...fill }) },
     async listForRun(runId: number) {
       return fills.filter((f) => f.runId === runId).map((f) => ({ ...f })).sort((a, b) => a.id - b.id)
     },
-    async update(runId: number, fillId: number, patch: any) {
+    async update(runId: number, fillId: number, patch: FillPatch) {
       const f = fills.find((x) => x.runId === runId && x.id === fillId)
       if (f) Object.assign(f, patch)
     },
@@ -99,7 +118,7 @@ export function fakeRepos() {
     },
   }
   const pendingRepo = {
-    async insert(p: any) { const id = pendingSeq++; pending.push({ id, ...p }); return id },
+    async insert(p: NewPending) { const id = pendingSeq++; pending.push({ id, createdAt: FAKE_CREATED_AT, ...p }); return id },
     async listPending() { return pending.filter((p) => p.status === 'pending') },
     async hasLiveForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'pending') },
     async hasConfirmedForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'confirmed') },
@@ -115,10 +134,10 @@ export function fakeRepos() {
   const captureRepo = {
     async findByHash(runId: number, hash: string) {
       const c = captures.find((x) => x.runId === runId && x.imageHash === hash)
-      return c ? { id: c.id as number, status: c.status as string } : null
+      return c ? { id: c.id, status: c.status } : null
     },
-    async setStatus(id: number, status: string) { const c = captures.find((x) => x.id === id); if (c) c.status = status },
-    async insert(c: any) {
+    async setStatus(id: number, status: 'parsed' | 'unparseable') { const c = captures.find((x) => x.id === id); if (c) c.status = status },
+    async insert(c: NewCapture) {
       const dup = captures.some((x) => x.runId === c.runId && x.imageHash === c.imageHash)
       if (dup) return { inserted: false }
       const id = captureSeq++
@@ -127,18 +146,18 @@ export function fakeRepos() {
     },
   }
   const ledgerRepo = {
-    async insert(l: any) { ledger.push({ id: ledgerSeq++, ...l }) },
+    async insert(l: NewLedgerEntry) { ledger.push({ id: ledgerSeq++, ts: FAKE_CREATED_AT, ...l }) },
     async listForRun(runId: number) { return ledger.filter((l) => l.runId === runId) },
   }
   const captureImageRepo = {
-    async insertIgnore(row: any): Promise<boolean> {
+    async insertIgnore(row: CaptureImageInsert): Promise<boolean> {
       if (captureImages.some((x) => x.captureId === row.captureId)) return false
       captureImages.push({ ...row, keep: false })
       return true
     },
     async getBytes(captureId: number) {
       const r = captureImages.find((x) => x.captureId === captureId)
-      return r ? { mime: r.mime as string, bytes: r.bytes as Buffer } : null
+      return r ? { mime: r.mime, bytes: r.bytes } : null
     },
     async isKept(captureId: number) { return captureImages.some((x) => x.captureId === captureId && x.keep) },
     async setKeep(captureId: number) { const r = captureImages.find((x) => x.captureId === captureId); if (r) r.keep = true },
@@ -156,15 +175,14 @@ export function fakeRepos() {
     },
   }
   const visionReviewRepo = {
-    async insertIgnore(row: any): Promise<void> {
+    async insertIgnore(row: VisionReviewInsert): Promise<void> {
       if (visionReviews.some((x) => x.pendingFillId === row.pendingFillId)) return
       visionReviews.push({ id: visionSeq++, createdAt: '', ...row })
     },
-    async listUnfrozenKept() {
+    async listUnfrozenKept(): Promise<UnfrozenPendingRow[]> {
       return pending
-        .filter((p) => (p.status === 'confirmed' || p.status === 'rejected')
-          && captureImages.some((x) => x.captureId === p.captureId && x.keep)
-          && !visionReviews.some((v) => v.pendingFillId === p.id))
+        .filter((p): p is PendingRow & { captureId: number; status: 'confirmed' | 'rejected' } => p.captureId !== null && (p.status === 'confirmed' || p.status === 'rejected'))
+        .filter((p) => captureImages.some((x) => x.captureId === p.captureId && x.keep) && !visionReviews.some((v) => v.pendingFillId === p.id))
         .sort((a, b) => a.id - b.id)
     },
     async listForCaptures(captureIds: number[]) { return visionReviews.filter((x) => captureIds.includes(x.captureId)) },

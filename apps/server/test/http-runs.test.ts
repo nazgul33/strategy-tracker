@@ -1,6 +1,8 @@
 import { describe, test, expect } from 'bun:test'
 import { createApp } from '../src/http/app'
 import { makeFakes, makeDeps, PASSWORD, json, loginAs, createRun } from './http-fakes'
+import { FAKE_CREATED_AT } from './booking-fakes'
+import type { RunStatus } from '../src/domain/repo-types'
 
 describe('http runs', () => {
   test('create run appears in list, progressView cash===pool', async () => {
@@ -107,7 +109,7 @@ describe('http runs', () => {
     const { id } = await cr.json()
     const pr = await app.request(`/api/runs/${id}/pool`, { method: 'POST', body: JSON.stringify({ amountCents: 200 }), headers: { 'content-type': 'application/json', ...auth } })
     expect(pr.status).toBe(200)
-    const run = f.runs.find((x) => x.id === id)
+    const run = f.runs.find((x) => x.id === id)!
     expect(run.poolCents).toBe(200)
     expect(f.poolEdits.length).toBe(1)
   })
@@ -157,7 +159,7 @@ describe('http runs', () => {
     const lr = await app.request('/api/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }), headers: { 'content-type': 'application/json' } })
     const token = (await lr.json()).token
     const auth = { Authorization: `Bearer ${token}` }
-    f.runs.push({ id: 900, strategyKey: 'mean-reversion', ticker: 'Z', name: 'legacy', poolCents: 100, costPpm: 0, status: 'done', stateJson: '{}', createdAt: new Date() })
+    f.runs.push({ id: 900, strategyKey: 'mean-reversion', ticker: 'Z', name: 'legacy', poolCents: 100, costPpm: 0, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, status: 'done' as unknown as RunStatus, stateJson: '{}', createdAt: FAKE_CREATED_AT })
     expect((await app.request('/api/runs/900', { method: 'PATCH', body: JSON.stringify({ status: 'active' }), headers: { 'content-type': 'application/json', ...auth } })).status).toBe(409)
     expect((await app.request('/api/runs/900', { method: 'PATCH', body: JSON.stringify({ status: 'closed' }), headers: { 'content-type': 'application/json', ...auth } })).status).toBe(409)
   })

@@ -1,3 +1,5 @@
+import type { NewCapture } from './repo-types'
+
 // Only the repo methods the claim needs, declared here so this module stays
 // independent of booking.ts (which imports claimCapture, never the other way
 // round). RepoSurface satisfies it structurally.
@@ -5,7 +7,7 @@ export interface CaptureClaimRepos {
   captureRepo: {
     findByHash(runId: number, hash: string): Promise<{ id: number } | null>
     setStatus(id: number, status: 'parsed' | 'unparseable'): Promise<void>
-    insert(c: any): Promise<{ inserted: boolean; id?: number }>
+    insert(c: NewCapture): Promise<{ inserted: boolean; id?: number }>
   }
   pendingRepo: {
     // status 'pending' only: a row still awaiting the operator's decision

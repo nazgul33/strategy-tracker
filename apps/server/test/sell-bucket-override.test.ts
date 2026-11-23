@@ -2,6 +2,7 @@ import { describe, test, expect } from 'bun:test'
 import { parseUsd } from '@st/core/money'
 import { manualFill, confirmPendingFill, type FillBookingDeps } from '../src/domain/booking'
 import { sellSetup, orderOf, heldShares, held43, book43, D, Y } from './sell-fixture'
+import { NO_SNAPSHOT } from './booking-fakes'
 
 type Setup = Awaited<ReturnType<typeof sellSetup>>
 const forced = (s: Setup, shares: number, price: string, bucketIdx: number | null, filledOn = D) =>
@@ -91,7 +92,7 @@ describe('an operator-chosen bucket on a sell', () => {
 
 describe('an operator-chosen bucket on a pending confirm', () => {
   const pendingSell = (s: Setup, side: 'buy' | 'sell' = 'sell') =>
-    s.f.repos.pendingRepo.insert({ runId: s.runId, captureId: null, bucketIdx: null, side, ticker: 'AAPL', shares: 10, price: parseUsd('96.50'), fee: null, filledOn: D, status: 'pending' })
+    s.f.repos.pendingRepo.insert({ runId: s.runId, captureId: null, bucketIdx: null, side, ticker: 'AAPL', shares: 10, price: parseUsd('96.50'), fee: null, filledOn: D, status: 'pending', ...NO_SNAPSHOT })
 
   test('a confirm override bucketIdx books the pending sell to that bucket', async () => {
     const s = await sellSetup(held43, book43())
