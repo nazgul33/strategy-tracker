@@ -343,7 +343,7 @@ describe('day pipeline', () => {
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TSLA', name: 'T', poolCents: 1000000, costPpm: 30, initialRunState: emptyState(10) })
     // yesterday's unresolved order
     await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-05', kind: 'buy_loc', bucketIdx: 0, limitPrice: 100n, shares: 1, status: 'open' }])
-    // older order
+    // older order: already reported on an earlier morning, so not part of today's line
     await f.repos.orderRepo.insertMany([{ runId, tradeDate: '2026-11-03', kind: 'buy_loc', bucketIdx: 0, limitPrice: 100n, shares: 1, status: 'open' }])
     const sends: string[] = []
     const deps: DayDeps = {
@@ -358,9 +358,7 @@ describe('day pipeline', () => {
     }
     const r = await runMorningPipeline(deps)
     expect(r).toBe('sent')
-    expect(sends.some((s) => s.includes('unconfirmed orders from 2026-11-03'))).toBe(true)
-    // count 2
-    expect(sends.some((s) => s.includes('⚠️ 2 unconfirmed'))).toBe(true)
+    expect(sends.some((s) => s.includes('⚠️ 1 unconfirmed orders from 2026-11-05'))).toBe(true)
     // seeded orders now stale
     const staleCount = f.orders.filter((o) => o.status === 'stale').length
     expect(staleCount).toBe(2)

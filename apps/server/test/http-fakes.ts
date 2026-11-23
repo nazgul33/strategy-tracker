@@ -55,13 +55,13 @@ export function makeFakes() {
   const orderRepo = {
     async insertMany(os: NewOrder[]) { for (const o of os) orders.push({ id: orders.length + 1, ...o, skipReason: null, cancelReason: null }) },
     async listForDate(date: string) { return orders.filter((o) => o.tradeDate === date) },
-    async markStale(_date: string) { return 0 },
+    async markStale(date: string) { let c = 0; for (const o of orders) if (o.status === 'open' && o.tradeDate < date) { o.status = 'stale'; c++ } return c },
     async get(id: number) { return orders.find((x) => x.id === id) ?? null },
     async setStatus(id: number, status: OrderStatus, cancelReason?: string) {
       const o = orders.find((x) => x.id === id)
       if (o) { o.status = status; if (cancelReason !== undefined) o.cancelReason = cancelReason }
     },
-    async listOpenBefore(_date: string) { return [] },
+    async listOpenBefore(date: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < date) },
     async listForRun(runId: number, date?: string) {
       let out = orders.filter((o) => o.runId === runId)
       if (date) out = out.filter((o) => o.tradeDate === date)
