@@ -53,9 +53,9 @@ function failRun1(f: Fakes) {
   }
   return () => { f.repos.bucketRepo.saveStateWithOrders = real }
 }
-const LINE = '⚠️ 2 unconfirmed orders from 2026-11-05'
+const LINE = '⚠️ Unconfirmed orders from 2026-11-05: 2'
 const digestFor = (sent: string[], ticker: string) => sent.find((s) => s.includes(ticker) && !s.startsWith('ℹ️'))
-const unconfirmedLines = (digest: string | undefined) => (digest ?? '').split('\n').filter((l) => l.startsWith('⚠️ ') && /unconfirmed|미확인/.test(l))
+const unconfirmedLines = (digest: string | undefined) => (digest ?? '').split('\n').filter((l) => l.startsWith('⚠️ ') && /unconfirmed|미확인/i.test(l))
 
 describe('the unconfirmed orders line', () => {
   test('a normal morning reports the previous trading day\'s unresolved orders per run', async () => {
@@ -63,7 +63,7 @@ describe('the unconfirmed orders line', () => {
     await seed(f, 'open')
     expect(await runMorningPipeline(deps)).toBe('sent')
     expect(digestFor(sent, 'TSLA')).toContain(LINE)
-    expect(digestFor(sent, 'AAPL')).not.toContain('unconfirmed')
+    expect(digestFor(sent, 'AAPL')).not.toMatch(/unconfirmed/i)
     expect(f.orders.filter((o) => o.status === 'stale').map((o) => o.id)).toEqual([1, 2, 3])
   })
 
@@ -84,7 +84,7 @@ describe('the unconfirmed orders line', () => {
       expect(await runMorningPipeline(deps)).toBe('sent')
       expect(digestFor(sent, 'TSLA')).toContain(LINE)
       expect(sent.some((s) => s.startsWith('ℹ️ Run #2 AAPL'))).toBe(true)
-      expect(sent.filter((s) => s.includes('unconfirmed'))).toHaveLength(1)
+      expect(sent.filter((s) => /unconfirmed/i.test(s))).toHaveLength(1)
     } finally {
       errors.mockRestore()
       logs.mockRestore()
@@ -112,9 +112,9 @@ describe('the unconfirmed orders line', () => {
     expect(reported(f).slice(0, 4)).toEqual([true, true, true, false])
     nextMorning(deps, sent)
     await runMorningPipeline(deps)
-    expect(digestFor(sent, 'TSLA')).toContain('⚠️ 1 unconfirmed orders from 2026-11-06')
+    expect(digestFor(sent, 'TSLA')).toContain('⚠️ Unconfirmed orders from 2026-11-06: 1')
     expect(digestFor(sent, 'TSLA')).not.toContain('2026-11-05')
-    expect(digestFor(sent, 'AAPL')).toContain('⚠️ 1 unconfirmed orders from 2026-11-06')
+    expect(digestFor(sent, 'AAPL')).toContain('⚠️ Unconfirmed orders from 2026-11-06: 1')
   })
 
   test('after an earlier failed roll and a failed run, the retry names every unreported order (#91)', async () => {
@@ -129,7 +129,7 @@ describe('the unconfirmed orders line', () => {
       expect(f.orders.slice(0, 3).map((o) => [o.status, o.reportedAt])).toEqual([['stale', null], ['stale', null], ['stale', null]])
       sent.length = 0
       expect(await runMorningPipeline(deps)).toBe('sent')
-      expect(unconfirmedLines(digestFor(sent, 'TSLA'))).toEqual(['⚠️ 1 unconfirmed orders from 2026-11-04', '⚠️ 2 unconfirmed orders from 2026-11-05'])
+      expect(unconfirmedLines(digestFor(sent, 'TSLA'))).toEqual(['⚠️ Unconfirmed orders from 2026-11-04: 1', '⚠️ Unconfirmed orders from 2026-11-05: 2'])
       expect(reported(f).slice(0, 3)).toEqual([true, true, true])
     } finally {
       errors.mockRestore()
@@ -144,7 +144,7 @@ describe('the unconfirmed orders line', () => {
     ])
     expect(await runMorningPipeline(deps)).toBe('sent')
     expect(unconfirmedLines(digestFor(sent, 'TSLA'))).toEqual([
-      '⚠️ 1 unconfirmed orders from 2026-11-03', '⚠️ 1 unconfirmed orders from 2026-11-04', '⚠️ 2 unconfirmed orders from 2026-11-05',
+      '⚠️ Unconfirmed orders from 2026-11-03: 1', '⚠️ Unconfirmed orders from 2026-11-04: 1', '⚠️ Unconfirmed orders from 2026-11-05: 2',
     ])
     expect(reported(f).slice(0, 4)).toEqual([true, true, true, true])
   })
@@ -191,7 +191,7 @@ describe('the unconfirmed orders line', () => {
       f.repos.notificationRepo.insert = insert
       nextMorning(deps, sent)
       await runMorningPipeline(deps)
-      expect(unconfirmedLines(digestFor(sent, 'TSLA'))).toEqual(['⚠️ 2 unconfirmed orders from 2026-11-05', '⚠️ 1 unconfirmed orders from 2026-11-06'])
+      expect(unconfirmedLines(digestFor(sent, 'TSLA'))).toEqual(['⚠️ Unconfirmed orders from 2026-11-05: 2', '⚠️ Unconfirmed orders from 2026-11-06: 1'])
     } finally {
       f.repos.notificationRepo.insert = insert
       errors.mockRestore()
@@ -213,7 +213,7 @@ describe('the unconfirmed orders line', () => {
       f.repos.orderRepo.markReported = mark
       nextMorning(deps, sent)
       await runMorningPipeline(deps)
-      expect(unconfirmedLines(digestFor(sent, 'TSLA'))).toEqual(['⚠️ 2 unconfirmed orders from 2026-11-05', '⚠️ 1 unconfirmed orders from 2026-11-06'])
+      expect(unconfirmedLines(digestFor(sent, 'TSLA'))).toEqual(['⚠️ Unconfirmed orders from 2026-11-05: 2', '⚠️ Unconfirmed orders from 2026-11-06: 1'])
     } finally {
       f.repos.orderRepo.markReported = mark
       errors.mockRestore()

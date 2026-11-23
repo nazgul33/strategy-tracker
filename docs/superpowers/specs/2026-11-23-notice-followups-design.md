@@ -63,6 +63,7 @@ Exact repo method names, the shape of `broadcastNotice`'s widened result, test f
 
 ## Additions after the final review (operator request)
 
-- **One line per date.** When a run's unreported stale orders span several trade dates, the digest carries one existing `unconfirmed` notice per date, oldest first: "⚠️ 1 unconfirmed orders from 2026-11-04", then "⚠️ 2 unconfirmed orders from 2026-11-05". A single date reads as before. No new copy.
+- **One line per date.** When a run's unreported stale orders span several trade dates, the digest carries one existing `unconfirmed` notice per date, oldest first: "⚠️ Unconfirmed orders from 2026-11-04: 1", then "⚠️ Unconfirmed orders from 2026-11-05: 2". A single date reads as before. No new notice code (the English wording changed, see the next bullet).
+- **Count-neutral English copy.** The English line was ungrammatical for a count of 1 ("1 unconfirmed orders"). At the operator's request it became `⚠️ Unconfirmed orders from {date}: {count}`; the Korean line is unchanged.
 - **`rollStale` returns only the count.** Its per-run map has had no production reader since the line moved to `listUnreportedStale`; it becomes `markStale` alone, and `OrderRepo.listOpenBefore` (its only caller) is removed.
 - **README calendar caveat** says 2025–2028, matching `NYSE_YEARS`.
