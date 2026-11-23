@@ -1,12 +1,10 @@
 import type { ISODate, RunState } from '@st/core'
 import type { OrderRepo } from './repo-types'
-import { openSellLegs, staleSellLegs, type OrderRow } from './sell-match'
+import { openSellLegs, staleSellLegs, SELL_SIDE_KINDS, type OrderRow } from './sell-match'
 
 export type EmptyCause =
   | { kind: 'sold'; filledOn: ISODate; legId: number | null }   // legId: the order the emptying sell belongs to
   | { kind: 'buy-removed'; filledOn: ISODate }                  // filledOn: the deleted buy's trade date
-
-const SELL_SIDE_KINDS: readonly string[] = ['sell_loc', 'stop_sell', 'market_sell']
 
 // Indices of the buckets that are not 'empty' in prev and 'empty' in next, ascending.
 export function emptiedBuckets(prev: RunState, next: RunState): number[] {
