@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A failing Telegram send or notification insert never aborts the pipeline, every notice leaves a row even with no Telegram chat, the Runs page lists all notices with deep links into the run, and Telegram `/orders` groups orders under a per-run header.
+**Goal:** No failing send, insert or single run aborts the morning pipeline; a failed run leaves nothing behind and the pipeline is safe to run again the same day; every notice leaves a row even with no Telegram chat; the Runs page lists all notices with deep links into the run; Telegram `/orders` groups orders under a per-run header.
 
-**Architecture:** One never-throwing server helper (`wire/broadcast.ts`) replaces every per-chat send/insert loop (morning pipeline, reminder, December nudge, order-cancel route, booking notifier). A new read route `GET /api/notifications` pages over all notification rows by descending id and collapses the per-chat rows of one broadcast into one entry (pure grouping in `domain/notice-feed.ts`). The web adds a `SystemNotices` panel under the runs table and a `?tab=notifications&notice=<id>` query on the run hash route.
+**Architecture:** One never-throwing server helper (`wire/broadcast.ts`) replaces every per-chat send/insert loop (morning pipeline, reminder, December nudge, order-cancel route, booking notifier); it can record one text while sending it in parts. The morning pipeline wraps each run in its own `try`, writes orders and aged state in one DB transaction, and skips a run that already has orders for today. A new read route `GET /api/notifications` pages over all notification rows by descending id and collapses the per-chat rows of one broadcast into one entry (pure grouping in `domain/notice-feed.ts`). The web adds a `SystemNotices` panel under the runs table and a `?tab=notifications&notice=<id>` query on the run hash route.
 
 **Tech Stack:** Bun + TypeScript, Hono, Drizzle (MariaDB), React + Tailwind, `bun:test` + happy-dom.
 
@@ -12,9 +12,13 @@
 
 ## Global Constraints
 
-- No schema change, no migration. No change to which runs fail or to `MorningResult` values. No retry of failed sends. No unread state, no polling.
+- No schema change, no migration. No retry of failed sends. No unread state, no polling. No filter on the feed (capture replies with no run are listed).
+- `MorningResult` values and meaning are unchanged: `'data-error'` when at least one active run failed and none completed, else `'sent'` on an open day. A run that throws counts as failed; a run skipped as already planned counts as completed.
 - The web-only chat id is the literal `web` (`WEB_ONLY_CHAT_ID`).
 - Telegram copy, verbatim (`packages/telegram/src/i18n.ts`): `orders-line` en `#{id} {kind} {shares} sh @ ${price}`, ko `#{id} {kind} {shares}주 @ ${price}`. `status-run-line` and `orders-run-missing` are unchanged.
+- New per-run warning, verbatim, key `warn-run-error` in `packages/telegram/src/i18n.ts` (right after `warn-data-error`) and key `digest.warn-run-error` in `apps/web/src/i18n/{en,ko}.json` (right after `digest.warn-data-error`):
+  - en: `Morning pipeline error — run #{id} {ticker}: today's orders could not be planned. Check this run's Orders tab in the web app; if today's orders are missing, run the morning pipeline again.`
+  - ko: `아침 파이프라인 오류 — 런 #{id} {ticker}: 오늘 주문을 계획하지 못했습니다. 웹 앱에서 이 런의 주문 탭을 확인하고, 오늘 주문이 없으면 아침 파이프라인을 다시 실행하세요.`
 - New web copy, verbatim (`apps/web/src/i18n/{en,ko}.json`, inserted between `statWinRate` and `tabFills`, in this order):
   - `systemNoticesOlder`: en `Show older`, ko `이전 알림 더 보기`
   - `systemNoticesSource`: en `Source`, ko `출처`
@@ -31,6 +35,12 @@
 
 - Helper: `broadcastNotice` in `apps/server/src/wire/broadcast.ts`. `WEB_ONLY_CHAT_ID` moves there with **no** re-export (its only importer, `day.ts`, stops needing it).
 - Failure log shape: `console.error(label, kind, { runId, ...extra, chatId }, String(e))`, default label `notice failed:`. It does not name the failed step (insert or send): the existing booking-notifier tests pin this exact four-argument shape and must stay green unchanged.
+- Helper text argument: `string | { record: string; send: string[] }`. A failed part's log object also carries `part` (1-based) when there is more than one part.
+- Digest: one helper call per run with `record: chunks.join('\n\n')` and `send: chunks`. No existing test or E2E check counts one row per digest part (`day.test.ts` (c) and `scripts/e2e.ts` use one-part digests), so none changes.
+- Plan write: new `bucketRepo.saveStateWithOrders(runId, state, orders)` — one transaction, orders first, then the state. It is typed on a new `DayRepoSurface` (not on `RepoSurface`), so only the fakes the pipeline uses gain it (`day.test.ts`, `http-fakes.ts`).
+- Same-day guard: a run with an order row dated today is skipped silently (no fetch, no write, no digest, no notice) and counts as completed. Checked before the close fetch and again first thing inside the run lock.
+- Per-run failure: one `try` around everything done for a run; log `console.error('morning run failed:', { runId, ticker }, String(e))`; one warning (`warn-run-error`, kind `'run-error'`) through the helper.
+- A failing `rollStale` is logged (`console.error('stale roll failed:', String(e))`) and the pipeline carries on with no stale linkage and no notice (why this is safe: spec, "Stale roll").
 - The December nudge becomes `runDecemberNudge(deps)` in `day.ts` (next to `runReminder`) so it is testable; the cron in `pipeline/wire.ts` only calls it.
 - Feed route: `GET /api/notifications?before=<id>&limit=<n>` → `{ entries, nextBefore }`. Default limit 20, max 100 (larger values clamp to 100). A `before` or `limit` that is not a canonical positive integer (`parseId`) → 400 `invalid before` / `invalid limit`.
 - Grouping: a row joins the entry being built when `runId` and `text` are equal **and its chat id is not already in that entry**. The last clause is an addition to the spec: one broadcast writes at most one row per chat, so a repeated chat means a new message (two daily reminders with nothing between them stay two entries).
@@ -38,15 +48,15 @@
 - The run ticker is joined server-side (`ticker: string | null`); the web shows `#<id> <ticker>` or `#<id>` when null.
 - Web: the panel requests the server default page (sends only `before`). The deep link recognises only `tab=notifications`; `notice` is read only together with it. The highlight marks only the row whose id matches (`aria-current="true"` + `bg-primary/10`).
 - The empty state reuses `notifEmpty`; column headers reuse `notifColDate` / `notifColBody`; the chat line reuses `notifColChat` / `notifChatWeb`.
-- New day-pipeline tests go in a new file `apps/server/test/day-notices.test.ts` built on `makeFakes()` from `http-fakes.ts` (`day.test.ts` is already 466 lines and its fakes are file-local).
+- New day-pipeline tests go in new files `apps/server/test/day-notices.test.ts` and `apps/server/test/day-failures.test.ts` built on `makeFakes()` from `http-fakes.ts` (`day.test.ts` is already 466 lines and its fakes are file-local).
 
 ## Review Focus
 
-1. The operator presses **Run morning pipeline** on the Runs page (the conflict case): the System notices panel must show the new notice without a browser reload. Pinned in Task 5.
-2. The same text sent twice in a row to the same chat (two daily reminders with no digest between, a web-only operator with no active run): two entries, never one. Pinned in Task 4.
-3. **Show older** fails mid-list (server down): the rows already loaded stay on screen and the button retries. Pinned in Task 5.
-4. The database and Telegram are both down for a chat, or the insert fails right after a successful order cancel: nothing throws, both failures are logged, the next chat still gets its message and the cancel still answers `{ ok: true }`. Pinned in Tasks 1 and 2.
-5. A deep link whose notice id is not in the run's list, or a second deep link followed while the same run is already open: the Notifications tab opens without a highlight in the first case, and the highlight moves in the second. Pinned in Task 6.
+1. The operator presses **Run morning pipeline** on the Runs page (the conflict case, or after a failed-run warning): the System notices panel must show the new notice without a browser reload. Pinned in Task 6.
+2. The scheduled run and a manual trigger overlap, or the pipeline is run again while quotes are down: no run is planned twice, and a run that already has today's orders raises no data-error warning. Pinned in Task 3.
+3. The same text sent twice in a row to the same chat (two daily reminders with no digest between, a web-only operator with no active run): two entries, never one. Pinned in Task 5.
+4. The database and Telegram are both down for a chat, the insert fails right after a successful order cancel, or one part of a long digest is refused: nothing throws, each failure is logged, the later parts and chats still go out and the cancel still answers `{ ok: true }`. Pinned in Tasks 1 and 2.
+5. A deep link whose notice id is not in the run's list, or a second deep link followed while the same run is already open: the Notifications tab opens without a highlight in the first case, and the highlight moves in the second. Pinned in Task 7.
 
 ---
 
@@ -54,9 +64,10 @@
 
 | File | Responsibility |
 | --- | --- |
-| `apps/server/src/wire/broadcast.ts` (new) | `WEB_ONLY_CHAT_ID`, `broadcastNotice`: record + send one notice to every allowed chat, never throws |
+| `apps/server/src/wire/broadcast.ts` (new) | `WEB_ONLY_CHAT_ID`, `broadcastNotice`: record + send one notice (in one or more parts) to every allowed chat, never throws |
 | `apps/server/src/wire/booking-notifier.ts` | renders booking notices; delegates delivery to `broadcastNotice` |
-| `apps/server/src/pipeline/day.ts` | morning pipeline, reminder, December nudge; all notices via `broadcastNotice` |
+| `apps/server/src/pipeline/day.ts` | morning pipeline (per-run isolation, same-day guard), reminder, December nudge; all notices via `broadcastNotice` |
+| `apps/server/src/domain/repo-types.ts`, `db/repos.ts` | `DayRepoSurface`, `bucketRepo.saveStateWithOrders` (orders + state in one transaction) |
 | `apps/server/src/pipeline/wire.ts` | cron schedule only |
 | `apps/server/src/http/routes/runs.ts` | order-cancel notice via `broadcastNotice` |
 | `apps/server/src/wire/capture.ts` | `/orders` grouped by run |
@@ -98,8 +109,12 @@ export interface NoticeLog {
   extra?: Record<string, unknown>   // merged into the logged object, e.g. { orderId }
 }
 
+// A plain string is recorded and sent as is. The object form records `record` once per chat
+// and sends every entry of `send` as its own message (a digest longer than one Telegram message).
+export type NoticeText = string | { record: string; send: string[] }
+
 export async function broadcastNotice<R extends number | null>(
-  deps: BroadcastDeps<R>, runId: R, text: string, log: NoticeLog,
+  deps: BroadcastDeps<R>, runId: R, text: NoticeText, log: NoticeLog,
 ): Promise<void>
 ```
 
@@ -117,7 +132,8 @@ function harness(allowedChatIds: string[], fail: { send?: string[]; insert?: str
     allowedChatIds,
     send: async (chatId: string, text: string) => {
       events.push(`send:${chatId}`)
-      if (fail.send?.includes(chatId)) throw new Error('telegram-down')
+      // fail.send holds a chat id (every send to it fails) or '<chatId>:<text>' (that one message fails)
+      if (fail.send?.includes(chatId) || fail.send?.includes(`${chatId}:${text}`)) throw new Error('telegram-down')
       sent.push({ chatId, text })
     },
     notificationRepo: {
@@ -132,7 +148,7 @@ function harness(allowedChatIds: string[], fail: { send?: string[]; insert?: str
 }
 ```
 
-Each test spies `console.error` (`spyOn(console, 'error').mockImplementation(() => {})`, restored in `finally`) and awaits `broadcastNotice(h.deps, runId, 'hi', log)` without a `try`: a throw fails the test.
+Each test spies `console.error` (`spyOn(console, 'error').mockImplementation(() => {})`, restored in `finally`) and awaits `broadcastNotice(h.deps, runId, text, log)` without a `try`: a throw fails the test. The text is `'hi'` unless the row says `PARTS`, which is `{ record: 'p1\n\np2', send: ['p1', 'p2'] }`.
 
 | Test name | Call | Assertions |
 | --- | --- | --- |
@@ -143,6 +159,10 @@ Each test spies `console.error` (`spyOn(console, 'error').mockImplementation(() 
 | `insert and send both failing for a chat logs both and moves on` | `harness(['a', 'b'], { insert: ['a'], send: ['a'] })` | `errors` called 2 times, both with `chatId: 'a'`; `rows` and `sent` each hold only `b` |
 | `a failing web-only insert is logged, not thrown` | `harness([], { insert: ['web'] })`, `runId null`, `{ kind: 'conflict' }` | `errors.mock.calls` equals `[['notice failed:', 'conflict', { runId: null, chatId: 'web' }, 'Error: db-down']]` |
 | `label and extra shape the log line` | `harness(['a'], { send: ['a'] })`, `runId 7`, `{ kind: 'sell-attributed', label: 'booking notice failed:', extra: { orderId: 12 } }` | `errors.mock.calls[0]` equals `['booking notice failed:', 'sell-attributed', { runId: 7, orderId: 12, chatId: 'a' }, 'Error: telegram-down']` |
+| `parts: one row per chat, every part sent in order` | `harness(['a', 'b'])`, `runId 7`, `PARTS`, `{ kind: 'digest' }` | `events` equals `['insert:a', 'send:a', 'send:a', 'insert:b', 'send:b', 'send:b']`; `rows` equals `[{ runId: 7, chatId: 'a', text: 'p1\n\np2' }, { runId: 7, chatId: 'b', text: 'p1\n\np2' }]`; the sent messages, written `chatId:text`, equal `['a:p1', 'a:p2', 'b:p1', 'b:p2']` |
+| `a part that cannot be sent does not stop the later parts or chats` | `harness(['a', 'b'], { send: ['a:p1'] })`, `runId 7`, `PARTS`, `{ kind: 'digest' }` | the sent messages equal `['a:p2', 'b:p1', 'b:p2']`; 2 rows; `errors.mock.calls` equals `[['notice failed:', 'digest', { runId: 7, chatId: 'a', part: 1 }, 'Error: telegram-down']]` |
+| `parts with no allowed chat: one web row holding the recorded text` | `harness([])`, `runId 7`, `PARTS` | `rows` equals `[{ runId: 7, chatId: 'web', text: 'p1\n\np2' }]`; `sent` equals `[]` |
+| `a single part logs without a part number` | `harness(['a'], { send: ['a'] })`, `runId 7`, `{ record: 'p1', send: ['p1'] }`, `{ kind: 'digest' }` | `errors.mock.calls` equals `[['notice failed:', 'digest', { runId: 7, chatId: 'a' }, 'Error: telegram-down']]` |
 
 Add to `apps/server/test/booking-notifier.test.ts` (describe `booking notifier: sellAttributed`):
 
@@ -174,7 +194,7 @@ Expected: FAIL — `Cannot find module '../src/wire/broadcast'`; the new notifie
 
 - [ ] **Step 3: Implement `broadcastNotice`** in `apps/server/src/wire/broadcast.ts` (signature above)
 
-No chat → one insert with `WEB_ONLY_CHAT_ID`. Otherwise, per chat in order: insert, then send, each in its own `try`. Every caught error is one `console.error(log.label ?? 'notice failed:', log.kind, { runId, ...log.extra, chatId }, String(e))`. The function never rejects.
+Normalise the text first: a string `s` is `{ record: s, send: [s] }`. No chat → one insert of `record` with `WEB_ONLY_CHAT_ID`. Otherwise, per chat in order: insert `record`, then send each part in order — the insert and every part's send each in their own `try`. Every caught error is one `console.error(log.label ?? 'notice failed:', log.kind, { runId, ...log.extra, chatId }, String(e))`; a failed send adds `part: <1-based index>` to that object only when there is more than one part. The function never rejects.
 
 - [ ] **Step 4: Adopt it in `makeBookingNotifier`**
 
@@ -194,10 +214,10 @@ git commit -m "fix: share one never-throwing notice broadcast helper (#87)"
 
 ---
 
-### Task 2: Pipeline, reminder, December nudge and order-cancel notices go through the helper
+### Task 2: Pipeline, reminder, December nudge and order-cancel notices go through the helper; a digest is one record
 
 **Files:**
-- Modify: `apps/server/src/pipeline/day.ts` (the five send/insert loops; new `runDecemberNudge`)
+- Modify: `apps/server/src/pipeline/day.ts` (the five send/insert loops; new `runDecemberNudge`; per-run structure untouched — that is Task 3)
 - Modify: `apps/server/src/pipeline/wire.ts:29-40` (nudge cron body)
 - Modify: `apps/server/src/http/routes/runs.ts:265-276` (order-cancel notice)
 - Create: `apps/server/test/day-notices.test.ts`
@@ -205,8 +225,12 @@ git commit -m "fix: share one never-throwing notice broadcast helper (#87)"
 - Modify: `AGENTS.md` (test list: `day-notices`)
 
 **Interfaces:**
-- Consumes: `broadcastNotice`, `BroadcastDeps`, `NoticeLog` from Task 1.
-- Produces: `export async function runDecemberNudge(deps: DayDeps): Promise<void>` in `apps/server/src/pipeline/day.ts`. Notice kinds logged by the pipeline: `'closed' | 'conflict' | 'data-error' | 'digest' | 'reminder' | 'december-nudge'`; by the cancel route: `'order-cancelled'` with `extra: { orderId }`. All use the default label.
+- Consumes: `broadcastNotice`, `BroadcastDeps`, `NoticeText`, `NoticeLog` from Task 1.
+- Produces, in `apps/server/src/pipeline/day.ts`:
+  - `export async function runDecemberNudge(deps: DayDeps): Promise<void>`
+  - module-level `notify(deps: DayDeps, runId: number | null, text: NoticeText, kind: string): Promise<void>` (Task 3 sends its warning through it)
+  - Notice kinds logged by the pipeline: `'closed' | 'conflict' | 'data-error' | 'digest' | 'reminder' | 'december-nudge'`; by the cancel route: `'order-cancelled'` with `extra: { orderId }`. All use the default label.
+  - A digest is recorded as one row per chat: the parts of `renderDigest` joined with `'\n\n'`.
 
 - [ ] **Step 1: Write the failing tests** in `apps/server/test/day-notices.test.ts`
 
@@ -264,6 +288,15 @@ Tests (spy `console.error` wherever a failure is injected):
   Result `'closed'`; `expect(rowsOf(f).map((r) => [r.chatId, r.text])).toEqual([['c1', 'Market closed (Thanksgiving)'], ['c2', 'Market closed (Thanksgiving)']])`.
 - `reminder and December nudge carry on past a failing chat`: `send` throws for `c1`; `await runReminder(deps); await runDecemberNudge(deps)` both resolve; `sent.map((s) => s.chatId)` equals `['c2', 'c2']`; 4 rows.
 
+`describe('a digest longer than one message')` — `setup({}, [])`, then one run whose state is `emptyState(120)` with every bucket `{ index: i, state: 'held', shares: 10, buyPrice: 3402300n, buyFeeCents: 0, filledOn: '2026-11-03' }`, `ages[i] = 3`, `cashCents = 1000000` (name `'T'`, ticker `'TSLA'`; this renders as two parts of 3980 and 2232 characters):
+- `is sent in parts and recorded once per chat`: result `'sent'`;
+  `const c1 = sent.filter((s) => s.chatId === 'c1').map((s) => s.text)`; `expect(c1).toHaveLength(2)`; `expect(c1.every((p) => p.length <= 4000)).toBe(true)`;
+  `expect(f.notifications.map((n) => [n.runId, n.chatId])).toEqual([[1, 'c1'], [1, 'c2']])`;
+  `expect(f.notifications[0]!.text).toBe(c1.join('\n\n'))`; `expect(f.notifications[1]!.text).toBe(c1.join('\n\n'))`.
+- `a part that cannot be sent does not stop the later part or the other chat`: `send` throws on its first call for `c1` only.
+  `sent.filter((s) => s.chatId === 'c1')` has 1 item, `c2` has 2; still 2 rows;
+  `expect(errors).toHaveBeenCalledWith('notice failed:', 'digest', { runId: 1, chatId: 'c1', part: 1 }, 'Error: telegram-down')`.
+
 `describe('with no Telegram chat every notice leaves one web row')` — all with `allowedChatIds: []`, all assert `sent` equals `[]`:
 - `closed` (`today: () => '2026-11-26'`): result `'closed'`; `rowsOf(f)` equals `[{ runId: null, chatId: 'web', text: 'Market closed (Thanksgiving)' }]`.
 - `conflict` (`crossCheck: async () => ({ agree: false })`): result `'conflict'`; `rowsOf(f)` equals `[{ runId: null, chatId: 'web', text: CONFLICT }]`; `f.orders` equals `[]`.
@@ -287,7 +320,7 @@ Expected: FAIL — `day-notices.test.ts` does not load (`runDecemberNudge` is no
 
 - [ ] **Step 3: Route every notice in `day.ts` through the helper**
 
-Add one module-level helper `notify(deps: DayDeps, runId: number | null, text: string, kind: string): Promise<void>` that calls `broadcastNotice({ allowedChatIds: deps.allowedChatIds, send: deps.send, notificationRepo: deps.repos.notificationRepo }, runId, text, { kind })`. Replace the closed loop (`'closed'`, `null`), the conflict loop (`'conflict'`, `null`), the body of `warnDataError` (`'data-error'`, `run.id`), the digest chunk loop (`'digest'`, `run.id`, one call per chunk) and the `runReminder` loop (`'reminder'`, `null`). Drop the `WEB_ONLY_CHAT_ID` import. Add `runDecemberNudge`: text `t('december-nudge', deps.digestLang)`, `runId` `null`, kind `'december-nudge'`, no trading-day check. Leave the `plan.notices.push` line and everything inside `withRunLock` untouched.
+Add the module-level `notify` (Interfaces) that calls `broadcastNotice({ allowedChatIds: deps.allowedChatIds, send: deps.send, notificationRepo: deps.repos.notificationRepo }, runId, text, { kind })`. Replace the closed loop (`'closed'`, `null`), the conflict loop (`'conflict'`, `null`), the body of `warnDataError` (`'data-error'`, `run.id`), the `runReminder` loop (`'reminder'`, `null`) and the digest chunk loop: **one** call `notify(deps, run.id, { record: chunks.join('\n\n'), send: chunks }, 'digest')`. Drop the `WEB_ONLY_CHAT_ID` import. Add `runDecemberNudge`: text `t('december-nudge', deps.digestLang)`, `runId` `null`, kind `'december-nudge'`, no trading-day check. Leave the `plan.notices.push` line and everything inside `withRunLock` untouched.
 
 - [ ] **Step 4: Call it from the cron and the cancel route**
 
@@ -307,7 +340,165 @@ git commit -m "fix: pipeline, reminder, nudge and order-cancel notices never thr
 
 ---
 
-### Task 3: Telegram `/orders` groups orders under a per-run header (#85)
+### Task 3: One failing run never stops the others; a failed run leaves nothing behind; the pipeline is safe to run again
+
+**Files:**
+- Modify: `apps/server/src/domain/repo-types.ts` (new `DayRepoSurface`, after `RepoSurface`)
+- Modify: `apps/server/src/db/repos.ts:74-92` (`bucketRepo.saveStateWithOrders`)
+- Modify: `apps/server/src/pipeline/day.ts` (`DayDeps.repos`, stale roll, per-run `try`, same-day guard, plan write)
+- Modify: `packages/telegram/src/i18n.ts` (`warn-run-error`), `apps/web/src/i18n/en.json`, `apps/web/src/i18n/ko.json` (`digest.warn-run-error`) — copy in Global Constraints
+- Modify: `apps/server/test/http-fakes.ts:24-27`, `apps/server/test/day.test.ts:26-29,43-55` (the two fakes the pipeline uses gain the method)
+- Modify: `apps/server/test/repo-surface-types.test.ts` (one arity pin)
+- Create: `apps/server/test/day-failures.test.ts`, `apps/server/test/db-day-plan.test.ts`
+- Modify: `README.md:168` (manual trigger: safe to repeat), `AGENTS.md` (test list: `day-failures`)
+
+**Interfaces:**
+- Consumes: `notify` in `day.ts` from Task 2.
+- Produces:
+
+```ts
+// repo-types.ts
+/** What the morning pipeline needs beyond RepoSurface. */
+export interface DayRepoSurface extends RepoSurface {
+  bucketRepo: RepoSurface['bucketRepo'] & {
+    /** One transaction, orders first: both are written or neither is. */
+    saveStateWithOrders(runId: number, state: RunState, orders: NewOrder[]): Promise<void>
+  }
+}
+
+// day.ts
+export interface DayDeps { repos: DayRepoSurface /* was RepoSurface; every other field unchanged */ }
+```
+
+- Log lines: `console.error('stale roll failed:', String(e))` and `console.error('morning run failed:', { runId: run.id, ticker: run.ticker }, String(e))`. Warning kind for the helper: `'run-error'`.
+
+- [ ] **Step 1: Write the failing tests**
+
+`apps/server/test/day-failures.test.ts` — imports as in `day-notices.test.ts`:
+
+```ts
+// Two runs (1 TSLA 'T', 2 AAPL 'A'), each with one held bucket aged 3: a planned run gets 2 orders
+// (buy_loc bucket 0, sell_loc bucket 1) and its age becomes 4.
+async function setup(over: Partial<DayDeps> = {}) {
+  const f = makeFakes()
+  for (const ticker of ['TSLA', 'AAPL']) {
+    const st = emptyState(10)
+    st.buckets[1] = { index: 1, state: 'held', shares: 10, buyPrice: 3402300n, buyFeeCents: 0, filledOn: '2026-11-03' }
+    st.ages[1] = 3
+    st.cashCents = 1000000
+    await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: ticker[0]!, poolCents: 1000000, costPpm: 30, initialRunState: st })
+  }
+  const sent: string[] = []
+  const deps: DayDeps = {
+    today: () => '2026-11-06',
+    fetchLastClose: async () => ({ date: '2026-11-05', close: 3402300n }),
+    crossCheck: async () => ({ agree: true }),
+    send: async (_chatId, text) => { sent.push(text.split('\n')[0]!) },
+    allowedChatIds: ['c1'],
+    repos: f.repos,
+    params: () => DEFAULT_MR_PARAMS,
+    digestLang: 'en',
+    ...over,
+  }
+  return { f, deps, sent }
+}
+type Fakes = ReturnType<typeof makeFakes>
+const orderCount = (f: Fakes, runId: number) => f.orders.filter((o) => o.runId === runId).length
+const age = async (f: Fakes, runId: number) => (await f.repos.bucketRepo.loadState(runId)).ages[1]
+const RUN_ERR = (id: number, tk: string) => `Morning pipeline error — run #${id} ${tk}: today's orders could not be planned. Check this run's Orders tab in the web app; if today's orders are missing, run the morning pipeline again.`
+// Makes the plan write fail for the given runs; returns a function that undoes it.
+function failPlanWrite(f: Fakes, runIds: number[]) {
+  const real = f.repos.bucketRepo.saveStateWithOrders
+  f.repos.bucketRepo.saveStateWithOrders = async (runId, state, orders) => {
+    if (runIds.includes(runId)) throw new Error('db-down')
+    await real(runId, state, orders)
+  }
+  return () => { f.repos.bucketRepo.saveStateWithOrders = real }
+}
+```
+
+Tests (each spies `console.error`):
+
+| Test name | Arrange and act | Assertions |
+| --- | --- | --- |
+| `a run whose plan cannot be saved is reported and the next run is still planned` | `failPlanWrite(f, [1])`; run the pipeline | result `'sent'`; `orderCount(f, 1)` 0 and `age(f, 1)` 3; `orderCount(f, 2)` 2 and `age(f, 2)` 4; `sent` equals `[RUN_ERR(1, 'TSLA'), 'A  AAPL']`; `f.notifications[0]` matches `{ runId: 1, chatId: 'c1', text: RUN_ERR(1, 'TSLA') }`; `errors` called with `'morning run failed:', { runId: 1, ticker: 'TSLA' }, 'Error: db-down'` |
+| `a run whose planning throws is reported the same way` | `params: (run) => { if (run.id === 1) throw new Error('bad-params'); return DEFAULT_MR_PARAMS }` | result `'sent'`; `orderCount(f, 1)` 0; `orderCount(f, 2)` 2; `sent` equals `[RUN_ERR(1, 'TSLA'), 'A  AAPL']`; `errors` called with `'morning run failed:', { runId: 1, ticker: 'TSLA' }, 'Error: bad-params'` |
+| `the warning is rendered in Korean` | `digestLang: 'ko'`, `failPlanWrite(f, [1])` | `sent[0]` is `'아침 파이프라인 오류 — 런 #1 TSLA: 오늘 주문을 계획하지 못했습니다. 웹 앱에서 이 런의 주문 탭을 확인하고, 오늘 주문이 없으면 아침 파이프라인을 다시 실행하세요.'` |
+| `data-error only when every active run failed` | (a) `failPlanWrite(f, [1, 2])`; (b) fresh setup: `fetchLastClose` returns date `'2026-11-04'` for `TSLA`, and `failPlanWrite(f, [2])` | (a) result `'data-error'`, `sent` equals `[RUN_ERR(1, 'TSLA'), RUN_ERR(2, 'AAPL')]`; (b) result `'data-error'`, `f.orders` equals `[]` |
+| `running again after a failure plans only the failed run` | `const undo = failPlanWrite(f, [1])`; run; `undo()`; `sent.length = 0`; run again | second result `'sent'`; `orderCount(f, 1)` 2 and `age(f, 1)` 4; `orderCount(f, 2)` still 2 and `age(f, 2)` still 4; `sent` equals `['T  TSLA']` |
+| `two pipelines at once plan each run once` | `await Promise.all([runMorningPipeline(deps), runMorningPipeline(deps)])` | both results `'sent'`; `f.orders.length` 4; `age(f, 1)` 4 and `age(f, 2)` 4; `[...sent].sort()` equals `['A  AAPL', 'T  TSLA']` |
+| `a run already planned today is not touched when the close fetch fails later` | run once; `sent.length = 0`; run again with `fetchLastClose: async () => { throw new Error('yahoo down') }` | second result `'sent'`; `sent` equals `[]`; `f.notifications.length` unchanged; `f.orders.length` 4 |
+| `a failing stale roll does not stop the morning` | `f.repos.orderRepo.listOpenBefore = async () => { throw new Error('db-down') }` | result `'sent'`; `f.orders.length` 4; `sent` equals `['T  TSLA', 'A  AAPL']`; `errors` called with `'stale roll failed:', 'Error: db-down'` |
+
+`apps/server/test/db-day-plan.test.ts` — `describeIf` + `beforeAll` as in `apps/server/test/db.test.ts:14-23`; imports `emptyState` and `type RunState` from `@st/core`, `type NewOrder` from `../src/domain/repo-types`:
+
+```ts
+const order = (runId: number): NewOrder => ({ runId, tradeDate: '2026-02-10', kind: 'buy_loc', bucketIdx: 0, limitPrice: 100n, shares: 1, status: 'open' })
+const newRun = () => repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'DP', name: `dp-${Date.now()}`, poolCents: 1000, costPpm: 10 })
+
+test('saveStateWithOrders stores the orders and the state together', async () => {
+  const runId = await newRun()
+  const state: RunState = { ...emptyState(2), cashCents: 900 }
+  await repos.bucketRepo.saveStateWithOrders(runId, state, [order(runId)])
+  expect(await repos.orderRepo.listForRun(runId, '2026-02-10')).toHaveLength(1)
+  expect((await repos.bucketRepo.loadState(runId)).cashCents).toBe(900)
+})
+
+test('a failing state write rolls the orders back', async () => {
+  const runId = await newRun()
+  // shares: null violates NOT NULL on buckets.shares, after the order insert and the state_json update
+  const bad = { ...emptyState(1), cashCents: 900 } as RunState
+  bad.buckets[0] = { index: 0, state: 'held', shares: null as unknown as number, buyPrice: 100n, buyFeeCents: 0, filledOn: '2026-02-09' }
+  await expect(repos.bucketRepo.saveStateWithOrders(runId, bad, [order(runId)])).rejects.toThrow()
+  expect(await repos.orderRepo.listForRun(runId, '2026-02-10')).toEqual([])
+  expect((await repos.bucketRepo.loadState(runId)).cashCents).toBe(1000)
+})
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun test apps/server/test/day-failures.test.ts apps/server/test/db-day-plan.test.ts`
+Expected: FAIL — `saveStateWithOrders` is not a function in the DB tests; in `day-failures.test.ts` `failPlanWrite` has nothing to wrap, the pipeline rejects with `bad-params` / `db-down`, the second run doubles the orders (4 per run) and ages to 5.
+
+- [ ] **Step 3: Add the plan write**
+
+- `repo-types.ts`: `DayRepoSurface` (Interfaces).
+- `db/repos.ts`, in `bucketRepo`: `saveStateWithOrders` opens one `db.transaction`, inserts the orders when there are any, then calls the existing `saveStateWith(tx, runId, state)`.
+- `test/http-fakes.ts`: `async saveStateWithOrders(runId: number, state: RunState, os: NewOrder[]) { await orderRepo.insertMany(os); await bucketRepo.saveState(runId, state) }`, and the object's annotation becomes `satisfies DayRepoSurface['bucketRepo']`. It must call through `orderRepo` / `bucketRepo` (no `this`, no captured function): tests replace those methods.
+- `test/day.test.ts` `makeRepos`: the same method on `bucketRepo`; `satisfies DayRepoSurface`; the `_day` pin compares against `DayRepoSurface`. The two run-lock tests must pass unchanged (they patch `bucketRepo.saveState` and `orderRepo.insertMany`, which the fake still calls).
+- `repo-surface-types.test.ts`: `export type _realDay = Expect<IsNever<ArityMismatches<ReturnType<typeof getRepos>, DayRepoSurface>>>`.
+
+- [ ] **Step 4: Add the warning copy** (`warn-run-error` and `digest.warn-run-error`, Global Constraints).
+
+- [ ] **Step 5: Restructure the per-run loop in `runMorningPipeline`**
+
+- `DayDeps.repos` becomes `DayRepoSurface`.
+- Stale roll: wrap `rollStale` in a `try`; on a throw log `stale roll failed:` and use `{}`.
+- Everything done for one run is inside one `try`, in this order:
+  1. Guard: `(await deps.repos.orderRepo.listForRun(run.id, today)).length > 0` → the run is already planned: `numCompleted++`, next run. No fetch, no notice.
+  2. Close fetch, sanity check and `persistClose` exactly as today (the data-error path keeps its own `numFailed++` and warning).
+  3. Inside `withRunLock`: the same guard again first (already planned → same outcome as 1); then `loadState`, `advanceDay`, `computeOrders`, the `unconfirmed` notice, and **one** `deps.repos.bucketRepo.saveStateWithOrders(run.id, state, rows)` in place of `insertMany` + `saveState`.
+  4. `renderDigest` and the digest `notify`; `numCompleted++`.
+- `catch (e)`: the `morning run failed:` log, `numFailed++`, `await notify(deps, run.id, t('warn-run-error', lang, { id: run.id, ticker: run.ticker }), 'run-error')`.
+- The return expression is unchanged. Keep `day.ts` under ~300 lines: move the per-run body into a module-level function if the loop gets hard to read.
+
+- [ ] **Step 6: Document the trigger** — `README.md`, after the manual-trigger line: it is safe to repeat; a run that already has orders for today is not planned again, so after a failed-run warning it plans only that run.
+
+- [ ] **Step 7: Run to verify they pass**
+
+Run: `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun test apps/server packages/telegram apps/web/src/catalog.test.ts && bun test && bun run typecheck`
+Expected: PASS, 0 fail — including the unchanged `day.test.ts` (run-lock tests) and `day-notices.test.ts`.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add apps/server/src/domain/repo-types.ts apps/server/src/db/repos.ts apps/server/src/pipeline/day.ts packages/telegram/src/i18n.ts apps/web/src/i18n/en.json apps/web/src/i18n/ko.json apps/server/test/http-fakes.ts apps/server/test/day.test.ts apps/server/test/repo-surface-types.test.ts apps/server/test/day-failures.test.ts apps/server/test/db-day-plan.test.ts README.md AGENTS.md
+git commit -m "fix: isolate each run in the morning pipeline, write its plan atomically and skip runs already planned today (#87)"
+```
+
+---
+
+### Task 4: Telegram `/orders` groups orders under a per-run header (#85)
 
 **Files:**
 - Modify: `packages/telegram/src/i18n.ts:57` (`orders-line`)
@@ -384,7 +575,7 @@ git commit -m "feat: group Telegram /orders under per-run headers (#85)"
 
 ---
 
-### Task 4: Global notifications feed — `listBefore`, grouping, `GET /api/notifications`
+### Task 5: Global notifications feed — `listBefore`, grouping, `GET /api/notifications`
 
 **Files:**
 - Create: `apps/server/src/domain/notice-feed.ts`
@@ -392,7 +583,7 @@ git commit -m "feat: group Telegram /orders under per-run headers (#85)"
 - Modify: `apps/server/src/domain/repo-types.ts:47-50` (`NotificationRepo`)
 - Modify: `apps/server/src/db/repos.ts:216-219` (real `listBefore`; import `lt`, `desc`)
 - Modify: `apps/server/src/http/app.ts` (register the router)
-- Modify: `apps/server/test/http-fakes.ts:140-143` (fake `listBefore`; the file ends near 303 lines, accepted)
+- Modify: `apps/server/test/http-fakes.ts:140-143` (fake `listBefore`; with Task 3's one line the file ends near 304 lines, accepted)
 - Modify: `apps/server/test/repo-surface-types.test.ts` (one pin in `_restPins`)
 - Create: `apps/server/test/notice-feed.test.ts`, `apps/server/test/http-notifications.test.ts`, `apps/server/test/db-notifications.test.ts`
 - Modify: `AGENTS.md` (repo map: `domain/notice-feed.ts`, route `notifications`; test list: `notice-feed`)
@@ -534,7 +725,7 @@ git commit -m "feat: paged global notifications feed, one entry per message (#86
 
 ---
 
-### Task 5: System notices panel on the Runs page
+### Task 6: System notices panel on the Runs page
 
 **Files:**
 - Create: `apps/web/src/components/SystemNotices.tsx`, `apps/web/src/components/SystemNotices.test.tsx`
@@ -545,7 +736,7 @@ git commit -m "feat: paged global notifications feed, one entry per message (#86
 - Modify: `README.md:136-137` (Telegram section), `AGENTS.md` (components list: `SystemNotices`)
 
 **Interfaces:**
-- Consumes: `GET /api/notifications` response from Task 4.
+- Consumes: `GET /api/notifications` response from Task 5.
 - Produces:
 
 ```ts
@@ -561,7 +752,7 @@ listNotices(before?: number): Promise<NoticePageDto>
 export function SystemNotices()
 ```
 
-- Run-notice link format (Task 6 parses it): `#/runs/<runId>?tab=notifications&notice=<entry.id>`.
+- Run-notice link format (Task 7 parses it): `#/runs/<runId>?tab=notifications&notice=<entry.id>`.
 - DOM contract the tests rely on: a `Card` with `SectionTitle` `systemNoticesTitle`; one `<tr>` per entry in `<tbody>`; cells in order date (`isoDateTime(sentAt)`), source, message. Source is `#<runId> <ticker>`, `#<runId>` when the ticker is null, or `systemNoticesSystem` for a global notice. The message cell holds the preview as a direct child — an `<a>` for a run notice, a `<button type="button" aria-expanded>` for a global one — and, when a global notice is expanded, the full text (`whitespace-pre-wrap`) and a line `<notifColChat>: <chats joined by ', '>` with `web` shown as `notifChatWeb`, both inside the same cell. The preview is the first non-blank line of the text, trimmed.
 
 - [ ] **Step 1: Write the failing tests**
@@ -659,7 +850,7 @@ git commit -m "feat: System notices panel on the Runs page (#86)"
 
 ---
 
-### Task 6: Deep link from a notice to the run's Notifications tab
+### Task 7: Deep link from a notice to the run's Notifications tab
 
 **Files:**
 - Modify: `apps/web/src/components/hooks.tsx:92-114` (`Route`, `parseHash`)
@@ -670,7 +861,7 @@ git commit -m "feat: System notices panel on the Runs page (#86)"
 - Test: `apps/web/src/components/hooks.test.tsx`, `apps/web/src/components/NoticeList.test.tsx`, `apps/web/src/App.test.tsx`
 
 **Interfaces:**
-- Consumes: the link format `#/runs/<runId>?tab=notifications&notice=<id>` from Task 5.
+- Consumes: the link format `#/runs/<runId>?tab=notifications&notice=<id>` from Task 6.
 - Produces:
 
 ```ts
@@ -771,7 +962,7 @@ Run: `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun test`
 Expected: 0 fail, no DB test skipped.
 Run (from the repo root): `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun scripts/e2e.ts`
 Expected: the smoke finishes without a failed check and drops its scratch database.
-Run: `wc -l apps/server/src/pipeline/day.ts apps/server/src/http/routes/runs.ts apps/server/src/wire/capture.ts apps/web/src/pages/RunsList.tsx apps/web/src/pages/RunDetail.tsx apps/web/src/api.ts apps/web/src/api.types.ts apps/web/src/components/SystemNotices.tsx`
+Run: `wc -l apps/server/src/pipeline/day.ts apps/server/src/wire/broadcast.ts apps/server/src/db/repos.ts apps/server/src/domain/repo-types.ts apps/server/src/http/routes/runs.ts apps/server/src/wire/capture.ts apps/web/src/pages/RunsList.tsx apps/web/src/pages/RunDetail.tsx apps/web/src/api.ts apps/web/src/api.types.ts apps/web/src/components/SystemNotices.tsx`
 Expected: every file at or under ~300 lines.
 
 - [ ] **Step 7: Commit**
