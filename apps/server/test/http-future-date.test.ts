@@ -31,6 +31,16 @@ describe('HTTP refuses a fill dated after today (#96)', () => {
     expect(f.fills).toEqual([])
   })
 
+  test('POST /runs with a falsy seed creates the run', async () => {
+    const { f, app, auth } = await setup()
+    for (const seed of [false, 0, '']) {
+      const res = await post(app, auth, '/api/runs', { name: `r${String(seed)}`, ticker: 'AAPL', costPpm: 0, poolCents: 1_000_000, seed })
+      expect(res.status).toBe(201)
+    }
+    expect(await f.repos.runRepo.list()).toHaveLength(3)
+    expect(f.fills).toEqual([])
+  })
+
   test('POST /runs/:id/fills with a future date', async () => {
     const { f, app, auth } = await setup()
     const id = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm: 0, poolCents: 1_000_000 })

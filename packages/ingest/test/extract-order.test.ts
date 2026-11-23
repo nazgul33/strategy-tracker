@@ -80,6 +80,25 @@ describe('extract order columns', () => {
     }
   });
 
+  test('out-of-range or mistyped order values are dropped, the fill stays', async () => {
+    const fills = await fillsOf([
+      { ...SELL, orderedShares: '12345678901', orderPrice: '1234567890.00' },
+      { ...SELL, orderedShares: true, orderPrice: true },
+      { ...SELL, orderedShares: [5], orderPrice: ['5.00'] },
+    ]);
+    expect(fills).toHaveLength(3);
+    for (const fill of fills) {
+      expect('orderPrice' in fill).toBe(false);
+      expect('orderedShares' in fill).toBe(false);
+    }
+  });
+
+  test('the largest accepted order values are kept', async () => {
+    const [fill] = await fillsOf([{ ...SELL, orderedShares: '1000000000', orderPrice: '999999999.9999' }]);
+    expect(fill.orderedShares).toBe(1_000_000_000);
+    expect(fill.orderPrice).toBe('999999999.9999');
+  });
+
   test('the order type is trimmed', async () => {
     const [fill] = await fillsOf([{ ...SELL, orderType: '  매도/LOC  ' }]);
     expect(fill.orderType).toBe('매도/LOC');

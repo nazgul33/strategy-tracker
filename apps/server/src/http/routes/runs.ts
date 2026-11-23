@@ -83,7 +83,7 @@ export function runsRouter(deps: HttpDeps): Hono {
     }
     const seed = body?.seed
     if (seed && !validSeed(seed, bucketCount)) return c.json({ error: 'invalid seed' }, 400)
-    if (seed?.buckets.some((b: { filledOn: string }) => b.filledOn > deps.today())) return c.json({ error: 'fill-date-in-future' }, 422)
+    if (seed && seed.buckets.some((b: { filledOn: string }) => b.filledOn > deps.today())) return c.json({ error: 'fill-date-in-future' }, 422)
     const state = emptyState(bucketCount)
     state.cashCents = poolCents
     const id = await deps.repos.runRepo.create({
