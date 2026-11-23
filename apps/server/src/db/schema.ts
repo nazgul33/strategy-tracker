@@ -47,6 +47,7 @@ export const orders = mysqlTable('orders', {
   status: mysqlEnum('status', ['open', 'filled', 'stale', 'cancelled']).notNull().default('open'),
   skipReason: text('skip_reason'),
   cancelReason: varchar('cancel_reason', { length: 32 }),
+  reportedAt: timestamp('reported_at', { mode: 'string' }),
 }, (t) => ({
   runTradeDateIdx: index('orders_run_trade_date_idx').on(t.runId, t.tradeDate),
   tradeDateIdx: index('orders_trade_date_idx').on(t.tradeDate),
@@ -198,7 +199,7 @@ export const simDays = mysqlTable('sim_days', {
   stateJson: text('state_json').notNull(),
   eventsJson: text('events_json').notNull(),
 }, (t) => ({
-  simRunIdx: index('sim_days_sim_run_idx').on(t.simRunId),
+  simRunTradeIdx: index('sim_days_sim_run_trade_idx').on(t.simRunId, t.tradeDate),
 }))
 
 export const settings = mysqlTable('settings', {
