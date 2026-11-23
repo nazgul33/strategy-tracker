@@ -20,6 +20,10 @@ export async function _orderPendingPins(r: RepoSurface) {
   await r.orderRepo.setStatus(1, 'closed')
   // @ts-expect-error limitPrice is bigint myriadths
   const _lp: string = (await r.orderRepo.get(1))!.limitPrice
+  // @ts-expect-error markReported takes a list of order ids
+  await r.orderRepo.markReported(1)
+  // @ts-expect-error reportedAt is a timestamp string or null
+  const _ra: number = (await r.orderRepo.get(1))!.reportedAt
   // @ts-expect-error a pending row carries its vision snapshot
   await r.pendingRepo.insert({ runId: 1 })
   // @ts-expect-error a pending row carries every detected* column, not only the fields the operator sees

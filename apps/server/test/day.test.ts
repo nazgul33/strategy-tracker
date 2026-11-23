@@ -32,7 +32,7 @@ function makeRepos() {
     },
   }
   const orderRepo = {
-    async insertMany(os: NewOrder[]) { for (const o of os) orders.push({ id: orderSeq++, ...o, skipReason: null, cancelReason: null }) },
+    async insertMany(os: NewOrder[]) { for (const o of os) orders.push({ id: orderSeq++, ...o, skipReason: null, cancelReason: null, reportedAt: null }) },
     async listForDate(d: string) { return orders.filter((o) => o.tradeDate === d) },
     async listForRun(runId: number, d?: string) { return orders.filter((o) => o.runId === runId && (d === undefined || o.tradeDate === d)) },
     async listForRunFrom(runId: number, fromDate: string) { return orders.filter((o) => o.runId === runId && o.tradeDate >= fromDate).sort((a, b) => a.id - b.id) },
@@ -40,6 +40,8 @@ function makeRepos() {
     async markStale(d: string) { let c = 0; for (const o of orders) if (o.status === 'open' && o.tradeDate < d) { o.status = 'stale'; c++ } return c },
     async setStatus(id: number, s: OrderStatus, _cancelReason?: string) { const o = orders.find((x) => x.id === id); if (o) o.status = s },
     async listOpenBefore(d: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < d) },
+    async listUnreportedStale(runId: number) { return orders.filter((o) => o.runId === runId && o.status === 'stale' && o.reportedAt === null).sort((a, b) => a.id - b.id) },
+    async markReported(ids: number[]) { for (const o of orders) if (ids.includes(o.id)) o.reportedAt = FAKE_CREATED_AT },
   }
   const notificationRepo = {
     async insert(n: NewNotification) { notifications.push({ id: notifications.length + 1, sentAt: FAKE_CREATED_AT, ...n }) },
