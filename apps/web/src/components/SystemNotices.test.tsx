@@ -1,6 +1,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { installFetchStub, restoreFetch } from '../testing/fetchStub';
+import { goOffline } from '../testing/offline';
 
 GlobalRegistrator.register();
 
@@ -167,7 +168,9 @@ describe('SystemNotices', () => {
   it('a failed first load shows the error and Retry reloads it', async () => {
     first.status = 500;
     await render();
-    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(container.querySelector('[role="alert"]')!.textContent).toBe(
+      'The server had a problem (http-500). Try again; if it keeps failing, check the server log.',
+    );
     expect(container.querySelector('tbody')).toBeNull();
     first.status = 200;
     await click(buttonByText('Retry'));
@@ -178,13 +181,24 @@ describe('SystemNotices', () => {
     await render();
     older.status = 500;
     await click(buttonByText('Show older'));
-    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(container.querySelector('[role="alert"]')!.textContent).toBe(
+      'The server had a problem (http-500). Try again; if it keeps failing, check the server log.',
+    );
     expect(previews().length).toBe(3);
     expect(buttonByText('Show older')).toBeDefined();
     older.status = 200;
     await click(buttonByText('Show older'));
     expect(previews().length).toBe(4);
     expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('Show older with the server unreachable is worded, in the page language', async () => {
+    localStorage.setItem('st-lang', 'ko');
+    await render();
+    goOffline('GET', '?before=9');
+    await click(buttonByText('이전 알림 더 보기'));
+    expect(container.querySelector('[role="alert"]')!.textContent).toBe('서버에 연결할 수 없습니다. 연결을 확인하고 다시 시도하세요.');
+    expect(previews().length).toBe(3);
   });
 
   it('Show older on an expired session clears the token and goes to the login page', async () => {

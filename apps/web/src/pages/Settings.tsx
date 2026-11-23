@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { useAsync } from '../components/hooks';
 import { Button, ErrorNote, Field, Input, SectionTitle, Select, Spinner } from '../components/ui';
+import { errorText } from '../errortext';
 import { useT } from '../i18n';
 
 export function SettingsPage() {
@@ -39,7 +40,7 @@ export function SettingsPage() {
       setVisionApiKey('');
       reload();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : String(err));
+      setSaveError(errorText(err, t));
     } finally {
       setBusy(false);
     }

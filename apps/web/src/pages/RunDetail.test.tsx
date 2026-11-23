@@ -433,13 +433,13 @@ describe('RunDetailPage history recalc error handling', () => {
     expect(document.body.textContent).not.toContain('bucket-not-held');
   });
 
-  it('falls back to the raw code for unknown recalc errors', async () => {
+  it('an unknown recalc error keeps its code in worded copy', async () => {
     recalcFlag.recalcCode = 'zzz';
     await act(async () => {
       buttonByText('Update').click();
     });
     await flush();
-    expect(document.body.textContent).toContain('zzz');
+    expect(document.querySelector('[role="alert"]')!.textContent).toBe('The request failed (zzz).');
   });
 });
 

@@ -5,13 +5,14 @@ import { SimReplay } from '../components/SimReplay';
 import { Button, ErrorNote, SectionTitle, Spinner } from '../components/ui';
 import { useT } from '../i18n';
 import { parseSimParams } from '../simconfig';
+import { simErrorText } from '../simerrors';
 
 // Server default when a run stored no bucketCount and has no days to infer one from.
 const DEFAULT_BUCKET_COUNT = 10;
 
 export function SimRunPage({ id }: { id: number }) {
   const t = useT();
-  const { data, error, loading, reload } = useAsync(() => api.getSimRun(id), [id]);
+  const { data, error, failure, loading, reload } = useAsync(() => api.getSimRun(id), [id]);
 
   return (
     <div>
@@ -23,7 +24,7 @@ export function SimRunPage({ id }: { id: number }) {
         <Spinner />
       ) : error ? (
         <div className="space-y-3">
-          <ErrorNote message={error} />
+          <ErrorNote message={simErrorText(failure, t)} />
           <Button variant="secondary" onClick={reload}>{t('retry')}</Button>
         </div>
       ) : data ? (

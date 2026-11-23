@@ -4,6 +4,7 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { RunDto } from '../api.types';
 import { installFetchStub, restoreFetch } from '../testing/fetchStub';
+import { goOffline } from '../testing/offline';
 
 GlobalRegistrator.register();
 
@@ -66,6 +67,8 @@ const trigger = {
   json: { result: '"conflict"' } as unknown,
 };
 
+const bulk = { method: 'POST' as const, url: '/api/runs/bulk-status', status: 200, json: { updated: 1 } as unknown };
+
 describe('RunsListPage', () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
@@ -74,8 +77,12 @@ describe('RunsListPage', () => {
     noticeGets = 0;
     page = { entries: [notice(1, REMINDER)], nextBefore: null };
     trigger.status = 200;
+    trigger.json = { result: '"conflict"' };
+    bulk.status = 200;
+    bulk.json = { updated: 1 };
     installFetchStub([
       trigger,
+      bulk,
       {
         url: '/api/notifications',
         get json() {
@@ -124,16 +131,53 @@ describe('RunsListPage', () => {
 
   it('a failed morning trigger shows the error and still reloads the notices', async () => {
     trigger.status = 500;
+    trigger.json = { error: 'pipeline-error' };
     page = {
       entries: [notice(2, 'Morning pipeline error — the pipeline stopped before any run was planned. Check the server log, then run the morning pipeline again.')],
       nextBefore: null,
     };
     await clickTrigger();
-    expect(container.querySelector('[role="alert"]')!.textContent).toContain('http-500');
+    expect(container.querySelector('[role="alert"]')!.textContent).toBe(
+      'The morning pipeline stopped before planning any run. See System notices below.',
+    );
     expect(container.querySelector('[role="status"]')).toBeNull();
     expect(noticeGets).toBe(2);
     expect(container.textContent).toContain(
       'Morning pipeline error — the pipeline stopped before any run was planned.',
     );
+  });
+
+  const alertText = () => container.querySelector('[role="alert"]')?.textContent;
+  const SERVER = (code: string) => `The server had a problem (${code}). Try again; if it keeps failing, check the server log.`;
+  const NETWORK = 'Could not reach the server. Check the connection and try again.';
+
+  it('a trigger that fails outside the pipeline does not blame the pipeline', async () => {
+    trigger.status = 502;
+    trigger.json = {};
+    await clickTrigger();
+    expect(alertText()).toBe(SERVER('http-502'));
+  });
+
+  it('a trigger with the server unreachable says so', async () => {
+    goOffline('POST', '/api/trigger/morning');
+    await clickTrigger();
+    expect(alertText()).toBe(NETWORK);
+  });
+
+  it('a failed list reload is worded and can be retried', async () => {
+    goOffline('GET', '/api/runs');
+    await clickTrigger();
+    expect(alertText()).toBe(NETWORK);
+    expect([...container.querySelectorAll('button')].some((b) => b.textContent === 'Retry')).toBe(true);
+  });
+
+  it('a failed bulk action is worded with its code', async () => {
+    bulk.status = 500;
+    bulk.json = {};
+    await act(async () => (container.querySelector('input[aria-label="Test run"]') as HTMLInputElement).click());
+    const pause = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Pause (1)');
+    await act(async () => pause!.click());
+    await flush();
+    expect(alertText()).toBe(SERVER('http-500'));
   });
 });
