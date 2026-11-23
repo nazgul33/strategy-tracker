@@ -3,6 +3,7 @@ import { DomainError, type ISODate } from '@st/core'
 import type { BookingDeps } from '../../domain/booking'
 import { rebookFill, deleteFill, recalcRunState } from '../../domain/recompute'
 import type { HttpDeps } from '../app'
+import { fillBookingDeps } from '../booking-deps'
 import { parseId } from '../params'
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -34,7 +35,7 @@ export function fillsRouter(deps: HttpDeps): Hono {
       edited = await rebookFill(runId, {
         fillId, shares: qty, priceStr: centsToStr(priceCents), feeCents: feeCents as number | null,
         filledOn: filledOn as ISODate | undefined,
-      }, bookingDeps())
+      }, fillBookingDeps(deps))
     } catch (e) {
       if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
       throw e
@@ -51,7 +52,7 @@ export function fillsRouter(deps: HttpDeps): Hono {
     let deleted: { fill: { id: number }; deltaCents: number }
     try {
       // the domain guards per-bucket newness and books the compensating adjust
-      deleted = await deleteFill(runId, fillId, bookingDeps())
+      deleted = await deleteFill(runId, fillId, fillBookingDeps(deps))
     } catch (e) {
       if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
       throw e

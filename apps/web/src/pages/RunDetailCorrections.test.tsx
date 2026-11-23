@@ -12,7 +12,8 @@ const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { act } = await import('react');
 const { RunDetailPage } = await import('./RunDetail');
-const { PENDING_ROW, setInputValue } = await import('../testing/pendingRow');
+const { setInputValue } = await import('../testing/dom');
+const { PENDING_ROW } = await import('../testing/pendingRow');
 
 const d = React.createElement;
 

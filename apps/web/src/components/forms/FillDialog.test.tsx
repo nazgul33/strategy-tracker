@@ -1,8 +1,10 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test';
-import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
+import { restoreFetch } from '../../testing/fetchStub';
 import type { FetchCalls } from '../../testing/fetchStub';
-import { goOffline } from '../../testing/offline';
+import { elementByTestId, inputByTestId } from '../../testing/dom';
+import { errorText, fillDialogHelpers, fillDto, installFillDialogStub } from '../../testing/fillDialog';
+import type { FillDialogCall } from '../../testing/fillDialog';
 
 GlobalRegistrator.register();
 
@@ -12,7 +14,7 @@ GlobalRegistrator.register();
 const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { act } = await import('react');
-const { FillDialog, autoFeeUsd } = await import('./FillDialog');
+const { FillDialog } = await import('./FillDialog');
 
 const d = React.createElement;
 
@@ -21,102 +23,8 @@ declare global {
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-interface FetchCall {
-  method: string;
-  url: string;
-  body: Record<string, unknown>;
-}
-
 let stub: FetchCalls;
-let calls: FetchCall[] = [];
-let putFailure: { status: number; error: string } | null = null;
-let postFailure: { status: number; error: string } | null = null;
-let deleteFailure: { status: number; error: string } | null = null;
-let deltaCents = 0; // booked cash adjustment returned by the PUT/DELETE stubs
-
-function setInputValue(el: HTMLInputElement, value: string) {
-  // Bypass React's value tracker so onChange fires (same as user typing).
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
-  setter.call(el, value);
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
-function elementByTestId(id: string): Element {
-  const el = document.querySelector(`[data-testid="${id}"]`);
-  if (!el) throw new Error(`[${id}] not found`);
-  return el;
-}
-
-function inputByTestId(id: string): HTMLInputElement {
-  const el = elementByTestId(id);
-  if (!(el instanceof HTMLInputElement)) throw new Error(`[${id}] is not an input`);
-  return el;
-}
-
-function findButton(text: string): HTMLButtonElement | undefined {
-  return Array.from(document.querySelectorAll('button')).find((b) => b.textContent === text);
-}
-
-function button(text: string): HTMLButtonElement {
-  const btn = findButton(text);
-  if (!btn) throw new Error(`button [${text}] not found`);
-  return btn;
-}
-
-async function type(testid: string, value: string) {
-  await act(async () => {
-    setInputValue(inputByTestId(testid), value);
-  });
-}
-
-// Click + flush the async handler (the fetch stub resolves immediately).
-async function clickButton(text: string) {
-  await act(async () => {
-    button(text).click();
-  });
-  await act(async () => {
-    await Promise.resolve();
-  });
-  // Mirror the helper's recorded non-GET calls into the local shape.
-  calls = stub.map((c) => ({ method: c.method, url: c.url, body: c.body as Record<string, unknown> }));
-}
-
-// Fire the form's submit event directly (no constraint validation), like a
-// browser without a native date control would. Needed to exercise the dialog's
-// own guards with values the DOM would otherwise reject on click.
-async function submitForm() {
-  const form = button('Save').closest('form')!;
-  await act(async () => {
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-  });
-  await act(async () => {
-    await Promise.resolve();
-  });
-  calls = stub.map((c) => ({ method: c.method, url: c.url, body: c.body as Record<string, unknown> }));
-}
-
-// FillDto fixture (api.types.ts wire shape: price = myriadths string, fee = cents).
-function fillDto() {
-  return {
-    id: 3,
-    runId: 7,
-    bucketIdx: 1,
-    side: 'sell' as const,
-    ticker: 'AAPL',
-    shares: 10,
-    price: '3402300',
-    fee: 102,
-    filledOn: '2026-11-06',
-    source: 'manual',
-    createdAt: '2026-11-06 10:00:00',
-  };
-}
-
-function errorText(): string | null {
-  const el = document.querySelector('[data-testid="error"]');
-  return el ? (el.textContent ?? '') : null;
-}
+let calls: FillDialogCall[] = [];
 
 describe('FillDialog', () => {
   let container: HTMLDivElement;
@@ -130,48 +38,17 @@ describe('FillDialog', () => {
     });
   }
 
+  const { type, clickButton, submitForm } = fillDialogHelpers({
+    act,
+    stub: () => stub,
+    onCalls: (recorded) => (calls = recorded),
+  });
+
   beforeEach(() => {
     calls = [];
-    putFailure = null;
-    postFailure = null;
-    deleteFailure = null;
     saved = 0;
     closed = 0;
-    deltaCents = 0;
-    // Route getters re-read the flags on every request — same semantics as
-    // the old closure-based stub.
-    stub = installFetchStub([
-      {
-        method: 'DELETE',
-        url: '/api/runs/',
-        get status() {
-          return deleteFailure ? deleteFailure.status : 200;
-        },
-        get json() {
-          return deleteFailure ? { error: deleteFailure.error } : { ok: true, deletedFillId: 3, deltaCents };
-        },
-      },
-      {
-        method: 'PUT',
-        url: '/api/runs/',
-        get status() {
-          return putFailure ? putFailure.status : 200;
-        },
-        get json() {
-          return putFailure ? { error: putFailure.error } : { ok: true, fill: { id: 3 }, deltaCents };
-        },
-      },
-      {
-        method: 'POST',
-        url: '',
-        get status() {
-          return postFailure ? postFailure.status : 200;
-        },
-        get json() {
-          return postFailure ? { error: postFailure.error } : { ok: true, fill: { id: 3 }, deltaCents };
-        },
-      },
-    ]);
+    stub = installFillDialogStub();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -313,248 +190,4 @@ describe('FillDialog', () => {
     expect(put!.body.feeCents).toBe(700);
   });
 
-  it('delete: confirm inside the dialog then DELETE, cancel returns to the form', async () => {
-    await render({ costPpm: 30, fill: fillDto(), deletable: true });
-    expect(button('Delete')).toBeTruthy();
-
-    await clickButton('Delete');
-    expect(document.body.textContent).toContain(
-      "Delete this bucket's last fill (10 shares)? Cash and positions are recomputed.",
-    );
-
-    // Cancel returns to the form without deleting.
-    await clickButton('Cancel');
-    expect(button('Delete')).toBeTruthy();
-    expect(calls.filter((c) => c.method === 'DELETE').length).toBe(0);
-
-    await clickButton('Delete');
-    await clickButton('Delete for real');
-
-    const del = calls.find((c) => c.method === 'DELETE');
-    expect(del).toBeDefined();
-    expect(del!.url.endsWith('/api/runs/7/fills/3')).toBe(true);
-    expect(saved).toBe(1);
-    expect(closed).toBe(1);
-  });
-
-  it('no Delete button when the fill is not deletable or absent', async () => {
-    await render({ fill: fillDto(), deletable: false });
-    expect(findButton('Delete')).toBeUndefined();
-    expect(findButton('Delete for real')).toBeUndefined();
-    act(() => root.unmount());
-    root = createRoot(container);
-
-    await render();
-    expect(findButton('Delete')).toBeUndefined();
-  });
-
-  it('maps a server error code through fillErr.* and keeps the dialog open', async () => {
-    putFailure = { status: 422, error: 'not-last' };
-    await render({ costPpm: 30, fill: fillDto(), deletable: true });
-    await clickButton('Save');
-    expect(errorText()).toBe('Only the last fill of a bucket can be deleted.');
-    expect(closed).toBe(0);
-    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
-  });
-
-  const replayErrors: Array<[string, string]> = [
-    ['too-many-shares', 'More shares than the position holds.'],
-    ['bucket-not-held', 'This bucket is not currently held.'],
-    ['bucket-not-empty', 'This bucket still has open shares.'],
-  ];
-
-  for (const [code, text] of replayErrors) {
-    it(`save failing with ${code} shows the localized text, not the raw code`, async () => {
-      putFailure = { status: 422, error: code };
-      await render({ costPpm: 30, fill: fillDto(), deletable: true });
-      await clickButton('Save');
-      expect(errorText()).toBe(text);
-      expect(closed).toBe(0);
-    });
-
-    it(`delete failing with ${code} shows the localized text, not the raw code`, async () => {
-      deleteFailure = { status: 422, error: code };
-      await render({ costPpm: 30, fill: fillDto(), deletable: true });
-      await clickButton('Delete');
-      await clickButton('Delete for real');
-      expect(errorText()).toBe(text);
-      expect(closed).toBe(0);
-    });
-  }
-
-  const addErrors: Array<[string, string]> = [
-    ['no-bucket-for-sell', 'No held bucket can cover this sell — check the share count.'],
-    ['no-empty-bucket', 'No empty bucket left in this run — free one up first.'],
-    ['invalid-shares', 'Invalid share count.'],
-  ];
-
-  for (const [code, text] of addErrors) {
-    it(`add fill failing with ${code} shows the localized text and keeps the dialog open`, async () => {
-      postFailure = { status: 422, error: code };
-      await render();
-      await type('manualSharesInput', '3');
-      await type('manualPriceInput', '5.00');
-      await type('manualDateInput', '2026-11-06');
-      await clickButton('Add fill');
-      expect(errorText()).toBe(text);
-      expect(closed).toBe(0);
-      expect(saved).toBe(0);
-    });
-  }
-
-  it('an unknown error code keeps its code in worded copy', async () => {
-    putFailure = { status: 422, error: 'weird-code' };
-    await render({ costPpm: 30, fill: fillDto(), deletable: true });
-    await clickButton('Save');
-    expect(errorText()).toBe('The request failed (weird-code).');
-  });
-
-  it('a save with the server unreachable is worded and keeps the dialog open', async () => {
-    await render({ costPpm: 30, fill: fillDto(), deletable: true });
-    goOffline('PUT');
-    await clickButton('Save');
-    expect(errorText()).toBe('Could not reach the server. Check the connection and try again.');
-    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
-  });
-
-  it('edit mode with bucketClosed shows the closed-bucket warning', async () => {
-    await render({ fill: fillDto(), bucketClosed: true });
-    expect(document.querySelector('[role="dialog"]')!.textContent ?? '').toContain(
-      'This fill belongs to a closed position. Saving re-derives all later history and may book a cash adjustment.',
-    );
-  });
-
-  it('delete confirm with bucketClosed shows the closed-bucket warning', async () => {
-    await render({ fill: fillDto(), bucketClosed: true, deletable: true });
-    await clickButton('Delete');
-    expect(document.querySelector('[role="dialog"]')!.textContent ?? '').toContain(
-      'This fill belongs to a closed position. Saving re-derives all later history and may book a cash adjustment.',
-    );
-  });
-
-  it('edit save with a nonzero delta: success step shows the summary, OK saves and closes', async () => {
-    deltaCents = -120;
-    await render({ fill: fillDto() });
-    await clickButton('Save');
-    // Form replaced by the booked-adjustment summary; nothing propagates yet.
-    expect(document.getElementById('manualSharesInput')).toBeNull();
-    expect(document.body.textContent ?? '').toContain('-$1.20');
-    expect(document.body.textContent ?? '').not.toContain('Rebuilt run state');
-    // The shared result popup is what renders here, not an ad-hoc copy.
-    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
-    expect(saved).toBe(0);
-    expect(closed).toBe(0);
-
-    await clickButton('OK');
-    expect(saved).toBe(1);
-    expect(closed).toBe(1);
-  });
-
-  it('delete with a nonzero delta: same success step, OK saves and closes', async () => {
-    deltaCents = 80;
-    await render({ fill: fillDto(), deletable: true });
-    await clickButton('Delete');
-    await clickButton('Delete for real');
-    expect(document.body.textContent ?? '').toContain('$0.80');
-    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
-    expect(saved).toBe(0);
-    expect(closed).toBe(0);
-
-    await clickButton('OK');
-    expect(saved).toBe(1);
-    expect(closed).toBe(1);
-  });
-
-  it('edit save with a nonzero delta: the X button dismisses and still saves and closes', async () => {
-    deltaCents = -120;
-    await render({ fill: fillDto() });
-    await clickButton('Save');
-    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
-
-    await act(async () => {
-      document
-        .querySelector('[role="dialog"] button[aria-label="Cancel"]')!
-        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(saved).toBe(1);
-    expect(closed).toBe(1);
-  });
-
-  it('delete with a nonzero delta: backdrop dismiss saves and closes too', async () => {
-    deltaCents = 80;
-    await render({ fill: fillDto(), deletable: true });
-    await clickButton('Delete');
-    await clickButton('Delete for real');
-    expect(document.querySelector('[data-testid="recalc-result-modal"]')).not.toBeNull();
-
-    await act(async () => {
-      document
-        .querySelector('[role="dialog"]')!
-        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(saved).toBe(1);
-    expect(closed).toBe(1);
-  });
-
-  it('edit mode without bucketClosed shows no warning', async () => {
-    await render({ fill: fillDto() });
-    expect(document.querySelector('[role="dialog"]')!.textContent ?? '').not.toContain('closed position');
-  });
-});
-
-describe('autoFeeUsd', () => {
-  it('computes the fee in whole cents from price, shares and ppm', () => {
-    expect(autoFeeUsd('100', '340.23', 30)).toBe('1.02');
-  });
-
-  it('rounds an exact half cent up', () => {
-    // 5 × $1.00 × 1000 ppm = 0.5¢ → 1¢
-    expect(autoFeeUsd('5', '1.00', 1000)).toBe('0.01');
-  });
-
-  it('rounds half-up from a 4-decimal price rather than flooring', () => {
-    // 1000 × $340.2345 × 30 ppm = 1020.7035¢ → 1021¢ (floor would give 10.20)
-    expect(autoFeeUsd('1000', '340.2345', 30)).toBe('10.21');
-  });
-
-  it('returns 0.00 when cost is 0 ppm', () => {
-    expect(autoFeeUsd('100', '340.23', 0)).toBe('0.00');
-  });
-
-  it('returns empty when costPpm is undefined', () => {
-    expect(autoFeeUsd('100', '340.23', undefined)).toBe('');
-  });
-
-  it.each([['abc'], [''], ['0'], ['-5'], ['1.5']])('returns empty for invalid shares %p', (shares) => {
-    expect(autoFeeUsd(shares, '340.23', 30)).toBe('');
-  });
-
-  it.each([['abc'], [''], ['0'], ['-1'], ['1.23456']])('returns empty for invalid price %p', (price) => {
-    expect(autoFeeUsd('100', price, 30)).toBe('');
-  });
-
-  it.each([[1.5], [Number.NaN], [-30], [Number.POSITIVE_INFINITY]])(
-    'returns empty instead of throwing for unusable costPpm %p',
-    (costPpm) => {
-      expect(autoFeeUsd('100', '340.23', costPpm)).toBe('');
-    },
-  );
-
-  it('returns empty when the fee would exceed what the fee field accepts', () => {
-    // 1e21 shares → toFixed would switch to exponent notation
-    expect(autoFeeUsd('1e21', '340.23', 30)).toBe('');
-    // largest accepted fee is 999999999.99; this one is just above it
-    expect(autoFeeUsd('1000000', '999999999', 1_000_000)).toBe('');
-  });
-
-  it('keeps a large fee that the fee field still accepts', () => {
-    // 1 × $999999999 × 1_000_000 ppm = $999999999.00
-    expect(autoFeeUsd('1', '999999999', 1_000_000)).toBe('999999999.00');
-  });
 });

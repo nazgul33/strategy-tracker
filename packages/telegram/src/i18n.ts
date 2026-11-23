@@ -66,6 +66,8 @@ export const CATALOG: Record<string, MsgEntry> = {
   'order-cancelled': { en: '🚫 Cancelled: {kind} bucket {bucket} — {reason} ({price})', ko: '🚫 취소: {kind} 버킷 {bucket} — {reason} ({price})' },
   'sibling-cancelled': { en: '⚠️ Run #{id} {ticker}: cancel bucket {bucket} {leg} (${limit}) at your broker — the other leg already filled, so this order is no longer needed.', ko: '⚠️ 런 #{id} {ticker}: 증권사에서 버킷 {bucket} {leg} (${limit}) 주문을 취소하세요 — 반대편 주문이 이미 체결되어 이 주문은 더 이상 필요하지 않습니다.' },
   'sibling-cancelled-market': { en: '⚠️ Run #{id} {ticker}: cancel bucket {bucket} {leg} at your broker — the other leg already filled, so this order is no longer needed.', ko: '⚠️ 런 #{id} {ticker}: 증권사에서 버킷 {bucket} {leg} 주문을 취소하세요 — 반대편 주문이 이미 체결되어 이 주문은 더 이상 필요하지 않습니다.' },
+  'buy-removed-cancelled': { en: '⚠️ Run #{id} {ticker}: cancel bucket {bucket} {leg} (${limit}) at your broker — the buy it was placed for was deleted, so this order is no longer needed.', ko: '⚠️ 런 #{id} {ticker}: 증권사에서 버킷 {bucket} {leg} (${limit}) 주문을 취소하세요 — 이 주문의 근거였던 매수 체결이 삭제되어 더 이상 필요하지 않습니다.' },
+  'buy-removed-cancelled-market': { en: '⚠️ Run #{id} {ticker}: cancel bucket {bucket} {leg} at your broker — the buy it was placed for was deleted, so this order is no longer needed.', ko: '⚠️ 런 #{id} {ticker}: 증권사에서 버킷 {bucket} {leg} 주문을 취소하세요 — 이 주문의 근거였던 매수 체결이 삭제되어 더 이상 필요하지 않습니다.' },
   'leg-sell_loc': { en: 'target', ko: '목표가 매도' },
   'leg-stop_sell': { en: 'stop', ko: '손절 매도' },
   'leg-market_sell': { en: 'market sell', ko: '시장가 매도' },

@@ -30,7 +30,8 @@ export function pendingRouter(deps: HttpDeps): Hono {
       }),
     ))
     return c.json(jsonBig(rows.map((p) => {
-      const { detectedSide, detectedShares, detectedPrice, detectedFilledOn, detectedFee, detectedAt, ...row } = p
+      // feeOverride is server-internal (boot-repair bookkeeping), so it is dropped with the detected* fields.
+      const { detectedSide, detectedShares, detectedPrice, detectedFilledOn, detectedFee, detectedAt, feeOverride, ...row } = p
       const { costPpm, heldBuckets } = perRun.get(p.runId)!
       return {
         ...row,

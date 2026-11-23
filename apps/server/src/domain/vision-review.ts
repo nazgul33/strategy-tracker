@@ -1,4 +1,5 @@
 import type { RepoSurface } from './booking'
+import type { FeeOverrideKind } from './repo-types'
 
 // What the vision model read, as frozen onto the pending row at ingest.
 // detectedAt null marks a row that predates the snapshot.
@@ -148,13 +149,16 @@ export async function freezeReview(
 export type UnfrozenPendingRow = ReviewedPendingRow & {
   captureId: number; status: 'confirmed' | 'rejected'
   side: string; shares: number; price: bigint; fee: number | null; filledOn: string
+  // The KIND of fee override `decide` stored; null for a rejected row or one decided before the column existed.
+  feeOverride: FeeOverrideKind | null
 }
 
 // Boot repair: the keep flag is written before a confirm or reject flips its row, so a crash
 // between the flip and the freeze leaves a kept image with no frozen record, and the review tab
 // lists only kept images that have one. Rebuilds each missing record from the pending row and
-// returns the pending ids it froze, ascending. Known loss: the confirm's fee override is not
-// stored on the row, so a rebuilt record has feeOverridden false and its `edited` ignores the fee.
+// returns the pending ids it froze, ascending. A confirmed row carries the confirm's fee override
+// kind, so the rebuilt record matches the live one; a row decided before the column existed
+// (null) rebuilds with feeOverridden false and an `edited` that ignores the fee.
 // Its createdAt is the boot time, so a rebuilt record lists after siblings frozen later than
 // the original would have been.
 export async function refreezeKept(
@@ -165,7 +169,12 @@ export async function refreezeKept(
     const final: FinalValues | null = row.status === 'confirmed'
       ? { side: row.side, shares: row.shares, price: row.price, filledOn: row.filledOn, fee: row.fee ?? 0 }
       : null
-    await freezeReview(repos, { pendingRow: row, captureId: row.captureId, outcome: row.status, final })
+    // Back from the stored kind to the value freezeReview takes (undefined = none, null = cleared).
+    // A set override books exactly the fee `decide` wrote onto the row.
+    const feeOverride = row.status === 'confirmed' && row.feeOverride === 'cleared' ? null
+      : row.status === 'confirmed' && row.feeOverride === 'set' ? row.fee ?? 0
+      : undefined
+    await freezeReview(repos, { pendingRow: row, captureId: row.captureId, outcome: row.status, final, feeOverride })
     frozen.push(row.id)
   }
   return frozen

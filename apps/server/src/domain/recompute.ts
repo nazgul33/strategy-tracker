@@ -1,7 +1,10 @@
 import { applyBuyFill, applySellFill, emptyState, DomainError, parseUsd, type ISODate, type RunState } from '@st/core'
 import { feeCents } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
-import type { BookingDeps, FillRow } from './booking'
+import type { BookingDeps, FillBookingDeps, FillRow } from './booking'
+import { notifyBookingOutcome } from './booking-notify'
+import { emptiedBuckets, retireLegs, type EmptyCause } from './retire-legs'
+import { matchForcedLeg, type OrderRow } from './sell-match'
 import { withRunLock } from './run-lock'
 import { requireRun } from './require-run'
 
@@ -35,26 +38,31 @@ export interface RebookEdit { fillId: number; shares: number; priceStr: string; 
 // `audit` labels the adjust row's ref; the correction id is omitted when absent.
 // Runs under the per-run lock. Callers already inside withRunLock(runId) must
 // use rebookFillUnlocked instead: the lock is not reentrant.
-// Rebuilding state does not reopen orders (applies to deleteFill too): a sell
+// Rebuilding state never reopens orders (applies to deleteFill too): a sell
 // fill's sibling-cancelled leg stays cancelled after that sell is edited away or
 // deleted, so a re-held bucket has no live protection until the next morning's
-// re-plan places its legs again. It does not close them either: an edit that turns
-// a partial sell into a bucket-emptying one leaves that bucket's legs open.
-export function rebookFill(
+// re-plan places its legs again. An edit that empties a bucket does retire that
+// bucket's legs, as a new bucket-emptying sell does (retireLegs); the operator is
+// told which open legs to pull once the lock is released.
+export async function rebookFill(
   runId: number,
   edit: RebookEdit,
-  deps: BookingDeps,
+  deps: FillBookingDeps,
   audit: { reason: string; correctionId?: number } = { reason: 'fill-edit' },
 ): Promise<{ fill: FillRow; deltaCents: number }> {
-  return withRunLock(runId, () => rebookFillUnlocked(runId, edit, deps, audit))
+  const { fill, deltaCents, cancelledIds } = await withRunLock(runId, () => rebookFillUnlocked(runId, edit, deps, audit))
+  await notifyBookingOutcome(runId, { cancelledIds, attribution: null }, deps)
+  return { fill, deltaCents }
 }
 
+// Never notifies: it runs inside a lock. Its callers pass cancelledIds to
+// notifyBookingOutcome once their own lock is released.
 export async function rebookFillUnlocked(
   runId: number,
   edit: RebookEdit,
   deps: BookingDeps,
   audit: { reason: string; correctionId?: number } = { reason: 'fill-edit' },
-): Promise<{ fill: FillRow; deltaCents: number }> {
+): Promise<{ fill: FillRow; deltaCents: number; cancelledIds: number[] }> {
   const repos = deps.repos
   if (!repos.fillRepo.update) throw new Error('fill-history-unavailable')
   const history = byIdAsc(await repos.fillRepo.listForRun(runId))
@@ -81,6 +89,20 @@ export async function rebookFillUnlocked(
   const patched = history.map((f) => (f.id === edit.fillId ? { ...f, ...patch } : f))
   const rebuilt = rebuildState(patched, run.poolCents, deps.today, state.buckets.length)
 
+  // Read what the retirements need before the first write: a failing read then
+  // fails the edit with nothing stored, so a retry can simply repeat it. Only the
+  // edited fill's own bucket is looked at: a bucket the rebuild empties because the
+  // stored state had drifted from the history is repaired without touching its
+  // orders, as recalc does.
+  const retirements: Array<{ orders: OrderRow[]; bucketIdx: number; cause: EmptyCause }> = []
+  for (const bucketIdx of emptiedBuckets(state, rebuilt).filter((i) => i === match.bucketIdx)) {
+    const last = patched.filter((f) => f.bucketIdx === bucketIdx).at(-1)
+    if (last?.side !== 'sell') continue
+    const orders = await repos.orderRepo.listForRunFrom(runId, last.filledOn)
+    const leg = matchForcedLeg(orders, { runId, filledOn: last.filledOn, shares: last.shares, price: last.price, bucketIdx })
+    retirements.push({ orders, bucketIdx, cause: { kind: 'sold', filledOn: last.filledOn, legId: leg?.id ?? null } })
+  }
+
   const delta = rebuilt.cashCents - state.cashCents
   await repos.bucketRepo.saveState(runId, rebuilt)
   await repos.fillRepo.update(runId, edit.fillId, patch)
@@ -93,7 +115,9 @@ export async function rebookFillUnlocked(
     }
     await repos.ledgerRepo.insert({ runId, kind: 'adjust', amountCents: delta, ref: JSON.stringify(ref) })
   }
-  return { fill: { ...match, ...patch }, deltaCents: delta }
+  const cancelledIds: number[] = []
+  for (const r of retirements) cancelledIds.push(...await retireLegs(repos, r.orders, { runId, bucketIdx: r.bucketIdx }, r.cause))
+  return { fill: { ...match, ...patch }, deltaCents: delta, cancelledIds }
 }
 
 // Delete any fill that is the newest in its bucket (MAX(id) within bucketIdx).
@@ -101,19 +125,23 @@ export async function rebookFillUnlocked(
 // reopened. Returns the deleted row plus deltaCents: the signed cash effect of
 // the removal (rebuilt cash minus previously stored cash), same amount as the
 // compensating 'adjust' that gets booked. Runs under the per-run lock.
-export function deleteFill(
+// Deleting a buy that empties its bucket retires that bucket's sell legs (retireLegs);
+// the operator is told which open legs to pull once the lock is released.
+export async function deleteFill(
   runId: number,
   fillId: number,
-  deps: BookingDeps,
+  deps: FillBookingDeps,
 ): Promise<{ fill: FillRow; deltaCents: number }> {
-  return withRunLock(runId, () => deleteFillUnlocked(runId, fillId, deps))
+  const { fill, deltaCents, orphanedIds } = await withRunLock(runId, () => deleteFillUnlocked(runId, fillId, deps))
+  await notifyBookingOutcome(runId, { cancelledIds: [], attribution: null, orphanedIds }, deps)
+  return { fill, deltaCents }
 }
 
 async function deleteFillUnlocked(
   runId: number,
   fillId: number,
   deps: BookingDeps,
-): Promise<{ fill: FillRow; deltaCents: number }> {
+): Promise<{ fill: FillRow; deltaCents: number; orphanedIds: number[] }> {
   const repos = deps.repos
   if (!repos.fillRepo.deleteById) throw new Error('fill-history-unavailable')
   const history = byIdAsc(await repos.fillRepo.listForRun(runId))
@@ -126,13 +154,21 @@ async function deleteFillUnlocked(
   const state = await repos.bucketRepo.loadState(runId)
   const rebuilt = rebuildState(history.filter((f) => f.id !== fillId), run.poolCents, deps.today, state.buckets.length)
 
+  // As in rebookFillUnlocked: read the orders before the first write.
+  const retiring = fill.side === 'buy' && emptiedBuckets(state, rebuilt).includes(fill.bucketIdx)
+  const orders = retiring ? await repos.orderRepo.listForRunFrom(runId, fill.filledOn) : []
+
   const delta = rebuilt.cashCents - state.cashCents
   await repos.bucketRepo.saveState(runId, rebuilt)
   await repos.fillRepo.deleteById(runId, fillId)
   if (delta !== 0) {
     await repos.ledgerRepo.insert({ runId, kind: 'adjust', amountCents: delta, ref: JSON.stringify({ fillId, bookedOn: deps.today, reason: 'fill-delete' }) })
   }
-  return { fill, deltaCents: delta }
+  let orphanedIds: number[] = []
+  if (retiring) {
+    orphanedIds = await retireLegs(repos, orders, { runId, bucketIdx: fill.bucketIdx }, { kind: 'buy-removed', filledOn: fill.filledOn })
+  }
+  return { fill, deltaCents: delta, orphanedIds }
 }
 
 // Re-derive the run state from the full fill history (Cash Model A) and store

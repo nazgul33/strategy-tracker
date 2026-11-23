@@ -3,7 +3,7 @@ import { DomainError, emptyState, parseUsd, type ISODate } from '@st/core'
 import { manualFill, type FillBookingDeps } from '../src/domain/booking'
 import { applyCorrection, dismissCorrection, listOpenCorrections } from '../src/domain/corrections'
 import { deleteFill, rebookFill } from '../src/domain/recompute'
-import { fakeRepos, silentNotifier } from './booking-fakes'
+import { fakeRepos, recordingNotifier, silentNotifier } from './booking-fakes'
 
 const TODAY: ISODate = '2026-11-15'
 type F = ReturnType<typeof fakeRepos>
@@ -144,6 +144,41 @@ describe('applyCorrection', () => {
     const state = await f.repos.bucketRepo.loadState(runId)
     expect(state.cashCents).toBe(1_000_000 - 261_800 + 290_532 - 203) // pool - buy + sell - sell fee
     expect(state.buckets[0]!.state).not.toBe('held')
+  })
+
+  test('applying a correction leaves the run\'s orders alone', async () => {
+    const { f, deps, runId, sell, propose } = await setup()
+    await f.repos.orderRepo.insertMany([
+      { runId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 0, limitPrice: 660000n, shares: 44, status: 'open' },
+      { runId, tradeDate: '2026-11-11', kind: 'stop_sell', bucketIdx: 0, limitPrice: 570000n, shares: 44, status: 'open' },
+    ])
+    await applyCorrection(await propose(sell, '64.07', 203), deps)
+    expect(f._stores.orders.map((o) => o.status)).toEqual(['open', 'open'])
+  })
+
+  test('a correction on a partial sell of a still-held bucket leaves its target and stop open and sends no notice', async () => {
+    const { f, runId, sell } = await setup()
+    const rec = recordingNotifier()
+    const deps: FillBookingDeps = { repos: f.repos, today: TODAY, notify: rec.notify }
+    await deleteFill(runId, sell.id, deps)
+    await manualFill(runId, { side: 'sell', shares: 20, price: '66.03', fee: '2.03', filledOn: '2026-11-11' }, deps)
+    const partial = f._stores.fills.find((x) => x.side === 'sell')!
+    expect((await f.repos.bucketRepo.loadState(runId)).buckets[0]).toMatchObject({ state: 'held', shares: 24 })
+    await f.repos.orderRepo.insertMany([
+      { runId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 0, limitPrice: 660000n, shares: 24, status: 'open' },
+      { runId, tradeDate: '2026-11-11', kind: 'stop_sell', bucketIdx: 0, limitPrice: 570000n, shares: 24, status: 'open' },
+    ])
+    const id = await f.repos.correctionRepo.insert({
+      runId, fillId: partial.id, captureId: null, side: partial.side, ticker: partial.ticker,
+      bookedShares: partial.shares, bookedFilledOn: partial.filledOn, bookedPrice: partial.price, bookedFee: partial.fee,
+      proposedPrice: parseUsd('64.07'), proposedFee: 203,
+    })
+
+    await applyCorrection(id, deps)
+
+    expect(fillById(f, partial.id).price).toBe(parseUsd('64.07'))
+    expect(f._stores.orders.map((o) => o.status)).toEqual(['open', 'open'])
+    expect([rec.siblings, rec.attributions, rec.orphans]).toEqual([[], [], []])
   })
 
   test('apply: unknown id -> correction-not-found', async () => {

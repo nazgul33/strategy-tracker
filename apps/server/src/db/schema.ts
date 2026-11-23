@@ -85,6 +85,9 @@ export const pendingFills = mysqlTable('pending_fills', {
   detectedFilledOn: date('detected_filled_on', { mode: 'string' }),
   detectedFee: int('detected_fee'),
   detectedAt: timestamp('detected_at', { mode: 'string' }),
+  // How the confirm treated the fee, written by the statement that flips the row (null: still
+  // pending, rejected, or decided before this column existed). Only the boot repair reads it.
+  feeOverride: mysqlEnum('fee_override', ['none', 'cleared', 'set']),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 })
 

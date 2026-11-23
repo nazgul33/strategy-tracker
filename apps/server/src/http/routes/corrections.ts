@@ -3,6 +3,7 @@ import { DomainError, type ISODate } from '@st/core'
 import type { BookingDeps } from '../../domain/booking'
 import { applyCorrection, dismissCorrection, listOpenCorrections } from '../../domain/corrections'
 import { jsonBig, type HttpDeps } from '../app'
+import { fillBookingDeps } from '../booking-deps'
 import { parseId } from '../params'
 
 // Review of capture-proposed fill corrections. Auth is handled by the app-level middleware.
@@ -22,7 +23,7 @@ export function correctionsRouter(deps: HttpDeps): Hono {
     const id = parseId(c.req.param('id'))
     if (id === null) return c.json({ error: 'correction-not-found' }, 404)
     try {
-      const { deltaCents } = await applyCorrection(id, bookingDeps())
+      const { deltaCents } = await applyCorrection(id, fillBookingDeps(deps))
       return c.json({ ok: true, deltaCents })
     } catch (e) {
       return failure(c, e)

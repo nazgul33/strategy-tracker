@@ -69,6 +69,8 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
       pendingId,
       source: 'capture',
       bucketIdx: overrides?.bucketIdx ?? null,
+      // the kind of the override; the local `feeOverride` is its value (undefined = none, null = cleared)
+      feeOverride: feeOverride === undefined ? 'none' : feeOverride === null ? 'cleared' : 'set',
     }, deps)
 
     // After booking, inside the lock: a late no-empty-bucket / no-bucket-for-sell

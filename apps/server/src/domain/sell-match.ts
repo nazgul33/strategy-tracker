@@ -3,7 +3,7 @@ import { DomainError, type RunState, type ISODate, type Bucket } from '@st/core'
 export interface OrderRow { id: number; runId: number; tradeDate: string; kind: string; bucketIdx: number; limitPrice: bigint; shares: number; status: string }
 
 // Every order kind that sells a held bucket.
-const SELL_SIDE_KINDS: readonly string[] = ['sell_loc', 'stop_sell', 'market_sell']
+export const SELL_SIDE_KINDS: readonly string[] = ['sell_loc', 'stop_sell', 'market_sell']
 
 // The open sell-side orders of one bucket and run from `fromTradeDate` onwards,
 // lowest id first, minus `exceptId` (the order a fill matched). Open is load-bearing:

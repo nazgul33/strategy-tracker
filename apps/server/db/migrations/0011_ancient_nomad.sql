@@ -1,0 +1,1 @@
+ALTER TABLE `pending_fills` ADD `fee_override` enum('none','cleared','set');

@@ -23,16 +23,18 @@ export function fakeRunRow(id: number, input: NewRun): RunRow {
   }
 }
 
-export const silentNotifier: BookingNotifier = { siblingCancelled: async () => {}, sellAttributed: async () => {} }
+export const silentNotifier: BookingNotifier = { siblingCancelled: async () => {}, sellAttributed: async () => {}, buyRemoved: async () => {} }
 
 export function recordingNotifier() {
   const siblings: Array<{ runId: number; order: OrderRow }> = []
   const attributions: Array<{ runId: number; attribution: SellAttribution }> = []
+  const orphans: Array<{ runId: number; order: OrderRow }> = []
   const notify: BookingNotifier = {
     siblingCancelled: async (runId, order) => { siblings.push({ runId, order: { ...order } }) },
     sellAttributed: async (runId, attribution) => { attributions.push({ runId, attribution }) },
+    buyRemoved: async (runId, order) => { orphans.push({ runId, order: { ...order } }) },
   }
-  return { notify, siblings, attributions }
+  return { notify, siblings, attributions, orphans }
 }
 
 export function serializeState(state: RunState): string {
@@ -185,6 +187,7 @@ export function fakeRepos() {
         .filter((p): p is PendingRow & { captureId: number; status: 'confirmed' | 'rejected' } => p.captureId !== null && (p.status === 'confirmed' || p.status === 'rejected'))
         .filter((p) => captureImages.some((x) => x.captureId === p.captureId && x.keep) && !visionReviews.some((v) => v.pendingFillId === p.id))
         .sort((a, b) => a.id - b.id)
+        .map((p) => ({ ...p, feeOverride: p.feeOverride ?? null }))
     },
     async listForCaptures(captureIds: number[]) { return visionReviews.filter((x) => captureIds.includes(x.captureId)) },
     async deleteFor(captureId: number) {

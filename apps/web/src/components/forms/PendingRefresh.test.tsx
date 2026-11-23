@@ -12,7 +12,8 @@ const { PendingTable } = await import('./PendingTable');
 const { autoFeeUsd } = await import('../../autofee');
 const { costPercentText } = await import('../../format');
 const { installFetchStub, restoreFetch } = await import('../../testing/fetchStub');
-const { PENDING_ROW, setInputValue } = await import('../../testing/pendingRow');
+const { setInputValue } = await import('../../testing/dom');
+const { PENDING_ROW } = await import('../../testing/pendingRow');
 
 const d = React.createElement;
 

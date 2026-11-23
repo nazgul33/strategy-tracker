@@ -12,7 +12,8 @@ const { PendingTable } = await import('./PendingTable');
 const { lookup } = await import('../../i18n/catalog');
 const { useT } = await import('../../i18n');
 const { installFetchStub, restoreFetch } = await import('../../testing/fetchStub');
-const { PENDING_ROW, setInputValue } = await import('../../testing/pendingRow');
+const { setInputValue } = await import('../../testing/dom');
+const { PENDING_ROW } = await import('../../testing/pendingRow');
 type Route = Parameters<typeof installFetchStub>[0][number];
 
 // A keep-requested confirm/reject whose review record could not be saved (`archived:
