@@ -1,8 +1,7 @@
 import { describe, test, expect, spyOn } from 'bun:test'
 import { deleteFill } from '../src/domain/recompute'
 import { manualFill } from '../src/domain/booking'
-import { D, Y, orderOf } from './sell-fixture'
-import { heldRun } from './legs-fixture'
+import { D, Y, orderOf, heldRun } from './sell-fixture'
 
 const BUYS = [
   { shares: 10, price: '100.00', filledOn: '2026-11-10' },

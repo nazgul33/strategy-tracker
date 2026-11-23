@@ -2,8 +2,7 @@ import { describe, test, expect, spyOn } from 'bun:test'
 import { applyBuyFill, parseUsd } from '@st/core'
 import { manualFill } from '../src/domain/booking'
 import { rebookFill } from '../src/domain/recompute'
-import { D, Y, sellAt, orderOf, type Ord } from './sell-fixture'
-import { heldRun, lastFillId } from './legs-fixture'
+import { D, Y, sellAt, orderOf, heldRun, lastFillId, type Ord } from './sell-fixture'
 import { expectKind } from './rebooking-fixture'
 
 const BUY = { shares: 10, price: '100.00', filledOn: '2026-11-01' } as const

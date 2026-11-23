@@ -7,7 +7,7 @@ import {
 } from '../src/domain/booking'
 import { withRunLock } from '../src/domain/run-lock'
 import { silentNotifier, NO_SNAPSHOT } from './booking-fakes'
-import { D, setup, order, bookInput, pair, held1 } from './booking-sell-fixture'
+import { D, sellSetup, orderOf, bookInput, pair, held1 } from './sell-fixture'
 
 describe('sell matching with target and stop legs', () => {
   describe('notifying the operator of the cancelled leg', () => {
@@ -18,27 +18,27 @@ describe('sell matching with target and stop legs', () => {
     })
 
     test('a bucket-emptying stop fill notifies once, naming the pulled leg', async () => {
-      const { f, deps, runId } = await setup(held1, pair)
+      const { f, deps, runId } = await sellSetup(held1, pair)
       const notified: Notified[] = []
       await manualFill(runId, { side: 'sell', shares: 10, price: '96.50', filledOn: D }, withNotifier(deps, notified))
       expect(notified).toHaveLength(1)
       expect(notified[0]!.runId).toBe(runId)
-      expect(notified[0]!.order).toMatchObject({ id: order(f, 1, 'sell_loc').id, kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') })
+      expect(notified[0]!.order).toMatchObject({ id: orderOf(f, 1, 'sell_loc').id, kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') })
     })
 
     test('every cancelled leg gets its own notification, lowest id first', async () => {
-      const { f, deps, runId } = await setup(held1, [...pair, { idx: 1, kind: 'market_sell', price: '0' }])
+      const { f, deps, runId } = await sellSetup(held1, [...pair, { idx: 1, kind: 'market_sell', price: '0' }])
       const notified: Notified[] = []
       await runBooking(bookInput(runId, 10, '103.00'), withNotifier(deps, notified))
       expect(notified.map((n) => n.order.kind)).toEqual(['stop_sell', 'market_sell'])
-      expect(notified.map((n) => n.order.id)).toEqual([order(f, 1, 'stop_sell').id, order(f, 1, 'market_sell').id])
+      expect(notified.map((n) => n.order.id)).toEqual([orderOf(f, 1, 'stop_sell').id, orderOf(f, 1, 'market_sell').id])
     })
 
     // A screenshot of yesterday's fills, confirmed today after the morning re-plan:
     // today's legs are live at the broker against shares the operator no longer holds.
     test('a prior-day fill that empties the bucket also pulls and announces today legs', async () => {
       const yesterday: ISODate = '2026-11-11'
-      const { f, deps, runId } = await setup(
+      const { f, deps, runId } = await sellSetup(
         [{ idx: 1, shares: 10, buy: '100.00' }, { idx: 2, shares: 10, buy: '100.00' }],
         [
           { idx: 1, kind: 'sell_loc', price: '103.00', tradeDate: yesterday },
@@ -67,14 +67,14 @@ describe('sell matching with target and stop legs', () => {
     })
 
     test('a partial fill notifies nobody', async () => {
-      const { deps, runId } = await setup(held1, pair)
+      const { deps, runId } = await sellSetup(held1, pair)
       const notified: Notified[] = []
       await manualFill(runId, { side: 'sell', shares: 4, price: '96.50', filledOn: D }, withNotifier(deps, notified))
       expect(notified).toHaveLength(0)
     })
 
     test('a buy, and an emptying sell with no other open leg, notify nobody', async () => {
-      const { deps, runId } = await setup(held1, [{ idx: 1, kind: 'market_sell', price: '0' }])
+      const { deps, runId } = await sellSetup(held1, [{ idx: 1, kind: 'market_sell', price: '0' }])
       const notified: Notified[] = []
       const d = withNotifier(deps, notified)
       await manualFill(runId, { side: 'buy', shares: 5, price: '50.00', filledOn: D }, d)
@@ -83,7 +83,7 @@ describe('sell matching with target and stop legs', () => {
     })
 
     test('confirming a pending sell notifies too', async () => {
-      const { f, deps, runId } = await setup(held1, pair)
+      const { f, deps, runId } = await sellSetup(held1, pair)
       const notified: Notified[] = []
       const pid = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: parseUsd('96.50'), fee: null, filledOn: D, status: 'pending', ...NO_SNAPSHOT })
       await confirmPendingFill(pid, null, withNotifier(deps, notified))
@@ -93,7 +93,7 @@ describe('sell matching with target and stop legs', () => {
     })
 
     test('the notifier runs after the run lock is released', async () => {
-      const { deps, runId } = await setup(held1, pair)
+      const { deps, runId } = await sellSetup(held1, pair)
       let seen = 'never called'
       // withRunLock is not reentrant: a probe queued from inside the lock can only wait, so it loses the race.
       const d: FillBookingDeps = {
@@ -110,7 +110,7 @@ describe('sell matching with target and stop legs', () => {
     })
 
     test('a failing notifier never fails the booking: fill, ledger row and cancel are all persisted', async () => {
-      const { f, deps, runId } = await setup(held1, pair)
+      const { f, deps, runId } = await sellSetup(held1, pair)
       const errors = spyOn(console, 'error').mockImplementation(() => {})
       try {
         const d: FillBookingDeps = { ...deps, notify: { ...silentNotifier, siblingCancelled: async () => { throw new Error('telegram-down') } } }
@@ -119,16 +119,16 @@ describe('sell matching with target and stop legs', () => {
         expect(f._stores.fills[0]).toMatchObject({ runId, bucketIdx: 1, side: 'sell', shares: 10 })
         expect(f._stores.ledger).toHaveLength(1)
         expect(f._stores.ledger[0].kind).toBe('sell')
-        expect(order(f, 1, 'sell_loc')).toMatchObject({ status: 'cancelled', cancelReason: 'broker-filled' })
-        expect(order(f, 1, 'stop_sell').status).toBe('filled')
+        expect(orderOf(f, 1, 'sell_loc')).toMatchObject({ status: 'cancelled', cancelReason: 'broker-filled' })
+        expect(orderOf(f, 1, 'stop_sell').status).toBe('filled')
         expect((await f.repos.bucketRepo.loadState(runId)).buckets[1]!.state).toBe('empty')
-        expect(cancelled).toEqual([order(f, 1, 'sell_loc').id])
+        expect(cancelled).toEqual([orderOf(f, 1, 'sell_loc').id])
         expect(errors).toHaveBeenCalledTimes(1)
       } finally { errors.mockRestore() }
     })
 
     test('a notifier that throws synchronously is swallowed too', async () => {
-      const { f, deps, runId } = await setup(held1, pair)
+      const { f, deps, runId } = await sellSetup(held1, pair)
       const errors = spyOn(console, 'error').mockImplementation(() => {})
       try {
         const d: FillBookingDeps = { ...deps, notify: { ...silentNotifier, siblingCancelled: () => { throw new Error('boom') } } }
@@ -138,7 +138,7 @@ describe('sell matching with target and stop legs', () => {
     })
 
     test('a failing notification does not stop the next cancelled leg from being notified', async () => {
-      const { f, deps, runId } = await setup(held1, [...pair, { idx: 1, kind: 'market_sell', price: '0' }])
+      const { f, deps, runId } = await sellSetup(held1, [...pair, { idx: 1, kind: 'market_sell', price: '0' }])
       const errors = spyOn(console, 'error').mockImplementation(() => {})
       try {
         const attempts: number[] = []
@@ -147,13 +147,13 @@ describe('sell matching with target and stop legs', () => {
           notify: { ...silentNotifier, siblingCancelled: async (_rid, o) => { attempts.push(o.id); if (attempts.length === 1) throw new Error('flaky') } },
         }
         await runBooking(bookInput(runId, 10, '103.00'), d)
-        expect(attempts).toEqual([order(f, 1, 'stop_sell').id, order(f, 1, 'market_sell').id])
+        expect(attempts).toEqual([orderOf(f, 1, 'stop_sell').id, orderOf(f, 1, 'market_sell').id])
         expect(errors).toHaveBeenCalledTimes(1)
       } finally { errors.mockRestore() }
     })
 
     test('a booking that throws notifies nobody', async () => {
-      const { f, deps, runId } = await setup(held1, pair)
+      const { f, deps, runId } = await sellSetup(held1, pair)
       const notified: Notified[] = []
       f.repos.fillRepo.insert = async () => { throw new Error('db-exploded') }
       await expect(manualFill(runId, { side: 'sell', shares: 10, price: '96.50', filledOn: D }, withNotifier(deps, notified))).rejects.toThrow('db-exploded')
