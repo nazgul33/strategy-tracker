@@ -1,13 +1,13 @@
 // Typed client for the Hono JSON API (apps/server/src/http). Bigint fields
 // arrive as decimal *strings* (jsonBig), cents/fees as numbers. Prices and
 // fees the client *sends* are USD strings ("12.34"), parsed via ./usd (which wraps @st/core).
+import type { NoticePageDto } from './api.notices';
 import { simConfigBody } from './api.sim';
 import type {
   CorrectionDto,
   CreateRunInput,
   FillDto,
   ManualFillInput,
-  NoticePageDto,
   NotificationDto,
   OrderDto,
   PendingFillDto,
@@ -25,6 +25,7 @@ import type {
 } from './api.types';
 
 export type * from './api.types';
+export type * from './api.notices';
 export { usdOrNull, usdFeeOrNull, ungroupUsd, usdToCents } from './usd';
 
 export type Http = (url: string, init?: RequestInit) => Promise<Response>;

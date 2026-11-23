@@ -261,10 +261,15 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       await deps.send(chatId, t('no-orders', lang, { date }));
       return;
     }
-    const tickers = new Map((await deps.repos.runRepo.list()).map((r) => [r.id, r.ticker]));
+    const tickerOf = new Map((await deps.repos.runRepo.list()).map((r) => [r.id, r.ticker]));
     const byRun = new Map<number, string[]>();
     for (const o of orders) {
-      const line = t('orders-line', lang, { id: o.id, kind: o.kind, shares: o.shares, price: formatUsd(o.limitPrice) });
+      const line = t('orders-line', lang, {
+        id: o.id,
+        kind: o.kind,
+        shares: o.shares,
+        price: formatUsd(o.limitPrice),
+      });
       const group = byRun.get(o.runId);
       if (group) group.push(line);
       else byRun.set(o.runId, [line]);
@@ -272,7 +277,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     const blocks = [...byRun.keys()]
       .sort((a, b) => a - b)
       .map((runId) => {
-        const ticker = tickers.get(runId);
+        const ticker = tickerOf.get(runId);
         const header =
           ticker === undefined
             ? t('orders-run-missing', lang, { id: runId })

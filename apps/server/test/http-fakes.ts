@@ -4,8 +4,8 @@ import type { HttpDeps, HttpRepoSurface, createApp } from '../src/http/app'
 import type { DayRepoSurface, FillRow, LedgerRow, NewOrder, NotificationRow, OrderRecord, OrderStatus, PendingRow, RunRow, RunStatus } from '../src/domain/repo-types'
 import type { CaptureImageInsert } from '../src/db/repos-vision'
 import type { VisionReviewRow } from '../src/domain/vision-review'
-import type { SimRunRow, SimDayRow } from '../src/sim/sim'
 import { fakeCorrectionRepo } from './fake-corrections'
+import { fakeSimRepo } from './fake-sim'
 import { fakeRunRow, FAKE_CREATED_AT } from './booking-fakes'
 import { normTicker } from '../src/db/repos-bars'
 
@@ -61,7 +61,7 @@ export function makeFakes() {
       const o = orders.find((x) => x.id === id)
       if (o) { o.status = status; if (cancelReason !== undefined) o.cancelReason = cancelReason }
     },
-    async listOpenBefore(date: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < date) },
+    async listOpenBefore(date: string) { return orders.filter((o) => o.status === 'open' && o.tradeDate < date).map((o) => ({ ...o })) },
     async listForRun(runId: number, date?: string) {
       let out = orders.filter((o) => o.runId === runId)
       if (date) out = out.filter((o) => o.tradeDate === date)
@@ -155,55 +155,7 @@ export function makeFakes() {
   const poolEditRepo = {
     async insert(input: { runId: number; poolCents: number }) { poolEdits.push({ id: poolEdits.length + 1, ...input }) },
   } satisfies HttpRepoSurface['poolEditRepo']
-  // monotonic like AUTO_INCREMENT: ids are never reused after a delete
-  let simRunIdSeq = 1
-  let simDayIdSeq = 1
-  const simRuns: SimRunRow[] = []
-  const simDays: SimDayRow[] = []
-  const simRepo = {
-    async insertRun(i) {
-      const id = simRunIdSeq++
-      simRuns.push({ id, createdAt: '2026-11-10T00:00:00Z', ...i, draft: true })
-      return id
-    },
-    async insertDays(rows) { for (const r of rows) simDays.push({ id: simDayIdSeq++, ...r }) },
-    // guarded like the real one: nothing is touched unless the run is still a draft
-    async rewriteDraft(id, v, rows) {
-      const r = simRuns.find((x) => x.id === id)
-      if (!r || !r.draft) return false
-      Object.assign(r, v)
-      for (let i = simDays.length - 1; i >= 0; i--) if (simDays[i].simRunId === id) simDays.splice(i, 1)
-      for (const d of rows) simDays.push({ id: simDayIdSeq++, ...d })
-      return true
-    },
-    async finalize(id: number) {
-      const r = simRuns.find((x) => x.id === id)
-      if (!r || !r.draft) return false
-      r.draft = false
-      return true
-    },
-    async deleteRun(id: number) {
-      const i = simRuns.findIndex((x) => x.id === id)
-      if (i < 0 || !simRuns[i].draft) return false
-      simRuns.splice(i, 1)
-      for (let j = simDays.length - 1; j >= 0; j--) if (simDays[j].simRunId === id) simDays.splice(j, 1)
-      return true
-    },
-    async sweepDrafts(createdBefore: Date) {
-      let n = 0
-      for (let i = simRuns.length - 1; i >= 0; i--) {
-        const r = simRuns[i]
-        if (!r.draft || new Date(r.createdAt).getTime() >= createdBefore.getTime()) continue
-        simRuns.splice(i, 1)
-        for (let j = simDays.length - 1; j >= 0; j--) if (simDays[j].simRunId === r.id) simDays.splice(j, 1)
-        n += 1
-      }
-      return n
-    },
-    async listRuns() { return [...simRuns].sort((a, b) => b.id - a.id) },
-    async getRun(id: number) { return simRuns.find((x) => x.id === id) ?? null },
-    async listDays(id: number) { return simDays.filter((d) => d.simRunId === id).sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1)) },
-  } satisfies HttpRepoSurface['simRepo']
+  const { repo: simRepo, simRuns, simDays } = fakeSimRepo()
   type FakeBar = { ticker: string; tradeDate: string; open?: bigint; high?: bigint; low?: bigint; close: bigint }
   const priceHistory: FakeBar[] = []
   const priceHistoryRepo = {
