@@ -135,6 +135,36 @@ describe('PendingReviewDialog hints, as on the row', () => {
     expect(dialogText()).toContain('Filled in — vision read nothing here');
   });
 
+  const description = (label: string) =>
+    (input(label).getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean).map((id) => document.getElementById(id)?.textContent);
+  const nameOf = (label: string) => input(label).closest('label')!.textContent;
+
+  it('a hint is the field description and never part of its name', async () => {
+    await show();
+    expect(input('Qty').hasAttribute('aria-describedby')).toBe(false);
+    await act(async () => {
+      setInputValue(input('Qty'), '11');
+    });
+    expect(nameOf('Qty')).toBe('Qty');
+    expect(description('Qty')).toEqual(['Changed from what vision read']);
+    await act(async () => {
+      setInputValue(input('Qty'), '');
+    });
+    expect(nameOf('Qty')).toBe('Qty');
+    expect(description('Qty')).toEqual([lookup('en', 'pendingFieldErased')]);
+  });
+
+  it('a hint that appears while typing leaves the field focused', async () => {
+    await show();
+    const qty = input('Qty');
+    qty.focus();
+    await act(async () => {
+      setInputValue(qty, '11');
+    });
+    expect(input('Qty')).toBe(qty);
+    expect(document.activeElement).toBe(qty);
+  });
+
   it('the derived fee carries its hint but no edit marker', async () => {
     await show({ ...ROW, fee: null, detected: { ...ROW.detected!, fee: null } }, { ...VALUES, fee: '4.94' });
     expect(input('Fee').hasAttribute('data-edit')).toBe(false);
