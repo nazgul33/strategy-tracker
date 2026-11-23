@@ -193,9 +193,11 @@ describe('Modal focus behaviour', () => {
 
   it('keeps focus inside when Tab is pressed outside the dialog', async () => {
     await show();
-    const opener = byId('opener');
-    await focus(opener);
-    const ev = press(opener, 'Tab');
+    // The page behind is inert, so nothing there can take focus; what is left is focus
+    // falling to <body> (the focused control went away, or a click on the page chrome).
+    await act(async () => (document.activeElement as HTMLElement).blur());
+    expect(document.activeElement).toBe(document.body);
+    const ev = press(document.body, 'Tab');
     expect(ev.defaultPrevented).toBe(true);
     // Pulled back to where an open dialog starts: the body's first control.
     expect(document.activeElement).toBe(byTestId('first'));
@@ -245,10 +247,36 @@ describe('Modal focus behaviour', () => {
       ),
     );
     expect(dialogCount()).toBe(2);
+    const [firstDialog, secondDialog] = Array.from(document.querySelectorAll('[role=dialog]'));
+    expect(firstDialog!.closest('[inert]')).not.toBeNull();
+    expect(secondDialog!.closest('[inert]')).toBeNull();
 
     press(document.body, 'Escape');
 
     expect(closed).toEqual(['second']);
+  });
+
+  // A result popup can arrive (after a request) while another dialog is open, and
+  // sit earlier in the document: the one that opened last is the one in use.
+  it('a dialog that opens later but earlier in the document owns Escape and stays reachable', async () => {
+    const closed: string[] = [];
+    const tree = (withFirst: boolean) =>
+      d(
+        'div',
+        null,
+        withFirst && d(Modal, { key: 'first', title: 'First', onClose: () => closed.push('first'), children: d('button', null, 'a') }),
+        d(Modal, { key: 'second', title: 'Second', onClose: () => closed.push('second'), children: d('button', null, 'b') }),
+      );
+    await act(async () => root.render(tree(false)));
+    await act(async () => root.render(tree(true)));
+    const [firstDialog, secondDialog] = Array.from(document.querySelectorAll('[role=dialog]'));
+    expect(firstDialog!.getAttribute('aria-label')).toBe('First');
+    expect(firstDialog!.closest('[inert]')).toBeNull();
+    expect(secondDialog!.closest('[inert]')).not.toBeNull();
+
+    press(document.body, 'Escape');
+
+    expect(closed).toEqual(['first']);
   });
 
   // StrictMode (main.tsx) simulates an unmount and re-mount on mount; the
@@ -277,10 +305,12 @@ describe('Modal focus behaviour', () => {
     await focus(byId('opener'));
     await click(byId('opener'));
     expect(document.activeElement).toBe(byTestId('safe'));
+    expect(byId('opener').closest('[inert]')).not.toBeNull();
 
     await click(headerClose(topPanel()));
     expect(dialogCount()).toBe(0);
     expect(document.activeElement).toBe(byId('opener'));
+    expect(document.querySelector('[inert]')).toBeNull();
   });
 
   it('prefers a data-autofocus child over the first control, on open and on a Tab from outside', async () => {
@@ -303,6 +333,44 @@ describe('Modal focus behaviour', () => {
     const ev = press(document.body, 'Tab');
     expect(ev.defaultPrevented).toBe(true);
     expect(document.activeElement).toBe(byTestId('marked'));
+  });
+
+  const inertOutside = (el: Element) => el.closest('[inert]') !== null;
+
+  it('makes the page behind inert while open, and nothing stays inert after it closes', async () => {
+    const outside = document.createElement('p');
+    document.body.appendChild(outside);
+    try {
+      await show();
+      expect(inertOutside(byId('opener'))).toBe(true);
+      expect(inertOutside(outside)).toBe(true);
+      expect(inertOutside(topPanel())).toBe(false);
+      expect(document.body.hasAttribute('inert')).toBe(false);
+      await click(headerClose(topPanel()));
+      expect(document.querySelector('[inert]')).toBeNull();
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it('an inner dialog makes the rest of the outer one inert, and gives it back on close', async () => {
+    await show();
+    const openInner = Array.from(topPanel().querySelectorAll('button')).find((b) => b.textContent === 'Open inner')!;
+    await focus(openInner);
+    await click(openInner);
+    expect(inertOutside(byTestId('first'))).toBe(true);
+    expect(inertOutside(openInner)).toBe(true);
+    expect(inertOutside(byTestId('inner'))).toBe(false);
+    expect(inertOutside(byId('opener'))).toBe(true);
+
+    press(document.body, 'Escape');
+    expect(dialogCount()).toBe(1);
+    expect(inertOutside(byTestId('first'))).toBe(false);
+    expect(inertOutside(byId('opener'))).toBe(true);
+
+    press(document.body, 'Escape');
+    expect(dialogCount()).toBe(0);
+    expect(document.querySelector('[inert]')).toBeNull();
   });
 
   it('keeps the header close button in the tab order', async () => {

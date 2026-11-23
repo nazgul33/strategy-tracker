@@ -159,4 +159,16 @@ describe('FillDialog focus', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(focused()).toBe('Edit');
   });
+
+  it('leaves nothing inert after the form, the delete step and back again', async () => {
+    await openFromEdit();
+    expect(editButton().closest('[inert]')).not.toBeNull();
+    await press(button('Delete'));
+    expect(editButton().closest('[inert]')).not.toBeNull();
+    expect(button('Cancel').closest('[inert]')).toBeNull();
+    await press(button('Cancel'));
+    expect(editButton().closest('[inert]')).not.toBeNull();
+    await press(closeX());
+    expect(document.querySelector('[inert]')).toBeNull();
+  });
 });
