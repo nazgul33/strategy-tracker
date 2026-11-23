@@ -7,7 +7,8 @@ import { claimCapture } from './capture-claim'
 import { recordCorrections } from './capture-corrections'
 import { withRunLock } from './run-lock'
 import { notifyBookingOutcome, type BookingNotifier, type BookedOutcome } from './booking-notify'
-import { pickSellBucket, openSellLegs, staleSellLegs, type OrderRow, type SellAttribution } from './sell-match'
+import { pickSellBucket, type OrderRow, type SellAttribution } from './sell-match'
+import { emptiedBuckets, retireLegs } from './retire-legs'
 import { storeCaptureImage } from './capture-image'
 import type { FillSource, PendingDecisionPatch, RepoSurface } from './repo-types'
 import { requireRun } from './require-run'
@@ -126,25 +127,15 @@ export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise
   await repos.bucketRepo.saveState(input.runId, next)
   await repos.fillRepo.insert({ runId: input.runId, bucketIdx, side: input.side, ticker: run.ticker, shares: input.shares, price: priceBigInt, fee: finalFee, filledOn: input.filledOn, source: input.source })
   await repos.ledgerRepo.insert({ runId: input.runId, kind: input.side === 'buy' ? 'buy' : 'sell', amountCents: delta, ref: JSON.stringify({ bookedOn: deps.today, filledOn: input.filledOn }) })
-  // A sell that empties its bucket leaves every open sell-side order of that bucket
-  // with nothing to sell, however the bucket was chosen (matched order or fallback
-  // guess) and whenever it was planned (see openSellLegs). A partial fill leaves
-  // shares that still need both legs: it cancels nothing and leaves the matched order
-  // as it was, so its rest stays a candidate. Plain status writer, not cancelOrder
-  // (re-enters the lock). An emptying sell's matched order flips to filled below.
-  const emptied = input.side === 'sell' && next.buckets[bucketIdx]!.state === 'empty'
-  const cancelledIds: number[] = []
-  if (emptied) {
-    for (const o of openSellLegs(sellOrders, { runId: input.runId, bucketIdx, fromTradeDate: input.filledOn }, matchedOrderId)) {
-      await repos.orderRepo.setStatus(o.id, 'cancelled', 'broker-filled')
-      cancelledIds.push(o.id)
-    }
-    // Not announced and not in cancelledIds: nothing is live at the broker for a stale leg.
-    for (const o of staleSellLegs(sellOrders, { runId: input.runId, bucketIdx, tradeDate: input.filledOn }, matchedOrderId)) {
-      await repos.orderRepo.setStatus(o.id, 'cancelled', 'broker-filled')
-    }
+  // A sell that empties its bucket retires that bucket's sell legs and flips its matched
+  // order (retireLegs). A partial fill cancels nothing and leaves the matched order as it
+  // was, so its rest stays a candidate. A buy flips its matched buy_loc.
+  let cancelledIds: number[] = []
+  if (input.side === 'sell' && emptiedBuckets(state, next).includes(bucketIdx)) {
+    cancelledIds = await retireLegs(repos, sellOrders, { runId: input.runId, bucketIdx }, { kind: 'sold', filledOn: input.filledOn, legId: matchedOrderId })
+  } else if (input.side === 'buy' && matchedOrderId !== null) {
+    await repos.orderRepo.setStatus(matchedOrderId, 'filled')
   }
-  if (matchedOrderId !== null && (input.side === 'buy' || emptied)) await repos.orderRepo.setStatus(matchedOrderId, 'filled')
   return { cancelledIds, attribution }
 }
 
