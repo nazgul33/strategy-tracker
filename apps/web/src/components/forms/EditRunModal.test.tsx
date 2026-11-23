@@ -4,6 +4,7 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
 import type { FetchCalls } from '../../testing/fetchStub';
+import { goOffline } from '../../testing/offline';
 import type { BucketDto } from '../../api';
 
 GlobalRegistrator.register();
@@ -271,5 +272,24 @@ describe('EditRunModal cut-loss', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(saved).toBe(0);
     expect(document.activeElement).toBe(opener);
+  });
+
+  const alertText = () => document.querySelector('[role="alert"]')?.textContent;
+
+  it('a refused save names the gap update and keeps the code', async () => {
+    restoreFetch();
+    calls = installFetchStub([{ method: 'POST', url: '', status: 422, json: { error: 'invalid-body' } }]);
+    await render();
+    await save();
+    expect(alertText()).toBe('gap update failed (invalid-body)');
+    expect(saved).toBe(0);
+  });
+
+  it('a save with the server unreachable is worded', async () => {
+    await render();
+    goOffline('POST');
+    await save();
+    expect(alertText()).toBe('Could not reach the server. Check the connection and try again.');
+    expect(saved).toBe(0);
   });
 });

@@ -2,6 +2,7 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import type { CorrectionDto } from '../../api.types';
 import { installFetchStub, restoreFetch, type Route } from '../../testing/fetchStub';
+import { goOffline } from '../../testing/offline';
 
 GlobalRegistrator.register();
 
@@ -126,7 +127,9 @@ describe('CorrectionList', () => {
     expect(gets).toBe(1);
     expect(container.textContent).not.toBe('');
     expect(container.textContent).toContain('Corrections (from screenshots)');
-    expect(container.textContent).toContain('boom-load');
+    expect(container.textContent).toContain(
+      'The server had a problem (boom-load). Try again; if it keeps failing, check the server log.',
+    );
   });
 
   it('shows booked → proposed price and fee change', async () => {
@@ -220,13 +223,25 @@ describe('CorrectionList', () => {
     expect(container.textContent).toContain('Fill does not match this bucket — delete it and re-enter.');
   });
 
-  it('unknown 422 code falls back to the raw code', async () => {
+  it('an unknown 422 code keeps its code in worded copy', async () => {
     stub([ROW], [{ method: 'POST', url: '/api/corrections/1/apply', status: 422, json: { error: 'weird-kind' } }]);
     await render();
 
     await click('Apply');
 
-    expect(container.textContent).toContain('weird-kind');
+    expect(container.textContent).toContain('The request failed (weird-kind).');
+  });
+
+  it('apply with the server unreachable is worded and keeps the row', async () => {
+    stub([ROW]);
+    await render();
+    goOffline('POST', '/api/corrections/1/apply');
+
+    await click('Apply');
+
+    expect(container.textContent).toContain('Could not reach the server. Check the connection and try again.');
+    expect(container.textContent).not.toContain('Failed to fetch');
+    expect(button('Apply')).toBeDefined();
   });
 
   it('apply with onChanged given loads the list exactly once more', async () => {

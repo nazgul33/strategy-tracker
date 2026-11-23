@@ -63,7 +63,7 @@ function SimTable({ rows, onDiscard }: { rows: SimRunDto[]; onDiscard?: (id: num
 
 export function SimPage() {
   const t = useT();
-  const { data, error, loading, reload } = useAsync(() => api.listSimRuns(), []);
+  const { data, error, failure, loading, reload } = useAsync(() => api.listSimRuns(), []);
 
   const [ticker, setTicker] = useState('');
   const [rest, setRest] = useState<ConfigRest>({
@@ -160,7 +160,7 @@ export function SimPage() {
       ) : error ? (
         <Card>
           <div className="flex items-center gap-3">
-            <ErrorNote message={error} />
+            <ErrorNote message={simErrorText(failure, t)} />
             <Button onClick={() => void reload()}>{t('retry')}</Button>
           </div>
         </Card>

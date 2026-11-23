@@ -6,6 +6,7 @@ import { useState } from 'react';
 
 import { api } from '../api';
 import type { NoticeEntryDto } from '../api';
+import { errorText } from '../errortext';
 import { isoDateTime } from '../format';
 import { useT } from '../i18n';
 import { handleUnauthorized, useAsync } from './hooks';
@@ -43,7 +44,7 @@ export function SystemNotices() {
       setCursor(page.nextBefore);
     } catch (err) {
       handleUnauthorized(err);
-      setOlderError(err instanceof Error ? err.message : String(err));
+      setOlderError(errorText(err, t));
     } finally {
       setOlderBusy(false);
     }

@@ -1,6 +1,7 @@
 // Small presentational building blocks shared by the pages. All colours come
 // from the semantic Tailwind tokens (see tailwind.config.ts + style.css), so
 // the dark class on <html> repaints everything at once.
+import { cloneElement, isValidElement, useId } from 'react';
 import type { ReactNode } from 'react';
 
 import { useT } from '../i18n';
@@ -130,12 +131,24 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
 }
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  const hintId = useId();
+  let control = children;
+  if (hint !== undefined && isValidElement<{ 'aria-describedby'?: string }>(children)) {
+    const own = children.props['aria-describedby'];
+    control = cloneElement(children, { 'aria-describedby': own ? `${own} ${hintId}` : hintId });
+  }
   return (
-    <label className="block">
-      <span className="mb-1 block text-xs text-muted-foreground">{label}</span>
-      {children}
-      {hint !== undefined && <span className="mt-1 block text-[11px] leading-snug text-muted-foreground">{hint}</span>}
-    </label>
+    <div>
+      <label className="block">
+        <span className="mb-1 block text-xs text-muted-foreground">{label}</span>
+        {control}
+      </label>
+      {hint !== undefined && (
+        <span id={hintId} data-field-hint className="mt-1 block text-[11px] leading-snug text-muted-foreground">
+          {hint}
+        </span>
+      )}
+    </div>
   );
 }
 

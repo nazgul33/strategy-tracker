@@ -3,9 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiError, getToken, setToken } from '../api';
 import { loadDefaultCostText, peekDefaultCostText } from '../defaultcost';
+import { errorText } from '../errortext';
+import { useT } from '../i18n';
 
 export interface AsyncData<T> {
   data: T | undefined;
+  /** worded for the current language by `errorText`; undefined after a success */
   error: string | undefined;
   /** the caught value behind `error`; undefined after a success */
   failure: unknown;
@@ -24,7 +27,8 @@ export function handleUnauthorized(e: unknown): void {
 
 export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): AsyncData<T> {
   const [data, setData] = useState<T | undefined>(undefined);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const t = useT();
+  const [failed, setFailed] = useState(false);
   const [failure, setFailure] = useState<unknown>(undefined);
   const [loading, setLoading] = useState(true);
   const fnRef = useRef(fn);
@@ -36,11 +40,11 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): Asy
       try {
         const value = await fnRef.current();
         setData(value);
-        setError(undefined);
+        setFailed(false);
         setFailure(undefined);
       } catch (e) {
         handleUnauthorized(e);
-        setError(e instanceof Error ? e.message : String(e));
+        setFailed(true);
         setFailure(e);
       } finally {
         setLoading(false);
@@ -56,7 +60,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): Asy
   }, [load, key]);
 
   const reload = useCallback(() => load(true), [load]);
-  return { data, error, failure, loading, reload };
+  return { data, error: failed ? errorText(failure, t) : undefined, failure, loading, reload };
 }
 
 /**

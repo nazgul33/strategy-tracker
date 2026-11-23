@@ -135,9 +135,86 @@ describe('PendingReviewDialog hints, as on the row', () => {
     expect(dialogText()).toContain('Filled in — vision read nothing here');
   });
 
+  const description = (label: string) =>
+    (input(label).getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean).map((id) => document.getElementById(id)?.textContent);
+  const nameOf = (label: string) => input(label).closest('label')!.textContent;
+
+  it('a hint is the field description and never part of its name', async () => {
+    await show();
+    expect(input('Qty').hasAttribute('aria-describedby')).toBe(false);
+    await act(async () => {
+      setInputValue(input('Qty'), '11');
+    });
+    expect(nameOf('Qty')).toBe('Qty');
+    expect(description('Qty')).toEqual(['Changed from what vision read']);
+    await act(async () => {
+      setInputValue(input('Qty'), '');
+    });
+    expect(nameOf('Qty')).toBe('Qty');
+    expect(description('Qty')).toEqual([lookup('en', 'pendingFieldErased')]);
+  });
+
+  it('a hint that appears while typing leaves the field focused', async () => {
+    await show();
+    const qty = input('Qty');
+    qty.focus();
+    await act(async () => {
+      setInputValue(qty, '11');
+    });
+    expect(input('Qty')).toBe(qty);
+    expect(document.activeElement).toBe(qty);
+  });
+
   it('the derived fee carries its hint but no edit marker', async () => {
     await show({ ...ROW, fee: null, detected: { ...ROW.detected!, fee: null } }, { ...VALUES, fee: '4.94' });
     expect(input('Fee').hasAttribute('data-edit')).toBe(false);
     expect(dialogText()).toContain(lookup('en', 'pendingFeeAutoHint'));
+  });
+
+  describe('a field vision missed', () => {
+    const missedPrice: PendingFillDto = { ...ROW, price: '', detected: { ...ROW.detected!, price: null } };
+    const missedDate: PendingFillDto = { ...ROW, filledOn: '2026-11-09', detected: { ...ROW.detected!, filledOn: null } };
+    const warned = () =>
+      Array.from(container.querySelectorAll('[role=dialog] input, [role=dialog] select'))
+        .filter((el) => el.className.split(' ').includes('border-warning'))
+        .map((el) => el.closest('label')!.querySelector('span')!.textContent);
+
+    it('carries the warning border until it is filled in, like the row', async () => {
+      await show(missedPrice, { ...VALUES, price: '' });
+      expect(warned()).toEqual(['Price']);
+      expect(input('Price').className).toContain('w-full');
+      expect(input('Price').hasAttribute('data-edit')).toBe(false);
+      await act(async () => {
+        setInputValue(input('Price'), '12.50');
+      });
+      expect(warned()).toEqual([]);
+      expect(input('Price').getAttribute('data-edit')).toBe('filled');
+    });
+
+    it('gets the solid warning back, not the dashed erased look, when emptied again', async () => {
+      await show(missedPrice, { ...VALUES, price: '' });
+      await act(async () => {
+        setInputValue(input('Price'), '12.50');
+      });
+      await act(async () => {
+        setInputValue(input('Price'), '');
+      });
+      expect(warned()).toEqual(['Price']);
+      expect(input('Price').className).not.toContain('border-dashed');
+      expect(input('Price').hasAttribute('data-edit')).toBe(false);
+    });
+
+    it('marks every missed field at once: date and side', async () => {
+      await show({ ...missedDate, side: '', detected: { ...missedDate.detected!, side: null } }, { ...VALUES, filledOn: '', side: '' });
+      expect(warned()).toEqual(['Trade date', 'Side']);
+    });
+
+    it('a complete row and a row missing only its ticker mark nothing', async () => {
+      await show();
+      expect(warned()).toEqual([]);
+      await show({ ...ROW, ticker: '' });
+      expect(warned()).toEqual([]);
+      expect(container.querySelector('[role=dialog]')!.getAttribute('aria-label')).toContain('?');
+    });
   });
 });

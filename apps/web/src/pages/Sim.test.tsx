@@ -223,6 +223,20 @@ describe('SimPage gap fields', () => {
     expect(inputByTestId('costInput').value).toBe('');
   });
 
+  it('a failed list load reads in the sim wording, with its code', async () => {
+    restoreFetch();
+    stub = installFetchStub([settingsRoute, { url: '/api/sim', status: 500, json: {} }]);
+    await act(async () => {
+      root.render(d(SimPage));
+    });
+    for (let i = 0; i < 4; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    expect(document.querySelector('[role="alert"]')!.textContent).toBe('The server hit an error (http-500). Try again.');
+  });
+
   it('sends cut-loss as ppm', async () => {
     await act(async () => {
       root.render(d(SimPage));

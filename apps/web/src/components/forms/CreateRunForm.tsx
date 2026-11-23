@@ -3,6 +3,7 @@ import { useState } from 'react';
 
 import { api, usdOrNull, usdToCents } from '../../api';
 import { cutLossToPpm, gapToPpm, isCutLossText, isGapText, isPercentText, percentTextToPpm } from '../../gaps';
+import { errorText } from '../../errortext';
 import { useT } from '../../i18n';
 import { seedCashErrorKey } from '../../viewmodels';
 import { useDefaultCostText } from '../hooks';
@@ -124,7 +125,7 @@ export function CreateRunForm({
       });
       setCreatedId(res.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err, t));
     } finally {
       setBusy(false);
     }

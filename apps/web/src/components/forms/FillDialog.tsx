@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
-import { api, ApiError, ungroupUsd, usdFeeOrNull, usdOrNull, type FillUpdatePayload, type ManualFillInput } from '../../api';
+import { api, ungroupUsd, usdFeeOrNull, usdOrNull, type FillUpdatePayload, type ManualFillInput } from '../../api';
 import { autoFeeUsd } from '../../autofee';
+import { errorText } from '../../errortext';
 import { useT } from '../../i18n';
 import { centsToUsdText, isoDate, priceInputValue, todayIso, usdTextToCents } from '../../format';
 import type { FillDto, HeldBucketDto } from '../../api.types';
@@ -61,15 +62,7 @@ export function FillDialog({
   // render swaps the form for the shared result popup (null = no result yet).
   const [doneResult, setDoneResult] = useState<RecalcResult | null>(null);
 
-  const showFailure = (err: unknown) => {
-    if (err instanceof ApiError) {
-      const key = `fillErr.${err.code}`;
-      const msg = t(key);
-      setError(msg === key ? err.message : msg);
-    } else {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
+  const showFailure = (err: unknown) => setError(errorText(err, t, 'fillErr'));
 
   const syncAutoFee = (nextShares: string, nextPrice: string) => {
     if (!feeTouched) setFee(autoFeeUsd(nextShares, nextPrice, costPpm));

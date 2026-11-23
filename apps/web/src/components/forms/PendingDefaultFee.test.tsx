@@ -258,4 +258,23 @@ describe('auto fee popup', () => {
     expect(dialog(TITLE)).toBeNull();
     expect(container.querySelector('[role=dialog]')!.textContent).toContain('Rejecting this fill');
   });
+
+  // Each popup makes the table behind it inert; the swap from one to the next must
+  // hand that over, and the last one closing must give all of it back.
+  it('the table is inert under each popup in turn and free again afterwards', async () => {
+    await renderWithConfirmCalls(ROW);
+    const table = () => container.querySelector('table')!;
+    await type('Fee', '');
+    await pressButton('Confirm');
+    expect(table().closest('[inert]')).not.toBeNull();
+    expect(dialog(TITLE)!.closest('[inert]')).toBeNull();
+
+    await pressButton('Use auto fee');
+    expect(table().closest('[inert]')).not.toBeNull();
+    expect(container.querySelector('[role=dialog]')!.closest('[inert]')).toBeNull();
+
+    await pressButton('Discard');
+    expect(container.querySelector('[role=dialog]')).toBeNull();
+    expect(document.querySelector('[inert]')).toBeNull();
+  });
 });

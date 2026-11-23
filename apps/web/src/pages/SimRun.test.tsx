@@ -117,4 +117,14 @@ describe('SimRunPage', () => {
     await flush();
     expect(detailFetches).toBe(2);
   });
+
+  it('a simulation that is gone says so instead of showing the code', async () => {
+    restoreFetch();
+    installFetchStub([{ url: '/api/sim/3', status: 404, json: { error: 'not-found' } }]);
+    await act(async () => {
+      root.render(d(SimRunPage, { id: 3 }));
+    });
+    await flush();
+    expect(document.querySelector('[role="alert"]')!.textContent).toBe('This simulation no longer exists.');
+  });
 });

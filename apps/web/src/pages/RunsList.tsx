@@ -20,6 +20,7 @@ import {
   Td,
   Th,
 } from '../components/ui';
+import { errorText } from '../errortext';
 import { centsUsd, costPercentText, isoDateTime } from '../format';
 import { useT } from '../i18n';
 import { RUN_STATUSES, bulkPlan, enumLabelKey, runStatusTone } from '../viewmodels';
@@ -90,7 +91,7 @@ export function RunsListPage() {
       setSelected(new Set());
       await reload();
     } catch (err) {
-      setTriggerError(err instanceof Error ? err.message : String(err));
+      setTriggerError(errorText(err, t, 'triggerErr'));
     } finally {
       setTriggerBusy(false);
       setNoticesKey((k) => k + 1);
@@ -107,7 +108,7 @@ export function RunsListPage() {
       await reload();
       setBulkResult(t('bulkDone', { count: updated }));
     } catch (err) {
-      setBulkError(err instanceof Error ? err.message : String(err));
+      setBulkError(errorText(err, t));
     } finally {
       setBulkBusy(false);
     }

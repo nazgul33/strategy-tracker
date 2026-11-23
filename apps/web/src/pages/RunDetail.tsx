@@ -3,7 +3,7 @@
 // and the tabbed panels (orders / pending / fills / history / notifications).
 import { useState } from 'react';
 
-import { api, ApiError } from '../api';
+import { api } from '../api';
 import type { RunStatus } from '../api';
 import { BucketBoard } from '../components/BucketBoard';
 import { useAsync } from '../components/hooks';
@@ -26,6 +26,7 @@ import {
   Spinner,
   Stat,
 } from '../components/ui';
+import { errorText } from '../errortext';
 import { centsUsd, costPercentText, gapText, isoDateTime, percent, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
 import { enumLabelKey, heldBucketsOf, pnlBadgeTone, runActions, runStatusTone, toneFor } from '../viewmodels';
@@ -83,7 +84,7 @@ export function RunDetailPage({
       await api.setRunStatus(id, status);
       await reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(errorText(err, t));
     } finally {
       setBusyStatus(null);
     }
@@ -97,15 +98,7 @@ export function RunDetailPage({
       setRecalcResult({ deltaCents: res.deltaCents, fillCount: res.fillCount! });
       await reload();
     } catch (err) {
-      if (err instanceof ApiError) {
-        // fillErr.* pattern: known recalcErr.* keys read localized, the rest
-        // fall back to the raw server code.
-        const key = `recalcErr.${err.code}`;
-        const msg = t(key);
-        setActionError(msg === key ? err.code : msg);
-      } else {
-        setActionError(err instanceof Error ? err.message : String(err));
-      }
+      setActionError(errorText(err, t, 'recalcErr'));
     }
   };
 

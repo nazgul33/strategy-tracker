@@ -2,6 +2,7 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterEach, afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
 import type { FetchCalls } from '../../testing/fetchStub';
+import { goOffline } from '../../testing/offline';
 
 GlobalRegistrator.register();
 
@@ -401,14 +402,19 @@ describe('FillDialog', () => {
     });
   }
 
-  it('falls back to the raw message for an unknown error code', async () => {
+  it('an unknown error code keeps its code in worded copy', async () => {
     putFailure = { status: 422, error: 'weird-code' };
     await render({ costPpm: 30, fill: fillDto(), deletable: true });
     await clickButton('Save');
-    const msg = errorText();
-    expect(msg).not.toBeNull();
-    expect(msg!.length).toBeGreaterThan(0);
-    expect(msg).toContain('weird-code');
+    expect(errorText()).toBe('The request failed (weird-code).');
+  });
+
+  it('a save with the server unreachable is worded and keeps the dialog open', async () => {
+    await render({ costPpm: 30, fill: fillDto(), deletable: true });
+    goOffline('PUT');
+    await clickButton('Save');
+    expect(errorText()).toBe('Could not reach the server. Check the connection and try again.');
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
   });
 
   it('edit mode with bucketClosed shows the closed-bucket warning', async () => {

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useT } from '../i18n';
+import { holdBackgroundInert } from './inert';
 
 // Elements a keyboard user can land on inside a dialog: links, enabled form
 // controls (not hidden inputs) and anything with a tabindex other than -1.
@@ -54,7 +55,8 @@ function captureOpener(active: HTMLElement | null): { raw: HTMLElement | null; b
 }
 
 /** Simple fixed-overlay modal used by the dialogs (pool edit, new run); `wide` makes room for side-by-side content.
- * Traps focus inside the panel, closes on Escape unless `closeOnEscape` is off, and returns focus to its opener. */
+ * Traps focus inside the panel, closes on Escape unless `closeOnEscape` is off, and returns focus to its opener.
+ * The page behind is inert while it is open. */
 export function Modal({
   title,
   onClose,
@@ -89,8 +91,13 @@ export function Modal({
     const panel = panelRef.current;
     if (!panel) return;
     modalOpeners.set(panel, opener.raw); // `opener` is state: fixed for the panel's lifetime.
+    const overlay = panel.parentElement as HTMLElement; // the role="dialog" element
+    const release = holdBackgroundInert(overlay);
     if (!panel.contains(document.activeElement)) modalInitialFocus(panel)?.focus();
     return () => {
+      // First: StrictMode's simulated unmount gives the page back (the re-run
+      // takes it again), and an opener that is still inert cannot take focus.
+      release();
       // Two cases where restoring would steal focus from a dialog that is
       // taking over: StrictMode's simulated unmount (the panel is still
       // attached), and a successor dialog that already holds focus (a step
@@ -116,8 +123,10 @@ export function Modal({
     (ev: KeyboardEvent) => {
       const panel = panelRef.current;
       if (!panel) return;
-      const dialogs = document.querySelectorAll('[role=dialog]');
-      if (dialogs[dialogs.length - 1] !== panel.closest('[role=dialog]')) return; // a nested panel owns the keystroke
+      // The dialog in use is the last one that is not inert: a dialog that
+      // opened later holds every older one inert, wherever it sits in the document.
+      const dialogs = Array.from(document.querySelectorAll('[role=dialog]')).filter((el) => el.closest('[inert]') === null);
+      if (dialogs[dialogs.length - 1] !== panel.closest('[role=dialog]')) return; // another panel owns the keystroke
       if (ev.key === 'Escape') {
         if (!closeOnEscape) return; // opt-out: the buttons carry the meaning
         ev.preventDefault();
