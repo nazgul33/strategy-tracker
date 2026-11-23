@@ -29,7 +29,7 @@ The morning digest's "⚠️ N unconfirmed orders from <date>" line must name ev
 ### Unconfirmed line (#91, orders half of #89) — `apps/server/src/pipeline/day.ts`
 
 - `OrderRepo` gains `listUnreportedStale(runId)` (`run_id = ? AND status = 'stale' AND reported_at IS NULL`; `orders_run_trade_date_idx` narrows by run) and `markReported(ids)`. `OrderRecord` carries `reportedAt: string | null` where needed.
-- `unconfirmedOrders` returns `listUnreportedStale(run.id)`, still read inside the run lock after this morning's roll. The `stale` roll map is no longer needed for the line (the roll still runs; its failure is still logged). `count` = rows, `date` = oldest `tradeDate`, as today.
+- `unconfirmedOrders` returns `listUnreportedStale(run.id)`, still read inside the run lock after this morning's roll. The `stale` roll map is no longer needed for the line (the roll still runs; its failure is still logged). `count` = rows, `date` = oldest `tradeDate`, as today (superseded: one line per trade date, see "Additions after the final review").
 - After the digest broadcast, the reported ids are marked with `markReported`. They are marked only if at least one copy of the digest was recorded: `broadcastNotice` returns a `recorded` count alongside `failed`. A failed mark is logged; the orders are then named again next morning (accepted).
 - Stale orders from a morning whose digest was never recorded are named the next morning (the issue's "arguably right" edge, now explicit).
 - Orders that leave `stale` (late fill, broker-filled cancel) drop out of the line naturally.
