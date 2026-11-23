@@ -1,6 +1,6 @@
 # Sell attribution by order type, and refusing future-dated fills — design
 
-Date: 2026-11-23. Status: draft, awaiting operator approval.
+Date: 2026-11-23. Status: approved.
 Issues: #74 (a sell booked silently to the wrong bucket), #96 (a fill dated after
 its bucket's open legs leaves them open without the pull notice).
 Branch: `fix/issues-74-96`.
