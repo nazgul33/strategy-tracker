@@ -159,9 +159,10 @@ async function planRun(deps: DayDeps, run: RunRow, today: ISODate): Promise<RunO
     const plan: DayPlan = computeOrders(run as Run, state, { lastClose: close }, mrParams)
 
     const unconfirmed = await deps.repos.orderRepo.listUnreportedStale(run.id)
-    if (unconfirmed.length > 0) {
-      const oldest = unconfirmed.reduce((min, o) => (o.tradeDate < min ? o.tradeDate : min), unconfirmed[0]!.tradeDate)
-      plan.notices.push({ code: 'unconfirmed', params: { count: unconfirmed.length, date: oldest } })
+    const perDate = new Map<string, number>()
+    for (const o of unconfirmed) perDate.set(o.tradeDate, (perDate.get(o.tradeDate) ?? 0) + 1)
+    for (const [date, count] of [...perDate].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+      plan.notices.push({ code: 'unconfirmed', params: { count, date } })
     }
 
     const rows = plan.orders.map((o): NewOrder => ({

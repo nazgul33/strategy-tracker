@@ -55,6 +55,7 @@ function failRun1(f: Fakes) {
 }
 const LINE = '⚠️ 2 unconfirmed orders from 2026-11-05'
 const digestFor = (sent: string[], ticker: string) => sent.find((s) => s.includes(ticker) && !s.startsWith('ℹ️'))
+const unconfirmedLines = (digest: string | undefined) => (digest ?? '').split('\n').filter((l) => l.startsWith('⚠️ ') && /unconfirmed|미확인/.test(l))
 
 describe('the unconfirmed orders line', () => {
   test('a normal morning reports the previous trading day\'s unresolved orders per run', async () => {
@@ -128,12 +129,32 @@ describe('the unconfirmed orders line', () => {
       expect(f.orders.slice(0, 3).map((o) => [o.status, o.reportedAt])).toEqual([['stale', null], ['stale', null], ['stale', null]])
       sent.length = 0
       expect(await runMorningPipeline(deps)).toBe('sent')
-      expect(digestFor(sent, 'TSLA')).toContain('⚠️ 3 unconfirmed orders from 2026-11-04')
+      expect(unconfirmedLines(digestFor(sent, 'TSLA'))).toEqual(['⚠️ 1 unconfirmed orders from 2026-11-04', '⚠️ 2 unconfirmed orders from 2026-11-05'])
       expect(reported(f).slice(0, 3)).toEqual([true, true, true])
     } finally {
       errors.mockRestore()
       logs.mockRestore()
     }
+  })
+
+  test('several dates give one line each, oldest first', async () => {
+    const { f, deps, sent } = await setup()
+    await f.repos.orderRepo.insertMany([
+      order(1, '2026-11-05', 'open', 0), order(1, '2026-11-05', 'open', 1), order(1, '2026-11-03', 'open', 2), order(1, '2026-11-04', 'open', 3),
+    ])
+    expect(await runMorningPipeline(deps)).toBe('sent')
+    expect(unconfirmedLines(digestFor(sent, 'TSLA'))).toEqual([
+      '⚠️ 1 unconfirmed orders from 2026-11-03', '⚠️ 1 unconfirmed orders from 2026-11-04', '⚠️ 2 unconfirmed orders from 2026-11-05',
+    ])
+    expect(reported(f).slice(0, 4)).toEqual([true, true, true, true])
+  })
+
+  test('the Korean digest renders one line per date', async () => {
+    const { f, deps, sent } = await setup()
+    deps.digestLang = 'ko'
+    await f.repos.orderRepo.insertMany([order(1, '2026-11-05', 'open', 0), order(1, '2026-11-04', 'open', 1), order(1, '2026-11-05', 'open', 2)])
+    expect(await runMorningPipeline(deps)).toBe('sent')
+    expect(unconfirmedLines(digestFor(sent, 'TSLA'))).toEqual(['⚠️ 2026-11-04 미확인 주문 1건', '⚠️ 2026-11-05 미확인 주문 2건'])
   })
 
   test('with no Telegram chat the web row counts: the orders are marked', async () => {
@@ -170,7 +191,7 @@ describe('the unconfirmed orders line', () => {
       f.repos.notificationRepo.insert = insert
       nextMorning(deps, sent)
       await runMorningPipeline(deps)
-      expect(digestFor(sent, 'TSLA')).toContain('⚠️ 3 unconfirmed orders from 2026-11-05')
+      expect(unconfirmedLines(digestFor(sent, 'TSLA'))).toEqual(['⚠️ 2 unconfirmed orders from 2026-11-05', '⚠️ 1 unconfirmed orders from 2026-11-06'])
     } finally {
       f.repos.notificationRepo.insert = insert
       errors.mockRestore()
@@ -192,7 +213,7 @@ describe('the unconfirmed orders line', () => {
       f.repos.orderRepo.markReported = mark
       nextMorning(deps, sent)
       await runMorningPipeline(deps)
-      expect(digestFor(sent, 'TSLA')).toContain('⚠️ 3 unconfirmed orders from 2026-11-05')
+      expect(unconfirmedLines(digestFor(sent, 'TSLA'))).toEqual(['⚠️ 2 unconfirmed orders from 2026-11-05', '⚠️ 1 unconfirmed orders from 2026-11-06'])
     } finally {
       f.repos.orderRepo.markReported = mark
       errors.mockRestore()

@@ -360,9 +360,9 @@ describe('day pipeline', () => {
     }
     const r = await runMorningPipeline(deps)
     expect(r).toBe('sent')
-    expect(sends.some((s) => s.includes('unconfirmed orders from 2026-11-03'))).toBe(true)
-    // count 2
-    expect(sends.some((s) => s.includes('⚠️ 2 unconfirmed'))).toBe(true)
+    const digest = sends.find((s) => s.includes('unconfirmed'))!
+    const lines = digest.split('\n').filter((l) => l.includes('unconfirmed'))
+    expect(lines).toEqual(['⚠️ 1 unconfirmed orders from 2026-11-03', '⚠️ 1 unconfirmed orders from 2026-11-05'])
     // seeded orders now stale
     const staleCount = f.orders.filter((o) => o.status === 'stale').length
     expect(staleCount).toBe(2)
