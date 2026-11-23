@@ -1,5 +1,5 @@
 import type { Bucket, ClosedBucket, RunState } from '@st/core'
-import { eq, and, sql, inArray } from 'drizzle-orm'
+import { eq, and, sql, inArray, lt, desc } from 'drizzle-orm'
 import * as s from './schema'
 import type { Db, DbOrTx } from './db-type'
 import { getSimRepo } from './repos-sim'
@@ -222,6 +222,9 @@ export function getRepos(db: Db) {
   const notificationRepo = {
     async insert(n: NewNotification): Promise<void> { await db.insert(s.notifications).values(n) },
     async listForRun(runId: number) { return db.select().from(s.notifications).where(eq(s.notifications.runId, runId)) },
+    async listBefore(before: number | null, limit: number) {
+      return db.select().from(s.notifications).where(before === null ? undefined : lt(s.notifications.id, before)).orderBy(desc(s.notifications.id)).limit(limit)
+    },
   } satisfies NotificationRepo
 
   const settingsRepo = {

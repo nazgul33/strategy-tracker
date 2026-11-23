@@ -41,6 +41,7 @@ import { fillsRouter } from './routes/fills'
 import { pendingRouter } from './routes/pending'
 import { correctionsRouter } from './routes/corrections'
 import { settingsRouter } from './routes/settings'
+import { notificationsRouter } from './routes/notifications'
 import { simRouter } from './routes/sim'
 import { visionReviewRouter } from './routes/vision-review'
 
@@ -68,6 +69,7 @@ export function createApp(deps: HttpDeps): Hono {
   app.route('/api', visionReviewRouter(deps))
   app.route('/api', correctionsRouter(deps))
   app.route('/api', settingsRouter(deps))
+  app.route('/api', notificationsRouter(deps))
   app.route('/api/sim', simRouter(deps))
   app.post('/api/trigger/morning', async (c) => {
     const result = await deps.triggerMorning()

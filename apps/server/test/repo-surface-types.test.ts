@@ -48,6 +48,8 @@ export async function _restPins(r: HttpRepoSurface, d: HttpDeps) {
   await r.notificationRepo.insert({ text: 'x' })
   // @ts-expect-error text is a string
   const _n: number = (await r.notificationRepo.listForRun(1))[0]!.text
+  // @ts-expect-error the page cursor is a row id or null
+  await r.notificationRepo.listBefore('5', 20)
   // @ts-expect-error bars carry a bigint close
   const _c: string = (await d.fetchDailyBars('X', '2026-01-01', '2026-01-02'))[0]!.close
 }

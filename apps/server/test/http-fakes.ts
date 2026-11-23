@@ -145,6 +145,7 @@ export function makeFakes() {
   const notificationRepo = {
     async insert(n) { notifications.push({ id: notifications.length + 1, sentAt: FAKE_CREATED_AT, ...n }) },
     async listForRun(runId: number) { return notifications.filter((n) => n.runId === runId) },
+    async listBefore(before: number | null, limit: number) { return notifications.filter((n) => before === null || n.id < before).sort((a, b) => b.id - a.id).slice(0, limit) },
   } satisfies HttpRepoSurface['notificationRepo']
   const sent: { chatId: string; text: string }[] = []
   const settingsRepo = {

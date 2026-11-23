@@ -47,6 +47,8 @@ export type NewNotification = Omit<NotificationRow, 'id' | 'sentAt'>
 export interface NotificationRepo {
   insert(n: NewNotification): Promise<void>
   listForRun(runId: number): Promise<NotificationRow[]>
+  /** Newest first (id descending); only rows with id < before when before is not null. */
+  listBefore(before: number | null, limit: number): Promise<NotificationRow[]>
 }
 
 export type OrderKind = 'buy_loc' | 'sell_loc' | 'market_sell' | 'stop_sell'
