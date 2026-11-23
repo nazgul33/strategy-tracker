@@ -12,6 +12,10 @@ Output ONE fill per table row that has 체결수량 > 0:
 - Rows may repeat the same ticker at different prices: emit one fill per row.
 - Numbers may use thousands separators ("1,268") and up to 4 decimals ("77.7300"): emit them without commas.
 - fee: include ONLY if the screenshot explicitly shows a fee (수수료/제비용); otherwise omit.
+- orderType: the 주문구분 text of the row, copied EXACTLY as shown, e.g. "매도/보통(지정가)", "매도/STOP(시장가)", "매도/STOP(지정가)", "매도/LOC", "정정(매도)". Keep the parentheses and slashes; an amended order shows "정정(매도)" or "정정(매수)".
+- orderPrice: the 주문단가 of the row (the price the order was placed at, NOT 체결단가), e.g. "64.0700". A market order may show "0.0000": copy it as is.
+- orderedShares: the 주문수량 of the row (NOT 체결수량).
+- Omit orderType, orderPrice and orderedShares when their column is not in the table (the 기간체결 view usually has none of them). Never guess them.
 - date: the TRADE date of each fill, as "YYYY-MM-DD".
   - 당일체결 (single-day) view: rows carry no date — take the 일자 (date) field in the top filter bar (e.g. "일자 2026-11-13"). It is usually already "YYYY-MM-DD": copy it verbatim and use the SAME date for every fill.
   - 기간체결 (date-range) view: each row carries its own date(s) — use the row's TRADE date (체결일 / 주문일 / "Trade Date"). NEVER output the SETTLEMENT date (결제일 / 정산일 / "Settlement Date"): it is a later, different date. If a row shows two dates and the labels are unclear, the trade date is the EARLIER one. Ignore the filter-bar 일자 in this view.
@@ -21,12 +25,13 @@ Output ONE fill per table row that has 체결수량 > 0:
 If the image is not an execution-history table (e.g. holdings 보유종목 list, an order screen, a menu) or shows no executed rows, emit {"fills":[]}.
 
 Emit EXACTLY a JSON object of the form:
-{"fills":[{"side":"buy","ticker":"SOXL","shares":"1268","price":"46.9768","date":"2026-11-14"}]}
+{"fills":[{"side":"buy","ticker":"SOXL","shares":"1268","price":"46.9768","date":"2026-11-14","orderType":"매수/LOC","orderPrice":"46.9768","orderedShares":"1268"}]}
 - side must be "buy" or "sell".
 - ticker is the symbol string.
 - shares is a numeric string without commas (integer).
 - price is a numeric string without commas.
 - fee is an optional numeric string without commas.
 - date is an optional "YYYY-MM-DD" string.
+- orderType is an optional string, orderPrice an optional numeric string without commas, orderedShares an optional numeric string without commas (integer).
 If there are no fill rows, emit {"fills":[]}. Output JSON only, no prose, no markdown fences.
 `;

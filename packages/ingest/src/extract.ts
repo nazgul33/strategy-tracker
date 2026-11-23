@@ -1,5 +1,5 @@
 export interface VisionConfig { baseUrl: string; apiKey: string; model: string; maxTokens: number; today?: string }
-export interface RawFill { side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee?: string; date?: string }
+export interface RawFill { side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee?: string; date?: string; orderType?: string; orderPrice?: string; orderedShares?: number }
 export type ExtractResult = { ok: true; fills: RawFill[] } | { ok: false; reason: 'http' | 'unparseable' | 'empty'; detail: string }
 
 import { MPOP_FILL_EXTRACTION_PROMPT } from './prompt';
@@ -50,6 +50,12 @@ function normalizeFill(raw: any): RawFill | null {
     // round-trip check: Date.parse silently rolls over calendar-invalid days (2026-02-30 -> 2026-03-02)
     if (!Number.isNaN(ts) && new Date(ts).toISOString().slice(0, 10) === date) f.date = date;
   }
+  const orderType = typeof raw?.orderType === 'string' ? raw.orderType.trim() : '';
+  if (orderType.length >= 1 && orderType.length <= 32) f.orderType = orderType;
+  const orderPrice = stripCommas(raw?.orderPrice);
+  if (orderPrice !== undefined && orderPrice !== null && PRICE_RE.test(String(orderPrice))) f.orderPrice = String(orderPrice);
+  const orderedShares = Number(stripCommas(raw?.orderedShares));
+  if (Number.isInteger(orderedShares) && orderedShares > 0) f.orderedShares = orderedShares;
   return f;
 }
 
