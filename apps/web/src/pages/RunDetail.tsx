@@ -40,14 +40,24 @@ const TABS: { id: Tab; labelKey: string }[] = [
   { id: 'notifications', labelKey: 'tabNotifications' },
 ];
 
-export function RunDetailPage({ id }: { id: number }) {
+export function RunDetailPage({
+  id,
+  initialTab,
+  highlightNoticeId: deepLinkNoticeId,
+}: {
+  id: number;
+  initialTab?: 'notifications';
+  highlightNoticeId?: number;
+}) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.getRun(id), [id]);
   // Owned here, not inside the table: switching tabs remounts the pending
   // panel, and a warning the operator has not dismissed must survive that.
   const keepNotices = useKeepNotices();
 
-  const [tab, setTab] = useState<Tab>('orders');
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'orders');
+  // Only the deep-linked visit highlights; the first tab switch drops it for good.
+  const [highlightNoticeId, setHighlightNoticeId] = useState(deepLinkNoticeId);
   const [panelKey, setPanelKey] = useState(0);
   const [tabKey, setTabKey] = useState(0);
   const [busyStatus, setBusyStatus] = useState<RunStatus | null>(null);
@@ -60,6 +70,7 @@ export function RunDetailPage({ id }: { id: number }) {
 
   const selectTab = (next: Tab) => {
     setTab(next);
+    setHighlightNoticeId(undefined);
     setPanelKey((k) => k + 1); // remount self-fetching panels so they re-read
     setTabKey((k) => k + 1);
     void reload();
@@ -230,7 +241,7 @@ export function RunDetailPage({ id }: { id: number }) {
           />
         )}
         {tab === 'history' && <RunHistory closed={run.state.closed} onRecalc={recalc} />}
-        {tab === 'notifications' && <NotificationsPanel key={`n${panelKey}`} runId={id} />}
+        {tab === 'notifications' && <NotificationsPanel key={`n${panelKey}`} runId={id} highlightId={highlightNoticeId} />}
       </Card>
 
       {showClose && (

@@ -47,6 +47,8 @@ export type NewNotification = Omit<NotificationRow, 'id' | 'sentAt'>
 export interface NotificationRepo {
   insert(n: NewNotification): Promise<void>
   listForRun(runId: number): Promise<NotificationRow[]>
+  /** Newest first (id descending); only rows with id < before when before is not null. */
+  listBefore(before: number | null, limit: number): Promise<NotificationRow[]>
 }
 
 export type OrderKind = 'buy_loc' | 'sell_loc' | 'market_sell' | 'stop_sell'
@@ -132,4 +134,12 @@ export interface RepoSurface {
   }
   ledgerRepo: LedgerRepo
   notificationRepo: Pick<NotificationRepo, 'insert'>
+}
+
+/** What the morning pipeline needs beyond RepoSurface. */
+export interface DayRepoSurface extends RepoSurface {
+  bucketRepo: RepoSurface['bucketRepo'] & {
+    /** One transaction, orders first: both are written or neither is. */
+    saveStateWithOrders(runId: number, state: RunState, orders: NewOrder[]): Promise<void>
+  }
 }

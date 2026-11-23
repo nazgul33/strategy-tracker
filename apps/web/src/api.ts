@@ -1,6 +1,7 @@
 // Typed client for the Hono JSON API (apps/server/src/http). Bigint fields
 // arrive as decimal *strings* (jsonBig), cents/fees as numbers. Prices and
 // fees the client *sends* are USD strings ("12.34"), parsed via ./usd (which wraps @st/core).
+import type { NoticePageDto } from './api.notices';
 import { simConfigBody } from './api.sim';
 import type {
   CorrectionDto,
@@ -24,6 +25,7 @@ import type {
 } from './api.types';
 
 export type * from './api.types';
+export type * from './api.notices';
 export { usdOrNull, usdFeeOrNull, ungroupUsd, usdToCents } from './usd';
 
 export type Http = (url: string, init?: RequestInit) => Promise<Response>;
@@ -118,6 +120,8 @@ export interface Api {
   cancelOrder(runId: number, orderId: number, reason: string): Promise<void>;
   listFills(id: number): Promise<FillDto[]>;
   listNotifications(id: number): Promise<NotificationDto[]>;
+  /** The global notice feed, newest first; `before` is the previous page's `nextBefore`. */
+  listNotices(before?: number): Promise<NoticePageDto>;
   addManualFill(runId: number, fill: ManualFillInput): Promise<void>;
   updateFill(runId: number, fillId: number, body: FillUpdatePayload): Promise<{ ok: true; deltaCents: number }>;
   deleteFill(runId: number, fillId: number): Promise<{ ok: true; deletedFillId: number; deltaCents: number }>;
@@ -199,6 +203,8 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
       send<{ ok: true }>('POST', `/api/runs/${runId}/orders/${orderId}/cancel`, { reason }).then(() => undefined),
     listFills: (id) => get<FillDto[]>(`/api/runs/${id}/fills`),
     listNotifications: (id) => get<NotificationDto[]>(`/api/runs/${id}/notifications`),
+    listNotices: (before) =>
+      get<NoticePageDto>(`/api/notifications${before === undefined ? '' : `?before=${before}`}`),
     addManualFill: (runId, fill) => {
       const body: Record<string, unknown> = {
         side: fill.side,

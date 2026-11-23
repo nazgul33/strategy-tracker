@@ -1,5 +1,6 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { installScrollShim, restoreScrollShim } from '../testing/scrollShim';
 
 GlobalRegistrator.register();
 
@@ -61,5 +62,52 @@ describe('NoticeList', () => {
     localStorage.setItem('st-lang', 'ko');
     await render(d(NoticeList, { notifications: rows }));
     expect(chatCells()).toEqual(['웹 전용', '42']);
+  });
+});
+
+describe('NoticeList highlight', () => {
+  const marked = () => [...container.querySelectorAll('tbody tr[aria-current="true"]')].map((el) => el.textContent ?? '');
+
+  beforeEach(installScrollShim);
+  afterEach(restoreScrollShim);
+
+  it('marks the highlighted notice and scrolls it into view once', async () => {
+    const spy = spyOn(window.Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+    try {
+      await render(d(NoticeList, { notifications: rows, highlightId: 2 }));
+      const found = marked();
+      expect(found).toHaveLength(1);
+      expect(found[0]).toContain('sold');
+      expect(container.querySelector('tbody tr[aria-current="true"]')?.className).toContain('bg-primary/10');
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith({ block: 'center' });
+      await act(() => root.render(d(LangProvider, null, d(NoticeList, { notifications: rows, highlightId: 2 }))));
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('an unknown highlight id marks nothing and does not scroll', async () => {
+    const spy = spyOn(window.Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+    try {
+      await render(d(NoticeList, { notifications: rows, highlightId: 99 }));
+      expect(marked()).toEqual([]);
+      expect(spy).toHaveBeenCalledTimes(0);
+      expect(chatCells()).toEqual(['web only', '42']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('without a highlight id no row is marked', async () => {
+    const spy = spyOn(window.Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+    try {
+      await render(d(NoticeList, { notifications: rows }));
+      expect(marked()).toEqual([]);
+      expect(spy).toHaveBeenCalledTimes(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

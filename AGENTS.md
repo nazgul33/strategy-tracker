@@ -29,19 +29,19 @@ apps/server/       drizzle.config.ts package.json tsconfig.json
   src/
     main.ts
     db/schema.ts db/client.ts db/db-type.ts db/repos.ts db/repos-bars.ts db/repos-sim.ts db/repos-vision.ts
-    domain/booking.ts domain/confirm-pending.ts domain/capture-claim.ts domain/capture-corrections.ts domain/capture-dedup.ts domain/booking-notify.ts domain/capture-image.ts domain/correction-types.ts domain/corrections.ts domain/order-ops.ts domain/ppm.ts domain/recompute.ts domain/repo-types.ts domain/require-run.ts domain/run-lock.ts domain/sell-match.ts domain/vision-review.ts
-    wire/deps.ts wire/capture.ts wire/booking-notifier.ts wire/boot-sweeps.ts wire/send.ts
+    domain/booking.ts domain/confirm-pending.ts domain/capture-claim.ts domain/capture-corrections.ts domain/capture-dedup.ts domain/booking-notify.ts domain/capture-image.ts domain/correction-types.ts domain/corrections.ts domain/notice-feed.ts domain/order-ops.ts domain/ppm.ts domain/recompute.ts domain/repo-types.ts domain/require-run.ts domain/run-lock.ts domain/sell-match.ts domain/vision-review.ts
+    wire/deps.ts wire/capture.ts wire/booking-notifier.ts wire/broadcast.ts wire/boot-sweeps.ts wire/send.ts
     pipeline/day.ts pipeline/wire.ts
     market/bars.ts
     sim/sim.ts sim/serialize.ts
-    http/app.ts http/auth.ts http/booking-deps.ts http/params.ts http/routes/{runs,fills,pending,corrections,sim,settings,vision-review}.ts
+    http/app.ts http/auth.ts http/booking-deps.ts http/params.ts http/routes/{runs,fills,pending,corrections,sim,settings,notifications,vision-review}.ts
   db/              README.md
   db/migrations/   0000_fantastic_thunderbolts.sql … 0009_living_lenny_balinger.sql (+ meta/)
-  test/            *.test.ts per area (booking, rebooking, sell-attribution, sell-matching, sell-bucket-override, http-bucket-override, booking-notifier, vision-review, capture-claim, capture-image, corrections, fake-corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, send, calendar-2028, day, migration-sql, sim, wire, http-*, db*, confirm-keep-order, refreeze-kept, main-boot-order, repo-surface-types) + fake-corrections.ts http-fakes.ts booking-fakes.ts bars-fakes.ts sell-fixture.ts type-assert.ts
+  test/            *.test.ts per area (booking, rebooking, sell-attribution, sell-matching, sell-bucket-override, http-bucket-override, booking-notifier, broadcast, vision-review, notice-feed, capture-claim, capture-image, corrections, fake-corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, send, calendar-2028, day, day-notices, day-failures, migration-sql, sim, wire, http-*, db*, confirm-keep-order, refreeze-kept, main-boot-order, repo-surface-types) + fake-corrections.ts fake-sim.ts http-fakes.ts booking-fakes.ts bars-fakes.ts sell-fixture.ts type-assert.ts
 apps/web/          package.json tsconfig.json index.html vite.config.ts tailwind.config.ts postcss.config.js .gitignore
-apps/web/src/      main.tsx App.tsx style.css api.ts api.sim.ts api.types.ts autofee.ts defaultcost.ts format.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts priceHistory.ts simconfig.ts simerrors.ts simview.ts usd.ts visionreviewerrors.ts (+ colocated *.test.ts(x))
-  testing/{fetchStub,holdFetch,pendingRow,visionReview}.ts   (shared test fixtures, no DOM needed at import time; fetchStub.test.ts)
-  components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,PriceChart,RecalcSummary,RunPanels,RunHistory,ScreenshotLink,VisionReviewEntry,Modal,hooks,ui,forms/*}
+apps/web/src/      main.tsx App.tsx style.css api.ts api.sim.ts api.notices.ts api.types.ts autofee.ts defaultcost.ts format.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts priceHistory.ts simconfig.ts simerrors.ts simview.ts usd.ts visionreviewerrors.ts (+ colocated *.test.ts(x))
+  testing/{fetchStub,holdFetch,pendingRow,scrollShim,visionReview}.ts   (shared test fixtures, no DOM needed at import time; fetchStub.test.ts)
+  components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,SystemNotices,PriceChart,RecalcSummary,RunPanels,RunHistory,ScreenshotLink,VisionReviewEntry,Modal,hooks,ui,forms/*}
   components/forms/{BucketSelect,CorrectionList,CreateRunForm,DefaultFeePrompt,EditRunModal,FillDeleteStep,FillDialog,KeepImagePrompt,KeepNotices,PendingReviewDialog,PendingRow,PendingTable,SimConfigFields,SimConfigPanel,pendingHints}
   pages/{RunsList,RunDetail,Sim,SimRun,Settings,Login,Pending,VisionReview}.tsx
   i18n/catalog.ts i18n/index.tsx i18n/en.json i18n/ko.json

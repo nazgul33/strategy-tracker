@@ -21,7 +21,17 @@ function pageFor(route: Route) {
     case 'runs':
       return { node: <RunsListPage />, nav: 'runs' as const };
     case 'run':
-      return { node: <RunDetailPage key={route.id} id={route.id} />, nav: 'runs' as const };
+      return {
+        node: (
+          <RunDetailPage
+            key={`${route.id}:${route.tab ?? ''}:${route.notice ?? ''}`}
+            id={route.id}
+            initialTab={route.tab}
+            highlightNoticeId={route.notice}
+          />
+        ),
+        nav: 'runs' as const,
+      };
     case 'pending':
       return { node: <PendingPage />, nav: 'pending' as const };
     case 'visionReview':

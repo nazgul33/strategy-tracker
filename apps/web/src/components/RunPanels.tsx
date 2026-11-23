@@ -197,9 +197,9 @@ export function FillsPanel({
   );
 }
 
-export function NotificationsPanel({ runId }: { runId: number }) {
+export function NotificationsPanel({ runId, highlightId }: { runId: number; highlightId?: number }) {
   const { data, error, loading, reload } = useAsync(() => api.listNotifications(runId), [runId]);
   if (loading) return <Spinner />;
   if (error) return <PanelState error={error} onRetry={() => void reload()} />;
-  return <NoticeList notifications={data ?? []} />;
+  return <NoticeList notifications={data ?? []} highlightId={highlightId} />;
 }

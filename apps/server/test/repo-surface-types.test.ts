@@ -1,6 +1,7 @@
 import { test, expect } from 'bun:test'
 import type { getRepos } from '../src/db/repos'
 import type { RepoSurface } from '../src/domain/booking'
+import type { DayRepoSurface } from '../src/domain/repo-types'
 import type { HttpDeps, HttpRepoSurface } from '../src/http/app'
 import type { CaptureRepos } from '../src/wire/capture'
 import type { Expect, IsNever, ArityMismatches } from './type-assert'
@@ -47,12 +48,15 @@ export async function _restPins(r: HttpRepoSurface, d: HttpDeps) {
   await r.notificationRepo.insert({ text: 'x' })
   // @ts-expect-error text is a string
   const _n: number = (await r.notificationRepo.listForRun(1))[0]!.text
+  // @ts-expect-error the page cursor is a row id or null
+  await r.notificationRepo.listBefore('5', 20)
   // @ts-expect-error bars carry a bigint close
   const _c: string = (await d.fetchDailyBars('X', '2026-01-01', '2026-01-02'))[0]!.close
 }
 
 export type _real = Expect<IsNever<ArityMismatches<ReturnType<typeof getRepos>, HttpRepoSurface>>>
 export type _realCapture = Expect<IsNever<ArityMismatches<ReturnType<typeof getRepos>, CaptureRepos>>>
+export type _realDay = Expect<IsNever<ArityMismatches<ReturnType<typeof getRepos>, DayRepoSurface>>>
 export type _booking = Expect<IsNever<ArityMismatches<ReturnType<typeof fakeRepos>['repos'], RepoSurface>>>
 export type _http = Expect<IsNever<ArityMismatches<ReturnType<typeof makeFakes>['repos'], HttpRepoSurface>>>
 // @ts-expect-error a fake that drops listForRun's date is caught

@@ -67,7 +67,7 @@ unset.
 | `PORT` | no | `8080` | HTTP port |
 | `DIGEST_LANG` | no | `en` | `en` or `ko` |
 | `DEFAULT_COST_PERCENT` | no | `0.07` | per-side trading cost prefilled for new runs and sims, as a percent with up to 3 decimals (`0` = no cost, max `100`) |
-| `TELEGRAM_BOT_TOKEN` | no | unset | unset ⇒ bot disabled; every send falls back to a console log line; booking notices are still recorded in the run's Notifications tab (chat `web`) |
+| `TELEGRAM_BOT_TOKEN` | no | unset | unset ⇒ bot disabled and no allowed chats, so nothing is sent; every notice (pipeline, reminder, nudge, order-cancel, booking) is still recorded (chat `web`) and listed under System notices (per-run ones also in the run's Notifications tab) |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | when token set | — | comma-separated Telegram chat IDs |
 | `VISION_BASE_URL` | when token set | — | OpenAI-compatible vision endpoint base URL |
 | `VISION_MODEL` | when token set | — | model name for fill extraction |
@@ -133,15 +133,18 @@ Migrations again apply at startup; use the production DB of your choice in `DATA
 
 ## Telegram
 
-Everything Telegram is optional: with `TELEGRAM_BOT_TOKEN` unset the bot never starts and every
-digest/send is a `[send:<chatId>] …` console line — the web UI stays fully usable. To turn it on,
-set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_CHAT_IDS` (plus `VISION_BASE_URL` / `VISION_MODEL` for
+Everything Telegram is optional: with `TELEGRAM_BOT_TOKEN` unset the bot never starts and the
+allowed chat list is empty, so no Telegram message is sent at all. Every notice (pipeline, reminder,
+nudge, order-cancel and booking) is then only recorded (chat `web`) and listed under **System
+notices** on the Runs page; per-run ones also appear in the run's Notifications tab. The web UI
+stays fully usable. To turn it on, set
+`TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_CHAT_IDS` (plus `VISION_BASE_URL` / `VISION_MODEL` for
 fill extraction; the key may come from `VISION_API_KEY` or the web Settings page, which wins).
 Restart — `main.ts` starts a long-polling bot (no inbound endpoint needed).
 
 Only chat IDs on the allowlist get any response (`packages/telegram/src/bot.ts`):
 
-- `/status` — current runs with held buckets and cash; `/orders` — today's open orders;
+- `/status` — current runs with held buckets and cash; `/orders` — today's open orders, grouped by run;
   `/help`, `/start`.
 - Send a fill screenshot (mPOP) as a photo. To pick the run explicitly, caption it with the run id
   as the first word: `12 …`, `#12 …`, or `/capture 12 …`. With no run number the fills are
@@ -165,7 +168,10 @@ only — nothing on weekends:
 | 16:05 Mon–Fri | Fill-capture reminder (skipped on market holidays). |
 | Dec 1, 08:00 | Calendar-maintenance nudge (see caveat below). |
 
-Manual trigger for the morning pipeline: `POST /api/trigger/morning` (authenticated).
+Manual trigger for the morning pipeline: `POST /api/trigger/morning` (authenticated). It is safe to
+repeat: a run that already has orders for today is not planned again and gets a notice saying so, so
+after a failed-run warning it plans only that run. If the pipeline stops before any run is planned, it
+sends a global warning and the trigger answers 500.
 
 ## Calendar caveat (NYSE data)
 

@@ -14,6 +14,14 @@ export interface AsyncData<T> {
   reload: () => Promise<void>;
 }
 
+/** An expired or revoked session: drop the token and send the operator to the login page. */
+export function handleUnauthorized(e: unknown): void {
+  if (e instanceof ApiError && e.status === 401) {
+    setToken(null);
+    if (window.location.hash !== '#/login') window.location.hash = '#/login';
+  }
+}
+
 export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): AsyncData<T> {
   const [data, setData] = useState<T | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -31,10 +39,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): Asy
         setError(undefined);
         setFailure(undefined);
       } catch (e) {
-        if (e instanceof ApiError && e.status === 401) {
-          setToken(null);
-          if (window.location.hash !== '#/login') window.location.hash = '#/login';
-        }
+        handleUnauthorized(e);
         setError(e instanceof Error ? e.message : String(e));
         setFailure(e);
       } finally {
@@ -91,7 +96,7 @@ export function useDefaultCostText(): [text: string, setText: (v: string) => voi
 
 export type Route =
   | { page: 'runs' }
-  | { page: 'run'; id: number }
+  | { page: 'run'; id: number; tab?: 'notifications'; notice?: number }
   | { page: 'pending' }
   | { page: 'visionReview' }
   | { page: 'sim' }
@@ -101,7 +106,10 @@ export type Route =
   | { page: 'notFound'; hash: string };
 
 export function parseHash(hash: string): Route {
-  const path = hash.replace(/^#/, '').split('?')[0] ?? '';
+  const raw = hash.replace(/^#/, '');
+  const cut = raw.indexOf('?');
+  const path = cut < 0 ? raw : raw.slice(0, cut);
+  const query = new URLSearchParams(cut < 0 ? '' : raw.slice(cut + 1));
   const parts = path.split('/').filter((p) => p.length > 0);
   if (parts.length === 0) return { page: 'runs' };
   switch (parts[0]) {
@@ -109,7 +117,13 @@ export function parseHash(hash: string): Route {
       if (parts.length === 1) return { page: 'runs' };
       if (parts.length === 2) {
         const id = Number(parts[1]);
-        if (Number.isInteger(id) && id > 0) return { page: 'run', id };
+        if (Number.isInteger(id) && id > 0) {
+          if (query.get('tab') !== 'notifications') return { page: 'run', id };
+          const notice = query.get('notice') ?? '';
+          return /^[1-9]\d*$/.test(notice)
+            ? { page: 'run', id, tab: 'notifications', notice: Number(notice) }
+            : { page: 'run', id, tab: 'notifications' };
+        }
       }
       return { page: 'notFound', hash };
     case 'pending':
