@@ -1,6 +1,7 @@
 import { DomainError } from '@st/core'
 import { formatUsd } from '@st/core/money'
-import type { BookingDeps, FillRow } from './booking'
+import type { BookingDeps, FillBookingDeps, FillRow } from './booking'
+import { notifyBookingOutcome } from './booking-notify'
 import { isCorrectionStale, type CorrectionRow } from './correction-types'
 import { rebookFillUnlocked } from './recompute'
 import { withRunLock } from './run-lock'
@@ -22,18 +23,18 @@ export async function listOpenCorrections(deps: BookingDeps): Promise<Correction
 // Patch only the correction's target fill (never books a new one). The whole
 // sequence runs under the run lock, so a concurrent second apply waits and then
 // fails the open check; rebook-then-decide is therefore safe.
-export async function applyCorrection(id: number, deps: BookingDeps): Promise<{ deltaCents: number }> {
+export async function applyCorrection(id: number, deps: FillBookingDeps): Promise<{ deltaCents: number }> {
   const repo = deps.repos.correctionRepo
   const first = await repo.get(id)
   if (!first) throw new DomainError('correction-not-found')
-  return withRunLock(first.runId, async () => {
+  const applied = await withRunLock(first.runId, async () => {
     const row = await repo.get(id)
     if (!row) throw new DomainError('correction-not-found')
     if (row.status !== 'open') throw new DomainError('correction-not-open')
     const fill = (await deps.repos.fillRepo.listForRun(row.runId)).find((f) => f.id === row.fillId)
     if (!fill || isCorrectionStale(row, fill)) throw new DomainError('correction-stale')
     // rebookFillUnlocked, not rebookFill: the lock is not reentrant.
-    const { deltaCents } = await rebookFillUnlocked(row.runId, {
+    const { deltaCents, cancelledIds } = await rebookFillUnlocked(row.runId, {
       fillId: fill.id,
       shares: fill.shares,
       priceStr: formatUsd(row.proposedPrice),
@@ -41,8 +42,10 @@ export async function applyCorrection(id: number, deps: BookingDeps): Promise<{ 
       filledOn: fill.filledOn,
     }, deps, { reason: 'capture-correction', correctionId: id })
     if (!(await repo.decide(id, 'applied'))) throw new DomainError('correction-not-open')
-    return { deltaCents }
+    return { deltaCents, cancelledIds }
   })
+  await notifyBookingOutcome(first.runId, { cancelledIds: applied.cancelledIds, attribution: null }, deps)
+  return { deltaCents: applied.deltaCents }
 }
 
 export async function dismissCorrection(id: number, deps: BookingDeps): Promise<void> {

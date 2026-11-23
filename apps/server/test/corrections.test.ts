@@ -146,6 +146,16 @@ describe('applyCorrection', () => {
     expect(state.buckets[0]!.state).not.toBe('held')
   })
 
+  test('applying a correction leaves the run\'s orders alone', async () => {
+    const { f, deps, runId, sell, propose } = await setup()
+    await f.repos.orderRepo.insertMany([
+      { runId, tradeDate: '2026-11-11', kind: 'sell_loc', bucketIdx: 0, limitPrice: 660000n, shares: 44, status: 'open' },
+      { runId, tradeDate: '2026-11-11', kind: 'stop_sell', bucketIdx: 0, limitPrice: 570000n, shares: 44, status: 'open' },
+    ])
+    await applyCorrection(await propose(sell, '64.07', 203), deps)
+    expect(f._stores.orders.map((o) => o.status)).toEqual(['open', 'open'])
+  })
+
   test('apply: unknown id -> correction-not-found', async () => {
     const { deps } = await setup()
     expect(await kindOf(() => applyCorrection(999, deps))).toBe('correction-not-found')
