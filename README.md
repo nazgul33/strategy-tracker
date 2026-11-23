@@ -168,6 +168,8 @@ only — nothing on weekends:
 | 16:05 Mon–Fri | Fill-capture reminder (skipped on market holidays). |
 | Dec 1, 08:00 | Calendar-maintenance nudge (see caveat below). |
 
+The digest's "⚠️ N unconfirmed orders from <date>" line names every order left unresolved that no recorded digest has named yet, each exactly once; if a morning's digest could not be recorded they are named again the next morning.
+
 Manual trigger for the morning pipeline: `POST /api/trigger/morning` (authenticated). It is safe to
 repeat: a run that already has orders for today is not planned again and gets a notice saying so, so
 after a failed-run warning it plans only that run. If the pipeline stops before any run is planned, it
