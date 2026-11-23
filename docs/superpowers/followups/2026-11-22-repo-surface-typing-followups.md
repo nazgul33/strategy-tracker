@@ -21,7 +21,7 @@ the whole-branch review found and the branch deliberately left.
   `onOrders` test in `wire.test.ts` asserts an `NVDA` ticker that production
   cannot emit, because its fake supplies one. The fix needs a join (or a run
   lookup) and a message-level test; both change the message, so they were out of
-  scope here.
+  scope here. Fixed on `fix/issues-75-83`: `onOrders` now looks the ticker up from the order's run.
 
 ## Type-safety gaps left open
 

@@ -903,14 +903,27 @@ describe('capture status and orders', () => {
   });
 
   test('onOrders lists orders due today and says so when empty', async () => {
-    const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA'), { ...activeRun(2, 'AAPL'), status: 'closed' }] });
     await h.handlers.onOrders('777');
     expect(h.sent[0]!.text).toBe('No orders due on 2026-11-10.');
 
-    const order: OrderRecord & { ticker: string } = { id: 1, runId: 1, bucketIdx: 0, kind: 'buy_loc', ticker: 'NVDA', limitPrice: parseUsd('170.00'), shares: 10, tradeDate: '2026-11-10', status: 'open', skipReason: null, cancelReason: null };
+    const base = { bucketIdx: 0, tradeDate: '2026-11-10', status: 'open', skipReason: null, cancelReason: null } as const;
+    const orders: OrderRecord[] = [
+      { ...base, id: 1, runId: 1, kind: 'buy_loc', limitPrice: parseUsd('170.00'), shares: 10 },
+      { ...base, id: 2, runId: 2, kind: 'sell_loc', limitPrice: parseUsd('200.00'), shares: 5 },
+      { ...base, id: 3, runId: 9, kind: 'buy_loc', limitPrice: parseUsd('50.00'), shares: 1 },
+    ];
+    h.repos.orderRepo.listForDate = async () => orders;
+    await h.handlers.onOrders('777');
+    expect(h.sent[1]!.text).toBe('#1 buy_loc NVDA 10 sh @ $170.00\n#2 sell_loc AAPL 5 sh @ $200.00\n#3 buy_loc run #9 1 sh @ $50.00');
+  });
+
+  test('onOrders names a missing run in Korean', async () => {
+    const h = makeCapture({ runs: [], lang: 'ko' });
+    const order: OrderRecord = { id: 3, runId: 9, bucketIdx: 0, kind: 'buy_loc', limitPrice: parseUsd('50.00'), shares: 1, tradeDate: '2026-11-10', status: 'open', skipReason: null, cancelReason: null };
     h.repos.orderRepo.listForDate = async () => [order];
     await h.handlers.onOrders('777');
-    expect(h.sent[1]!.text).toContain('#1 buy_loc NVDA 10 sh @ $170.00');
+    expect(h.sent[0]!.text).toBe('#3 buy_loc 런 #9 1주 @ $50.00');
   });
 });
 

@@ -6,7 +6,7 @@ import type { Lang } from '@st/telegram/i18n';
 
 import { confirmPendingFill, ingestCapture, rejectPendingFill } from '../domain/booking';
 import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/booking';
-import type { OrderRecord, PendingRepo } from '../domain/repo-types';
+import type { PendingRepo } from '../domain/repo-types';
 import { parseId } from '../http/params';
 import { makeBookingNotifier } from './booking-notifier';
 
@@ -261,10 +261,16 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       await deps.send(chatId, t('no-orders', lang, { date }));
       return;
     }
-    // An order row carries no ticker column; the line shows a blank ticker unless a fake adds one.
+    const tickers = new Map((await deps.repos.runRepo.list()).map((r) => [r.id, r.ticker]));
     const lines = orders.map(
       (o) =>
-        t('orders-line', lang, { id: o.id, kind: o.kind, ticker: (o as OrderRecord & { ticker?: string }).ticker ?? '', shares: o.shares, price: formatUsd(o.limitPrice) }),
+        t('orders-line', lang, {
+          id: o.id,
+          kind: o.kind,
+          ticker: tickers.get(o.runId) ?? t('orders-run-missing', lang, { id: o.runId }),
+          shares: o.shares,
+          price: formatUsd(o.limitPrice),
+        }),
     );
     await deps.send(chatId, lines.join('\n'));
   }
