@@ -178,7 +178,7 @@ sends a global warning and the trigger answers 500.
 
 ## Calendar caveat (NYSE data)
 
-The NYSE holiday/early-close calendar is committed **static data covering 2025–2027**
+The NYSE holiday/early-close calendar is committed **static data covering 2025–2028**
 (`NYSE_YEARS` in `packages/calendar/src/nyse-data.ts`). For a year outside that range `dayInfo()`
 knows only weekends — every weekday counts as a trading day, so holidays would be missed silently.
 That is why the app sends a "December — time to load next year's NYSE calendar" nudge to all allowed
