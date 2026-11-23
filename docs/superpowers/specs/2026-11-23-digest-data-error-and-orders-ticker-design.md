@@ -15,7 +15,8 @@ Small change, two independent fixes in the Telegram surface.
 ## Goals
 
 - #75: one warning message per failed run, naming the run id and ticker,
-  saying no orders today *for this run* (other runs still get their digests).
+  saying today's orders *for this run* could not be computed (other runs still
+  get their digests).
 - #75: each warning's notification row is recorded against that run
   (`runId: run.id`), one row per chat actually sent to — no more rows for
   messages that were never sent.
@@ -51,8 +52,10 @@ Small change, two independent fixes in the Telegram surface.
 ### #75 — `apps/server/src/pipeline/day.ts`, `packages/telegram/src/i18n.ts`
 
 - `warn-data-error` copy gains `{id}` and `{ticker}`:
-  - en: `Market data error — run #{id} {ticker}: last close unavailable or stale. No orders today for this run`
-  - ko: `시세 데이터 오류 — 런 #{id} {ticker}: 최근 종가를 가져올 수 없습니다. 오늘 이 런의 주문을 내지 마세요`
+  - en: `Market data error — run #{id} {ticker}: last close unavailable or stale. Today's orders for this run could not be computed.`
+  - ko: `시세 데이터 오류 — 런 #{id} {ticker}: 최근 종가를 가져올 수 없습니다. 오늘 런의 주문을 계산할 수 없습니다.`
+    (ko wording from the user; the en line was aligned to it and the em dash
+    kept for consistency with the rest of the catalog — my call.)
 - Both failure paths (fetch throws; close date ≠ previous trading day) render
   that text with the run's id and ticker, send it to every allowed chat, and
   insert one notification row per chat with `runId: run.id`. The `warnedData`
@@ -84,5 +87,5 @@ Small change, two independent fixes in the Telegram surface.
 
 ## Left to the builder
 
-- Helper naming and placement inside `day.ts`; ko wording polish if it reads
-  awkwardly, keeping the same placeholders.
+- Helper naming and placement inside `day.ts`. The copy above is fixed
+  verbatim.
