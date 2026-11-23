@@ -377,15 +377,18 @@ must stop looking live in the tracker *and* the operator must pull it by hand.
   *outside* the lock span so a Telegram outage can never fail a booking.
 - **An edit or a correction that empties a bucket** (2026-11-23, #73) retires the
   legs the same way. `rebookFillUnlocked` compares the state before and after the
-  replay; for each bucket that was not `empty` before and is `empty` after, whose newest fill by id
-  in the edited history is a sell, it takes that sell as the emptying one. Its leg
+  replay; if the edited fill's bucket was not `empty` before and is `empty` after,
+  and its newest fill by id in the edited history is a sell, it takes that sell as
+  the emptying one. Its leg
   is the order `matchForcedLeg` picks for it (none: nothing flips); that leg
   flips to `filled`, and the same cancels apply: every other `open` sell-side order
   of the bucket dated on or after the sell's trade date with `broker-filled`, the
   bucket's `stale` ones dated on the sell's trade date silently. The same
   `sibling-cancelled` notice goes out, after the lock is released and with no
   attribution. An edit that leaves the bucket held, or an applied correction (it
-  changes price and fee, never shares), touches no order. The orders are read
+  changes price and fee, never shares), touches no order. A different bucket that
+  the rebuild empties because the stored state had drifted from the fill history
+  is repaired without touching its orders, on edit, delete and recalc alike. The orders are read
   before the first write, so a failing read fails the edit (or the delete below)
   with nothing stored and a retry can repeat it. A failing order write propagates
   after the edit is stored: the bucket's legs may be partly retired, and the run's

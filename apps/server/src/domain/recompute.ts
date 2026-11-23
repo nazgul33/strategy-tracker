@@ -90,9 +90,12 @@ export async function rebookFillUnlocked(
   const rebuilt = rebuildState(patched, run.poolCents, deps.today, state.buckets.length)
 
   // Read what the retirements need before the first write: a failing read then
-  // fails the edit with nothing stored, so a retry can simply repeat it.
+  // fails the edit with nothing stored, so a retry can simply repeat it. Only the
+  // edited fill's own bucket is looked at: a bucket the rebuild empties because the
+  // stored state had drifted from the history is repaired without touching its
+  // orders, as recalc does.
   const retirements: Array<{ orders: OrderRow[]; bucketIdx: number; cause: EmptyCause }> = []
-  for (const bucketIdx of emptiedBuckets(state, rebuilt)) {
+  for (const bucketIdx of emptiedBuckets(state, rebuilt).filter((i) => i === match.bucketIdx)) {
     const last = patched.filter((f) => f.bucketIdx === bucketIdx).at(-1)
     if (last?.side !== 'sell') continue
     const orders = await repos.orderRepo.listForRunFrom(runId, last.filledOn)

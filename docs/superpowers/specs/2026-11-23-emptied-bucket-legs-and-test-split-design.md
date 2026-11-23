@@ -148,6 +148,11 @@ last" ordering), with the state before and after the write.
 
 A bucket counts when it was not `empty` before and is `empty` after.
 
+Amended 2026-11-23, after the final review: each writer looks only at the
+bucket of the fill it wrote: the booked sell's bucket, the edited fill's bucket,
+the deleted buy's bucket. A bucket emptied by drift between the stored state and
+the fill history is left to the rebuild, and its orders are not touched.
+
 **Cause "sold"** (a new sell fill, or a fill edit or applied correction):
 
 - The emptying sell is the fill being booked (booking path), or the bucket's

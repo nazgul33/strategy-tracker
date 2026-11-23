@@ -1,4 +1,6 @@
 import { describe, test, expect, spyOn } from 'bun:test'
+import { applyBuyFill, parseUsd } from '@st/core'
+import { manualFill } from '../src/domain/booking'
 import { rebookFill } from '../src/domain/recompute'
 import { D, Y, sellAt, orderOf, type Ord } from './sell-fixture'
 import { heldRun, lastFillId } from './legs-fixture'
@@ -16,6 +18,50 @@ async function partialSell(ords: Ord[], sellOn = D) {
   await sellAt(run.runId, 6, '96.50', run.deps, sellOn)
   return { ...run, sellId: lastFillId(run.f) }
 }
+
+const LEGS_1: Ord[] = [{ idx: 1, kind: 'sell_loc', price: '103.00' }, { idx: 1, kind: 'stop_sell', price: '97.00' }]
+
+// Buckets 0 and 1 held through real buys; bucket 1 is sold out (its newest fill is a sell), then the stored state is
+// drifted so bucket 1 is held again with no fill behind it, and bucket 1 gets open legs. A partial sell books on bucket 0.
+async function driftedRun(bucket0Legs: Ord[]) {
+  const run = await heldRun([BUY, BUY], bucket0Legs)
+  const { f, deps, runId } = run
+  await manualFill(runId, { side: 'sell', shares: 10, price: '103.00', filledOn: D, bucketIdx: 1 }, deps)
+  const drifted = applyBuyFill(await f.repos.bucketRepo.loadState(runId), 1, 10, parseUsd('100.00'), 0, BUY.filledOn)
+  await f.repos.bucketRepo.saveState(runId, drifted)
+  await f.repos.orderRepo.insertMany(LEGS_1.map((o) => ({
+    runId, tradeDate: D, kind: o.kind, bucketIdx: o.idx, limitPrice: parseUsd(o.price!), shares: 10, status: 'open' as const,
+  })))
+  await manualFill(runId, { side: 'sell', shares: 6, price: '96.50', filledOn: D, bucketIdx: 0 }, deps)
+  return { ...run, sellId: lastFillId(f) }
+}
+
+describe('rebookFill retires only the edited fill\'s bucket', () => {
+  test('an edit leaves another bucket\'s legs alone when the rebuild empties that bucket through drift', async () => {
+    const { f, deps, rec, runId, sellId } = await driftedRun([])
+
+    await rebookFill(runId, { fillId: sellId, ...edit(6, '96.40') }, deps)
+
+    expect((await f.repos.bucketRepo.loadState(runId)).buckets[1]!.state).toBe('empty')
+    for (const kind of ['sell_loc', 'stop_sell']) {
+      expect(orderOf(f, 1, kind)).toMatchObject({ status: 'open', cancelReason: null })
+    }
+    expect(rec.siblings).toEqual([])
+    expect(rec.attributions).toEqual([])
+  })
+
+  test('the edited bucket still retires its own legs under drift elsewhere', async () => {
+    const { f, deps, rec, runId, sellId } = await driftedRun(LEGS)
+
+    await rebookFill(runId, { fillId: sellId, ...edit(10, '96.50') }, deps)
+
+    expect(orderOf(f, 0, 'stop_sell').status).toBe('filled')
+    expect(orderOf(f, 0, 'sell_loc')).toMatchObject({ status: 'cancelled', cancelReason: 'broker-filled' })
+    expect(rec.siblings.map((s) => s.order.id)).toEqual([orderOf(f, 0, 'sell_loc').id])
+    expect(orderOf(f, 1, 'sell_loc').status).toBe('open')
+    expect(orderOf(f, 1, 'stop_sell').status).toBe('open')
+  })
+})
 
 describe('rebookFill retires the legs of a bucket it empties', () => {
   test('a sell edited up to the whole bucket flips its leg and retires the others', async () => {
