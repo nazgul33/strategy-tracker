@@ -62,13 +62,22 @@ function decideAmong(cands: Pair[], state: RunState, input: SellInput, ev: Order
   const s2 = ev.orderedShares === null ? s1 : keep(s1, (p) => p.order.shares === ev.orderedShares)
   const s3 = keep(s2, (p) => holds(p).shares === input.shares)
   const s4 = ev.type === 'market' ? s3 : nearest(s3, (p) => (isPrice(p) ? p.leg.distance : 0n))
-  const chosen = [...s4].sort((a, b) => holds(a).filledOn.localeCompare(holds(b).filledOn) || byBucket(a, b))[0]!
-  const quiet = priced && bucketsOf(s1).size === 1 && s1[0]!.order.limitPrice === ev.orderPrice
+  const byAge = (a: Pair, b: Pair): number => holds(a).filledOn.localeCompare(holds(b).filledOn) || byBucket(a, b)
+  const chosen = [...s4].sort(byAge)[0]!
+
+  // A notice exists only when the candidates span more than one bucket, so a step that did not
+  // run (s1 unpriced, s2 without ordered shares) still spans them and is never the labelled rule.
   const others = cands.filter((p) => p.order.bucketIdx !== chosen.order.bucketIdx)
+  const quiet = priced && bucketsOf(s1).size === 1 && s1[0]!.order.limitPrice === ev.orderPrice
   const steps: Array<[AttributionRule, Pair[]]> = [['order-price', s1], ['ordered-shares', s2], ['shares', s3], ['price', s4]]
   const rule: AttributionRule = steps.find(([, ps]) => bucketsOf(ps).size === 1)?.[0] ?? 'older'
-  const alternatives = [...others.filter(isPrice).sort(nearestFirst), ...others.filter((p) => !isPrice(p)).sort(byBucket)].map((p) => p.leg)
-  const attribution: SellAttribution | null = others.length && !quiet ? { shares: input.shares, price: input.price, rule, chosen: chosen.leg, alternatives } : null
+  const alternatives = [
+    ...others.filter(isPrice).sort(nearestFirst),
+    ...others.filter((p) => !isPrice(p)).sort(byBucket),
+  ].map((p) => p.leg)
+  const attribution: SellAttribution | null = others.length && !quiet
+    ? { shares: input.shares, price: input.price, rule, chosen: chosen.leg, alternatives }
+    : null
   return { bucketIdx: chosen.order.bucketIdx, orderId: chosen.order.id, attribution }
 }
 
