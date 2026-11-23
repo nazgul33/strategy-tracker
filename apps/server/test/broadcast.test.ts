@@ -1,5 +1,5 @@
 import { describe, test, expect, spyOn } from 'bun:test'
-import { broadcastNotice, WEB_ONLY_CHAT_ID } from '../src/wire/broadcast'
+import { broadcastNotice, WEB_ONLY_CHAT_ID, type NoticeLog } from '../src/wire/broadcast'
 
 function harness(allowedChatIds: string[], fail: { send?: string[]; insert?: string[] } = {}) {
   const rows: Array<{ runId: number | null; chatId: string; text: string }> = []
@@ -69,8 +69,7 @@ describe('broadcastNotice', () => {
       await broadcastNotice(h.deps, 7, 'hi', { kind: 'digest' })
       expect(chatIds(h.sent)).toEqual(['a', 'b'])
       expect(chatIds(h.rows)).toEqual(['b'])
-      expect(errors).toHaveBeenCalledTimes(1)
-      expect(errors.mock.calls[0]!.at(-1)).toBe('Error: db-down')
+      expect(errors.mock.calls).toEqual([['notice failed:', 'digest', { runId: 7, chatId: 'a' }, 'Error: db-down']])
     } finally { errors.mockRestore() }
   })
 
@@ -146,5 +145,48 @@ describe('broadcastNotice', () => {
       await broadcastNotice(h.deps, 7, { record: 'p1', send: ['p1'] }, { kind: 'digest' })
       expect(errors.mock.calls).toEqual([['notice failed:', 'digest', { runId: 7, chatId: 'a' }, 'Error: telegram-down']])
     } finally { errors.mockRestore() }
+  })
+})
+
+describe('broadcastNotice result', () => {
+  async function failedOf(allowed: string[], fail: Parameters<typeof harness>[1], text: Parameters<typeof broadcastNotice>[2] = 'hi') {
+    const h = harness(allowed, fail)
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      return await broadcastNotice(h.deps, 7, text, { kind: 'digest' })
+    } finally { errors.mockRestore() }
+  }
+
+  test('all ok: no failure', async () => {
+    expect(await failedOf(['a', 'b'], {})).toEqual({ failed: 0 })
+  })
+
+  test('one failing send counts 1', async () => {
+    expect(await failedOf(['a', 'b'], { send: ['a'] })).toEqual({ failed: 1 })
+  })
+
+  test('insert and send failing for one chat count 2', async () => {
+    expect(await failedOf(['a', 'b'], { insert: ['a'], send: ['a'] })).toEqual({ failed: 2 })
+  })
+
+  test('a failing web-only insert counts 1', async () => {
+    expect(await failedOf([], { insert: ['web'] })).toEqual({ failed: 1 })
+  })
+
+  test('one failing part of two counts 1', async () => {
+    expect(await failedOf(['a', 'b'], { send: ['a:p1'] }, PARTS)).toEqual({ failed: 1 })
+  })
+})
+
+describe('NoticeLog.extra', () => {
+  test('cannot carry the keys the logger sets itself', () => {
+    // @ts-expect-error chatId would be shadowed by the logged chat
+    const shadowsChat: NoticeLog = { kind: 'digest', extra: { chatId: 'x' } }
+    // @ts-expect-error runId would be shadowed by the broadcast's run id
+    const shadowsRun: NoticeLog = { kind: 'digest', extra: { runId: 1 } }
+    // @ts-expect-error part would be shadowed by the failed part number
+    const shadowsPart: NoticeLog = { kind: 'digest', extra: { part: 1 } }
+    const ok: NoticeLog = { kind: 'digest', extra: { orderId: 1 } }
+    expect([shadowsChat, shadowsRun, shadowsPart, ok]).toHaveLength(4)
   })
 })

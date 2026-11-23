@@ -2,6 +2,9 @@ import { Cron } from 'croner'
 import type { DayDeps } from './day'
 import { runDecemberNudge, runMorningPipeline, runReminder } from './day'
 
+const sentLine = (what: string, failed: number) =>
+  failed === 0 ? `${what} sent` : `${what} sent with ${failed} failure(s)`
+
 export function startJobs(deps: DayDeps, log?: (msg: string) => void): Cron[] {
   const jobs: Cron[] = []
 
@@ -17,8 +20,8 @@ export function startJobs(deps: DayDeps, log?: (msg: string) => void): Cron[] {
 
   const reminder = new Cron('5 16 * * 1-5', { timezone: 'America/New_York' }, async () => {
     try {
-      await runReminder(deps)
-      log?.('reminder sent')
+      const { failed } = await runReminder(deps)
+      log?.(sentLine('reminder', failed))
     } catch (e) {
       log?.(`reminder error: ${String(e)}`)
     }
@@ -27,8 +30,8 @@ export function startJobs(deps: DayDeps, log?: (msg: string) => void): Cron[] {
 
   const nudge = new Cron('0 8 1 12 *', { timezone: 'America/New_York' }, async () => {
     try {
-      await runDecemberNudge(deps)
-      log?.('december nudge sent')
+      const { failed } = await runDecemberNudge(deps)
+      log?.(sentLine('december nudge', failed))
     } catch (e) {
       log?.(`december nudge error: ${String(e)}`)
     }

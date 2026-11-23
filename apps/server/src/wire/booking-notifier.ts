@@ -61,7 +61,7 @@ export function makeBookingNotifier(deps: BookingNotifierDeps): BookingNotifier 
         alts: attribution.alternatives.map(legText).join('; '),
         why: t(`sell-attributed-why-${attribution.rule}`, deps.lang, { shares: attribution.shares }),
       })
-      return broadcastNotice(delivery, runId, text, log('sell-attributed', null))
+      await broadcastNotice(delivery, runId, text, log('sell-attributed', null))
     },
   }
 }

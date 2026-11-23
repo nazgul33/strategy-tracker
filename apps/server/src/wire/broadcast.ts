@@ -12,7 +12,8 @@ export interface BroadcastDeps<R extends number | null = number | null> {
 export interface NoticeLog {
   kind: string                      // e.g. 'digest', 'closed', 'sell-attributed'
   label?: string                    // console.error prefix, default 'notice failed:'
-  extra?: Record<string, unknown>   // merged into the logged object, e.g. { orderId }
+  // merged into the logged object, e.g. { orderId }; cannot shadow the keys the logger sets itself
+  extra?: Record<string, unknown> & { runId?: never; chatId?: never; part?: never }
 }
 
 // A plain string is recorded and sent as is. The object form records `record` once per chat
@@ -23,25 +24,29 @@ export type NoticeText = string | { record: string; send: string[] }
 // so a broadcast's rows stay adjacent in the feed) and then sends it to every allowed chat.
 // With no allowed chat the notice still gets one row (chat id 'web') so a web-only
 // operator sees it. Every failure (insert, or each part's send) is logged
-// and never hides the rest; this function never rejects.
+// and never hides the rest; this function never rejects. It resolves to the number of
+// failed inserts plus failed part sends, so a caller can tell a fully delivered notice.
 export async function broadcastNotice<R extends number | null>(
   deps: BroadcastDeps<R>, runId: R, text: NoticeText, log: NoticeLog,
-): Promise<void> {
+): Promise<{ failed: number }> {
   const { record, send } = typeof text === 'string' ? { record: text, send: [text] } : text
-  const fail = (chatId: string, e: unknown, part?: number) =>
+  let failed = 0
+  const fail = (chatId: string, e: unknown, part?: number) => {
+    failed++
     console.error(
       log.label ?? 'notice failed:',
       log.kind,
       { runId, ...log.extra, chatId, ...(part === undefined ? {} : { part }) },
       String(e),
     )
+  }
   if (deps.allowedChatIds.length === 0) {
     try {
       await deps.notificationRepo.insert({ runId, chatId: WEB_ONLY_CHAT_ID, text: record })
     } catch (e) {
       fail(WEB_ONLY_CHAT_ID, e)
     }
-    return
+    return { failed }
   }
   for (const chatId of deps.allowedChatIds) {
     try {
@@ -59,4 +64,5 @@ export async function broadcastNotice<R extends number | null>(
       }
     }
   }
+  return { failed }
 }

@@ -127,6 +127,27 @@ describe('pipeline notices survive a failing chat or insert', () => {
   })
 })
 
+describe('reminder and December nudge report their failures', () => {
+  test('failed counts the chats that did not take the notice', async () => {
+    const { deps } = await setup({ send: async (chatId) => { if (chatId === 'c1') throw new Error('telegram-down') } })
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(await runReminder(deps)).toEqual({ failed: 1 })
+      expect(await runDecemberNudge(deps)).toEqual({ failed: 1 })
+    } finally {
+      errors.mockRestore()
+    }
+  })
+
+  test('all delivered, or no reminder on a closed day: 0', async () => {
+    const open = await setup()
+    expect(await runReminder(open.deps)).toEqual({ failed: 0 })
+    expect(await runDecemberNudge(open.deps)).toEqual({ failed: 0 })
+    const closed = await setup({ today: () => '2026-11-26' })
+    expect(await runReminder(closed.deps)).toEqual({ failed: 0 })
+  })
+})
+
 describe('a digest longer than one message', () => {
   async function longSetup(over: Partial<DayDeps> = {}) {
     const s = await setup(over, [])

@@ -28,7 +28,7 @@ function weekday(t: ISODate): number {
   return new Date(t + 'T12:00:00Z').getUTCDay()
 }
 
-function notify(deps: DayDeps, runId: number | null, text: NoticeText, kind: string): Promise<void> {
+function notify(deps: DayDeps, runId: number | null, text: NoticeText, kind: string): Promise<{ failed: number }> {
   return broadcastNotice(
     { allowedChatIds: deps.allowedChatIds, send: deps.send, notificationRepo: deps.repos.notificationRepo },
     runId, text, { kind },
@@ -115,7 +115,8 @@ async function skipPlanned(deps: DayDeps, run: RunRow): Promise<RunOutcome> {
 // Orders this run reports as unconfirmed: what this morning's roll just flipped for it
 // (covers a missed roll on an earlier morning), plus its stale orders from its most
 // recent order date before today (a retry, or a failed roll, flips nothing now but the
-// orders are stored). De-duplicated by id. Older stale orders were reported earlier.
+// orders are stored). De-duplicated by id. Older stale orders were normally reported on
+// an earlier morning (a day whose digest was never sent is reported again the next morning).
 async function unconfirmedOrders(deps: DayDeps, runId: number, today: ISODate, rolled: OrderRecord[]): Promise<OrderRecord[]> {
   const past = (await deps.repos.orderRepo.listForRun(runId)).filter((o) => o.tradeDate < today)
   const last = past.reduce((max, o) => (o.tradeDate > max ? o.tradeDate : max), '')
@@ -199,13 +200,13 @@ async function planRun(deps: DayDeps, run: RunRow, today: ISODate, stale: StaleR
   return 'completed'
 }
 
-export async function runReminder(deps: DayDeps): Promise<void> {
+export async function runReminder(deps: DayDeps): Promise<{ failed: number }> {
   const today = deps.today()
   const info = dayInfo(today)
-  if (!info.open) return
-  await notify(deps, null, renderReminder(deps.digestLang), 'reminder')
+  if (!info.open) return { failed: 0 }
+  return notify(deps, null, renderReminder(deps.digestLang), 'reminder')
 }
 
-export async function runDecemberNudge(deps: DayDeps): Promise<void> {
-  await notify(deps, null, t('december-nudge', deps.digestLang), 'december-nudge')
+export async function runDecemberNudge(deps: DayDeps): Promise<{ failed: number }> {
+  return notify(deps, null, t('december-nudge', deps.digestLang), 'december-nudge')
 }
