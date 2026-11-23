@@ -26,7 +26,7 @@ describe('http pending: vision review surface', () => {
     await addPending({ captureId: null, ...DETECTED })
     const rows = await (await app.request('/api/pending', { headers: auth })).json()
     expect(rows.map((r: any) => r.hasImage)).toEqual([true, false, false])
-    expect(rows[0].detected).toEqual({ side: 'buy', shares: 3, price: '100000', filledOn: '2026-11-10', fee: 12 })
+    expect(rows[0].detected).toEqual({ side: 'buy', shares: 3, price: '100000', filledOn: '2026-11-10', fee: 12, orderType: null, orderPrice: null, orderedShares: null })
     expect(rows[0].price).toBe('100000')
     expect(rows[0].shares).toBe(3)
   })
@@ -51,7 +51,7 @@ describe('http pending: vision review surface', () => {
     const { app, auth, addPending } = await setup()
     await addPending({ captureId: 7, detectedSide: 'buy', detectedShares: 3, detectedPrice: null, detectedFilledOn: null, detectedFee: null, detectedAt: '2026-11-10 09:00:00' })
     const rows = await (await app.request('/api/pending', { headers: auth })).json()
-    expect(rows[0].detected).toEqual({ side: 'buy', shares: 3, price: null, filledOn: null, fee: null })
+    expect(rows[0].detected).toEqual({ side: 'buy', shares: 3, price: null, filledOn: null, fee: null, orderType: null, orderPrice: null, orderedShares: null })
   })
 
   test('GET /api/pending exposes the run cost ppm so the client can derive a fee as qty and price change', async () => {

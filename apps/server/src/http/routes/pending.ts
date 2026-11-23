@@ -10,7 +10,7 @@ import { parseId } from '../params'
 // to an object with null fields ("vision missed that field").
 function detectedDto(row: PendingRow) {
   if (row.detectedAt == null) return null
-  return { side: row.detectedSide ?? null, shares: row.detectedShares ?? null, price: row.detectedPrice ?? null, filledOn: row.detectedFilledOn ?? null, fee: row.detectedFee ?? null }
+  return { side: row.detectedSide ?? null, shares: row.detectedShares ?? null, price: row.detectedPrice ?? null, filledOn: row.detectedFilledOn ?? null, fee: row.detectedFee ?? null, orderType: row.detectedOrderType ?? null, orderPrice: row.detectedOrderPrice ?? null, orderedShares: row.detectedOrderedShares ?? null }
 }
 
 function heldBucketsOf(state: RunState): Array<{ index: number; shares: number }> {
@@ -31,7 +31,7 @@ export function pendingRouter(deps: HttpDeps): Hono {
     ))
     return c.json(jsonBig(rows.map((p) => {
       // feeOverride is server-internal (boot-repair bookkeeping), so it is dropped with the detected* fields.
-      const { detectedSide, detectedShares, detectedPrice, detectedFilledOn, detectedFee, detectedAt, feeOverride, ...row } = p
+      const { detectedSide, detectedShares, detectedPrice, detectedFilledOn, detectedFee, detectedOrderType, detectedOrderPrice, detectedOrderedShares, detectedAt, feeOverride, ...row } = p
       const { costPpm, heldBuckets } = perRun.get(p.runId)!
       return {
         ...row,

@@ -171,6 +171,9 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
         // rather than taking the filledOn substitute.
         detectedSide: f.side, detectedShares: f.shares, detectedPrice: parseUsd(f.price),
         detectedFilledOn: f.date ?? null, detectedFee: feeCentsVal, detectedAt: deps.today,
+        detectedOrderType: f.orderType ?? null,
+        detectedOrderPrice: f.orderPrice != null ? parseUsd(f.orderPrice) : null,
+        detectedOrderedShares: f.orderedShares ?? null,
       })
       pendingRows.push({
         id: pendingId, runId, captureId, side: f.side, ticker: f.ticker, shares: f.shares,

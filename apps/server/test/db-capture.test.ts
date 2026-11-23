@@ -162,6 +162,20 @@ describeIf('db integration', () => {
     expect(await repos.pendingRepo.hasConfirmedForCapture(capB)).toBe(false)
   })
 
+  test('the order columns round-trip', async () => {
+    const uniq = Date.now()
+    const ticker = 'OC' + uniq
+    const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'order-cols-' + uniq, poolCents: 1_000_000, costPpm: 10 })
+    await repos.pendingRepo.insert({
+      runId, captureId: null, bucketIdx: null, side: 'sell', ticker, shares: 44, price: parseUsd('64.07'), fee: null, filledOn: '2026-11-12', status: 'pending',
+      ...NO_SNAPSHOT, detectedOrderType: '매도/STOP(시장가)', detectedOrderPrice: 0n, detectedOrderedShares: 44,
+    })
+    const [row] = (await repos.pendingRepo.listPending()).filter((r) => r.runId === runId)
+    expect(row.detectedOrderType).toBe('매도/STOP(시장가)')
+    expect(row.detectedOrderPrice).toBe(0n)
+    expect(row.detectedOrderedShares).toBe(44)
+  })
+
   test('ingestCapture flags a re-read of a capture that already has a confirmed row', async () => {
     const ticker = 'BE' + Date.now()
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker, name: 'booked-earlier-' + Date.now(), poolCents: 1_000_000, costPpm: 10 })

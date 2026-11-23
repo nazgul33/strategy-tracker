@@ -85,6 +85,13 @@
       "when": 1795463014806,
       "tag": "0011_ancient_nomad",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1795472882722,
+      "tag": "0012_fearless_darkhawk",
+      "breakpoints": true
     }
   ]
 }

@@ -88,6 +88,18 @@ describe('http pending validation order', () => {
   })
 })
 
+describe('GET /api/pending order columns', () => {
+  test('the detected object carries the order columns', async () => {
+    const { app, auth, addPending } = await setup()
+    await addPending({ ...DETECTED, detectedSide: 'sell', detectedOrderType: '매도/보통(지정가)', detectedOrderPrice: 640700n, detectedOrderedShares: 44 })
+    await addPending({ detectedAt: null })
+    const rows = await (await app.request('/api/pending', { headers: auth })).json()
+    expect(rows[0].detected).toMatchObject({ orderType: '매도/보통(지정가)', orderPrice: '640700', orderedShares: 44 })
+    for (const key of ['detectedOrderType', 'detectedOrderPrice', 'detectedOrderedShares']) expect(key in rows[0]).toBe(false)
+    expect(rows[1].detected).toBeNull()
+  })
+})
+
 describe('GET /api/pending run lookup', () => {
   test('looks each distinct run up once, concurrently', async () => {
     const { f, app, auth, runId, addPending } = await setup(5000)

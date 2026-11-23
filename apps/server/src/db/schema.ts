@@ -84,6 +84,9 @@ export const pendingFills = mysqlTable('pending_fills', {
   detectedPrice: bigint('detected_price', { mode: 'bigint' }),
   detectedFilledOn: date('detected_filled_on', { mode: 'string' }),
   detectedFee: int('detected_fee'),
+  detectedOrderType: varchar('detected_order_type', { length: 32 }),
+  detectedOrderPrice: bigint('detected_order_price', { mode: 'bigint' }),
+  detectedOrderedShares: int('detected_ordered_shares'),
   detectedAt: timestamp('detected_at', { mode: 'string' }),
   // How the confirm treated the fee, written by the statement that flips the row (null: still
   // pending, rejected, or decided before this column existed). Only the boot repair reads it.
