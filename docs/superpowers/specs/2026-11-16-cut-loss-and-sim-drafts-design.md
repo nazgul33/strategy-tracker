@@ -245,6 +245,12 @@ The rungs, first hit wins:
 | 4 | Market sell | admissible `market_sell` | lowest `bucketIdx` |
 | 5 | Fallback | no order matched | the lowest non-empty bucket with enough shares, no order flipped; none: `no-bucket-for-sell` |
 
+> **Superseded 2026-11-23 (#74).** The rungs above (`matchSellOrder` and the fallback of
+> `pickSellBucket`) are replaced by attribution on the broker's order type, with the
+> operator choosing the bucket whenever the tracker cannot tell. See
+> `2026-11-23-order-type-attribution-and-future-dated-fills-design.md`, section 4. The pool,
+> gate and admissible terms above are unchanged.
+
 Rung 1 reads the exact-price legs through the gate only to choose among them: an
 exact-price print whose bucket cannot cover it still matches and fails as
 `too-many-shares` (or `bucket-not-held`) in `applySellFill` instead of landing in
@@ -349,6 +355,10 @@ ruling of the follow-up decisions log:
 4. Addressed 2026-11-22 (#52): the share-count rung separates same-close targets of different sizes.
 5. Addressed 2026-11-23 (#73): a fill edit, an applied correction or a delete that empties a bucket retires that bucket's sell legs through the same rule as a new fill.
 
+Note 2026-11-23 (#74): items 1 to 4 above describe the rung ladder, which
+`2026-11-23-order-type-attribution-and-future-dated-fills-design.md` supersedes. Under it a captured sell is
+attributed by its order type, and the operator chooses the bucket when more than one could have sold it.
+
 **Sibling cancel.** Both legs sit live at the broker, so when one fires the other
 must stop looking live in the tracker *and* the operator must pull it by hand.
 
@@ -359,6 +369,8 @@ must stop looking live in the tracker *and* the operator must pull it by hand.
   (already in `CANCEL_REASONS`); the matched order is not among them, it flips to
   `filled`. A fill captured for an earlier day and confirmed after the morning
   re-plan therefore also cancels **today's** freshly planned legs.
+  Note 2026-11-23 (#96): a fill dated after today is refused, so an open leg dated
+  before a fill's date is always a finished day order, never one live at the broker.
 - The bucket's `stale` sell-side orders dated exactly on the fill's trade date are
   cancelled too (same reason), without a message: that broker day is over and
   nothing is live to pull. Otherwise, once the bucket is bought again, such a leg
