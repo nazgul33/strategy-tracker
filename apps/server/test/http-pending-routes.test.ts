@@ -116,6 +116,30 @@ describe('GET /api/pending needsBucket and today', () => {
     expect(rows.map((r: any) => r.needsBucket)).toEqual([true, false, false])
   })
 
+  test('a sell dated after today never needs a bucket', async () => {
+    const { f, app, auth, runId, addPending } = await setup()
+    await seedTwoHeldBuckets(f, runId)
+    await addPending({ ...SELL, filledOn: '2026-11-11' })
+    const rows = await list(app, auth)
+    expect(rows.map((r: any) => [r.filledOn, r.needsBucket])).toEqual([['2026-11-11', false]])
+  })
+
+  test('a failing dry run is logged, that run lists needsBucket false and the list answers 200', async () => {
+    const { f, app, auth, runId, addPending } = await setup()
+    await seedTwoHeldBuckets(f, runId)
+    await addPending(SELL)
+    f.repos.orderRepo.listForRunFrom = async () => { throw new Error('db down') }
+    const logged = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const res = await app.request('/api/pending', { headers: auth })
+      expect(res.status).toBe(200)
+      expect((await res.json()).map((r: any) => r.needsBucket)).toEqual([false])
+      expect(logged).toHaveBeenCalledTimes(1)
+    } finally {
+      logged.mockRestore()
+    }
+  })
+
   test('every row carries the server date', async () => {
     const { app, auth, addPending } = await setup()
     await addPending()

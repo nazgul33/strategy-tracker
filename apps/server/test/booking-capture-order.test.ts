@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, spyOn } from 'bun:test'
 import type { ExtractResult } from '@st/ingest'
 import { ingestCapture, type BookingDeps, type PendingFillRow } from '../src/domain/booking'
 import { fakeRepos } from './booking-fakes'
@@ -51,5 +51,25 @@ describe('ingestCapture row flags', () => {
   test('a fill dated today is not after today', async () => {
     const { pending } = await ingest([{ side: 'buy', ticker: 'AAPL', shares: 3, price: '50.00', date: D }], 'FLAG-TODAY')
     expect(pending[0]).toMatchObject({ dateAfterToday: false })
+  })
+
+  test('a sell dated after today is flagged for its date only, never for a bucket', async () => {
+    const { pending } = await ingest([{ ...sell, date: '2026-11-13' }], 'FLAG-FUTURE-SELL')
+    expect(pending[0]).toMatchObject({ dateAfterToday: true, needsBucket: false })
+  })
+
+  test('a failing bucket hint still stores the screenshot and returns the rows unflagged', async () => {
+    const { f, deps, runId } = await sellSetup(held43, book43())
+    f.repos.orderRepo.listForRunFrom = async () => { throw new Error('db down') }
+    const logged = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const outcome = await ingestCapture(runId, { base64: 'FLAG-HINT-FAILS', mime: 'image/png' }, { ok: true, fills: [sell] }, deps)
+      expect((outcome as { pending: PendingFillRow[] }).pending[0]).toMatchObject({ needsBucket: false })
+      expect(f._stores.pending).toHaveLength(1)
+      expect(f._stores.captureImages).toHaveLength(1)
+      expect(logged).toHaveBeenCalledTimes(1)
+    } finally {
+      logged.mockRestore()
+    }
   })
 })

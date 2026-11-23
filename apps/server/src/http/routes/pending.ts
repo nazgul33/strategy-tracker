@@ -24,18 +24,18 @@ export function pendingRouter(deps: HttpDeps): Hono {
   r.get('/pending', async (c) => {
     const rows = await deps.repos.pendingRepo.listPending()
     const withImage = await deps.repos.captureImageRepo.existingIds(rows.map((p) => p.captureId).filter((id) => id != null) as number[])
+    const today = deps.today()
     const perRun = new Map(await Promise.all(
       [...new Set<number>(rows.map((p) => p.runId))].map(async (runId) => {
         const run = await deps.repos.runRepo.get(runId)
         const state = run ? await deps.repos.bucketRepo.loadState(runId) : null
         const flagRows = rows.filter((p) => p.runId === runId).map((p) => ({ id: p.id, side: p.side, shares: p.shares, price: p.price, filledOn: p.filledOn, evidence: evidenceOf(p) }))
         const needingBucket = state
-          ? await rowsNeedingBucket(deps.repos, runId, flagRows, state)
+          ? await rowsNeedingBucket(deps.repos, runId, flagRows, today, state)
           : new Set<number>()
         return [runId, { costPpm: run?.costPpm ?? deps.defaultSettings.defaultCostPpm, heldBuckets: state ? heldBucketsOf(state) : [], needingBucket }] as const
       }),
     ))
-    const today = deps.today()
     return c.json(jsonBig(rows.map((p) => {
       // feeOverride is server-internal (boot-repair bookkeeping), so it is dropped with the detected* fields.
       const { detectedSide, detectedShares, detectedPrice, detectedFilledOn, detectedFee, detectedOrderType, detectedOrderPrice, detectedOrderedShares, detectedAt, feeOverride, ...row } = p

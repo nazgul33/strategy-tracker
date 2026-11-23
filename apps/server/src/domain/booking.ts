@@ -191,9 +191,9 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
       })
       flagRows.push({ id: pendingId, side: f.side, shares: f.shares, price: parseUsd(f.price), filledOn, evidence: evidenceOf({ detectedOrderType, detectedOrderPrice, detectedOrderedShares }) })
     }
-    const needingBucket = await rowsNeedingBucket(repos, runId, flagRows)
-    for (const row of pendingRows) row.needsBucket = needingBucket.has(row.id)
     if (pendingRows.length > 0) await storeCaptureImage(repos, captureId, image)
+    const needingBucket = await rowsNeedingBucket(repos, runId, flagRows, deps.today)
+    for (const row of pendingRows) row.needsBucket = needingBucket.has(row.id)
     if (fresh.length === 0) return { conflicts }
     const earlier = claim.bookedEarlier ? { bookedEarlier: true as const } : {}
     if (conflicts.length > 0) return { pending: pendingRows, conflicts, ...earlier }

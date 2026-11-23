@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { applyBuyFill, parseUsd } from '@st/core';
 import { t } from '@st/telegram/i18n';
+import type { PendingFillRow } from '../src/domain/booking';
+import { pendingMessage } from '../src/wire/capture-pending-message';
 import { DATE_NOTICE_EN, PNG_B64, activeRun, makeCapture } from './wire-capture-fakes';
 
 const visionOf = (fills: Array<Record<string, unknown>>) =>
@@ -57,10 +59,25 @@ describe('capture rows the operator must act on', () => {
     expect(msg.text).toBe(`Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 — confirm?\n${DATE_NOTICE_EN}`);
   });
 
-  test('the notice lines come in order: date after today, then bucket', async () => {
+  test('a future-dated sell among two possible buckets shows only the date line', async () => {
     const h = await photo([sell({ date: '2026-11-12' })], [0, 1]);
-    const lines = h.sent.at(-1)!.text.split('\n');
-    expect(lines.slice(1)).toEqual([t('capture-date-after-today', 'en', { date: '2026-11-12' }), t('capture-needs-bucket', 'en')]);
+    const msg = h.sent.at(-1)!;
+    expect(msg.extra).toBeUndefined();
+    expect(msg.text.split('\n').slice(1)).toEqual([t('capture-date-after-today', 'en', { date: '2026-11-12' })]);
+  });
+
+  test('the notice lines come in order: substituted date, date after today, then bucket', () => {
+    const row: PendingFillRow = {
+      id: 1, runId: 1, captureId: 1, side: 'sell', ticker: 'NVDA', shares: 5, price: '190.00', fee: null,
+      filledOn: '2026-11-12', detectedFilledOn: null, status: 'pending', needsBucket: true, dateAfterToday: true,
+    };
+    const { text, buttons } = pendingMessage(row, 'en');
+    expect(buttons).toBe(false);
+    expect(text.split('\n').slice(1)).toEqual([
+      t('capture-date-substituted', 'en', { date: '2026-11-12' }),
+      t('capture-date-after-today', 'en', { date: '2026-11-12' }),
+      t('capture-needs-bucket', 'en'),
+    ]);
   });
 
   test('Yes on a row that now needs a choice is refused and books nothing', async () => {
