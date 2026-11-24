@@ -12,6 +12,7 @@ import { runMorningPipeline, type DayDeps } from './pipeline/day'
 import { startJobs } from './pipeline/wire'
 import { runBootSweeps } from './wire/boot-sweeps'
 import { makeCaptureHandlers, type CaptureDeps } from './wire/capture'
+import { makeCaptureRouting } from './wire/capture-route'
 import { parseEnv, todayEt } from './wire/deps'
 import { makeSend } from './wire/send'
 
@@ -34,11 +35,15 @@ async function main(): Promise<void> {
   let bot: ReturnType<typeof createBot> | null = null
   const send: CaptureDeps['send'] = makeSend(() => bot?.api ?? null)
 
-  const handlers = makeCaptureHandlers({
+  // one routing core for the Telegram handlers and the web upload route
+  const captureRouteDeps = {
     repos,
     vision: { baseUrl: visionBaseUrl, model: visionModel },
     getVisionApiKey: async () => (await repos.settingsRepo.getAll()).visionApiKey || env.visionApiKey,
     today: todayEt,
+  }
+  const handlers = makeCaptureHandlers({
+    ...captureRouteDeps,
     lang: digestLang,
     allowedChatIds: env.telegram?.allowedChatIds ?? [],
     send,
@@ -88,6 +93,7 @@ async function main(): Promise<void> {
     fetchDailyBars: makeCachedBarReader({ upstream: fetchDailyBars, repos, today: todayEt }),
     allowedChatIds: tg?.allowedChatIds ?? [],
     send,
+    routeCapture: makeCaptureRouting(captureRouteDeps),
   })
 
   // web build if `bun run --cwd apps/web build` was run; SPA fallback for deep links

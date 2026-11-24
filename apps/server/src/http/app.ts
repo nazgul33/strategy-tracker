@@ -5,6 +5,7 @@ import type { FillRepo, NotificationRepo, OrderRepo, PendingRepo, RunRepo } from
 import type { SimRepoSurface } from '../sim/sim'
 import { authMiddleware, makeToken } from './auth'
 import type { BarCacheRepos } from '../market/bars'
+import type { RouteCapture } from '../wire/capture-route'
 
 export interface HttpRepoSurface extends RepoSurface {
   priceHistoryRepo: BarCacheRepos['priceHistoryRepo'] & {
@@ -34,6 +35,7 @@ export interface HttpDeps {
   fetchDailyBars: (ticker: string, from: string, to: string) => Promise<OHLCBar[]>
   allowedChatIds: string[]
   send: (chatId: string, text: string) => Promise<void>
+  routeCapture: RouteCapture
 }
 
 import { runsRouter } from './routes/runs'
@@ -44,6 +46,7 @@ import { settingsRouter } from './routes/settings'
 import { notificationsRouter } from './routes/notifications'
 import { simRouter } from './routes/sim'
 import { visionReviewRouter } from './routes/vision-review'
+import { capturesRouter } from './routes/captures'
 
 export function jsonBig(x: unknown): unknown {
   return JSON.parse(JSON.stringify(x, (_k, v) => typeof v === 'bigint' ? v.toString() : v))
@@ -70,6 +73,7 @@ export function createApp(deps: HttpDeps): Hono {
   app.route('/api', correctionsRouter(deps))
   app.route('/api', settingsRouter(deps))
   app.route('/api', notificationsRouter(deps))
+  app.route('/api', capturesRouter(deps))
   app.route('/api/sim', simRouter(deps))
   app.post('/api/trigger/morning', async (c) => {
     try {

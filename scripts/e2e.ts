@@ -21,6 +21,7 @@ import { getDb, closeDb, applyMigrations } from '../apps/server/src/db/client'
 import { getRepos } from '../apps/server/src/db/repos'
 import { createApp, type HttpDeps } from '../apps/server/src/http/app'
 import { makeCaptureHandlers } from '../apps/server/src/wire/capture'
+import { makeCaptureRouting } from '../apps/server/src/wire/capture-route'
 import { runMorningPipeline, type DayDeps } from '../apps/server/src/pipeline/day'
 import { runSim, simulateDays } from '../apps/server/src/sim/sim'
 import { bucketCells } from '../apps/web/src/viewmodels'
@@ -108,6 +109,7 @@ async function main(): Promise<void> {
       fetchDailyBars: makeCachedBarReader({ upstream: barSource.upstream, repos, today: () => TODAY }),
       allowedChatIds: ['chat-1'],
       send: async (chatId: string, text: string) => { httpSends.push({ chat: chatId, text }) },
+      routeCapture: makeCaptureRouting({ repos, vision: { baseUrl: `http://127.0.0.1:${vision.port}/v1`, model: 'e2e-vision' }, getVisionApiKey: async () => 'e2e-key', today: () => TODAY }),
     }
     const app = createApp(httpDeps)
     const req = (method: string, path: string, body?: unknown, token?: string) =>

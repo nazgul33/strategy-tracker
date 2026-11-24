@@ -236,6 +236,7 @@ export function makeDeps(fakes: ReturnType<typeof makeFakes>): HttpDeps {
     fetchDailyBars: async () => [],
     allowedChatIds: ['42'],
     send: async (chatId: string, text: string) => { fakes.sent.push({ chatId, text }) },
+    routeCapture: async () => {},
   }
 }
 
