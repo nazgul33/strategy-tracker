@@ -21,6 +21,17 @@ async function createRun(c: E2eCtx, name: string, ticker: string): Promise<numbe
   return ((await jsonOf(resp)) as { id: number }).id
 }
 
+async function eventsOf(c: E2eCtx, resp: Response, label: string): Promise<any[]> {
+  c.ok(resp.status === 200, `${label} -> 200 (got ${resp.status})`)
+  return ((await jsonOf(resp)) as { events: any[] }).events
+}
+
+async function pendingOf(c: E2eCtx, runIds: number[]): Promise<any[]> {
+  const resp = await c.req('GET', '/pending', undefined, c.token)
+  c.ok(resp.status === 200, `GET /api/pending -> 200 (got ${resp.status})`)
+  return ((await jsonOf(resp)) as any[]).filter((r) => runIds.includes(r.runId))
+}
+
 export async function checkWebUpload(c: E2eCtx, today: string): Promise<void> {
   const pinRun = await createRun(c, 'E2E web pin', 'WUPA')
   const autoRun = await createRun(c, 'E2E web auto', 'WUPB')
@@ -31,8 +42,7 @@ export async function checkWebUpload(c: E2eCtx, today: string): Promise<void> {
     [{ side: 'buy', ticker: 'WUPA', shares: 2, price: '50.00', fee: '0.10', date: today }, { side: 'buy', ticker: 'WUPB', shares: 1, price: '20.00', date: today }],
     formOf(new File([pinnedBytes], 'pinned.png', { type: 'image/png' }), String(pinRun)),
   )
-  c.ok(pinned.status === 200, `pinned upload -> 200 (got ${pinned.status})`)
-  const pinnedEvents = ((await jsonOf(pinned)) as { events: any[] }).events
+  const pinnedEvents = await eventsOf(c, pinned, 'pinned upload')
   c.ok(JSON.stringify(pinnedEvents.map((e) => e.type)) === JSON.stringify(['pin-skipped', 'outcome']),
     `pinned upload events are pin-skipped then outcome: ${JSON.stringify(pinnedEvents)}`)
   c.ok(JSON.stringify(pinnedEvents[0].tickers) === JSON.stringify(['WUPB']), 'pin-skipped names the ignored ticker WUPB')
@@ -45,40 +55,54 @@ export async function checkWebUpload(c: E2eCtx, today: string): Promise<void> {
     'GET /captures/:id/image serves the uploaded bytes exactly')
 
   // ---- auto-routed by ticker, then the same bytes again -------------------
-  const autoFill = [{ side: 'buy', ticker: 'WUPB', shares: 3, price: '21.00', date: today }]
-  const auto = await c.upload(autoFill, formOf(pngOf('e2e-web-upload-auto', 'auto.png')))
-  const autoEvents = ((await jsonOf(auto)) as { events: any[] }).events
-  c.ok(auto.status === 200 && autoEvents.length === 1 && autoEvents[0].type === 'outcome' && autoEvents[0].runId === autoRun &&
+  // The second read of the same bytes answers a different fill, so fill-level dedup cannot
+  // report the duplicate: only the image-hash guard can.
+  const autoEvents = await eventsOf(c,
+    await c.upload([{ side: 'buy', ticker: 'WUPB', shares: 3, price: '21.00', date: today }], formOf(pngOf('e2e-web-upload-auto', 'auto.png'))),
+    'auto-routed upload')
+  c.ok(autoEvents.length === 1 && autoEvents[0].type === 'outcome' && autoEvents[0].runId === autoRun &&
     autoEvents[0].outcome.pending?.length === 1,
     `auto-routed upload: one outcome on the WUPB run with one pending row: ${JSON.stringify(autoEvents)}`)
 
-  const repeat = await c.upload(autoFill, formOf(pngOf('e2e-web-upload-auto', 'auto.png')))
-  const repeatEvents = ((await jsonOf(repeat)) as { events: any[] }).events
-  c.ok(repeat.status === 200 && JSON.stringify(repeatEvents) === JSON.stringify([{ type: 'outcome', runId: autoRun, ticker: 'WUPB', outcome: 'duplicate' }]),
-    `same bytes uploaded again -> single duplicate outcome: ${JSON.stringify(repeatEvents)}`)
-  const wupb = ((await jsonOf(await c.req('GET', '/pending', undefined, c.token))) as any[]).filter((r) => r.ticker === 'WUPB')
-  c.ok(wupb.length === 1, `the repeat created no second WUPB pending row: ${JSON.stringify(wupb.map((r) => [r.id, r.shares]))}`)
+  const repeatEvents = await eventsOf(c,
+    await c.upload([{ side: 'buy', ticker: 'WUPB', shares: 7, price: '23.50', date: today }], formOf(pngOf('e2e-web-upload-auto', 'auto.png'))),
+    'repeat upload')
+  c.ok(JSON.stringify(repeatEvents) === JSON.stringify([{ type: 'outcome', runId: autoRun, ticker: 'WUPB', outcome: 'duplicate' }]),
+    `same bytes uploaded again (vision reads another fill) -> single duplicate outcome: ${JSON.stringify(repeatEvents)}`)
+  const afterRepeat = await pendingOf(c, [autoRun])
+  c.ok(afterRepeat.length === 1, `the repeat created no second WUPB pending row: ${JSON.stringify(afterRepeat.map((r) => [r.id, r.shares]))}`)
 
   // ---- cross-path: a bot photo, then the same bytes over the web -----------
   const botText = 'e2e-web-upload-bot'
-  const botFill = [{ side: 'buy', ticker: 'WUPB', shares: 4, price: '22.00', date: today }]
-  await c.photo(botFill, { base64: Buffer.from(botText).toString('base64'), mime: 'image/png' })
-  const cross = await c.upload(botFill, formOf(pngOf(botText, 'bot.png')))
-  const crossEvents = ((await jsonOf(cross)) as { events: any[] }).events
-  c.ok(cross.status === 200 && crossEvents.length === 1 && crossEvents[0].outcome === 'duplicate',
-    `bytes already captured by the bot -> web upload is a duplicate: ${JSON.stringify(crossEvents)}`)
+  await c.photo([{ side: 'buy', ticker: 'WUPB', shares: 4, price: '22.00', date: today }], { base64: Buffer.from(botText).toString('base64'), mime: 'image/png' })
+  const afterBot = await pendingOf(c, [autoRun])
+  c.ok(afterBot.length === 2 && afterBot.some((r) => r.ticker === 'WUPB' && r.shares === 4),
+    `the bot photo left a WUPB pending row of 4 shares: ${JSON.stringify(afterBot.map((r) => [r.id, r.shares]))}`)
+  const crossEvents = await eventsOf(c,
+    await c.upload([{ side: 'buy', ticker: 'WUPB', shares: 9, price: '24.25', date: today }], formOf(pngOf(botText, 'bot.png'))),
+    'cross-path upload')
+  c.ok(crossEvents.length === 1 && crossEvents[0].outcome === 'duplicate',
+    `bytes already captured by the bot (vision reads another fill) -> web upload is a duplicate: ${JSON.stringify(crossEvents)}`)
+  const afterCross = await pendingOf(c, [autoRun])
+  c.ok(afterCross.length === 2, `the cross-path upload created no new pending row: ${JSON.stringify(afterCross.map((r) => [r.id, r.shares]))}`)
 
   // ---- errors --------------------------------------------------------------
-  const noRun = await c.upload(autoFill, formOf(pngOf('e2e-web-upload-norun', 'norun.png'), '999999'))
-  c.ok(noRun.status === 404 && (await jsonOf(noRun)).error === 'no-run', 'unknown pinned run -> 404 no-run')
-  const text = await c.upload(autoFill, formOf(new File([Buffer.from('not an image')], 'note.txt', { type: 'text/plain' })))
-  c.ok(text.status === 415 && (await jsonOf(text)).error === 'unsupported-image', 'text/plain upload -> 415 unsupported-image')
+  const errFill = [{ side: 'buy', ticker: 'WUPB', shares: 3, price: '21.00', date: today }]
+  const noRun = await c.upload(errFill, formOf(pngOf('e2e-web-upload-norun', 'norun.png'), '999999'))
+  c.ok(noRun.status === 404, `unknown pinned run -> 404 (got ${noRun.status})`)
+  c.ok((await jsonOf(noRun)).error === 'no-run', 'unknown pinned run -> error no-run')
+  const text = await c.upload(errFill, formOf(new File([Buffer.from('not an image')], 'note.txt', { type: 'text/plain' })))
+  c.ok(text.status === 415, `text/plain upload -> 415 (got ${text.status})`)
+  c.ok((await jsonOf(text)).error === 'unsupported-image', 'text/plain upload -> error unsupported-image')
 
   // ---- cleanup: later steps start with nothing pending from this step -------
-  const mine = ((await jsonOf(await c.req('GET', '/pending', undefined, c.token))) as any[])
-    .filter((r) => r.runId === pinRun || r.runId === autoRun)
+  // One WUPA row (pinned), two WUPB rows (auto-routed upload and bot photo).
+  const mine = await pendingOf(c, [pinRun, autoRun])
+  c.ok(mine.length === 3, `the step left exactly 3 pending rows on its runs: ${JSON.stringify(mine.map((r) => [r.id, r.ticker, r.shares]))}`)
   for (const row of mine) {
     const rej = await c.req('POST', `/pending/${row.id}/reject`, {}, c.token)
     c.ok(rej.status === 200, `reject web-upload pending row ${row.id} -> 200`)
   }
+  const left = await pendingOf(c, [pinRun, autoRun])
+  c.ok(left.length === 0, `no pending rows remain on the step's runs: ${JSON.stringify(left.map((r) => r.id))}`)
 }
