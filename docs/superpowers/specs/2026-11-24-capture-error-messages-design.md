@@ -88,3 +88,40 @@ Source words: `Settings`, `env`, and `not set` for a missing key.
 - Catalog key names and the Korean wording, kept close to the existing texts.
 - Whether the in-use and advice lines are separate catalog keys or composed in code.
 - How the key's source is threaded (the shape of `getVisionApiKey`'s return), as long as the key value never leaves the vision request.
+
+## Amendment (2026-11-24, after the final review): operator's decisions on the three open points
+
+The operator read the finished branch's open decisions and ruled on each. Where this section disagrees with the text above, this section wins.
+
+### 1. The key is masked, not blanked
+
+Supersedes the `[redacted]` rule and the "Known limits" note.
+
+- Wherever the key appears in a failure `detail`, it is shown as its first 4 characters, four dots and its last 4 characters: `sk-LEAKCHECK-7f3a9c2e` becomes `sk-L....9c2e`. The replacement is made in place, inside a word if need be. There are always exactly four dots, so the length of the key is not shown.
+- A key of 8 characters or fewer has no middle and is left as it is. Placeholder keys such as `test`, `local` and `ollama` therefore change nothing.
+- A partial echo is masked too: where the text contains a run of 8 or more consecutive characters of the key that is not the whole key, the characters of that run that come from the key's middle (everything but its first 4 and last 4) are replaced by four dots, and the characters from its first 4 or last 4 stay. *(My call, from the operator's "the middle part is always redacted": the 8-character threshold is kept from the earlier rule, so a shorter coincidence with an ordinary word changes nothing.)*
+- Known residue: with a long word-like placeholder key, an ordinary word that is an 8-character run of it is partly dotted (`required` under the key `sk-no-key-required` shows as `....ired`).
+- **Anti-goal, restated:** no run of 8 or more consecutive characters of the key appears in a message, an event, a log line or a notice. The first 4 and last 4 characters may appear, by the operator's decision.
+- The "In use" line still shows only the key's source.
+
+### 2. The original error is its own line
+
+- The two setup-related kinds (`http`, and `incompatible` below) end with a line `Original error: {detail}`. The label is translated; the content is the extractor's `detail` as it is (one line, key masked, capped at 200 characters) and is never translated.
+- The `http` main line loses its `— {detail}` part and reads `The vision service did not accept the request.` The advice line stays on every `http` failure; the operator judges from the original error.
+- `unparseable` keeps its detail inline and `empty` has none, as before.
+
+### 3. A fourth kind: not an OpenAI-compatible answer
+
+- The extractor classifies a 200 answer that is not the expected envelope as `incompatible` instead of `unparseable`: the body is not JSON (`response body not json`) or it has no message content (`no content`). The other `unparseable` cases (the model's own text is not usable JSON) stay `unparseable`.
+- The event's `reason` gains `incompatible`, which carries `vision` like `http` and `unparseable`.
+
+| Line | English |
+| --- | --- |
+| `http` main | The vision service did not accept the request. |
+| `incompatible` main | The vision service answered, but not as an OpenAI-compatible API. |
+| `incompatible` advice | Make sure the configured vision API is OpenAI-compatible. A URL or model changed in Settings applies after a server restart. |
+| original-error line (`http`, `incompatible`) | Original error: {detail} |
+
+Line order for `http` and `incompatible`: main, in-use, advice, original error. On the web the advice line of both links to `#/settings`. The vision timeout is unchanged on the web (its own single line).
+
+The README's "Reading a failed capture" section is rewritten to match: four messages, the masked form of the key, and no `[redacted]`.
