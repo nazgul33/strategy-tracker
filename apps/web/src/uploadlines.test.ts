@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
 import { ApiError, NetworkError } from './api';
-import type { CaptureConflictDto, CaptureEventDto, CapturePendingRowDto } from './api';
+import type { CaptureConflictDto, CaptureEventDto, CapturePendingRowDto, VisionInUseDto } from './api';
 import { lookup } from './i18n/catalog';
 import { captureEventLines, uploadErrorLines, uploadItemLines, wantsPending } from './uploadlines';
 
 const t = (k: string, p?: Record<string, string | number>) => lookup('en', k, p);
+
+const VISION: VisionInUseDto = { model: 'qwen2.5-vl', modelSource: 'settings', baseUrl: 'http://lm:1234/v1', baseUrlSource: 'env', keySource: 'none' };
 
 const row = (over: Partial<CapturePendingRowDto> = {}): CapturePendingRowDto => ({
   id: 1,
@@ -100,20 +102,54 @@ describe('captureEventLines', () => {
     ]);
   });
 
+  const emptyLine = {
+    tone: 'error',
+    depth: 0,
+    text: 'No fills were found in this image. Check that it shows the fills list, or book the fill manually.',
+    href: undefined,
+  } as const;
+
   test('rejected', () => {
-    expect(view(captureEventLines(outcome('rejected'), t))).toEqual([
-      { tone: 'error', depth: 0, text: 'Could not read fills from this image — no fills recognized. Book the fill manually, or upload a clearer screenshot.', href: undefined },
+    expect(view(captureEventLines(outcome('rejected'), t))).toEqual([emptyLine]);
+  });
+
+  test('bad-extract empty', () => {
+    expect(view(captureEventLines({ type: 'bad-extract', reason: 'empty', detail: 'no fills recognized' }, t))).toEqual([emptyLine]);
+  });
+
+  test('bad-extract http: error, the vision config in use, and the setup advice linking to Settings', () => {
+    expect(view(captureEventLines({ type: 'bad-extract', reason: 'http', detail: "http 404: The model 'x' is not loaded", vision: VISION }, t))).toEqual([
+      { tone: 'error', depth: 0, text: "The vision service did not accept the request — http 404: The model 'x' is not loaded.", href: undefined },
+      { tone: 'info', depth: 1, text: 'In use: model qwen2.5-vl (Settings), URL http://lm:1234/v1 (env), key (not set).', href: undefined },
+      {
+        tone: 'info',
+        depth: 1,
+        text: 'This is a vision setup problem, not the screenshot. A URL or model changed in Settings applies after a server restart.',
+        href: '#/settings',
+      },
     ]);
   });
 
-  test('bad-extract', () => {
-    expect(view(captureEventLines({ type: 'bad-extract', detail: 'no JSON in reply' }, t))).toEqual([
-      { tone: 'error', depth: 0, text: 'Could not read fills from this image — no JSON in reply. Book the fill manually, or upload a clearer screenshot.', href: undefined },
+  test('bad-extract unparseable: error and the vision config in use, no advice', () => {
+    expect(view(captureEventLines({ type: 'bad-extract', reason: 'unparseable', detail: 'no json', vision: { ...VISION, keySource: 'env' } }, t))).toEqual([
+      {
+        tone: 'error',
+        depth: 0,
+        text: 'The vision model answered, but not in a form the tracker understands — no json. Try again; if it keeps happening, check the vision model.',
+        href: undefined,
+      },
+      { tone: 'info', depth: 1, text: 'In use: model qwen2.5-vl (Settings), URL http://lm:1234/v1 (env), key (env).', href: undefined },
     ]);
+  });
+
+  test('brace text in the detail stays literal', () => {
+    expect(captureEventLines({ type: 'bad-extract', reason: 'http', detail: 'http 400: unknown field {model}', vision: VISION }, t)[0]!.text).toBe(
+      'The vision service did not accept the request — http 400: unknown field {model}.',
+    );
   });
 
   test('vision timeout', () => {
-    expect(view(captureEventLines({ type: 'bad-extract', detail: 'vision timed out' }, t))).toEqual([
+    expect(view(captureEventLines({ type: 'bad-extract', reason: 'http', detail: 'vision timed out', vision: VISION }, t))).toEqual([
       { tone: 'error', depth: 0, text: 'Vision took too long to answer — nothing was booked. Upload the file again.', href: undefined },
     ]);
   });
@@ -215,5 +251,16 @@ describe('wantsPending', () => {
 describe('ko catalog', () => {
   test('ko catalog renders the fill line in Korean', () => {
     expect(lookup('ko', 'upload.fillLine', { side: '매수', shares: 10, price: '131.20', date: '2026-11-23' })).toBe('2026-11-23 매수 10주 @ $131.20');
+  });
+
+  test('ko catalog renders the vision in-use line with the Korean source words', () => {
+    const params = {
+      model: 'm',
+      modelSource: lookup('ko', 'upload.visionSourceSettings'),
+      baseUrl: 'u',
+      baseUrlSource: lookup('ko', 'upload.visionSourceEnv'),
+      keySource: lookup('ko', 'upload.visionSourceNone'),
+    };
+    expect(lookup('ko', 'upload.visionInUse', params)).toBe('사용 중: 모델 m (설정), URL u (환경변수), 키 (API Key 없음).');
   });
 });

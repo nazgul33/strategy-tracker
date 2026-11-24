@@ -155,8 +155,9 @@ Only chat IDs on the allowlist get any response (`packages/telegram/src/bot.ts`)
   the tracker cannot tell which bucket sold a sell: that prompt has no buttons and points to the
   web Pending view). A fill dated after today (New York date) is refused everywhere, and a manual
   sell may ask for a bucket. `Yes` books it (lowest empty bucket for buys), `No` rejects. Nothing is booked without
-  that tap. Re-sending the identical photo is deduped by content hash. A screenshot the vision model
-  cannot read is answered with "Could not read fills…", and that reply is also listed under System notices.
+  that tap. Re-sending the identical photo is deduped by content hash. A screenshot that cannot be
+  read is answered with one of three messages (see "Reading a failed capture" below), and that reply
+  is also listed under System notices.
 - A fill-capture reminder goes out at 16:05 ET on trading days (nothing on weekends/holidays).
 
 ## Screenshot upload (web)
@@ -174,6 +175,22 @@ The same fill screenshots can be uploaded from the web UI, with or without the b
 - The server's `idleTimeout` is 60 s and the vision call is cut off at 50 s, so a TLS reverse proxy
   in front of the app must allow at least 60 s per request. It must also accept request bodies of at
   least 9 MB (for nginx, `client_max_body_size 9m;` — its default is 1 MB).
+
+### Reading a failed capture
+
+Telegram and the web word a failed capture the same way:
+
+- **"The vision service did not accept the request — …"** is a vision setup problem, not the
+  screenshot. The text after the dash is the service's own answer (for example a model name it does
+  not serve). The "In use" line names the model, URL and key source the server is running with, each
+  marked `Settings` or `env` (`not set` for a missing key). A URL or model changed in Settings
+  applies only after a server restart; the key is re-read on every capture.
+- **"The vision model answered, but not in a form the tracker understands — …"**: try again; if it
+  keeps happening, the model in use is probably not suited to reading screenshots.
+- **"No fills were found in this image."**: the screenshot does not show the fills list; book the
+  fill manually.
+
+The API key itself is never shown, only where it came from.
 
 ## Schedules
 
