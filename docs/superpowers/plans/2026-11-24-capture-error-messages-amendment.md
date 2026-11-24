@@ -8,7 +8,9 @@
 
 **Tech Stack:** Bun + TypeScript, `bun:test`, Hono server, React web app with flat JSON catalogs.
 
-**Spec:** `docs/superpowers/specs/2026-11-24-capture-error-messages-design.md`, section "Amendment (2026-11-24, after the final review)". Where the Amendment disagrees with earlier text in that file, the Amendment wins. Nothing outside the Amendment changes.
+**Spec:** `docs/superpowers/specs/2026-11-24-capture-error-messages-design.md`, section "Amendment (2026-11-24, after the final review)".
+
+**As built, this plan's rule for the extractor's 200 path was superseded twice** (Task 3's fix round and the final fix wave). The spec's Amendment section 3 holds the rule that shipped: `incompatible` only for a body that is not JSON or has no `choices[0].message` object and states no error; a message object without string content stays `unparseable`; a body read that fails for another reason, and a 200 answer that states an error, are `http` failures. Where Task 3 below says otherwise, the spec wins. Where the Amendment disagrees with earlier text in that file, the Amendment wins. Nothing outside the Amendment changes.
 
 ## Global Constraints
 

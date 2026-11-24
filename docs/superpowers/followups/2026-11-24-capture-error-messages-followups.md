@@ -35,6 +35,20 @@ what the reviews found and the branch deliberately left.
   sentence there ("The vision service did not accept the request."); the
   service's own text is visible only after expanding the row.
 
+- **A 200 answer of `{"message":"ok"}` reads as a refused request.** A 200
+  body without a chat reply counts as stating an error when it has text in
+  `error.message`, `error`, `message` or `detail`. A catch-all endpoint that
+  answers `{"message":"ok"}` therefore reads "did not accept the request" with
+  `Original error: http 200: ok`, where "not OpenAI-compatible" would fit
+  better. The in-use line and the original error still point at the URL.
+- **Only those four places count as a stated error.** A 200 answer that reports
+  its failure as plain text, or as `{"error":{"code":429}}`, `{"errors":[…]}`
+  or `{"msg":"…"}`, still reads "not as an OpenAI-compatible API" with
+  `response body not json` or `no content`. The README says "states an error"
+  without listing the places.
+- **A key whose middle is four dots masks to itself** (`abcd....efgh`). Real
+  keys do not look like this.
+
 ## Test gaps and polish
 
 - A thrown value that is `undefined` or `null` gives the detail text
