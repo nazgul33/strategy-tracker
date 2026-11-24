@@ -70,11 +70,11 @@ describe('capture onPhoto — dedup and failures', () => {
     expect(fakes.pending.length).toBe(0);
     expect(fakes.captures.length).toBe(0);
     expect(sent).toEqual([
-      { chatId: '777', text: 'Could not read fills from this image — http 500. Book the fill manually in the web UI.' },
+      { chatId: '777', text: 'Could not read fills from this image — http 500: boom. Book the fill manually in the web UI.' },
     ]);
     expect(fakes.notifications.length).toBe(1);
     expect(fakes.notifications[0]).toMatchObject({ runId: null, chatId: '777' });
-    expect(String(fakes.notifications[0]!.text)).toContain('Could not read fills from this image — http 500');
+    expect(String(fakes.notifications[0]!.text)).toContain('Could not read fills from this image — http 500: boom');
   });
 
   test('no active run: user is told, nothing captured', async () => {

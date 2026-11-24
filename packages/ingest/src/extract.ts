@@ -64,6 +64,47 @@ function normalizeFill(raw: any): RawFill | null {
   return f;
 }
 
+const MAX_ERROR_MESSAGE = 200;
+const KEY_RUN = 8;
+
+const hasText = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+const stripTrailingPeriods = (s: string): string => s.replace(/\.+$/, '').trim();
+
+// Services echo the API key in 401 bodies, sometimes whole: a word holding the whole key
+// (keys of 4-7 chars) or any 8-char run of it (keys of 8+) is replaced.
+function redactKey(text: string, apiKey: string): string {
+  if (apiKey.length < 4) return text;
+  const runs: string[] = [];
+  if (apiKey.length < KEY_RUN) runs.push(apiKey);
+  else for (let i = 0; i + KEY_RUN <= apiKey.length; i++) runs.push(apiKey.slice(i, i + KEY_RUN));
+  return text
+    .split(/(\s+)/)
+    .map((tok) => (tok !== '' && !/^\s+$/.test(tok) && runs.some((r) => tok.includes(r)) ? '[redacted]' : tok))
+    .join('');
+}
+
+function pickErrorMessage(body: string): string {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return body;
+  }
+  if (hasText(parsed?.error?.message)) return parsed.error.message;
+  if (hasText(parsed?.error)) return parsed.error;
+  if (hasText(parsed?.message)) return parsed.message;
+  return body;
+}
+
+function visionErrorDetail(status: number, body: string, apiKey: string): string {
+  const collapsed = pickErrorMessage(body).replace(/\s+/g, ' ').trim();
+  const msg = stripTrailingPeriods(redactKey(collapsed, apiKey));
+  if (msg === '') return `http ${status}`;
+  const cps = [...msg];
+  const capped = cps.length > MAX_ERROR_MESSAGE ? `${cps.slice(0, MAX_ERROR_MESSAGE - 1).join('')}…` : msg;
+  return `http ${status}: ${capped}`;
+}
+
 export async function extractFills(
   images: Array<{ base64: string; mime: string }>,
   cfg: VisionConfig,
@@ -92,10 +133,16 @@ export async function extractFills(
       body: JSON.stringify(body),
     });
   } catch (e: any) {
-    return { ok: false, reason: 'http', detail: String(e?.message ?? e) };
+    const redacted = redactKey(String(e?.message ?? e), cfg.apiKey);
+    return { ok: false, reason: 'http', detail: stripTrailingPeriods(redacted) || redacted };
   }
   if (!res.ok) {
-    return { ok: false, reason: 'http', detail: `http ${res.status}` };
+    let errBody = '';
+    try {
+      const t = typeof res.text === 'function' ? await res.text() : '';
+      if (typeof t === 'string') errBody = t;
+    } catch {}
+    return { ok: false, reason: 'http', detail: visionErrorDetail(res.status, errBody, cfg.apiKey) };
   }
   let json: any;
   try {
