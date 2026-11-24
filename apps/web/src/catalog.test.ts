@@ -4,6 +4,7 @@ import { computeOrders } from '@st/strategies';
 
 import en from './i18n/en.json';
 import ko from './i18n/ko.json';
+import { lookup } from './i18n/catalog';
 
 const enEntries = Object.entries(en as Record<string, string>);
 const koEntries = Object.entries(ko as Record<string, string>);
@@ -97,5 +98,28 @@ describe('i18n catalogs', () => {
       })
       .map(([key]) => key);
     expect(mismatches).toEqual([]);
+  });
+});
+
+describe('lookup', () => {
+  test('values are inserted literally', () => {
+    for (const seq of ["$'", '$&', '$$', '$`', '$1']) {
+      expect(lookup('en', 'upload.badExtractHttp', { detail: `a ${seq} b` })).toBe(`The vision service did not accept the request — a ${seq} b.`);
+    }
+  });
+
+  test('a value is not expanded again', () => {
+    const params = { model: '{baseUrl}', modelSource: 'Settings', baseUrl: 'http://u', baseUrlSource: 'env', keySource: '{model}' };
+    expect(lookup('en', 'upload.visionInUse', params)).toBe('In use: model {baseUrl} (Settings), URL http://u (env), key ({model}).');
+  });
+
+  test('an unknown placeholder stays literal', () => {
+    const text = lookup('en', 'upload.visionInUse', { model: 'm' });
+    expect(text).toContain('{baseUrl}');
+    expect(text).toContain('{keySource}');
+  });
+
+  test('inherited properties do not match', () => {
+    expect(lookup('en', 'upload.badExtractHttp', Object.create({ detail: 'x' }))).toContain('{detail}');
   });
 });
