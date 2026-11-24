@@ -29,13 +29,13 @@ guess.
 
 ## What the broker screen shows
 
-From the samples in `resources/trade_images/mpop/` (six older ones) and
-`resources/trade_images/mpop/stop/` (five new ones, `IMG_2140` to `IMG_2144`,
-added on this branch):
+From the samples in `resources/trade_images/mpop/` (six older ones, plus
+`IMG_2146` added 2026-11-24) and `resources/trade_images/mpop/stop/` (five new
+ones, `IMG_2140` to `IMG_2144`, added on this branch):
 
 | View | 주문구분 text seen | 주문단가 | 주문수량 |
 | --- | --- | --- | --- |
-| 당일체결 (single day) | `매수/LOC`, `매도/보통(지정가)`, `매도/STOP(시장가)`, `매도/STOP(지정가)`, `정정(매도)` | shown | shown |
+| 당일체결 (single day) | `매수/LOC`, `매도/LOC`, `매도/보통(지정가)`, `매도/STOP(시장가)`, `매도/STOP(지정가)`, `정정(매도)` | shown | shown |
 | 기간체결 (date range) | `매수` or `매도` only | not shown | not shown |
 
 - The text has the shape `side/condition(price type)`: `보통` or `STOP` is the
@@ -52,9 +52,16 @@ added on this branch):
   64.0700, 체결수량 44, 체결단가 64.0700 (`IMG_2112`).
 - `정정(매도)` is an amended sell (`IMG_2103`). Its original order type is not
   shown.
-- No sample shows a `LOC` sell or a market sell. `매도/LOC` is assumed by analogy
-  with `매수/LOC`. A market sell is assumed to carry `시장가` outside a `STOP`
+- A filled `LOC` sell reads `매도/LOC` (amended 2026-11-24: `IMG_2146`, added by
+  the operator after the whole-branch review, shows `매도/LOC` 주문수량 59, 주문단가
+  31.1800, 체결단가 43.2100, next to a second `매도/보통(지정가)` fill of 59 at
+  36.1800; before that sample the wording was assumed by analogy with
+  `매수/LOC`).
+- No sample shows a market sell. It is assumed to carry `시장가` outside a `STOP`
   (`매도/보통(시장가)` by the shape above; the operator wrote it as `매도(시장가)`).
+- The operator confirmed (2026-11-24) that the date on the mPOP screen is the US
+  trade date and is never a day ahead of New York's. Other broker apps may date
+  fills differently; that is tracked in issue #98.
 
 ## Goals
 
