@@ -77,6 +77,10 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       case 'outcome':
         await sendOutcome(chatId, event.outcome);
         return;
+      default: {
+        const unhandled: never = event;
+        return unhandled;
+      }
     }
   }
 

@@ -39,6 +39,7 @@ describe('capture routing core', () => {
     const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: vision500 })
     await r.run(null)
     expect(r.events).toEqual([{ type: 'bad-extract', detail: 'http 500' }])
+    expect(r.visionCalls()).toBe(1)
     expect(r.captures.length).toBe(0)
   })
 
@@ -155,10 +156,14 @@ describe('vision time limit', () => {
   })
 
   test('a read inside the limit is unaffected', async () => {
-    const r = routing({ runs: [activeRun(1, 'NVDA')] })
+    const f = switchable()
+    f.record()
+    const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: f.fetchImpl })
     await r.run(null, 1000)
     expect(r.events).toHaveLength(1)
     expect(r.events[0]).toMatchObject({ type: 'outcome', runId: 1, ticker: 'NVDA' })
+    expect(f.signal()).toBeDefined()
+    expect(f.signal()?.aborted).toBe(false)
   })
 
   test('without a limit the vision request carries no signal', async () => {
