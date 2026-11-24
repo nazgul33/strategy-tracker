@@ -250,7 +250,7 @@ describeIf('db integration', () => {
     const before = await repos.fillRepo.listForRun(runId)
     const lo = before[0].id
     const hi = before[1].id
-    await db.execute(sql.raw(`UPDATE fills SET id = ${hi + 10} WHERE id = ${lo}`))
+    await db.execute(sql.raw(`UPDATE mr_fills SET id = ${hi + 10} WHERE id = ${lo}`))
     const shuffled = await repos.fillRepo.listForRun(runId)
     expect(shuffled.map((f) => f.id)).toEqual([hi, hi + 10])
     expect(shuffled.map((f) => f.shares)).toEqual([20, 12])

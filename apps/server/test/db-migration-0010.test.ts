@@ -23,9 +23,9 @@ describeIf('db migration 0010', () => {
     ({ runId, tradeDate: '2026-02-10', kind: 'buy_loc', bucketIdx, limitPrice: 100n, shares: 1, status })
 
   test('sim_days is indexed on (sim_run_id, trade_date) and the single-column index is gone', async () => {
-    const idx = await rowsOf<{ Key_name: string; Seq_in_index: number; Column_name: string }>('SHOW INDEX FROM sim_days')
+    const idx = await rowsOf<{ Key_name: string; Seq_in_index: number; Column_name: string }>('SHOW INDEX FROM mr_sim_days')
     const cols = (name: string) => idx.filter((r) => r.Key_name === name).sort((a, b) => Number(a.Seq_in_index) - Number(b.Seq_in_index)).map((r) => r.Column_name)
-    expect(cols('sim_days_sim_run_trade_idx')).toEqual(['sim_run_id', 'trade_date'])
+    expect(cols('mr_sim_days_sim_run_trade_idx')).toEqual(['sim_run_id', 'trade_date'])
     expect(cols('sim_days_sim_run_idx')).toEqual([])
   })
 
@@ -35,7 +35,7 @@ describeIf('db migration 0010', () => {
   test('a new order has no reported_at; the backfill stamps stale orders only', async () => {
     const runId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'MG', name: `mg-${Date.now()}`, poolCents: 1000, costPpm: 10 })
     await repos.orderRepo.insertMany([order(runId, 'stale', 0), order(runId, 'open', 1), order(runId, 'filled', 2), order(runId, 'cancelled', 3)])
-    const flags = async () => (await rowsOf<{ reported: number }>(`SELECT reported_at IS NOT NULL AS reported FROM orders WHERE run_id = ${runId} ORDER BY bucket_idx`)).map((r) => Number(r.reported))
+    const flags = async () => (await rowsOf<{ reported: number }>(`SELECT reported_at IS NOT NULL AS reported FROM mr_orders WHERE run_id = ${runId} ORDER BY bucket_idx`)).map((r) => Number(r.reported))
     expect(await flags()).toEqual([0, 0, 0, 0])
     const migrationsDir = fileURLToPath(new URL('../db/migrations/', import.meta.url))
     const [file] = [...new Bun.Glob('0010_*.sql').scanSync({ cwd: migrationsDir })].sort()
@@ -43,8 +43,8 @@ describeIf('db migration 0010', () => {
     expect(backfill).toBeDefined()
     try {
       await db.transaction(async (tx) => {
-        await tx.execute(sql.raw(backfill!))
-        const [rows] = (await tx.execute(sql.raw(`SELECT reported_at IS NOT NULL AS reported FROM orders WHERE run_id = ${runId} ORDER BY bucket_idx`))) as unknown as [{ reported: number }[], unknown]
+        await tx.execute(sql.raw(backfill!.replace('`orders`', '`mr_orders`')))
+        const [rows] = (await tx.execute(sql.raw(`SELECT reported_at IS NOT NULL AS reported FROM mr_orders WHERE run_id = ${runId} ORDER BY bucket_idx`))) as unknown as [{ reported: number }[], unknown]
         expect(rows.map((r) => Number(r.reported))).toEqual([1, 0, 0, 0])
         tx.rollback()
       })

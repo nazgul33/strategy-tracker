@@ -127,7 +127,7 @@ describeIf('db integration', () => {
     expect(capRows[0].status).toBe('parsed')
     const captureId = capRows[0].id
 
-    const pendRows = await selectRows<{ capture_id: number; status: string }>(sql`SELECT capture_id, status FROM pending_fills WHERE run_id = ${runId} ORDER BY id`)
+    const pendRows = await selectRows<{ capture_id: number; status: string }>(sql`SELECT capture_id, status FROM mr_pending_fills WHERE run_id = ${runId} ORDER BY id`)
     expect(pendRows.map((r) => ({ capture_id: r.capture_id, status: r.status }))).toEqual([
       { capture_id: captureId, status: 'rejected' },
       { capture_id: captureId, status: 'pending' },
