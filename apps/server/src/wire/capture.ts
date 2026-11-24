@@ -9,9 +9,10 @@ import type { PendingRepo } from '../domain/repo-types';
 import { parseId } from '../http/params';
 import { makeBookingNotifier } from './booking-notifier';
 import { broadcastNotice } from './broadcast';
+import { badExtractMessage } from './capture-bad-extract-message';
 import { pendingMessage } from './capture-pending-message';
 import { makeCaptureRouting } from './capture-route';
-import type { CaptureEvent, CaptureRouteDeps } from './capture-route';
+import type { BadExtractEvent, CaptureEvent, CaptureRouteDeps } from './capture-route';
 
 const CONFIRM_ERROR_KEYS: Record<string, string> = {
   'ticker-mismatch': 'confirm-err-ticker-mismatch',
@@ -45,12 +46,12 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
   const lang: Lang = deps.lang ?? 'en';
   const routeCapture = makeCaptureRouting(deps);
 
-  // "Could not read fills": recorded for System notices (no run) and then sent, to the asking chat only.
+  // A failed read, worded by kind: recorded for System notices (no run) and then sent, to the asking chat only.
   // broadcastNotice logs a failing insert or send and never throws, so the photo handler resolves.
-  async function tellBadExtract(chatId: string, detail: string): Promise<void> {
+  async function tellBadExtract(chatId: string, event: BadExtractEvent): Promise<void> {
     await broadcastNotice(
       { allowedChatIds: [chatId], send: deps.send, notificationRepo: deps.repos.notificationRepo },
-      null, t('capture-bad-extract', lang, { detail }), { kind: 'capture-bad-extract' },
+      null, badExtractMessage(event, lang), { kind: 'capture-bad-extract' },
     );
   }
 
@@ -60,7 +61,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
         await deps.send(chatId, t('unknown-run', lang, { id: event.id }));
         return;
       case 'bad-extract':
-        await tellBadExtract(chatId, event.detail);
+        await tellBadExtract(chatId, event);
         return;
       case 'pin-nomatch':
         await deps.send(chatId, t('capture-pin-nomatch', lang, { ticker: event.ticker, id: event.runId }));
@@ -98,7 +99,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       return;
     }
     if (outcome === 'rejected') {
-      await tellBadExtract(chatId, 'no fills recognized');
+      await tellBadExtract(chatId, { type: 'bad-extract', reason: 'empty', detail: 'no fills recognized' });
       return;
     }
     const pending = 'pending' in outcome ? outcome.pending : [];
