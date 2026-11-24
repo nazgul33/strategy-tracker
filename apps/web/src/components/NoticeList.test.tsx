@@ -55,13 +55,13 @@ function chatCells(): string[] {
 describe('NoticeList', () => {
   it('shows the web-only sentinel as a label and other chat ids as they are', async () => {
     await render(d(NoticeList, { notifications: rows }));
-    expect(chatCells()).toEqual(['web only', '42']);
+    expect(chatCells()).toEqual(['42', 'web only']);
   });
 
   it('localizes the web-only label in Korean', async () => {
     localStorage.setItem('st-lang', 'ko');
     await render(d(NoticeList, { notifications: rows }));
-    expect(chatCells()).toEqual(['웹 전용', '42']);
+    expect(chatCells()).toEqual(['42', '웹 전용']);
   });
 });
 
@@ -94,7 +94,7 @@ describe('NoticeList highlight', () => {
       await render(d(NoticeList, { notifications: rows, highlightId: 99 }));
       expect(marked()).toEqual([]);
       expect(spy).toHaveBeenCalledTimes(0);
-      expect(chatCells()).toEqual(['web only', '42']);
+      expect(chatCells()).toEqual(['42', 'web only']);
     } finally {
       spy.mockRestore();
     }
