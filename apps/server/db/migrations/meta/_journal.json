@@ -92,6 +92,27 @@
       "when": 1795472882722,
       "tag": "0012_fearless_darkhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "5",
+      "when": 1795554207776,
+      "tag": "0013_mr_rename_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "5",
+      "when": 1795554208015,
+      "tag": "0014_mr_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "5",
+      "when": 1795554208249,
+      "tag": "0015_strategy_runs_trim",
+      "breakpoints": true
     }
   ]
 }

@@ -55,3 +55,62 @@ describe('migration 0010 SQL', () => {
     expect(backfill).toBeGreaterThan(add)
   })
 })
+
+describe('mr split migrations', () => {
+  const migrationsDir = fileURLToPath(new URL('../db/migrations/', import.meta.url))
+  const TABLES = ['pool_edits', 'buckets', 'orders', 'fills', 'ledger', 'pending_fills', 'fill_corrections', 'vision_reviews', 'sim_runs', 'sim_days']
+  const INDEXES = [
+    ['mr_orders', 'orders_run_trade_date_idx'],
+    ['mr_orders', 'orders_trade_date_idx'],
+    ['mr_vision_reviews', 'vision_reviews_pending_fill_unique'],
+    ['mr_vision_reviews', 'vision_reviews_capture_idx'],
+    ['mr_fill_corrections', 'fill_corrections_fill_idx'],
+    ['mr_sim_runs', 'sim_runs_draft_created_idx'],
+    ['mr_sim_days', 'sim_days_sim_run_trade_idx'],
+  ] as const
+  const MOVED = ['pool_cents', 'buy_gap_ppm', 'sell_gap_ppm', 'cut_loss_ppm', 'state_json']
+  const NEW_TAGS = ['0013_mr_rename_tables', '0014_mr_runs', '0015_strategy_runs_trim']
+
+  const statements = async (tag: string) =>
+    (await Bun.file(`${migrationsDir}${tag}.sql`).text()).split('--> statement-breakpoint').map((c) => c.trim())
+
+  test('journal timestamps strictly increase', async () => {
+    const journal = (await Bun.file(`${migrationsDir}meta/_journal.json`).json()) as { entries: { when: number; tag: string }[] }
+    journal.entries.forEach((e, i) => {
+      if (i > 0) expect(e.when).toBeGreaterThan(journal.entries[i - 1]!.when)
+    })
+    expect(journal.entries.slice(-3).map((e) => e.tag)).toEqual(NEW_TAGS)
+  })
+
+  test('0013 renames ten tables in one statement, then seven indexes', async () => {
+    const chunks = await statements('0013_mr_rename_tables')
+    expect(chunks).toHaveLength(8)
+    expect(chunks[0]!.startsWith('RENAME TABLE IF EXISTS')).toBe(true)
+    for (const t of TABLES) expect(chunks[0]).toContain(`\`${t}\` TO \`mr_${t}\``)
+    INDEXES.forEach(([table, old], i) => {
+      expect(chunks[i + 1]).toBe(`ALTER TABLE \`${table}\` RENAME INDEX IF EXISTS \`${old}\` TO \`mr_${old}\`;`)
+    })
+  })
+
+  test('0014 creates mr_runs and copies with INSERT IGNORE', async () => {
+    const chunks = await statements('0014_mr_runs')
+    expect(chunks).toHaveLength(2)
+    expect(chunks[0]!.startsWith('CREATE TABLE IF NOT EXISTS `mr_runs`')).toBe(true)
+    expect(chunks[1]!.startsWith('INSERT IGNORE INTO `mr_runs`')).toBe(true)
+    expect(chunks[1]).toContain('FROM `strategy_runs`')
+  })
+
+  test('0015 drops the five moved columns in one statement', async () => {
+    const chunks = await statements('0015_strategy_runs_trim')
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]!.startsWith('ALTER TABLE `strategy_runs`')).toBe(true)
+    for (const c of MOVED) expect(chunks[0]).toContain(`DROP COLUMN IF EXISTS \`${c}\``)
+  })
+
+  test('no new file both copies into mr_runs and drops a column', async () => {
+    for (const tag of NEW_TAGS) {
+      const text = await Bun.file(`${migrationsDir}${tag}.sql`).text()
+      expect(/INSERT\s+IGNORE\s+INTO\s+`mr_runs`/.test(text) && /DROP\s+COLUMN/i.test(text)).toBe(false)
+    }
+  })
+})
