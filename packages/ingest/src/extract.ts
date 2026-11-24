@@ -3,6 +3,7 @@ export interface RawFill { side: 'buy' | 'sell'; ticker: string; shares: number;
 export type ExtractResult = { ok: true; fills: RawFill[] } | { ok: false; reason: 'http' | 'unparseable' | 'empty'; detail: string }
 
 import { MPOP_FILL_EXTRACTION_PROMPT } from './prompt';
+import { maskKey } from './mask-key';
 
 const PRICE_RE = /^\d+(\.\d{1,4})?$/;
 const ORDER_PRICE_RE = /^\d{1,9}(\.\d{1,4})?$/;
@@ -65,7 +66,6 @@ function normalizeFill(raw: any): RawFill | null {
 }
 
 const MAX_ERROR_MESSAGE = 200;
-const KEY_RUN = 8;
 
 const hasText = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isSentenceEnd = (c: number) => c === 46 || c === 63 || c === 33; // . ? !
@@ -74,19 +74,6 @@ function stripTrailingPunctuation(s: string): string {
   let end = s.length;
   while (end > 0 && isSentenceEnd(s.charCodeAt(end - 1))) end--;
   return s.slice(0, end).trim();
-}
-
-// Services echo the API key in 401 bodies, sometimes whole: a word holding the whole key
-// (keys of 4-7 chars) or any 8-char run of it (keys of 8+) is replaced.
-function redactKey(text: string, apiKey: string): string {
-  if (apiKey.length < 4) return text;
-  const runs: string[] = [];
-  if (apiKey.length < KEY_RUN) runs.push(apiKey);
-  else for (let i = 0; i + KEY_RUN <= apiKey.length; i++) runs.push(apiKey.slice(i, i + KEY_RUN));
-  return text
-    .split(/(\s+)/)
-    .map((tok) => (tok !== '' && !/^\s+$/.test(tok) && runs.some((r) => tok.includes(r)) ? '[redacted]' : tok))
-    .join('');
 }
 
 function pickErrorMessage(body: string): string {
@@ -103,10 +90,10 @@ function pickErrorMessage(body: string): string {
   return body;
 }
 
-// One line, key redacted before the cap, no trailing sentence punctuation (it is placed in "— {detail}.").
+// One line, key masked before the cap, no trailing sentence punctuation (it is placed in "— {detail}.").
 function normalizeErrorText(text: string, apiKey: string): string {
   const collapsed = text.replace(/\s+/g, ' ').trim();
-  const msg = stripTrailingPunctuation(redactKey(collapsed, apiKey));
+  const msg = stripTrailingPunctuation(maskKey(collapsed, apiKey));
   const cps = [...msg];
   return cps.length > MAX_ERROR_MESSAGE ? `${cps.slice(0, MAX_ERROR_MESSAGE - 1).join('')}…` : msg;
 }

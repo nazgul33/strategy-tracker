@@ -71,7 +71,7 @@ describe('capture routing core', () => {
     expect(keyParts(JSON.stringify(r.events))).toEqual([])
     expect(r.events[0]).toMatchObject({
       reason: 'http',
-      detail: 'http 401: Incorrect API key provided: [redacted] masked sk-LEA*********9c2e',
+      detail: 'http 401: Incorrect API key provided: sk-L....9c2e; masked sk-LEA*********9c2e',
       vision: { keySource: 'env' },
     })
   })

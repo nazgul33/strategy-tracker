@@ -94,21 +94,46 @@ test('a thrown message is collapsed and capped like a body', async () => {
 test('a thrown message of only punctuation reads as network error', async () => {
   expect(await detailOf(throwing('...'))).toEqual(['http', 'network error'])
 })
-test('the whole key and 8+ character runs of it are redacted; masked forms and short runs are kept', async () => {
-  const KEY = 'sk-LEAKCHECK-7f3a9c2e'
+const KEY = 'sk-LEAKCHECK-7f3a9c2e'
+test('the whole key and 8+ character runs of it are masked; masked forms and short runs are kept', async () => {
   const cfg = { ...CFG, apiKey: KEY }
   const masked = JSON.stringify({ error: { message: 'Incorrect API key provided: sk-LEA*********9c2e. You can find your API key at https://x.' } })
   expect(await detailOf(failWith(401, masked), cfg)).toEqual(['http', 'http 401: Incorrect API key provided: sk-LEA*********9c2e. You can find your API key at https://x'])
-  expect(await detailOf(failWith(401, `bad key ${KEY}`), cfg)).toEqual(['http', 'http 401: bad key [redacted]'])
-  expect(await detailOf(failWith(401, 'key ending CHECK-7f3a9c2e rejected'), cfg)).toEqual(['http', 'http 401: key ending [redacted] rejected'])
+  expect(await detailOf(failWith(401, `bad key ${KEY}`), cfg)).toEqual(['http', 'http 401: bad key sk-L....9c2e'])
+  expect(await detailOf(failWith(401, 'key ending CHECK-7f3a9c2e rejected'), cfg)).toEqual(['http', 'http 401: key ending ....9c2e rejected'])
   expect(await detailOf(failWith(401, 'key ending 7f3a9c2 rejected'), cfg)).toEqual(['http', 'http 401: key ending 7f3a9c2 rejected'])
   const thrown = (async () => { throw new Error(`refused for Bearer ${KEY}`) }) as unknown as typeof fetch
-  expect(await detailOf(thrown, cfg)).toEqual(['http', 'refused for Bearer [redacted]'])
+  expect(await detailOf(thrown, cfg)).toEqual(['http', 'refused for Bearer sk-L....9c2e'])
 })
-test('ordinary words sharing short runs with the key are kept; short keys match whole only', async () => {
+test('ordinary words sharing short runs with the key are kept; keys of 8 characters or fewer are never masked', async () => {
   expect(await detailOf(failWith(404, 'project not found for this deployment'), { ...CFG, apiKey: 'sk-proj-abcdef123456' }))
     .toEqual(['http', 'http 404: project not found for this deployment'])
   expect(await detailOf(failWith(401, 'token abcde refused, abcd ok'), { ...CFG, apiKey: 'abcde' }))
-    .toEqual(['http', 'http 401: token [redacted] refused, abcd ok'])
+    .toEqual(['http', 'http 401: token abcde refused, abcd ok'])
   expect(await detailOf(failWith(401, 'kick back k'), { ...CFG, apiKey: 'k' })).toEqual(['http', 'http 401: kick back k'])
+})
+test('a mask at the end of the message loses its dots to the punctuation strip', async () => {
+  const cfg = { ...CFG, apiKey: KEY }
+  expect(await detailOf(failWith(401, 'unknown key sk-LEAKCHECK'), cfg)).toEqual(['http', 'http 401: unknown key sk-L'])
+  expect(await detailOf(failWith(401, 'AKCHECK-7f'), cfg)).toEqual(['http', 'http 401'])
+  expect(await detailOf(throwing('AKCHECK-7f'), cfg)).toEqual(['http', 'network error'])
+})
+test('the key is masked before the cap', async () => {
+  expect(await detailOf(failWith(401, `${'a'.repeat(180)} ${KEY}`), { ...CFG, apiKey: KEY }))
+    .toEqual(['http', `http 401: ${'a'.repeat(180)} sk-L....9c2e`])
+})
+test("OpenAI's masked project key loses its 8-character prefix run", async () => {
+  expect(await detailOf(failWith(401, 'Incorrect API key provided: sk-proj-****3456'), { ...CFG, apiKey: 'sk-proj-abcdef123456' }))
+    .toEqual(['http', 'http 401: Incorrect API key provided: sk-p....****3456'])
+})
+test('masking a long repetition of a key prefix is linear', async () => {
+  const started = performance.now()
+  expect(await detailOf(failWith(401, 'sk-LEAKCHECK'.repeat(40_000)), { ...CFG, apiKey: KEY }))
+    .toEqual(['http', `http 401: ${'sk-L....'.repeat(24)}sk-L...…`])
+  expect(performance.now() - started).toBeLessThan(1000)
+})
+test('masking with a key whose windows repeat is linear', async () => {
+  const started = performance.now()
+  expect(await detailOf(failWith(401, 'ab'.repeat(250_000)), { ...CFG, apiKey: 'ab'.repeat(32) })).toEqual(['http', 'http 401'])
+  expect(performance.now() - started).toBeLessThan(1000)
 })

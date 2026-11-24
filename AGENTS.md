@@ -23,7 +23,7 @@ packages/          each package also has package.json tsconfig.json
   calendar/src/    index.ts nyse-data.ts crosscheck.ts       (+ calendar/test/*)
   market-data/src/ yahoo.ts                                  (+ market-data/test/*)
   strategies/src/  index.ts mean-reversion.ts                (+ strategies/test/*)
-  ingest/src/      extract.ts prompt.ts                      (+ ingest/test/*)
+  ingest/src/      extract.ts mask-key.ts prompt.ts          (+ ingest/test/*)
   telegram/src/    digest.ts bot.ts i18n.ts                  (+ telegram/test/*)
 apps/server/       drizzle.config.ts package.json tsconfig.json
   src/

@@ -172,7 +172,7 @@ describe('POST /api/captures', () => {
       expect(keyParts(text)).toEqual([])
       const event = JSON.parse(text).events[0]
       expect(event).toMatchObject({ type: 'bad-extract', reason: 'http' })
-      expect(event.detail).toContain('[redacted]')
+      expect(event.detail).toBe('http 401: Incorrect API key provided: sk-L....9c2e; masked sk-LEA*********9c2e')
       expect(keyParts(JSON.stringify(errors.mock.calls))).toEqual([])
       expect(f.notifications).toEqual([])
     } finally {

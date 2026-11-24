@@ -95,7 +95,7 @@ describe('could not read fills replies', () => {
       expect(keyParts(JSON.stringify(logs.mock.calls))).toEqual([])
       expect(keyParts(JSON.stringify(warns.mock.calls))).toEqual([])
       expect(sent[0]!.split('\n')[0]).toBe(
-        'The vision service did not accept the request — http 401: Incorrect API key provided: [redacted] masked sk-LEA*********9c2e.',
+        'The vision service did not accept the request — http 401: Incorrect API key provided: sk-L....9c2e; masked sk-LEA*********9c2e.',
       )
       expect(sent[0]).toContain('key (Settings)')
     } finally {
