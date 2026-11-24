@@ -117,9 +117,9 @@ describe('captureEventLines', () => {
     expect(view(captureEventLines({ type: 'bad-extract', reason: 'empty', detail: 'no fills recognized' }, t))).toEqual([emptyLine]);
   });
 
-  test('bad-extract http: error, the vision config in use, and the setup advice linking to Settings', () => {
+  test('bad-extract http: error, the vision config in use, the setup advice linking to Settings, and the original error', () => {
     expect(view(captureEventLines({ type: 'bad-extract', reason: 'http', detail: "http 404: The model 'x' is not loaded", vision: VISION }, t))).toEqual([
-      { tone: 'error', depth: 0, text: "The vision service did not accept the request — http 404: The model 'x' is not loaded.", href: undefined },
+      { tone: 'error', depth: 0, text: 'The vision service did not accept the request.', href: undefined },
       { tone: 'info', depth: 1, text: 'In use: model qwen2.5-vl (Settings), URL http://lm:1234/v1 (env), key (not set).', href: undefined },
       {
         tone: 'info',
@@ -127,6 +127,7 @@ describe('captureEventLines', () => {
         text: 'This is a vision setup problem, not the screenshot. A URL or model changed in Settings applies after a server restart.',
         href: '#/settings',
       },
+      { tone: 'info', depth: 1, text: "Original error: http 404: The model 'x' is not loaded", href: undefined },
     ]);
   });
 
@@ -143,8 +144,8 @@ describe('captureEventLines', () => {
   });
 
   test('brace text in the detail stays literal', () => {
-    expect(captureEventLines({ type: 'bad-extract', reason: 'http', detail: 'http 400: unknown field {model}', vision: VISION }, t)[0]!.text).toBe(
-      'The vision service did not accept the request — http 400: unknown field {model}.',
+    expect(captureEventLines({ type: 'bad-extract', reason: 'http', detail: 'http 400: unknown field {model}', vision: VISION }, t)[3]!.text).toBe(
+      'Original error: http 400: unknown field {model}',
     );
   });
 

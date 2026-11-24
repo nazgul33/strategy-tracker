@@ -14,9 +14,10 @@ test('ko: each kind reads as on Telegram', () => {
   const texts = (event: Parameters<typeof captureEventLines>[0]) => captureEventLines(event, ko).map((l) => l.text);
 
   expect(texts({ type: 'bad-extract', reason: 'http', detail: 'http 404: Not Found', vision: VISION })).toEqual([
-    '비전 서비스가 요청을 받아들이지 않았습니다 — http 404: Not Found.',
+    '비전 서비스가 요청을 받아들이지 않았습니다.',
     '사용 중: 모델 qwen2.5-vl (설정), URL http://lm:1234/v1 (환경변수), 키 (API Key 없음).',
     '스크린샷 문제가 아니라 비전 설정 문제입니다. 설정에서 바꾼 URL이나 모델은 서버를 다시 시작해야 적용됩니다.',
+    '원본 오류: http 404: Not Found',
   ]);
 
   expect(texts({ type: 'bad-extract', reason: 'unparseable', detail: 'no json', vision: { ...VISION, keySource: 'settings' } })).toEqual([

@@ -6,9 +6,10 @@ import { LEAK_KEY, keyEchoFetch, keyParts } from './wire-capture-fakes'
 const IMAGE = { base64: 'aGVsbG8=', mime: 'image/png' }
 const ADVICE_EN = 'This is a vision setup problem, not the screenshot. A URL or model changed in Settings applies after a server restart.'
 const TEXT = [
-  'The vision service did not accept the request — http 500.',
+  'The vision service did not accept the request.',
   'In use: model m (env), URL https://vision.example/v1 (env), key (env).',
   ADVICE_EN,
+  'Original error: http 500',
 ].join('\n')
 // The vision endpoint answers 500, so the extract fails with detail 'http 500'.
 const vision500 = (async () => ({ ok: false, status: 500 })) as unknown as typeof fetch
@@ -73,9 +74,10 @@ describe('could not read fills replies', () => {
     const { f, handlers } = setup({ lang: 'ko' })
     await handlers.onPhoto('777', IMAGE)
     expect(rows(f)).toEqual([[null, '777', [
-      '비전 서비스가 요청을 받아들이지 않았습니다 — http 500.',
+      '비전 서비스가 요청을 받아들이지 않았습니다.',
       '사용 중: 모델 m (환경변수), URL https://vision.example/v1 (환경변수), 키 (환경변수).',
       '스크린샷 문제가 아니라 비전 설정 문제입니다. 설정에서 바꾼 URL이나 모델은 서버를 다시 시작해야 적용됩니다.',
+      '원본 오류: http 500',
     ].join('\n')]])
   })
 
@@ -94,9 +96,8 @@ describe('could not read fills replies', () => {
       expect(keyParts(JSON.stringify(errors.mock.calls))).toEqual([])
       expect(keyParts(JSON.stringify(logs.mock.calls))).toEqual([])
       expect(keyParts(JSON.stringify(warns.mock.calls))).toEqual([])
-      expect(sent[0]!.split('\n')[0]).toBe(
-        'The vision service did not accept the request — http 401: Incorrect API key provided: sk-L....9c2e; masked sk-LEA*********9c2e.',
-      )
+      expect(sent[0]!.split('\n')[0]).toBe('The vision service did not accept the request.')
+      expect(sent[0]!.split('\n')[3]).toBe('Original error: http 401: Incorrect API key provided: sk-L....9c2e; masked sk-LEA*********9c2e')
       expect(sent[0]).toContain('key (Settings)')
     } finally {
       errors.mockRestore()
@@ -123,6 +124,7 @@ describe('could not read fills replies', () => {
     expect(src.match(/await tellBadExtract\(chatId, event\)/g)).toHaveLength(1)
     expect(src.match(/await tellBadExtract\(chatId, \{ type: 'bad-extract', reason: 'empty', detail: 'no fills recognized' \}\)/g)).toHaveLength(1)
     expect(msg.match(/t\('capture-bad-extract-/g)).toHaveLength(3)
+    expect(msg.match(/t\('capture-vision-original-error'/g)).toHaveLength(1)
     expect(core.match(/emit\(badExtract\(/g)).toHaveLength(2)
     expect(core.match(/emit\(badExtract\(extract\.reason, extract\.detail, /g)).toHaveLength(1)
     expect(core.match(/emit\(badExtract\('empty', 'no fills recognized', /g)).toHaveLength(1)

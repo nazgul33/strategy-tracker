@@ -24,6 +24,10 @@ function visionInUseLine(v: VisionInUseDto, t: Translate): UploadLine {
   return line('info', 1, t('upload.visionInUse', params));
 }
 
+function originalErrorLine(detail: string, t: Translate): UploadLine {
+  return line('info', 1, t('upload.visionOriginalError', { detail }));
+}
+
 function badExtractLines(event: Extract<CaptureEventDto, { type: 'bad-extract' }>, t: Translate): UploadLine[] {
   if (event.reason === 'empty') return [line('error', 0, t('upload.badExtractEmpty'))];
   if (event.reason === 'unparseable') {
@@ -31,9 +35,10 @@ function badExtractLines(event: Extract<CaptureEventDto, { type: 'bad-extract' }
   }
   if (event.detail === VISION_TIMEOUT_DETAIL) return [line('error', 0, t('upload.visionTimeout'))];
   return [
-    line('error', 0, t('upload.badExtractHttp', { detail: event.detail })),
+    line('error', 0, t('upload.badExtractHttp')),
     visionInUseLine(event.vision, t),
     line('info', 1, t('upload.visionSetupAdvice'), '#/settings'),
+    originalErrorLine(event.detail, t),
   ];
 }
 

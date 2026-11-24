@@ -75,15 +75,16 @@ describe('capture onPhoto — dedup and failures', () => {
       {
         chatId: '777',
         text: [
-          'The vision service did not accept the request — http 500: boom.',
+          'The vision service did not accept the request.',
           'In use: model vision-model (env), URL https://vision.example/v1 (env), key (env).',
           ADVICE_EN,
+          'Original error: http 500: boom',
         ].join('\n'),
       },
     ]);
     expect(fakes.notifications.length).toBe(1);
     expect(fakes.notifications[0]).toMatchObject({ runId: null, chatId: '777' });
-    expect(String(fakes.notifications[0]!.text)).toContain('The vision service did not accept the request — http 500: boom.');
+    expect(String(fakes.notifications[0]!.text)).toContain('Original error: http 500: boom');
   });
 
   test('no active run: user is told, nothing captured', async () => {

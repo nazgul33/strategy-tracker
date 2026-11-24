@@ -7,11 +7,12 @@ const ADVICE_EN = 'This is a vision setup problem, not the screenshot. A URL or 
 const ADVICE_KO = '스크린샷 문제가 아니라 비전 설정 문제입니다. 설정에서 바꾼 URL이나 모델은 서버를 다시 시작해야 적용됩니다.';
 
 describe('badExtractMessage', () => {
-  test('http: main line, in-use line, setup advice', () => {
+  test('http: main line, in-use line, setup advice, original error', () => {
     expect(badExtractMessage({ type: 'bad-extract', reason: 'http', detail: "http 404: The model 'x' is not loaded", vision: VISION }, 'en')).toBe([
-      "The vision service did not accept the request — http 404: The model 'x' is not loaded.",
+      'The vision service did not accept the request.',
       'In use: model qwen2.5-vl (Settings), URL http://lm:1234/v1 (env), key (not set).',
       ADVICE_EN,
+      "Original error: http 404: The model 'x' is not loaded",
     ].join('\n'));
   });
 
@@ -29,9 +30,10 @@ describe('badExtractMessage', () => {
 
   test('Korean, same three events', () => {
     expect(badExtractMessage({ type: 'bad-extract', reason: 'http', detail: "http 404: The model 'x' is not loaded", vision: VISION }, 'ko')).toBe([
-      "비전 서비스가 요청을 받아들이지 않았습니다 — http 404: The model 'x' is not loaded.",
+      '비전 서비스가 요청을 받아들이지 않았습니다.',
       '사용 중: 모델 qwen2.5-vl (설정), URL http://lm:1234/v1 (환경변수), 키 (API Key 없음).',
       ADVICE_KO,
+      "원본 오류: http 404: The model 'x' is not loaded",
     ].join('\n'));
     expect(badExtractMessage({ type: 'bad-extract', reason: 'unparseable', detail: 'no json', vision: { ...VISION, keySource: 'env' } }, 'ko')).toBe([
       '비전 모델이 응답했지만 트래커가 이해할 수 있는 형식이 아닙니다 — no json. 다시 시도하고, 계속 반복되면 비전 모델을 확인하세요.',
@@ -42,7 +44,7 @@ describe('badExtractMessage', () => {
   });
 
   test('a detail with brace text is not substituted', () => {
-    expect(badExtractMessage({ type: 'bad-extract', reason: 'http', detail: 'http 400: unknown field {model}', vision: VISION }, 'en').split('\n')[0])
-      .toBe('The vision service did not accept the request — http 400: unknown field {model}.');
+    expect(badExtractMessage({ type: 'bad-extract', reason: 'http', detail: 'http 400: unknown field {model}', vision: VISION }, 'en').split('\n')[3])
+      .toBe('Original error: http 400: unknown field {model}');
   });
 });

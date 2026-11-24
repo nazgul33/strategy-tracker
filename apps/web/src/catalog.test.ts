@@ -104,7 +104,7 @@ describe('i18n catalogs', () => {
 describe('lookup', () => {
   test('values are inserted literally', () => {
     for (const seq of ["$'", '$&', '$$', '$`', '$1']) {
-      expect(lookup('en', 'upload.badExtractHttp', { detail: `a ${seq} b` })).toBe(`The vision service did not accept the request — a ${seq} b.`);
+      expect(lookup('en', 'upload.visionOriginalError', { detail: `a ${seq} b` })).toBe(`Original error: a ${seq} b`);
     }
   });
 
@@ -120,6 +120,6 @@ describe('lookup', () => {
   });
 
   test('inherited properties do not match', () => {
-    expect(lookup('en', 'upload.badExtractHttp', Object.create({ detail: 'x' }))).toContain('{detail}');
+    expect(lookup('en', 'upload.visionOriginalError', Object.create({ detail: 'x' }))).toContain('{detail}');
   });
 });
