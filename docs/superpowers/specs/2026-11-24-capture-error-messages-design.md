@@ -112,7 +112,10 @@ Supersedes the `[redacted]` rule and the "Known limits" note.
 
 ### 3. A fourth kind: not an OpenAI-compatible answer
 
-- The extractor classifies a 200 answer that is not the expected envelope as `incompatible` instead of `unparseable`: the body is not JSON (`response body not json`) or it has no message content (`no content`). The other `unparseable` cases (the model's own text is not usable JSON) stay `unparseable`.
+- The extractor classifies a 200 answer that is not shaped like a chat-completions reply as `incompatible` instead of `unparseable`: the body is not JSON (`response body not json`), or it is JSON without a `choices[0].message` object (`no content`; `{}`, an error object, an empty `choices`).
+- *(Narrowed during the build, my call.)* A reply that does have a message object but no text content (`content: null` from a reasoning model that ran out of tokens, a refusal, an array of parts) stays `unparseable` with `no content`: the API is compatible, and sending the operator to check compatibility would be wrong.
+- *(Added during the build, my call.)* A body read that fails for a reason other than invalid JSON (the connection dropped while the answer was streaming, an abort) is an `http` failure with the thrown message, not `incompatible`.
+- The other `unparseable` cases (the model's own text is not usable JSON) stay `unparseable`.
 - The event's `reason` gains `incompatible`, which carries `vision` like `http` and `unparseable`.
 
 | Line | English |
