@@ -68,10 +68,11 @@ const MAX_ERROR_MESSAGE = 200;
 const KEY_RUN = 8;
 
 const hasText = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
-// A loop, not /\.+$/: that regex backtracks quadratically on a long run of periods before other text.
-function stripTrailingPeriods(s: string): string {
+const isSentenceEnd = (c: number) => c === 46 || c === 63 || c === 33; // . ? !
+// A loop, not /[.?!]+$/: that regex backtracks quadratically on a long run of punctuation before other text.
+function stripTrailingPunctuation(s: string): string {
   let end = s.length;
-  while (end > 0 && s.charCodeAt(end - 1) === 46) end--;
+  while (end > 0 && isSentenceEnd(s.charCodeAt(end - 1))) end--;
   return s.slice(0, end).trim();
 }
 
@@ -98,16 +99,21 @@ function pickErrorMessage(body: string): string {
   if (hasText(parsed?.error?.message)) return parsed.error.message;
   if (hasText(parsed?.error)) return parsed.error;
   if (hasText(parsed?.message)) return parsed.message;
+  if (hasText(parsed?.detail)) return parsed.detail;
   return body;
 }
 
-function visionErrorDetail(status: number, body: string, apiKey: string): string {
-  const collapsed = pickErrorMessage(body).replace(/\s+/g, ' ').trim();
-  const msg = stripTrailingPeriods(redactKey(collapsed, apiKey));
-  if (msg === '') return `http ${status}`;
+// One line, key redacted before the cap, no trailing sentence punctuation (it is placed in "— {detail}.").
+function normalizeErrorText(text: string, apiKey: string): string {
+  const collapsed = text.replace(/\s+/g, ' ').trim();
+  const msg = stripTrailingPunctuation(redactKey(collapsed, apiKey));
   const cps = [...msg];
-  const capped = cps.length > MAX_ERROR_MESSAGE ? `${cps.slice(0, MAX_ERROR_MESSAGE - 1).join('')}…` : msg;
-  return `http ${status}: ${capped}`;
+  return cps.length > MAX_ERROR_MESSAGE ? `${cps.slice(0, MAX_ERROR_MESSAGE - 1).join('')}…` : msg;
+}
+
+function visionErrorDetail(status: number, body: string, apiKey: string): string {
+  const msg = normalizeErrorText(pickErrorMessage(body), apiKey);
+  return msg === '' ? `http ${status}` : `http ${status}: ${msg}`;
 }
 
 export async function extractFills(
@@ -138,8 +144,7 @@ export async function extractFills(
       body: JSON.stringify(body),
     });
   } catch (e: any) {
-    const redacted = redactKey(String(e?.message ?? e), cfg.apiKey);
-    return { ok: false, reason: 'http', detail: stripTrailingPeriods(redacted) || redacted };
+    return { ok: false, reason: 'http', detail: normalizeErrorText(String(e?.message ?? e), cfg.apiKey) || 'network error' };
   }
   if (!res.ok) {
     let errBody = '';

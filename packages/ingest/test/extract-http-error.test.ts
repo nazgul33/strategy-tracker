@@ -24,8 +24,18 @@ test('top-level string error, then top-level message', async () => {
   expect(await detailOf(failWith(401, '{"message":"Unauthorized"}'))).toEqual(['http', 'http 401: Unauthorized'])
 })
 test('other JSON and plain text are used as the body text', async () => {
-  expect(await detailOf(failWith(404, '{"detail":"Not Found"}'))).toEqual(['http', 'http 404: {"detail":"Not Found"}'])
+  expect(await detailOf(failWith(404, '{"code":"E1"}'))).toEqual(['http', 'http 404: {"code":"E1"}'])
   expect(await detailOf(failWith(502, 'Bad Gateway'))).toEqual(['http', 'http 502: Bad Gateway'])
+})
+test('a top-level string detail is picked; a non-string detail keeps the body text', async () => {
+  expect(await detailOf(failWith(404, '{"detail":"Not Found"}'))).toEqual(['http', 'http 404: Not Found'])
+  const validation = '{"detail":[{"loc":["body","model"],"msg":"field required"}]}'
+  expect(await detailOf(failWith(422, validation))).toEqual(['http', `http 422: ${validation}`])
+})
+test('trailing ? and ! are stripped too', async () => {
+  expect(await detailOf(failWith(404, 'Did you mean qwen?'))).toEqual(['http', 'http 404: Did you mean qwen'])
+  expect(await detailOf(failWith(404, 'No!?.'))).toEqual(['http', 'http 404: No'])
+  expect(await detailOf(failWith(404, '?!.'))).toEqual(['http', 'http 404'])
 })
 test('trailing periods are trimmed; a message of only periods leaves http <status>', async () => {
   expect(await detailOf(failWith(404, 'Model not found.'))).toEqual(['http', 'http 404: Model not found'])
@@ -54,6 +64,11 @@ test('a long run of periods that is not at the end is handled in linear time', a
   expect(await detailOf(failWith(500, '.'.repeat(200_000) + 'x'))).toEqual(['http', `http 500: ${'.'.repeat(199)}…`])
   expect(performance.now() - started).toBeLessThan(1000)
 })
+test('a long run of question marks that is not at the end is handled in linear time', async () => {
+  const started = performance.now()
+  expect(await detailOf(failWith(500, '?'.repeat(200_000) + 'x'))).toEqual(['http', `http 500: ${'?'.repeat(199)}…`])
+  expect(performance.now() - started).toBeLessThan(1000)
+})
 test('the body is read only on a non-OK answer', async () => {
   let textCalls = 0
   const ok = (async () => ({ ok: true, status: 200, text: async () => { textCalls++; return '' }, json: async () => ({ choices: [{ message: { content: '{"fills":[]}' } }] }) })) as unknown as typeof fetch
@@ -65,6 +80,19 @@ test('a network failure keeps the thrown message', async () => {
   expect(await detailOf(down)).toEqual(['http', 'connect ECONNREFUSED 127.0.0.1:1234'])
   const hangUp = (async () => { throw new Error('socket hang up.') }) as unknown as typeof fetch
   expect(await detailOf(hangUp)).toEqual(['http', 'socket hang up'])
+})
+const throwing = (message: string) => (async () => { throw new Error(message) }) as unknown as typeof fetch
+test('a refused connection reads as one sentence without trailing punctuation', async () => {
+  // Bun 1.4.5's own message for fetch('http://127.0.0.1:9/') on a closed port
+  expect(await detailOf(throwing('ECONNREFUSED: Unable to connect. Is the computer able to access the url?')))
+    .toEqual(['http', 'ECONNREFUSED: Unable to connect. Is the computer able to access the url'])
+})
+test('a thrown message is collapsed and capped like a body', async () => {
+  expect(await detailOf(throwing('a\n\n  b'))).toEqual(['http', 'a b'])
+  expect(await detailOf(throwing('a'.repeat(201)))).toEqual(['http', `${'a'.repeat(199)}…`])
+})
+test('a thrown message of only punctuation reads as network error', async () => {
+  expect(await detailOf(throwing('...'))).toEqual(['http', 'network error'])
 })
 test('the whole key and 8+ character runs of it are redacted; masked forms and short runs are kept', async () => {
   const KEY = 'sk-LEAKCHECK-7f3a9c2e'

@@ -190,7 +190,10 @@ Telegram and the web word a failed capture the same way:
 - **"No fills were found in this image."**: the screenshot does not show the fills list; book the
   fill manually.
 
-The API key itself is never shown, only where it came from.
+The API key itself is never shown, only where it came from. In the service's own text, any word that
+contains the key, or 8 or more consecutive characters of it, is replaced by `[redacted]`. With a
+word-like placeholder key (`test`, `local`, `sk-no-key-required`) that can also hide ordinary words,
+such as a model name containing "test": for a vision server that needs no key, leave the key unset.
 
 ## Schedules
 
