@@ -247,7 +247,7 @@ async function main(): Promise<void> {
     const foreign = await req('POST', `/runs/${foreignRun.id}/orders/${sellLoc.id}/cancel`, { reason: 'other' }, token)
     ok(foreign.status === 404 && (await jsonOf(foreign)).error === 'order-not-found', 'cancelling via a foreign run -> 404 order-not-found')
 
-    const expectedCancelMsg = `\u{1F6AB} Cancelled: ${sellLoc.kind} bucket ${sellLoc.bucketIdx} \u2014 ${CATALOG['reason-stale-price'].en} (${formatUsd(BigInt(sellLoc.limitPrice))})`
+    const expectedCancelMsg = `\u{1F6AB} Cancelled: ${sellLoc.kind} bucket ${sellLoc.bucketIdx + 1} \u2014 ${CATALOG['reason-stale-price'].en} (${formatUsd(BigInt(sellLoc.limitPrice))})`
     ok(httpSends.length === 1 && httpSends[0].chat === 'chat-1' && httpSends[0].text === expectedCancelMsg,
       `exactly one Telegram cancel push to the allowed chat, exact text: ${JSON.stringify(httpSends)}`)
     const notifs = (await jsonOf(await req('GET', `/runs/${runId}/notifications`, undefined, token))) as any[]

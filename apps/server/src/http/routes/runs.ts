@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { DomainError, emptyState } from '@st/core'
 import { parseUsd, formatUsd } from '@st/core/money'
 import { progressView } from '@st/strategies'
-import { t as tgT } from '@st/telegram/i18n'
+import { bucketNo, t as tgT } from '@st/telegram/i18n'
 import { seedRun, manualFill, cancelOrder } from '../../domain/booking'
 import type { RawFill } from '@st/ingest'
 import type { OHLCBar } from '@st/market-data'
@@ -267,7 +267,7 @@ export function runsRouter(deps: HttpDeps): Hono {
     const lang = deps.defaultSettings.digestLang
     const text = tgT('order-cancelled', lang, {
       kind: order.kind,
-      bucket: order.bucketIdx,
+      bucket: bucketNo(order.bucketIdx),
       price: formatUsd(order.limitPrice),
       reason: tgT('reason-' + order.cancelReason, lang),
     })

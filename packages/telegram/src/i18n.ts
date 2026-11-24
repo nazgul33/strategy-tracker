@@ -27,6 +27,7 @@ export const CATALOG: Record<string, MsgEntry> = {
   'run-already-planned': { en: 'ℹ️ Run #{id} {ticker}: today\'s orders were already planned, so this run was not planned again.', ko: 'ℹ️ 런 #{id} {ticker}: 오늘 주문이 이미 계획되어 있어 다시 계획하지 않았습니다.' },
   'capture-booked': { en: 'Booked {ticker} {side} {shares} sh @ ${price} on {date} — confirm?', ko: '{ticker} {side} {shares}주 @ ${price} ({date}) 예약 — 확인하시겠습니까?' },
   'booked': { en: 'Booked {ticker} {side} {shares} sh @ ${price} on {date} into bucket {bucket}', ko: '{ticker} {side} {shares}주 @ ${price} ({date})을(를) 버킷 {bucket}에 예약했습니다' },
+  'booked-no-bucket': { en: 'Booked {ticker} {side} {shares} sh @ ${price} on {date}', ko: '{ticker} {side} {shares}주 @ ${price} ({date})을(를) 예약했습니다' },
   'rejected-line': { en: 'Rejected — fill discarded.', ko: '거부됨 — 체결이 폐기되었습니다.' },
   'duplicate-capture': { en: 'Duplicate capture — all fills already booked or pending, or a correction is waiting in Pending.', ko: '중복 스냅샷 — 모든 체결이 이미 예약되었거나 대기 중이거나, 수정 제안이 \'확인 대기\'에 있습니다.' },
   'capture-conflicts-head': { en: 'Conflicts — these were not booked:', ko: '충돌 — 아래 체결은 예약되지 않았습니다:' },

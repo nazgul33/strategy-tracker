@@ -1,5 +1,5 @@
 import { formatUsd } from '@st/core'
-import { t } from '@st/telegram/i18n'
+import { bucketNo, t } from '@st/telegram/i18n'
 import type { Lang } from '@st/telegram/i18n'
 import type { BookingNotifier } from '../domain/booking'
 import type { SellLeg } from '../domain/sell-match'
@@ -25,9 +25,9 @@ export function makeBookingNotifier(deps: BookingNotifierDeps): BookingNotifier 
 
   const legText = (leg: SellLeg): string =>
     leg.kind === 'market_sell'
-      ? t('sell-attributed-alt-market', deps.lang, { bucket: leg.bucketIdx, leg: t('leg-market_sell', deps.lang) })
+      ? t('sell-attributed-alt-market', deps.lang, { bucket: bucketNo(leg.bucketIdx), leg: t('leg-market_sell', deps.lang) })
       : t('sell-attributed-alt', deps.lang, {
-          bucket: leg.bucketIdx,
+          bucket: bucketNo(leg.bucketIdx),
           leg: t(`leg-${leg.kind}`, deps.lang),
           limit: formatUsd(leg.limitPrice),
           distance: formatUsd(leg.distance),
@@ -46,14 +46,14 @@ export function makeBookingNotifier(deps: BookingNotifierDeps): BookingNotifier 
 
   return {
     siblingCancelled: async (runId, order) => {
-      const params = { ...(await runParams(runId)), bucket: order.bucketIdx, leg: t(`leg-${order.kind}`, deps.lang) }
+      const params = { ...(await runParams(runId)), bucket: bucketNo(order.bucketIdx), leg: t(`leg-${order.kind}`, deps.lang) }
       const text = order.kind === 'market_sell'
         ? t('sibling-cancelled-market', deps.lang, params)
         : t('sibling-cancelled', deps.lang, { ...params, limit: formatUsd(order.limitPrice) })
       await broadcastNotice(delivery, runId, text, log('sibling-cancelled', order.id))
     },
     buyRemoved: async (runId, order) => {
-      const params = { ...(await runParams(runId)), bucket: order.bucketIdx, leg: t(`leg-${order.kind}`, deps.lang) }
+      const params = { ...(await runParams(runId)), bucket: bucketNo(order.bucketIdx), leg: t(`leg-${order.kind}`, deps.lang) }
       const text = order.kind === 'market_sell'
         ? t('buy-removed-cancelled-market', deps.lang, params)
         : t('buy-removed-cancelled', deps.lang, { ...params, limit: formatUsd(order.limitPrice) })

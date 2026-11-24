@@ -17,7 +17,7 @@ const attribution: SellAttribution = {
   ],
 }
 
-const text = `ℹ️ Run #7 AAPL: sell 10 sh @ $96.50 was booked to bucket 0 stop ($97.00, $0.50 away). Also possible: bucket 1 target ($92.00, $4.50 away); bucket 2 stop ($102.00, $5.50 away). ${WHY_PRICE}`
+const text = `ℹ️ Run #7 AAPL: sell 10 sh @ $96.50 was booked to bucket 1 stop ($97.00, $0.50 away). Also possible: bucket 2 target ($92.00, $4.50 away); bucket 3 stop ($102.00, $5.50 away). ${WHY_PRICE}`
 
 function harness(allowedChatIds: string[], failFor?: string, lang: Lang = 'en') {
   const rows: Array<{ runId: number; chatId: string; text: string }> = []
@@ -46,39 +46,39 @@ describe('booking notifier: siblingCancelled', () => {
   test('siblingCancelled names the run, ticker and leg in the attribution notice\'s words', async () => {
     const { notifier, sent } = harness(['42'])
     await notifier.siblingCancelled(7, order({ kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') }))
-    expect(sent).toEqual([{ chatId: '42', text: `⚠️ Run #7 AAPL: cancel bucket 1 target ($103.00) ${TAIL}` }])
+    expect(sent).toEqual([{ chatId: '42', text: `⚠️ Run #7 AAPL: cancel bucket 2 target ($103.00) ${TAIL}` }])
   })
 
   test('siblingCancelled renders a stop leg', async () => {
     const { notifier, sent } = harness(['42'])
     await notifier.siblingCancelled(7, order({ kind: 'stop_sell', bucketIdx: 0, limitPrice: parseUsd('97.00') }))
-    expect(sent).toEqual([{ chatId: '42', text: `⚠️ Run #7 AAPL: cancel bucket 0 stop ($97.00) ${TAIL}` }])
+    expect(sent).toEqual([{ chatId: '42', text: `⚠️ Run #7 AAPL: cancel bucket 1 stop ($97.00) ${TAIL}` }])
   })
 
   test('siblingCancelled names a market leg without a price', async () => {
     const { notifier, sent } = harness(['42'])
     await notifier.siblingCancelled(7, order({ kind: 'market_sell', bucketIdx: 2, limitPrice: 0n }))
-    expect(sent).toEqual([{ chatId: '42', text: `⚠️ Run #7 AAPL: cancel bucket 2 market sell ${TAIL}` }])
+    expect(sent).toEqual([{ chatId: '42', text: `⚠️ Run #7 AAPL: cancel bucket 3 market sell ${TAIL}` }])
   })
 
   test('siblingCancelled renders in ko', async () => {
     const { notifier, sent } = harness(['42'], undefined, 'ko')
     await notifier.siblingCancelled(7, order({ kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') }))
-    expect(sent).toEqual([{ chatId: '42', text: '⚠️ 런 #7 AAPL: 증권사에서 버킷 1 목표가 매도 ($103.00) 주문을 취소하세요 — 반대편 주문이 이미 체결되어 이 주문은 더 이상 필요하지 않습니다.' }])
+    expect(sent).toEqual([{ chatId: '42', text: '⚠️ 런 #7 AAPL: 증권사에서 버킷 2 목표가 매도 ($103.00) 주문을 취소하세요 — 반대편 주문이 이미 체결되어 이 주문은 더 이상 필요하지 않습니다.' }])
   })
 
   test('a run the repo no longer has renders its ticker as ?', async () => {
     const { notifier, rows, sent } = harness(['42'])
     await notifier.siblingCancelled(8, order({ kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') }, 8))
     expect(sent).toHaveLength(1)
-    expect(sent[0]!.text).toStartWith('⚠️ Run #8 ?: cancel bucket 1 target ($103.00)')
+    expect(sent[0]!.text).toStartWith('⚠️ Run #8 ?: cancel bucket 2 target ($103.00)')
     expect(rows).toEqual([{ runId: 8, chatId: '42', text: sent[0]!.text }])
   })
 
   test('with no allowed chats the sibling notice is recorded for the web', async () => {
     const { notifier, rows, sent } = harness([])
     await notifier.siblingCancelled(7, order({ kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') }))
-    expect(rows).toEqual([{ runId: 7, chatId: 'web', text: `⚠️ Run #7 AAPL: cancel bucket 1 target ($103.00) ${TAIL}` }])
+    expect(rows).toEqual([{ runId: 7, chatId: 'web', text: `⚠️ Run #7 AAPL: cancel bucket 2 target ($103.00) ${TAIL}` }])
     expect(sent).toEqual([])
   })
 
@@ -99,19 +99,19 @@ describe('booking notifier: buyRemoved', () => {
   test('buyRemoved names the run, ticker and leg with its price', async () => {
     const { notifier, sent } = harness(['42'])
     await notifier.buyRemoved(7, order({ kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') }))
-    expect(sent).toEqual([{ chatId: '42', text: `⚠️ Run #7 AAPL: cancel bucket 1 target ($103.00) ${TAIL}` }])
+    expect(sent).toEqual([{ chatId: '42', text: `⚠️ Run #7 AAPL: cancel bucket 2 target ($103.00) ${TAIL}` }])
   })
 
   test('buyRemoved names a market leg without a price', async () => {
     const { notifier, sent } = harness(['42'])
     await notifier.buyRemoved(7, order({ kind: 'market_sell', bucketIdx: 2, limitPrice: 0n }))
-    expect(sent).toEqual([{ chatId: '42', text: `⚠️ Run #7 AAPL: cancel bucket 2 market sell ${TAIL}` }])
+    expect(sent).toEqual([{ chatId: '42', text: `⚠️ Run #7 AAPL: cancel bucket 3 market sell ${TAIL}` }])
   })
 
   test('buyRemoved renders in ko', async () => {
     const { notifier, sent } = harness(['42'], undefined, 'ko')
     await notifier.buyRemoved(7, order({ kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') }))
-    expect(sent).toEqual([{ chatId: '42', text: '⚠️ 런 #7 AAPL: 증권사에서 버킷 1 목표가 매도 ($103.00) 주문을 취소하세요 — 이 주문의 근거였던 매수 체결이 삭제되어 더 이상 필요하지 않습니다.' }])
+    expect(sent).toEqual([{ chatId: '42', text: '⚠️ 런 #7 AAPL: 증권사에서 버킷 2 목표가 매도 ($103.00) 주문을 취소하세요 — 이 주문의 근거였던 매수 체결이 삭제되어 더 이상 필요하지 않습니다.' }])
   })
 })
 
@@ -135,7 +135,7 @@ describe('booking notifier: sellAttributed', () => {
         { orderId: 23, bucketIdx: 3, kind: 'market_sell' },
       ],
     })
-    expect(sent).toEqual([{ chatId: '42', text: `ℹ️ Run #7 AAPL: sell 10 sh @ $99.00 was booked to bucket 5 target ($98.50, $0.50 away). Also possible: bucket 0 target ($97.85, $1.15 away); bucket 3 market sell. ${WHY_PRICE}` }])
+    expect(sent).toEqual([{ chatId: '42', text: `ℹ️ Run #7 AAPL: sell 10 sh @ $99.00 was booked to bucket 6 target ($98.50, $0.50 away). Also possible: bucket 1 target ($97.85, $1.15 away); bucket 4 market sell. ${WHY_PRICE}` }])
   })
 
   test('the closing sentence follows the rule that decided', async () => {
@@ -147,7 +147,7 @@ describe('booking notifier: sellAttributed', () => {
       chosen: { orderId: 31, bucketIdx: 2, kind: 'market_sell' },
       alternatives: [{ orderId: 32, bucketIdx: 5, kind: 'market_sell' }],
     })
-    expect(sent).toEqual([{ chatId: '42', text: 'ℹ️ Run #7 AAPL: sell 10 sh @ $50.00 was booked to bucket 2 market sell. Also possible: bucket 5 market sell. More than one order of this type could have filled; the bucket holding exactly 10 shares was chosen.' }])
+    expect(sent).toEqual([{ chatId: '42', text: 'ℹ️ Run #7 AAPL: sell 10 sh @ $50.00 was booked to bucket 3 market sell. Also possible: bucket 6 market sell. More than one order of this type could have filled; the bucket holding exactly 10 shares was chosen.' }])
   })
 
   test('with no allowed chats one row is recorded for the web and nothing is sent', async () => {
@@ -196,7 +196,7 @@ describe('booking notifier: sellAttributed', () => {
         ['booking notice run lookup failed:', 7, 'Error: lookup-down'],
       ])
       expect(sent).toHaveLength(2)
-      expect(sent[0]!.text).toStartWith('⚠️ Run #7 ?: cancel bucket 1 target ($103.00)')
+      expect(sent[0]!.text).toStartWith('⚠️ Run #7 ?: cancel bucket 2 target ($103.00)')
       expect(sent[1]!.text).toStartWith('ℹ️ Run #7 ?: sell 10 sh @ $96.50')
       expect(rows).toEqual([{ runId: 7, chatId: '42', text: sent[0]!.text }, { runId: 7, chatId: '42', text: sent[1]!.text }])
     } finally { errors.mockRestore() }
@@ -218,7 +218,7 @@ describe('booking notifier: sellAttributed', () => {
       await notifier.siblingCancelled(7, order({ kind: 'sell_loc', bucketIdx: 1, limitPrice: parseUsd('103.00') }))
       await notifier.sellAttributed(7, attribution)
       expect(sent).toHaveLength(2)
-      expect(sent[0]!.text).toStartWith('⚠️ 런 #7 ?: 증권사에서 버킷 1 목표가 매도 ($103.00)')
+      expect(sent[0]!.text).toStartWith('⚠️ 런 #7 ?: 증권사에서 버킷 2 목표가 매도 ($103.00)')
       expect(sent[1]!.text).toStartWith('ℹ️ 런 #7 ?: 매도 10주 @ $96.50')
     } finally { errors.mockRestore() }
   })

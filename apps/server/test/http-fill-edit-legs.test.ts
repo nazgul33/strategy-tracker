@@ -25,7 +25,7 @@ async function setup(chatIds?: string[]) {
   return { f, edit, id }
 }
 
-const text = (id: number) => `⚠️ Run #${id} AAPL: cancel bucket 0 target ($103.00) at your broker — the other leg already filled, so this order is no longer needed.`
+const text = (id: number) => `⚠️ Run #${id} AAPL: cancel bucket 1 target ($103.00) at your broker — the other leg already filled, so this order is no longer needed.`
 
 describe('fill edit that empties a bucket over HTTP', () => {
   test('an edit that empties the bucket tells every allowed chat to pull the other leg', async () => {
