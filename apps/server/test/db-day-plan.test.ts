@@ -27,7 +27,7 @@ describeIf('db day plan write', () => {
 
   test('a failing state write rolls the orders back', async () => {
     const runId = await newRun()
-    // shares: null violates NOT NULL on buckets.shares, after the order insert and the state_json update
+    // shares: null violates NOT NULL on mr_buckets.shares, after the order insert and the state_json update
     const bad = { ...emptyState(1), cashCents: 900 } as RunState
     bad.buckets[0] = { index: 0, state: 'held', shares: null as unknown as number, buyPrice: 100n, buyFeeCents: 0, filledOn: '2026-02-09' }
     await expect(repos.bucketRepo.saveStateWithOrders(runId, bad, [order(runId)])).rejects.toThrow()
@@ -37,7 +37,7 @@ describeIf('db day plan write', () => {
 
   test('a failing order insert leaves no orders and the state unchanged', async () => {
     const runId = await newRun()
-    // shares: null violates NOT NULL on orders.shares; the valid first row must not survive either
+    // shares: null violates NOT NULL on mr_orders.shares; the valid first row must not survive either
     const bad = { ...order(runId), bucketIdx: 1, shares: null as unknown as number }
     await expect(repos.bucketRepo.saveStateWithOrders(runId, { ...emptyState(2), cashCents: 900 }, [order(runId), bad])).rejects.toThrow()
     expect(await repos.orderRepo.listForRun(runId, '2026-02-10')).toEqual([])

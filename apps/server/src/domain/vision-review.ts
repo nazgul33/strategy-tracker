@@ -46,7 +46,7 @@ export type VisionReviewInsert = {
 }
 export type VisionReviewRow = VisionReviewInsert & { id: number; createdAt: string }
 
-// The pending_fills columns resolveReview reads.
+// The mr_pending_fills columns resolveReview reads.
 export interface ReviewedPendingRow {
   id: number; runId: number; ticker: string
   detectedSide: string | null; detectedShares: number | null; detectedPrice: bigint | null

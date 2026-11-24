@@ -1,13 +1,15 @@
 import { describe, test, expect, beforeAll } from 'bun:test'
 import { sql, type SQL } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/mysql2'
 import { getDb, applyMigrations } from '../src/db/client'
-import type { Db } from '../src/db/db-type'
 import { getRepos } from '../src/db/repos'
+import { getMrRunRepos } from '../src/db/repos-mr-runs'
+import * as schema from '../src/db/schema'
 
 const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
 
 describeIf('db integration: run scope', () => {
-  let db: Db
+  let db: Awaited<ReturnType<typeof getDb>>
   let repos: ReturnType<typeof getRepos>
   beforeAll(async () => {
     db = await getDb(process.env.TEST_DATABASE_URL!)
@@ -38,6 +40,12 @@ describeIf('db integration: run scope', () => {
   test('list returns runs in ascending id order', async () => {
     const ids = (await repos.runRepo.list()).map((r) => r.id)
     expect(ids).toEqual([...ids].sort((a, b) => a - b))
+
+    // InnoDB returns id order even without ORDER BY, so also pin the SQL that is sent.
+    const queries: string[] = []
+    const logged = drizzle(db.$client, { schema, mode: 'default', logger: { logQuery: (q) => { queries.push(q) } } })
+    await getMrRunRepos(logged).runRepo.list()
+    expect(queries.some((q) => /order by `strategy_runs`.`id`/i.test(q))).toBe(true)
   })
 
   test('create writes both tables; pool and order shaping land in mr_runs; a run row keeps every field', async () => {

@@ -19,6 +19,12 @@ const SCENARIOS: readonly (readonly [fileIndex: number, k: number])[] = [
 
 const recordedCount = async (db: ScratchDb) => Number((await rows(db, 'SELECT COUNT(*) AS n FROM __drizzle_migrations'))[0]!.n)
 
+const movedColumns = async (db: ScratchDb, table: string) =>
+  (await rows(db, `SHOW FULL COLUMNS FROM ${table}`))
+    .filter((r) => (MOVED_COLUMNS as readonly string[]).includes(String(r.Field)))
+    .map((r) => ({ Field: r.Field, Type: r.Type, Null: r.Null, Default: r.Default, Collation: r.Collation }))
+    .sort((a, b) => String(a.Field).localeCompare(String(b.Field)))
+
 describeIf('mr split migrations (db)', () => {
   test('existing rows survive under the new names', async () => {
     await withScratch('survive', async (db) => {
@@ -30,8 +36,13 @@ describeIf('mr split migrations (db)', () => {
       const runsBefore = await rows(db, 'SELECT * FROM strategy_runs ORDER BY id')
       const captureBefore = await rows(db, 'SELECT * FROM captures ORDER BY id')
       expect(runsBefore).toHaveLength(3)
+      const columnsBefore = await movedColumns(db, 'strategy_runs')
 
+      // These assertions describe the schema right after 0015. When a later migration changes
+      // strategy_runs or an mr_* table, replace this call with migrateThrough(db, 16).
       await applyMigrations(db)
+
+      expect(await movedColumns(db, 'mr_runs')).toEqual(columnsBefore)
 
       for (const [from, to] of RENAMES) {
         expect(before[from]!.length).toBeGreaterThanOrEqual(2)
@@ -61,7 +72,34 @@ describeIf('mr split migrations (db)', () => {
       )
       expect((header as { insertId: number }).insertId).toBe(4)
 
+      const [runHeader] = await db.$client.query(
+        "INSERT INTO strategy_runs (strategy_key, ticker, name, cost_ppm) VALUES ('mean-reversion', 'EEE', 'run-after', 10)",
+      )
+      expect((runHeader as { insertId: number }).insertId).toBe(5)
+
       expect(await rows(db, 'SELECT * FROM captures ORDER BY id')).toEqual(captureBefore)
+    })
+  }, TIMEOUT)
+
+  test('a stale mr_runs row is refreshed from strategy_runs', async () => {
+    await withScratch('stale', async (db) => {
+      await migrateThrough(db, PRE_SPLIT_COUNT)
+      await seedPreSplit(db)
+      const runsBefore = await rows(db, 'SELECT * FROM strategy_runs ORDER BY id')
+      expect(runsBefore).toHaveLength(3)
+
+      await migrateThrough(db, 14)
+      await db.execute(sql.raw(allMigrations()[14]!.sql[0]!))
+      await db.$client.query(
+        "INSERT INTO mr_runs (run_id, pool_cents, buy_gap_ppm, sell_gap_ppm, cut_loss_ppm, state_json) VALUES (1, 1, 0, 0, 0, '{}')",
+      )
+      await applyMigrations(db)
+
+      expect(await rows(db, 'SELECT * FROM mr_runs ORDER BY run_id')).toEqual(
+        runsBefore.map((r) => ({
+          run_id: r.id, pool_cents: r.pool_cents, buy_gap_ppm: r.buy_gap_ppm, sell_gap_ppm: r.sell_gap_ppm, cut_loss_ppm: r.cut_loss_ppm, state_json: r.state_json,
+        })),
+      )
     })
   }, TIMEOUT)
 

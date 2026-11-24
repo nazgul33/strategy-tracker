@@ -70,6 +70,9 @@ describe('mr split migrations', () => {
   ] as const
   const MOVED = ['pool_cents', 'buy_gap_ppm', 'sell_gap_ppm', 'cut_loss_ppm', 'state_json']
   const NEW_TAGS = ['0013_mr_rename_tables', '0014_mr_runs', '0015_strategy_runs_trim']
+  const COPY_STATEMENT = `INSERT INTO \`mr_runs\` (\`run_id\`, \`pool_cents\`, \`buy_gap_ppm\`, \`sell_gap_ppm\`, \`cut_loss_ppm\`, \`state_json\`)
+SELECT \`id\`, \`pool_cents\`, \`buy_gap_ppm\`, \`sell_gap_ppm\`, \`cut_loss_ppm\`, \`state_json\` FROM \`strategy_runs\`
+ON DUPLICATE KEY UPDATE \`pool_cents\` = VALUES(\`pool_cents\`), \`buy_gap_ppm\` = VALUES(\`buy_gap_ppm\`), \`sell_gap_ppm\` = VALUES(\`sell_gap_ppm\`), \`cut_loss_ppm\` = VALUES(\`cut_loss_ppm\`), \`state_json\` = VALUES(\`state_json\`);`
 
   const statements = async (tag: string) =>
     (await Bun.file(`${migrationsDir}${tag}.sql`).text()).split('--> statement-breakpoint').map((c) => c.trim())
@@ -87,17 +90,20 @@ describe('mr split migrations', () => {
     expect(chunks).toHaveLength(8)
     expect(chunks[0]!.startsWith('RENAME TABLE IF EXISTS')).toBe(true)
     for (const t of TABLES) expect(chunks[0]).toContain(`\`${t}\` TO \`mr_${t}\``)
+    expect(chunks[0]!.split('` TO `')).toHaveLength(TABLES.length + 1)
     INDEXES.forEach(([table, old], i) => {
       expect(chunks[i + 1]).toBe(`ALTER TABLE \`${table}\` RENAME INDEX IF EXISTS \`${old}\` TO \`mr_${old}\`;`)
     })
   })
 
-  test('0014 creates mr_runs and copies with INSERT IGNORE', async () => {
+  test('0014 creates mr_runs and copies with an upsert', async () => {
     const chunks = await statements('0014_mr_runs')
     expect(chunks).toHaveLength(2)
     expect(chunks[0]!.startsWith('CREATE TABLE IF NOT EXISTS `mr_runs`')).toBe(true)
-    expect(chunks[1]!.startsWith('INSERT IGNORE INTO `mr_runs`')).toBe(true)
+    expect(chunks[1]!.startsWith('INSERT INTO `mr_runs`')).toBe(true)
     expect(chunks[1]).toContain('FROM `strategy_runs`')
+    const normalise = (s: string) => s.replace(/\s+/g, ' ').trim()
+    expect(normalise(chunks[1]!)).toBe(normalise(COPY_STATEMENT))
   })
 
   test('0015 drops the five moved columns in one statement', async () => {
@@ -105,12 +111,13 @@ describe('mr split migrations', () => {
     expect(chunks).toHaveLength(1)
     expect(chunks[0]!.startsWith('ALTER TABLE `strategy_runs`')).toBe(true)
     for (const c of MOVED) expect(chunks[0]).toContain(`DROP COLUMN IF EXISTS \`${c}\``)
+    expect(chunks[0]!.match(/DROP COLUMN/g)).toHaveLength(MOVED.length)
   })
 
   test('no new file both copies into mr_runs and drops a column', async () => {
     for (const tag of NEW_TAGS) {
       const text = await Bun.file(`${migrationsDir}${tag}.sql`).text()
-      expect(/INSERT\s+IGNORE\s+INTO\s+`mr_runs`/.test(text) && /DROP\s+COLUMN/i.test(text)).toBe(false)
+      expect(/INSERT\s+(IGNORE\s+)?INTO\s+`mr_runs`/.test(text) && /DROP\s+COLUMN/i.test(text)).toBe(false)
     }
   })
 })

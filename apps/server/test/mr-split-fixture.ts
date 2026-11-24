@@ -50,8 +50,11 @@ export async function withScratch<T>(tag: string, fn: (db: ScratchDb) => Promise
     return await fn(scratch)
   } finally {
     try {
-      await scratch?.$client.end()
-      if (created) await parent.$client.query(`DROP DATABASE IF EXISTS \`${name}\``)
+      try {
+        await scratch?.$client.end()
+      } finally {
+        if (created) await parent.$client.query(`DROP DATABASE IF EXISTS \`${name}\``)
+      }
     } finally {
       await parent.$client.end()
     }
@@ -79,6 +82,7 @@ export async function seedPreSplit(db: ScratchDb): Promise<void> {
   await insert(db, 'strategy_runs', runCols, [
     [2, 'mean-reversion', 'BBB', 'run-paused', 500000, 55, 'paused', EMPTY_STATE, T1],
     [3, 'mean-reversion', 'CCC', 'run-closed', 99900, 0, 'closed', EMPTY_STATE, T2],
+    [4, 'mean-reversion', 'DDD', 'run-deleted', 1000, 0, 'closed', EMPTY_STATE, T2],
   ])
   await insert(db, 'pool_edits', ['id', 'run_id', 'pool_cents', 'edited_at'], [[1, 1, 1200000, T1], [2, 1, 1234500, T2]])
   await insert(db, 'buckets', ['id', 'run_id', 'idx', 'state', 'shares', 'buy_price_myriadths', 'buy_fee_cents', 'filled_on'], [
@@ -130,6 +134,7 @@ export async function seedPreSplit(db: ScratchDb): Promise<void> {
     [2, 1, '2026-01-05', '{"orders":[1]}', HELD_STATE, '[{"kind":"buy"}]'],
   ])
   await db.$client.query('DELETE FROM `fills` WHERE `id` = 3')
+  await db.$client.query('DELETE FROM `strategy_runs` WHERE `id` = 4')
 }
 
 async function tableNames(db: ScratchDb): Promise<string[]> {

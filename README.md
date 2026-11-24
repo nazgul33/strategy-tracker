@@ -102,7 +102,8 @@ long-polling and needs no inbound endpoint). To listen on all interfaces instead
 sits behind a TLS proxy on another machine — set `APP_BIND_HOST=0.0.0.0` in `.env`; traffic between
 that proxy and the app is then plain HTTP on your network. DB migrations are applied in-process at
 startup (`applyMigrations` in `apps/server/src/db/client.ts`); no manual step. Data persists in the
-`st-data` volume.
+`st-data` volume. The `mr_` table split (migrations 0013–0015) cannot be rolled back; follow the
+one-time steps in [`apps/server/db/README.md`](apps/server/db/README.md) before deploying it.
 
 > Gotcha: on first init MariaDB bakes the root password **and** the `MARIADB_DATABASE` /
 > `MARIADB_USER` / `MARIADB_PASSWORD` account into the `st-data` volume. Changing those in `.env`
