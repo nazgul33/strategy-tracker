@@ -77,7 +77,7 @@ A broker screenshot can only enter the tracker through the Telegram bot today. T
 
 ### Timeout — `apps/server/src/main.ts`
 
-`Bun.serve` gets `idleTimeout: 60` (operator's decision; the default is 10 seconds). Set on the server, so it covers every route *(my call: `createApp` has no handle on the server for a per-request timeout, and the morning trigger benefits too)*.
+`Bun.serve` gets `idleTimeout: 60` (operator's decision; the default is 10 seconds). Set on the server, so it covers every route *(my call: the plain reading of the operator's decision, and the morning trigger benefits too. Bun's `server.timeout(request, seconds)` could scope it to the upload route from `main.ts`'s fetch wrapper; not used)*.
 
 ### Web client — `apps/web/src/api.ts`, `api.types.ts`
 
