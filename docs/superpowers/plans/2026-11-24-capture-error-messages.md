@@ -14,7 +14,7 @@
 
 - English only in code, comments and docs; Korean only inside the catalogs (`packages/telegram/src/i18n.ts`, `apps/web/src/i18n/ko.json`).
 - No source file over ~300 lines; `packages/*` never import `apps/*`; `fetch` stays injectable; all copy in en/ko catalogs.
-- The API key value, or any 4-or-more-character run of it, never appears in an event, a message, a log line or a notice. Only its source (`settings` / `env` / `none`) is reported.
+- The API key value, or any run of 8 or more consecutive characters of it, never appears in an event, a message, a log line or a notice. Only its source (`settings` / `env` / `none`) is reported.
 - Event shape (exact names, used by every task):
   ```ts
   export type VisionSource = 'settings' | 'env'
@@ -66,11 +66,12 @@ Removed keys and their only users: `capture-bad-extract` (text) — used only by
 - Keys as in the copy tables; in-use and advice lines are separate catalog keys; source words are catalog keys; composition is in code (Telegram: lines joined with `\n`; web: separate `UploadLine`s).
 - `getVisionApiKey(): Promise<VisionApiKey>` with `export interface VisionApiKey { key: string; source: VisionSource | 'none' }`; `CaptureRouteDeps.vision` becomes `{ baseUrl: string; baseUrlSource: VisionSource; model: string; modelSource: VisionSource }`. The key value goes only into `cfg.apiKey` of the vision request.
 - Sources mirror the existing `settings.x || env.x` resolution: a non-empty Settings value is `settings`, otherwise `env` (even when the env value is empty too); the key is `none` only when both are empty.
-- The extractor redacts the key from every failure `detail` it builds, because OpenAI-style services echo a masked key in 401 bodies (`sk-proj-****abcd`), which would break the anti-goal.
+- The extractor redacts the key from every failure `detail` it builds, because services echo the key in 401 bodies, some of them whole (spec, "Vision error text"). A word is redacted when it contains the whole key or a run of 8+ consecutive key characters (keys of 4–7 characters: the whole key only; under 4: nothing). A service's own masked form with fewer than 8 real consecutive characters (`sk-LEA*********9c2e`) is shown as sent, and ordinary words sharing short runs with the key ("project" for an `sk-proj-…` key) are kept.
+- Trailing periods are trimmed from the service message (and from a thrown network message), because it is placed in a sentence ending "— {detail}.".
 
 ## Review Focus
 
-1. The vision service echoes the key (whole, or masked with only a few real characters) in its error body → the detail shows `[redacted]` in place of that word, on every channel. Pinned in Task 1 (extractor), Task 2 (event + HTTP body), Task 3 (Telegram reply, notice row, log line).
+1. The vision service echoes the key in its error body → a word holding the whole key or 8+ consecutive key characters shows as `[redacted]` on every channel, while the service's own masked form (fewer than 8 real consecutive characters) and ordinary words sharing short runs with the key are shown as sent. Pinned in Task 1 (extractor), Task 2 (event + HTTP body), Task 3 (Telegram reply, notice row, log line).
 2. A proxy answers with a multi-line HTML error page → one line, at most 200 characters plus the `http <status>: ` prefix, no raw newlines in the Telegram reply. Pinned in Task 1.
 3. No key set in Settings or env → the in-use line says `key (not set)` / `키 (없음)`, never an empty pair of parentheses. Pinned in Task 2 (core) and Task 3 (wording).
 4. A service message containing brace text such as `{model}` → rendered literally, not substituted by a later placeholder. Pinned in Task 3 (Telegram) and Task 4 (web, whose `lookup` substitutes sequentially).
@@ -87,14 +88,14 @@ Removed keys and their only users: `capture-bad-extract` (text) — used only by
 
 **Interfaces:**
 - Consumes: nothing new.
-- Produces: `ExtractResult` unchanged in type. On a non-OK response `detail` is `http <status>: <message>` or `http <status>`; on a network failure it is the thrown message. Neither ever contains a 4-character run of `cfg.apiKey` (when the key has 4+ characters). Later tasks rely on `detail === 'http 500'` for fakes that answer `{ ok: false, status: 500 }` with no `text` method.
+- Produces: `ExtractResult` unchanged in type. On a non-OK response `detail` is `http <status>: <message>` or `http <status>`; on a network failure it is the thrown message. Neither ever contains the whole `cfg.apiKey` (when it has 4+ characters) or any 8-character run of it (when it has 8+); the service message never ends in `.`, nor does a thrown message other than one made only of periods. Later tasks rely on `detail === 'http 500'` for fakes that answer `{ ok: false, status: 500 }` with no `text` method.
 
 Rules (decided here, not in the spec):
 - The body is read with `await res.text()` only when `!res.ok`; the OK path is unchanged (`res.json()`). If `res.text` is missing or throws/rejects, the body is `''`.
 - Message pick, in order: JSON-parsed body's `error.message` if a string with non-whitespace content; else top-level `error` if such a string; else top-level `message` if such a string; else the raw body text (also when the body is not JSON, or is JSON of another shape).
-- Then: collapse every whitespace run to one space and trim; redact; if the result is empty, `detail` is `http <status>`; otherwise, if it has more than 200 code points (`[...s].length`), keep the first 199 code points and append `…` (U+2026), so a cut message is exactly 200 code points; `detail` is `http <status>: <message>`.
-- Redaction, as a private `redactKey(text: string, apiKey: string): string`: when `apiKey.length < 4`, return `text` unchanged; otherwise split `text` on `/(\s+)/` (keeping the separators) and replace every non-whitespace token that contains any 4-character substring of `apiKey` with `[redacted]`. Case-sensitive.
-- Network failure: `detail` is `redactKey(String(e?.message ?? e), cfg.apiKey)` — the thrown message as today, unless it contains key parts.
+- Then: collapse every whitespace run to one space and trim; redact; strip trailing `.` characters and trim again (a message of only periods becomes empty); if the result is empty, `detail` is `http <status>`; otherwise, if it has more than 200 code points (`[...s].length`), keep the first 199 code points and append `…` (U+2026), so a cut message is exactly 200 code points; `detail` is `http <status>: <message>`.
+- Redaction, as a private `redactKey(text: string, apiKey: string): string`: when `apiKey.length < 4`, return `text` unchanged. Otherwise split `text` on `/(\s+)/` (keeping the separators) and replace a non-whitespace token with `[redacted]` when — for `4 <= apiKey.length < 8` — it contains the whole key, or — for `apiKey.length >= 8` — it contains any 8 consecutive characters of the key (which covers the whole key). Case-sensitive.
+- Network failure: `detail` is `String(e?.message ?? e)` run through `redactKey`, then trailing `.` characters stripped and trimmed — the thrown message as today, unless it contains the key or ends in a period. If that leaves it empty, the redacted message is kept untrimmed.
 
 - [ ] **Step 1: Write the failing tests** in `packages/ingest/test/extract-http-error.test.ts`. A local helper `failWith(status: number, body: string | (() => Promise<string>) | undefined)` returns a fetch fake answering `{ ok: false, status, text }` (`text` omitted when `undefined`); `CFG = { baseUrl: 'http://x', apiKey: 'k', model: 'm', maxTokens: 100 }`; `detailOf(fetch, cfg = CFG)` runs `extractFills([{ base64: 'AAA', mime: 'image/png' }], cfg, fetch)` and returns `r.ok ? null : [r.reason, r.detail]`.
 
@@ -110,6 +111,11 @@ test('top-level string error, then top-level message', async () => {
 test('other JSON and plain text are used as the body text', async () => {
   expect(await detailOf(failWith(404, '{"detail":"Not Found"}'))).toEqual(['http', 'http 404: {"detail":"Not Found"}'])
   expect(await detailOf(failWith(502, 'Bad Gateway'))).toEqual(['http', 'http 502: Bad Gateway'])
+})
+test('trailing periods are trimmed; a message of only periods leaves http <status>', async () => {
+  expect(await detailOf(failWith(404, 'Model not found.'))).toEqual(['http', 'http 404: Model not found'])
+  expect(await detailOf(failWith(404, '{"error":{"message":"Model not found. "}}'))).toEqual(['http', 'http 404: Model not found'])
+  expect(await detailOf(failWith(404, '...'))).toEqual(['http', 'http 404'])
 })
 test('an HTML error page collapses to one line', async () => {
   expect(await detailOf(failWith(502, '<html>\n  <body>\n\t<h1>502 Bad Gateway</h1>\n  </body>\n</html>\n')))
@@ -137,15 +143,26 @@ test('the body is read only on a non-OK answer', async () => {
 test('a network failure keeps the thrown message', async () => {
   const down = (async () => { throw new Error('connect ECONNREFUSED 127.0.0.1:1234') }) as unknown as typeof fetch
   expect(await detailOf(down)).toEqual(['http', 'connect ECONNREFUSED 127.0.0.1:1234'])
+  const hangUp = (async () => { throw new Error('socket hang up.') }) as unknown as typeof fetch
+  expect(await detailOf(hangUp)).toEqual(['http', 'socket hang up'])
 })
-test('the key, whole or masked, is redacted from the detail', async () => {
+test('the whole key and 8+ character runs of it are redacted; masked forms and short runs are kept', async () => {
   const KEY = 'sk-LEAKCHECK-7f3a9c2e'
   const cfg = { ...CFG, apiKey: KEY }
   const masked = JSON.stringify({ error: { message: 'Incorrect API key provided: sk-LEA*********9c2e. You can find your API key at https://x.' } })
-  expect(await detailOf(failWith(401, masked), cfg)).toEqual(['http', 'http 401: Incorrect API key provided: [redacted] You can find your API key at https://x.'])
+  expect(await detailOf(failWith(401, masked), cfg)).toEqual(['http', 'http 401: Incorrect API key provided: sk-LEA*********9c2e. You can find your API key at https://x'])
   expect(await detailOf(failWith(401, `bad key ${KEY}`), cfg)).toEqual(['http', 'http 401: bad key [redacted]'])
+  expect(await detailOf(failWith(401, 'key ending CHECK-7f3a9c2e rejected'), cfg)).toEqual(['http', 'http 401: key ending [redacted] rejected'])
+  expect(await detailOf(failWith(401, 'key ending 7f3a9c2 rejected'), cfg)).toEqual(['http', 'http 401: key ending 7f3a9c2 rejected'])
   const thrown = (async () => { throw new Error(`refused for Bearer ${KEY}`) }) as unknown as typeof fetch
   expect(await detailOf(thrown, cfg)).toEqual(['http', 'refused for Bearer [redacted]'])
+})
+test('ordinary words sharing short runs with the key are kept; short keys match whole only', async () => {
+  expect(await detailOf(failWith(404, 'project not found for this deployment'), { ...CFG, apiKey: 'sk-proj-abcdef123456' }))
+    .toEqual(['http', 'http 404: project not found for this deployment'])
+  expect(await detailOf(failWith(401, 'token abcde refused, abcd ok'), { ...CFG, apiKey: 'abcde' }))
+    .toEqual(['http', 'http 401: token [redacted] refused, abcd ok'])
+  expect(await detailOf(failWith(401, 'kick back k'), { ...CFG, apiKey: 'k' })).toEqual(['http', 'http 401: kick back k'])
 })
 ```
 
@@ -191,7 +208,7 @@ git commit -m "feat: carry the vision service's own error text in the extract de
   ```
   Private in the same file: `badExtract(reason: 'http' | 'unparseable' | 'empty', detail: string, vision: VisionInUse): BadExtractEvent` (drops `vision` for `empty`). Both emits are `await emit(badExtract(extract.reason, extract.detail, inUse))` and `await emit(badExtract('empty', 'no fills recognized', inUse))`, where `inUse` is built from `deps.vision` and the `source` of the key fetched for this capture.
 - Produces (exported from `apps/server/src/wire/deps.ts`): `visionSource(saved: string | undefined): VisionSource` (`'settings'` when `saved` is a non-empty string, else `'env'`) and `resolveVisionApiKey(saved: string | undefined, fromEnv: string): VisionApiKey`.
-- Produces (exported from `apps/server/test/wire-capture-fakes.ts`, used by Task 3): `LEAK_KEY = 'sk-LEAKCHECK-7f3a9c2e'`; `keyEchoFetch: typeof fetch` answering `{ ok: false, status: 401, text: async () => JSON.stringify({ error: { message: \`Incorrect API key provided: ${LEAK_KEY}; masked sk-LEA*********9c2e\` } }) }`; `keyParts(text: string): string[]` returning every 4-character substring of `LEAK_KEY` found in `text` (expected `[]`).
+- Produces (exported from `apps/server/test/wire-capture-fakes.ts`, used by Task 3): `LEAK_KEY = 'sk-LEAKCHECK-7f3a9c2e'`; `keyEchoFetch: typeof fetch` answering `{ ok: false, status: 401, text: async () => JSON.stringify({ error: { message: \`Incorrect API key provided: ${LEAK_KEY}; masked sk-LEA*********9c2e\` } }) }`; `keyParts(text: string): string[]` returning every 8-character substring of `LEAK_KEY` found in `text` (expected `[]`). The fetch echoes the WHOLE key (the leak the pipeline must stop) plus the service-style masked form, which is shown as sent.
 - Web between tasks: the web does not import server types; until Task 4 it reads only `detail` and shows the old "Could not read fills…" line for every kind. Telegram still sends the old text until Task 3 (`tellBadExtract(chatId, event.detail)` compiles against the union).
 
 - [ ] **Step 1: Write the failing tests.**
@@ -212,7 +229,7 @@ expect(resolveVisionApiKey(undefined, '')).toEqual({ key: '', source: 'none' })
 - new "an image without fills is empty and carries no config": fetch answers OK with content `'{"fills":[]}'` → `toEqual([{ type: 'bad-extract', reason: 'empty', detail: 'no valid fills' }])` and `expect('vision' in r.events[0]!).toBe(false)`.
 - new "no key anywhere is reported as none": `key: { key: '', source: 'none' }` with `vision500` → `vision: { ...IN_USE, keySource: 'none' }`.
 - "a vision read slower than the limit…": `[{ type: 'bad-extract', reason: 'http', detail: 'vision timed out', vision: IN_USE }]`.
-- new "the key value never reaches an event": `key: { key: LEAK_KEY, source: 'env' }`, `fetchImpl: keyEchoFetch` → `expect(keyParts(JSON.stringify(r.events))).toEqual([])` and `expect(r.events[0]).toMatchObject({ reason: 'http', detail: 'http 401: Incorrect API key provided: [redacted] masked [redacted]', vision: { keySource: 'env' } })`.
+- new "the key value never reaches an event": `key: { key: LEAK_KEY, source: 'env' }`, `fetchImpl: keyEchoFetch` → `expect(keyParts(JSON.stringify(r.events))).toEqual([])` and `expect(r.events[0]).toMatchObject({ reason: 'http', detail: 'http 401: Incorrect API key provided: [redacted] masked sk-LEA*********9c2e', vision: { keySource: 'env' } })` (the `;` belongs to the redacted token).
 
 `apps/server/test/http-captures.test.ts`:
 - "a bad-extract is a 200 result and records no notice": the event becomes `{ type: 'bad-extract', reason: 'http', detail: 'http 500', vision: { model: 'm', modelSource: 'settings', baseUrl: 'http://x', baseUrlSource: 'env', keySource: 'none' } }`; assertions unchanged.
@@ -293,7 +310,7 @@ expect(badExtractMessage({ type: 'bad-extract', reason: 'http', detail: 'http 40
 
 `apps/server/test/capture-replies.test.ts`:
 - `TEXT` becomes `['The vision service did not accept the request — http 500.', 'In use: model m (env), URL https://vision.example/v1 (env), key (env).', ADVICE_EN].join('\n')`; the Korean test expects `['비전 서비스가 요청을 받아들이지 않았습니다 — http 500.', '사용 중: 모델 m (env), URL https://vision.example/v1 (env), 키 (env).', '스크린샷 문제가 아니라 비전 설정 문제입니다. 설정에서 바꾼 URL이나 모델은 서버를 다시 시작해야 적용됩니다.'].join('\n')`. The two `notice failed:` log assertions are unchanged.
-- new "the key value never reaches a reply, a notice or a log line": `setup({ getVisionApiKey: async () => ({ key: LEAK_KEY, source: 'settings' }), fetchImpl: keyEchoFetch })`, `notificationRepo.insert` throws `db-down` (so a log line is written), `console.error`/`console.log`/`console.warn` spied → `keyParts` of `JSON.stringify(sent)`, of `JSON.stringify(f.notifications)` and of each spy's `JSON.stringify(mock.calls)` are all `[]`; `sent[0]` starts with `'The vision service did not accept the request — http 401: Incorrect API key provided: [redacted]'` and contains `'key (Settings)'`. Repeat without the throwing insert and assert `keyParts(JSON.stringify(rows(f)))` is `[]`.
+- new "the key value never reaches a reply, a notice or a log line": `setup({ getVisionApiKey: async () => ({ key: LEAK_KEY, source: 'settings' }), fetchImpl: keyEchoFetch })`, `notificationRepo.insert` throws `db-down` (so a log line is written), `console.error`/`console.log`/`console.warn` spied → `keyParts` of `JSON.stringify(sent)`, of `JSON.stringify(f.notifications)` and of each spy's `JSON.stringify(mock.calls)` are all `[]`; `sent[0].split('\n')[0]` is `'The vision service did not accept the request — http 401: Incorrect API key provided: [redacted] masked sk-LEA*********9c2e.'` and `sent[0]` contains `'key (Settings)'`. Repeat without the throwing insert and assert `keyParts(JSON.stringify(rows(f)))` is `[]`.
 - the source pin test — replace the four `src` lines (the `core` lines from Task 2 stay):
 ```ts
 const msg = await Bun.file(new URL('../src/wire/capture-bad-extract-message.ts', import.meta.url)).text()
