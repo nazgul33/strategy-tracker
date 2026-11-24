@@ -1,7 +1,7 @@
 // Typed client for the Hono JSON API (apps/server/src/http). Bigint fields
 // arrive as decimal *strings* (jsonBig), cents/fees as numbers. Prices and
 // fees the client *sends* are USD strings ("12.34"), parsed via ./usd (which wraps @st/core).
-import { call, type Http } from './api.call';
+import { ApiError, call, type Http } from './api.call';
 import type { CaptureEventDto } from './api.captures.types';
 import type { NoticePageDto } from './api.notices';
 import { simConfigBody } from './api.sim';
@@ -229,9 +229,11 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
       const form = new FormData();
       form.append('image', file);
       if (runId !== undefined) form.append('runId', String(runId));
-      return call<{ events: CaptureEventDto[] }>(http, '/api/captures', { method: 'POST', headers: headers(), body: form }).then(
-        (r) => r.events,
-      );
+      return call<{ events?: unknown }>(http, '/api/captures', { method: 'POST', headers: headers(), body: form }).then((r) => {
+        // A proxy or SPA fallback can answer 200 with something else; call() has the status no more.
+        if (!Array.isArray(r.events)) throw new ApiError(200, 'http-200');
+        return r.events as CaptureEventDto[];
+      });
     },
   };
 }

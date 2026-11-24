@@ -391,6 +391,7 @@ describe('Modal focus behaviour', () => {
     await click(close);
     expect(calls).toBe(0);
     expect(close.hasAttribute('disabled')).toBe(true);
+    expect(close.classList.contains('disabled:opacity-50')).toBe(true);
 
     await render(true);
     act(() => {

@@ -2,9 +2,10 @@
 // GlobalRegistrator.register(), otherwise onChange handlers silently never fire.
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { elementByTestId } from '../testing/dom';
+import { elementByTestId, setInputValue } from '../testing/dom';
 import { installFetchStub, restoreFetch } from '../testing/fetchStub';
 import type { FetchCalls } from '../testing/fetchStub';
+import { PENDING_ROW as PENDING_TABLE_ROW } from '../testing/pendingRow';
 import { RUN, buttonByText, runDetailHelpers, runDetailRoutes } from '../testing/runDetail';
 import { countGets, imageFile, pickFiles, stubUploads } from '../testing/upload';
 import type { UploadAnswer } from '../testing/upload';
@@ -60,9 +61,9 @@ describe('RunDetailPage upload button', () => {
   let root: ReturnType<typeof createRoot>;
   let sent: { name: string; runId: string | null }[];
 
-  async function mount(answers: UploadAnswer[]) {
+  async function mount(answers: UploadAnswer[], pending: unknown[] = []) {
     runBody = RUN;
-    calls = installFetchStub(runDetailRoutes(() => runBody));
+    calls = installFetchStub([{ url: '/api/pending', json: pending }, ...runDetailRoutes(() => runBody)]);
     sent = stubUploads(answers).sent;
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -134,5 +135,36 @@ describe('RunDetailPage upload button', () => {
     await click('uploadGoToPending');
     await flush();
     expect(buttonByText('Pending').className).toContain('bg-primary');
+  });
+
+  async function openPendingTab() {
+    await act(async () => buttonByText('Pending').click());
+    await flush();
+  }
+
+  const qty = () => document.querySelector('input[aria-label="Qty"]') as HTMLInputElement;
+
+  it('Go to pending with the Pending tab already open re-reads in place and keeps a typed edit', async () => {
+    await mount([OUTCOME], [{ ...PENDING_TABLE_ROW, runId: 1 }]);
+    await openPendingTab();
+    await act(async () => setInputValue(qty(), '11'));
+    const pendingGets = countGets('/api/pending');
+    const correctionGets = countGets('/api/corrections');
+    await upload();
+    await click('uploadGoToPending');
+    await flush();
+    expect(qty().value).toBe('11');
+    expect(pendingGets()).toBe(1);
+    expect(correctionGets()).toBe(1);
+  });
+
+  it('closing after an upload re-reads the corrections while the Pending tab is open', async () => {
+    await mount([DUPLICATE]);
+    await openPendingTab();
+    const correctionGets = countGets('/api/corrections');
+    await upload();
+    await click('uploadClose');
+    await flush();
+    expect(correctionGets()).toBe(1);
   });
 });

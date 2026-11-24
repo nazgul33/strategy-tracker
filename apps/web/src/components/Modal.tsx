@@ -20,7 +20,7 @@ const modalOpeners = new WeakMap<Element, HTMLElement | null>();
  * returns it: a `data-autofocus` child, else the body's first control. React
  * does not write `autoFocus` to the DOM, so a child that sets `autoFocus` also
  * sets `data-autofocus` to be findable here. */
-function modalInitialFocus(panel: HTMLElement): HTMLElement | null {
+export function modalInitialFocus(panel: HTMLElement): HTMLElement | null {
   const preferred = panel.querySelector<HTMLElement>('[data-autofocus]');
   if (preferred) return preferred;
   const body = panel.querySelector<HTMLElement>('[data-modal-body]');
@@ -183,7 +183,7 @@ export function Modal({
           <button
             type="button"
             aria-label={t('cancel')}
-            className="text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!dismissible}
             onClick={onClose}
           >

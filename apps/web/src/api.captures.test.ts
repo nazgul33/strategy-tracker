@@ -53,6 +53,16 @@ describe('uploadCapture', () => {
     expect((err as ApiError).code).toBe('image-too-large');
   });
 
+  test('a 200 answer without an events array is a failure', async () => {
+    const { api } = recording(() => Response.json({}));
+    const err = await api.uploadCapture(png()).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe('http-200');
+  });
+
   test('a thrown fetch becomes NetworkError', async () => {
     const api = createApi(() => Promise.reject(new TypeError('Failed to fetch')), { getToken: () => 'tok' });
     const err = await api.uploadCapture(png()).then(

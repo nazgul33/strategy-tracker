@@ -257,11 +257,11 @@ export function RunDetailPage({
           runId={run.id}
           onClose={({ uploaded, goToPending }: UploadCloseOutcome) => {
             setUploadOpen(false);
-            if (goToPending) {
-              setUploadKey((k) => k + 1);
-              selectTab('pending');
-            } else if (uploaded) {
-              setUploadKey((k) => k + 1);
+            if (!uploaded) return;
+            setUploadKey((k) => k + 1);
+            // Already on Pending: re-read in place, since a tab switch remounts the table and drops typed edits.
+            if (goToPending && tab !== 'pending') selectTab('pending');
+            else {
               setPanelKey((k) => k + 1);
               void reload();
             }

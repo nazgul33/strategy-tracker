@@ -4,7 +4,7 @@ import { useT } from '../../i18n';
 import { pickRefusal } from '../../uploadpick';
 import { wantsPending } from '../../uploadlines';
 import type { UploadItem } from '../../uploadlines';
-import { MODAL_FOCUSABLE } from '../Modal';
+import { MODAL_FOCUSABLE, modalInitialFocus } from '../Modal';
 import { Button, Modal } from '../ui';
 import { UploadPicker } from './UploadPicker';
 import type { UploadRefusal } from './UploadPicker';
@@ -22,7 +22,21 @@ type Phase = 'picking' | 'uploading' | 'done';
 function keepFocusInPanel(panel: HTMLElement): void {
   const active = document.activeElement;
   if (active instanceof HTMLElement && active !== panel && panel.contains(active) && active.matches(MODAL_FOCUSABLE)) return;
-  (panel.querySelector<HTMLElement>(MODAL_FOCUSABLE) ?? panel).focus();
+  (modalInitialFocus(panel) ?? panel).focus();
+}
+
+// The overlay covers the viewport, so a file dropped anywhere but the drop zone
+// would otherwise make the browser leave the app to open it.
+function useBlockStrayDrops(): void {
+  useEffect(() => {
+    const block = (ev: DragEvent) => ev.preventDefault();
+    window.addEventListener('dragover', block);
+    window.addEventListener('drop', block);
+    return () => {
+      window.removeEventListener('dragover', block);
+      window.removeEventListener('drop', block);
+    };
+  }, []);
 }
 
 /** Screenshot upload popup: pick files, send them one at a time, then show what each one did. */
@@ -32,8 +46,10 @@ export function UploadDialog({ runId, onClose }: { runId?: number; onClose: (out
   const [items, setItems] = useState<UploadItem[]>([]);
   const [refused, setRefused] = useState<UploadRefusal[]>([]);
   const [uploaded, setUploaded] = useState(false);
+  const [earlierWantedPending, setEarlierWantedPending] = useState(false);
   const nextKey = useRef(0);
   const bodyRef = useRef<HTMLDivElement>(null);
+  useBlockStrayDrops();
 
   useEffect(() => {
     const panel = bodyRef.current?.closest<HTMLElement>('[data-modal-panel]');
@@ -74,6 +90,7 @@ export function UploadDialog({ runId, onClose }: { runId?: number; onClose: (out
   }
 
   function more() {
+    if (wantsPending(items)) setEarlierWantedPending(true);
     setItems([]);
     setRefused([]);
     setPhase('picking');
@@ -102,12 +119,12 @@ export function UploadDialog({ runId, onClose }: { runId?: number; onClose: (out
               <Button data-testid="uploadMore" onClick={more}>
                 {t('upload.more')}
               </Button>
-              {wantsPending(items) ? (
-                <Button data-testid="uploadGoToPending" variant="primary" onClick={() => close(true)}>
+              {earlierWantedPending || wantsPending(items) ? (
+                <Button data-testid="uploadGoToPending" data-autofocus variant="primary" onClick={() => close(true)}>
                   {t('upload.goToPending')}
                 </Button>
               ) : (
-                <Button data-testid="uploadClose" variant="primary" onClick={() => close()}>
+                <Button data-testid="uploadClose" data-autofocus variant="primary" onClick={() => close()}>
                   {t('close')}
                 </Button>
               )}
