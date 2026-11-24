@@ -35,11 +35,12 @@ A failed capture says "Could not read fills from this image — http 404" on Tel
 
 On a non-OK answer the extractor reads the response body and puts the service's message in `detail`: `http 404: The model 'x' is not loaded; currently serving 'y'`.
 
-- The message is `error.message` when the body is JSON of the OpenAI error shape, a top-level string `error` or `message` when it is that, and otherwise the body text. Whitespace is collapsed and the message is capped at 200 characters, with an ellipsis when cut.
-- Trailing periods are trimmed from the message, so the sentence it is placed in does not end in "..".
+- The message is `error.message` when the body is JSON of the OpenAI error shape, a top-level string `error`, `message` or `detail` (the FastAPI shape) when it is that, and otherwise the body text. Whitespace is collapsed and the message is capped at 200 characters, with an ellipsis when cut.
+- Trailing sentence punctuation (`.`, `?`, `!`) is trimmed from the message, so the sentence it is placed in does not end in ".." or "?.".
 - An empty or unreadable body leaves `detail` as `http <status>`, as today.
-- A network failure keeps the thrown message as `detail`, as today.
+- A network failure uses the thrown message, put through the same collapsing, redaction, trimming and cap *(changed after the final review: Bun's connection-refused message ends in a question mark, and an unbounded thrown message broke "one line, bounded")*. A thrown message that is empty after that reads `network error`.
 - **The key is redacted from every failure `detail`** (found while planning: services echo the key in a 401 answer, some of them whole). Any word that contains the whole key, or a run of 8 or more consecutive characters of it, is replaced by `[redacted]`. A key shorter than 8 characters is matched whole, and one shorter than 4 is not redacted at all. *(My call on the threshold: a service's own masked form, such as `sk-…abcd`, shows a few real characters on purpose and is left as sent. Matching runs as short as 4 would also blank ordinary words that happen to share letters with the key, such as "project" for an `sk-proj-…` key, and those words are what this change exists to show.)*
+  - **Known limits of this rule** (final review): `sk-proj-` is exactly 8 characters, so OpenAI's masked form of a project key is redacted as well. With a word-like placeholder key, as local servers are often run with (`test`, `local`, `sk-no-key-required`, `lm-studio`), the rule also hides ordinary words that contain the key or an 8-character run of it, such as a model name containing "test". The README says so and advises leaving the key unset for a keyless server. Whether to change the rule is the operator's call.
 
 ### The event — `apps/server/src/wire/capture-route.ts`
 
