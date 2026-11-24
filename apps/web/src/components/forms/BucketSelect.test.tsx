@@ -43,10 +43,15 @@ describe('BucketSelect', () => {
     delete globalThis.IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it('keeps a chosen bucket that is no longer held visible', async () => {
+  it('labels buckets 1-based, like the bucket board, and keeps a chosen bucket that is no longer held visible', async () => {
     const select = await render('3');
-    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Automatic', 'Bucket 0 · 10 sh', 'Bucket 3']);
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Automatic', 'Bucket 1 · 10 sh', 'Bucket 4']);
     expect(select.value).toBe('3');
+  });
+
+  it('keeps the option values on the stored 0-based index', async () => {
+    const select = await render('3');
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['', '0', '3']);
   });
 
   it('adds no extra option for a held choice or for Automatic', async () => {

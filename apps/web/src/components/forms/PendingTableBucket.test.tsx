@@ -116,8 +116,8 @@ describe('PendingTable bucket selector', () => {
 
   it("each sell row offers its own run's held buckets", async () => {
     await renderRows([SELL_NINE, SELL_TEN]);
-    expect(optionTexts(bucketSelect(9))).toEqual(['Automatic', 'Bucket 0 · 10 sh', 'Bucket 3 · 4 sh']);
-    expect(optionTexts(bucketSelect(10))).toEqual(['Automatic', 'Bucket 1 · 5 sh']);
+    expect(optionTexts(bucketSelect(9))).toEqual(['Automatic', 'Bucket 1 · 10 sh', 'Bucket 4 · 4 sh']);
+    expect(optionTexts(bucketSelect(10))).toEqual(['Automatic', 'Bucket 2 · 5 sh']);
   });
 
   it('the header has a Bucket column and as many headers as cells', async () => {
