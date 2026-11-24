@@ -205,10 +205,10 @@ async function main(): Promise<void> {
     console.log('--- digest as sent ---\n' + digest + '\n--------------------')
     ok(digest.includes('E2E NVDA  NVDA'), 'digest header verbatim')
     ok(digest.includes(`Trade date: ${TODAY}  Last close: 180.00 (${PREV})`), 'digest trade-date line verbatim')
-    ok(digest.includes('Buy  LOC  5 sh  @ 179.99  → bucket 2'), 'digest buy_loc line: 5 sh @ 179.99 (close−tick) into lowest empty bucket 2')
-    ok(digest.includes('Sell  LOC  32 sh  @ 178.867  → bucket 0'), 'digest sell_loc line for seeded bucket 0')
-    ok(digest.includes('Sell  LOC  30 sh  @ 179.869  → bucket 1'), 'digest sell_loc line for captured bucket 1')
-    ok(digest.includes('Sell  STOP  32 sh  trigger 172.25  → bucket 0') && digest.includes('Sell  STOP  30 sh  trigger 173.21  → bucket 1'), 'digest stop lines: trigger 172.25 (bucket 0) and 173.21 (bucket 1)')
+    ok(digest.includes('Buy  LOC  5 sh  @ 179.99  → bucket 3'), 'digest buy_loc line: 5 sh @ 179.99 (close−tick) into lowest empty bucket (index 2, shown as 3)')
+    ok(digest.includes('Sell  LOC  32 sh  @ 178.867  → bucket 1'), 'digest sell_loc line for seeded bucket (index 0, shown as 1)')
+    ok(digest.includes('Sell  LOC  30 sh  @ 179.869  → bucket 2'), 'digest sell_loc line for captured bucket (index 1, shown as 2)')
+    ok(digest.includes('Sell  STOP  32 sh  trigger 172.25  → bucket 1') && digest.includes('Sell  STOP  30 sh  trigger 173.21  → bucket 2'), 'digest stop lines: trigger 172.25 (shown bucket 1) and 173.21 (shown bucket 2)')
     const aged = await jsonOf(await req('GET', `/runs/${runId}`, undefined, token))
     ok(aged.state.buckets[0].state === 'held' && aged.state.ages['0'] === 2, 'morning advanceDay aged seeded bucket 0 to 2')
 
@@ -247,7 +247,7 @@ async function main(): Promise<void> {
     const foreign = await req('POST', `/runs/${foreignRun.id}/orders/${sellLoc.id}/cancel`, { reason: 'other' }, token)
     ok(foreign.status === 404 && (await jsonOf(foreign)).error === 'order-not-found', 'cancelling via a foreign run -> 404 order-not-found')
 
-    const expectedCancelMsg = `\u{1F6AB} Cancelled: ${sellLoc.kind} bucket ${sellLoc.bucketIdx} \u2014 ${CATALOG['reason-stale-price'].en} (${formatUsd(BigInt(sellLoc.limitPrice))})`
+    const expectedCancelMsg = `\u{1F6AB} Cancelled: ${sellLoc.kind} bucket ${sellLoc.bucketIdx + 1} \u2014 ${CATALOG['reason-stale-price'].en} (${formatUsd(BigInt(sellLoc.limitPrice))})`
     ok(httpSends.length === 1 && httpSends[0].chat === 'chat-1' && httpSends[0].text === expectedCancelMsg,
       `exactly one Telegram cancel push to the allowed chat, exact text: ${JSON.stringify(httpSends)}`)
     const notifs = (await jsonOf(await req('GET', `/runs/${runId}/notifications`, undefined, token))) as any[]

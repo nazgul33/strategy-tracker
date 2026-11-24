@@ -1,6 +1,6 @@
 import { DomainError, formatUsd } from '@st/core';
 import { buildPendingKeyboard } from '@st/telegram';
-import { t } from '@st/telegram/i18n';
+import { bucketNo, t } from '@st/telegram/i18n';
 import type { Lang } from '@st/telegram/i18n';
 
 import { confirmPendingFill, rejectPendingFill } from '../domain/booking';
@@ -154,10 +154,12 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       }
       const row = await deps.repos.pendingRepo.get(id);
       if (!row) return;
-      const price = formatUsd(row.price);
+      const booked = { ticker: row.ticker, side: row.side, shares: row.shares, price: formatUsd(row.price), date: row.filledOn };
+      // A confirmed row carries the bucket the booking chose (decide writes it). Should it
+      // ever be missing, say so by leaving the bucket out rather than printing a made-up one.
       await deps.send(
         chatId,
-        t('booked', lang, { ticker: row.ticker, side: row.side, shares: row.shares, price, bucket: row.bucketIdx ?? 0, date: row.filledOn }),
+        row.bucketIdx == null ? t('booked-no-bucket', lang, booked) : t('booked', lang, { ...booked, bucket: bucketNo(row.bucketIdx) }),
       );
     } else {
       // No keep prompt over Telegram: the screenshot is not kept, but the reject
@@ -192,11 +194,11 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       ];
       for (const b of st.buckets) {
         if (b.state === 'empty') {
-          lines.push(t('bucket-idle', lang, { index: b.index }));
+          lines.push(t('bucket-idle', lang, { index: bucketNo(b.index) }));
         } else if (b.state === 'force_sell') {
-          lines.push(t('bucket-force-sell', lang, { index: b.index, shares: b.shares, price: formatUsd(b.buyPrice) }));
+          lines.push(t('bucket-force-sell', lang, { index: bucketNo(b.index), shares: b.shares, price: formatUsd(b.buyPrice) }));
         } else {
-          lines.push(t('bucket-held', lang, { index: b.index, shares: b.shares, price: formatUsd(b.buyPrice) }));
+          lines.push(t('bucket-held', lang, { index: bucketNo(b.index), shares: b.shares, price: formatUsd(b.buyPrice) }));
         }
       }
       blocks.push(lines.join('\n'));

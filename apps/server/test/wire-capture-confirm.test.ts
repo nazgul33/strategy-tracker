@@ -11,12 +11,25 @@ describe('capture onConfirm — reply target', () => {
     await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     const p = h.pending[0]!;
     await h.handlers.onConfirm('888', `yes:${p.id}`, true);
-    expect(h.sent.at(-1)).toEqual({ chatId: '888', text: 'Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 into bucket 0', extra: undefined });
+    expect(h.sent.at(-1)).toEqual({ chatId: '888', text: 'Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 into bucket 1', extra: undefined });
 
     const r = makeCapture({ runs: [activeRun(1, 'NVDA')] });
     await r.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
     await r.handlers.onConfirm('888', `no:${r.pending[0]!.id}`, false);
     expect(r.sent.at(-1)).toEqual({ chatId: '888', text: 'Rejected — fill discarded.', extra: undefined });
+  });
+
+  test('a confirmed row that carries no bucket is reported without inventing a bucket number', async () => {
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    const p = h.pending[0]!;
+    const get = h.repos.pendingRepo.get;
+    h.repos.pendingRepo.get = async (id: number) => {
+      const row = await get(id);
+      return row ? { ...row, bucketIdx: null } : row;
+    };
+    await h.handlers.onConfirm('777', `yes:${p.id}`, true);
+    expect(h.sent.at(-1)!.text).toBe('Booked NVDA buy 10 sh @ $180.50 on 2026-11-10');
   });
 
   test('a button pressed with no photo since start replies in its own chat', async () => {
@@ -231,7 +244,7 @@ describe('capture confirm — sibling leg cancelled by a bucket-emptying sell', 
   test('confirming the sell tells every allowed chat to pull the cancelled leg and records the notifications', async () => {
     const { fakes, orders, pid, sent, handlers } = await setupSell();
     await handlers.onConfirm('111', `yes:${pid}`, true);
-    const text = '⚠️ Run #1 NVDA: cancel bucket 0 target ($103.00) at your broker — the other leg already filled, so this order is no longer needed.';
+    const text = '⚠️ Run #1 NVDA: cancel bucket 1 target ($103.00) at your broker — the other leg already filled, so this order is no longer needed.';
     expect(sent.filter((s) => s.text === text).map((s) => s.chatId)).toEqual(['111', '222']);
     expect(fakes.notifications).toEqual([
       { runId: 1, chatId: '111', text },
@@ -244,7 +257,7 @@ describe('capture confirm — sibling leg cancelled by a bucket-emptying sell', 
   test('with no allowed chats the Telegram confirm records the notice for the web', async () => {
     const { fakes, pid, sent, handlers } = await setupSell({ allowedChatIds: [] });
     await handlers.onConfirm('111', `yes:${pid}`, true);
-    const text = '⚠️ Run #1 NVDA: cancel bucket 0 target ($103.00) at your broker — the other leg already filled, so this order is no longer needed.';
+    const text = '⚠️ Run #1 NVDA: cancel bucket 1 target ($103.00) at your broker — the other leg already filled, so this order is no longer needed.';
     expect(fakes.notifications).toEqual([{ runId: 1, chatId: 'web', text }]);
     expect(sent.some((s) => s.text === text)).toBe(false);
   });

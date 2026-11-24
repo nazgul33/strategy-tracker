@@ -59,7 +59,7 @@ describe('http trigger', () => {
     expect(row.status).toBe('cancelled')
     expect(row.cancelReason).toBe('stale-price')
     expect(f.notifications.filter((n) => n.runId === runId)).toHaveLength(1)
-    expect(f.notifications.find((n) => n.runId === runId)!.text).toContain('Cancelled')
+    expect(f.notifications.find((n) => n.runId === runId)!.text).toBe('🚫 Cancelled: sell_loc bucket 3 — price no longer valid (350.00)')
     expect(f.sent).toEqual([{ chatId: '42', text: f.notifications.find((n) => n.runId === runId)!.text }])
   })
   test('cancel order: 400 invalid-reason, 404 unknown order, 409 not open', async () => {

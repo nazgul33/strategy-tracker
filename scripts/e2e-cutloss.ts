@@ -7,7 +7,7 @@
  *   trigger = floor-to-cent(buyPrice * (1_000_000 - cutLossPpm) / 1_000_000), in myriadths.
  */
 import { formatUsd } from '../packages/core/src/money'
-import { t } from '../packages/telegram/src/i18n'
+import { bucketNo, t } from '../packages/telegram/src/i18n'
 import { jsonOf, type E2eCtx } from './e2e-ctx'
 
 export const CUT_LOSS_PPM = 35_000
@@ -68,7 +68,7 @@ export async function checkStopBooking(
   c.ok(after.filter((o) => o.status === 'cancelled').length === 2, 'exactly two cancelled orders overall (operator + sibling)')
 
   const expected = t('sibling-cancelled', 'en', {
-    id: runId, ticker: 'NVDA', bucket: 1, leg: t('leg-sell_loc', 'en'), limit: formatUsd(BigInt(sellLoc1.limitPrice)),
+    id: runId, ticker: 'NVDA', bucket: bucketNo(1), leg: t('leg-sell_loc', 'en'), limit: formatUsd(BigInt(sellLoc1.limitPrice)),
   })
   const added = sends.slice(sendsBefore)
   c.ok(added.length === 1 && added[0]!.chat === 'chat-1' && added[0]!.text === expected, `one sibling-cancel push to the allowed chat: ${JSON.stringify(added)}`)

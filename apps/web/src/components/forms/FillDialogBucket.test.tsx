@@ -125,7 +125,7 @@ describe('FillDialog bucket selector', () => {
   it("a sell offers Automatic and the run's held buckets", async () => {
     await render();
     await choose(element('manualSideSelect'), 'sell');
-    expect(optionTexts(bucketSelect())).toEqual(['Automatic', 'Bucket 0 · 10 sh', 'Bucket 2 · 7 sh']);
+    expect(optionTexts(bucketSelect())).toEqual(['Automatic', 'Bucket 1 · 10 sh', 'Bucket 3 · 7 sh']);
     expect(bucketSelect().value).toBe('');
   });
 

@@ -117,6 +117,6 @@ describe('RunDetailPage add-fill button', () => {
       side.dispatchEvent(new Event('change', { bubbles: true }));
     });
     const bucket = document.querySelector('[data-testid="manualBucketSelect"]') as HTMLSelectElement;
-    expect(Array.from(bucket.options).map((o) => o.textContent)).toEqual(['Automatic', 'Bucket 1 · 20 sh']);
+    expect(Array.from(bucket.options).map((o) => o.textContent)).toEqual(['Automatic', 'Bucket 2 · 20 sh']);
   });
 });

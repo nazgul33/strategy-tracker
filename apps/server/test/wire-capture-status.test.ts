@@ -10,7 +10,10 @@ describe('capture status and orders', () => {
     expect(h.sent.length).toBe(1);
     expect(h.sent[0]!.text).toMatch(/Run #1 NVDA/);
     expect(h.sent[0]!.text).toContain('Cash: $10000.00');
-    expect(h.sent[0]!.text).toContain('Bucket 0');
+    const count = h.stateFor(1).buckets.length;
+    expect(h.sent[0]!.text).toContain('Bucket 1: idle');
+    expect(h.sent[0]!.text).toContain(`Bucket ${count}: idle`);
+    expect(h.sent[0]!.text).not.toContain('Bucket 0:');
   });
 
   test('onStatus explains when there are no runs', async () => {

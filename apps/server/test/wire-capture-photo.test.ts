@@ -37,7 +37,7 @@ describe('capture onPhoto — happy path books via the real booking module', () 
     expect(h.ledger[0]!.kind).toBe('buy');
     expect(h.stateFor(1).buckets[0]!.state).toBe('held');
     expect(h.stateFor(1).buckets[0]!.shares).toBe(10);
-    expect(h.sent.at(-1)!.text).toBe('Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 into bucket 0');
+    expect(h.sent.at(-1)!.text).toBe('Booked NVDA buy 10 sh @ $180.50 on 2026-11-10 into bucket 1');
   });
 
   test('rejecting pending leaves no fill', async () => {

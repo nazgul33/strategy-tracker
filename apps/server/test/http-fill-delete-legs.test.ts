@@ -24,8 +24,8 @@ async function setup(chatIds?: string[]) {
 
 const TAIL = 'at your broker — the buy it was placed for was deleted, so this order is no longer needed.'
 const texts = (id: number) => [
-  `⚠️ Run #${id} AAPL: cancel bucket 0 target ($103.00) ${TAIL}`,
-  `⚠️ Run #${id} AAPL: cancel bucket 0 stop ($97.00) ${TAIL}`,
+  `⚠️ Run #${id} AAPL: cancel bucket 1 target ($103.00) ${TAIL}`,
+  `⚠️ Run #${id} AAPL: cancel bucket 1 stop ($97.00) ${TAIL}`,
 ]
 
 describe('fill delete that removes a bucket\'s buy over HTTP', () => {
