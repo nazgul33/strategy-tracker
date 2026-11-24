@@ -457,7 +457,8 @@ and is never a day ahead of New York's date. The premarket sample (ordered
   most likely want their own modules.
 - Names of the new DTO fields, i18n keys and the dry-run function.
 - Whether `maxTokens` (1024 in `wire/capture.ts`) is still enough with three more
-  values per row.
+  values per row. (Amended 2026-11-24: it was not; the limit is now 4096, see
+  Amendments.)
 - The exact en/ko wording. Korean copy stays within the scope of #50's later
   native read.
 - Updating the superseded section of the cut-loss spec with a pointer here, and
@@ -502,3 +503,8 @@ and is never a day ahead of New York's date. The premarket sample (ordered
   there.
 - The two numeric order values are bounded in the extractor (1 to 1,000,000,000 shares; at most
   9 integer digits of price).
+- The vision limit is 4096 output tokens, not 1024 (operator decision, 2026-11-24, #99). The
+  live read showed the model's reasoning counts against the limit: a three-fill single-day
+  screen used about 440 tokens on `main` and 635 to 726 with the three new values per row, and
+  a four-fill date-range screen up to 933. The plan's estimate of about 70 tokens per row was
+  wrong.

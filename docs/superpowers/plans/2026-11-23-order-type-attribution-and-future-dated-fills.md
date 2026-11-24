@@ -78,7 +78,7 @@
 
 Plus `the prompt asks for the order columns`: `MPOP_FILL_EXTRACTION_PROMPT` contains `orderType`, `orderPrice`, `orderedShares`, `매도/STOP(시장가)` and `정정(매도)`, and still contains `NEVER 주문단가`.
 
-`maxTokens` stays 1024 (`apps/server/src/wire/capture.ts`): a screen shows about eight rows at most, roughly 70 tokens each with the new keys.
+`maxTokens` stays 1024 (`apps/server/src/wire/capture.ts`): a screen shows about eight rows at most, roughly 70 tokens each with the new keys. (Superseded 2026-11-24: this estimate was wrong, because the model's reasoning counts against the limit; the limit is 4096 since #99. See the spec's Amendments.)
 
 - [ ] **Step 2: Run** `bun test packages/ingest/test/extract-order.test.ts`. Expected: FAIL (keys missing, prompt strings missing).
 
