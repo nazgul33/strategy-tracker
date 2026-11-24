@@ -1,7 +1,7 @@
 # Split shared tables from mean-reversion tables (`mr_` prefix) — Design
 
 Date: 2026-11-24
-Status: draft, awaiting owner approval
+Status: approved (2026-11-24)
 
 ## Intent and why
 
@@ -64,8 +64,7 @@ Roadmap, for context only:
   supports the `IF EXISTS` rename forms and atomic multi-table rename. Production runs the
   database in the `mariadb_st_prod` container with the app user created by the official image
   (`MARIADB_USER` on `MARIADB_DATABASE`), which holds all privileges on that database.
-  Assumption to confirm with the owner: `.env.prod` does not point `MARIADB_HOST` at a different
-  server.
+  Checked on 2026-11-24: the running `mariadb_st_prod` container reports MariaDB 11.4.13.
 - MariaDB commits implicitly on every DDL statement, so a migration cannot be rolled back.
 - Migrations are applied automatically at server start by drizzle's migrator
   (`applyMigrations` in `apps/server/src/db/client.ts`).
