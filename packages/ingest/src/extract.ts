@@ -103,6 +103,11 @@ function visionErrorDetail(status: number, body: string, apiKey: string): string
   return msg === '' ? `http ${status}` : `http ${status}: ${msg}`;
 }
 
+function transportFailure(e: unknown, apiKey: string): ExtractResult {
+  const text = String((e as { message?: unknown } | null)?.message ?? e);
+  return { ok: false, reason: 'http', detail: normalizeErrorText(text, apiKey) || 'network error' };
+}
+
 export async function extractFills(
   images: Array<{ base64: string; mime: string }>,
   cfg: VisionConfig,
@@ -130,8 +135,8 @@ export async function extractFills(
       headers: { Authorization: `Bearer ${cfg.apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-  } catch (e: any) {
-    return { ok: false, reason: 'http', detail: normalizeErrorText(String(e?.message ?? e), cfg.apiKey) || 'network error' };
+  } catch (e) {
+    return transportFailure(e, cfg.apiKey);
   }
   if (!res.ok) {
     let errBody = '';
@@ -144,12 +149,20 @@ export async function extractFills(
   let json: any;
   try {
     json = await res.json();
-  } catch {
-    return { ok: false, reason: 'incompatible', detail: 'response body not json' };
+  } catch (e) {
+    // Only a parse failure says something about the API; a dropped or aborted read does not.
+    if (e instanceof SyntaxError) return { ok: false, reason: 'incompatible', detail: 'response body not json' };
+    return transportFailure(e, cfg.apiKey);
   }
-  const rawContent = json?.choices?.[0]?.message?.content;
-  if (typeof rawContent !== 'string') {
+  const message = json?.choices?.[0]?.message;
+  if (typeof message !== 'object' || message === null) {
     return { ok: false, reason: 'incompatible', detail: 'no content' };
+  }
+  // A chat-completions reply without text (content null on a refusal or a token cut-off) is a
+  // compatible API that gave no usable answer.
+  const rawContent = message.content;
+  if (typeof rawContent !== 'string') {
+    return { ok: false, reason: 'unparseable', detail: 'no content' };
   }
   // strip fences + find first { ... last }
   let text = rawContent.trim();
