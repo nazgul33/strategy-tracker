@@ -43,8 +43,8 @@ English is fixed by the spec. Source words fill `{modelSource}`, `{baseUrlSource
 | `capture-vision-in-use` | `In use: model {model} ({modelSource}), URL {baseUrl} ({baseUrlSource}), key ({keySource}).` | `사용 중: 모델 {model} ({modelSource}), URL {baseUrl} ({baseUrlSource}), 키 ({keySource}).` |
 | `capture-vision-setup-advice` | `This is a vision setup problem, not the screenshot. A URL or model changed in Settings applies after a server restart.` | `스크린샷 문제가 아니라 비전 설정 문제입니다. 설정에서 바꾼 URL이나 모델은 서버를 다시 시작해야 적용됩니다.` |
 | `vision-source-settings` | `Settings` | `설정` |
-| `vision-source-env` | `env` | `env` |
-| `vision-source-none` | `not set` | `없음` |
+| `vision-source-env` | `env` | `환경변수` |
+| `vision-source-none` | `not set` | `API Key 없음` |
 
 **Web** (`apps/web/src/i18n/en.json` and `ko.json`; remove `upload.badExtract`; keep localeCompare order — the new `upload.badExtract*` keys go between `upload.ambiguous` and `upload.bookedEarlier`, the `upload.vision*` keys between `upload.title` and `upload.visionTimeout`):
 
@@ -55,8 +55,8 @@ English is fixed by the spec. Source words fill `{modelSource}`, `{baseUrlSource
 | `upload.badExtractUnparseable` | same text as `capture-bad-extract-unparseable` | same as Telegram ko |
 | `upload.visionInUse` | same text as `capture-vision-in-use` | same as Telegram ko |
 | `upload.visionSetupAdvice` | same text as `capture-vision-setup-advice` | same as Telegram ko |
-| `upload.visionSourceEnv` | `env` | `env` |
-| `upload.visionSourceNone` | `not set` | `없음` |
+| `upload.visionSourceEnv` | `env` | `환경변수` |
+| `upload.visionSourceNone` | `not set` | `API Key 없음` |
 | `upload.visionSourceSettings` | `Settings` | `설정` |
 
 Removed keys and their only users: `capture-bad-extract` (text) — used only by `apps/server/src/wire/capture.ts:53`; `upload.badExtract` — used only by `apps/web/src/uploadlines.ts:20`. Each removing task greps for the key and finds no remaining use (the notice *kind* string `'capture-bad-extract'` stays).
@@ -73,7 +73,7 @@ Removed keys and their only users: `capture-bad-extract` (text) — used only by
 
 1. The vision service echoes the key in its error body → a word holding the whole key or 8+ consecutive key characters shows as `[redacted]` on every channel, while the service's own masked form (fewer than 8 real consecutive characters) and ordinary words sharing short runs with the key are shown as sent. Pinned in Task 1 (extractor), Task 2 (event + HTTP body), Task 3 (Telegram reply, notice row, log line).
 2. A proxy answers with a multi-line HTML error page → one line, at most 200 characters plus the `http <status>: ` prefix, no raw newlines in the Telegram reply. Pinned in Task 1.
-3. No key set in Settings or env → the in-use line says `key (not set)` / `키 (없음)`, never an empty pair of parentheses. Pinned in Task 2 (core) and Task 3 (wording).
+3. No key set in Settings or env → the in-use line says `key (not set)` / `키 (API Key 없음)`, never an empty pair of parentheses. Pinned in Task 2 (core) and Task 3 (wording).
 4. A service message containing brace text such as `{model}` → rendered literally, not substituted by a later placeholder. Pinned in Task 3 (Telegram) and Task 4 (web, whose `lookup` substitutes sequentially).
 5. A web upload that times out → still only the "Vision took too long" line, no in-use or advice line. Pinned in Task 4.
 
@@ -302,14 +302,14 @@ expect(badExtractMessage({ type: 'bad-extract', reason: 'unparseable', detail: '
 expect(badExtractMessage({ type: 'bad-extract', reason: 'empty', detail: 'no valid fills' }, 'en'))
   .toBe('No fills were found in this image. Check that it shows the fills list, or book the fill manually.')
 // ko, same three events: the ko strings of the copy table, with
-// '사용 중: 모델 qwen2.5-vl (설정), URL http://lm:1234/v1 (env), 키 (없음).' as the in-use line of the http case
+// '사용 중: 모델 qwen2.5-vl (설정), URL http://lm:1234/v1 (환경변수), 키 (API Key 없음).' as the in-use line of the http case
 // a detail with brace text is not substituted
 expect(badExtractMessage({ type: 'bad-extract', reason: 'http', detail: 'http 400: unknown field {model}', vision: VISION }, 'en').split('\n')[0])
   .toBe('The vision service did not accept the request — http 400: unknown field {model}.')
 ```
 
 `apps/server/test/capture-replies.test.ts`:
-- `TEXT` becomes `['The vision service did not accept the request — http 500.', 'In use: model m (env), URL https://vision.example/v1 (env), key (env).', ADVICE_EN].join('\n')`; the Korean test expects `['비전 서비스가 요청을 받아들이지 않았습니다 — http 500.', '사용 중: 모델 m (env), URL https://vision.example/v1 (env), 키 (env).', '스크린샷 문제가 아니라 비전 설정 문제입니다. 설정에서 바꾼 URL이나 모델은 서버를 다시 시작해야 적용됩니다.'].join('\n')`. The two `notice failed:` log assertions are unchanged.
+- `TEXT` becomes `['The vision service did not accept the request — http 500.', 'In use: model m (env), URL https://vision.example/v1 (env), key (env).', ADVICE_EN].join('\n')`; the Korean test expects `['비전 서비스가 요청을 받아들이지 않았습니다 — http 500.', '사용 중: 모델 m (환경변수), URL https://vision.example/v1 (환경변수), 키 (환경변수).', '스크린샷 문제가 아니라 비전 설정 문제입니다. 설정에서 바꾼 URL이나 모델은 서버를 다시 시작해야 적용됩니다.'].join('\n')`. The two `notice failed:` log assertions are unchanged.
 - new "the key value never reaches a reply, a notice or a log line": `setup({ getVisionApiKey: async () => ({ key: LEAK_KEY, source: 'settings' }), fetchImpl: keyEchoFetch })`, `notificationRepo.insert` throws `db-down` (so a log line is written), `console.error`/`console.log`/`console.warn` spied → `keyParts` of `JSON.stringify(sent)`, of `JSON.stringify(f.notifications)` and of each spy's `JSON.stringify(mock.calls)` are all `[]`; `sent[0].split('\n')[0]` is `'The vision service did not accept the request — http 401: Incorrect API key provided: [redacted] masked sk-LEA*********9c2e.'` and `sent[0]` contains `'key (Settings)'`. Repeat without the throwing insert and assert `keyParts(JSON.stringify(rows(f)))` is `[]`.
 - the source pin test — replace the four `src` lines (the `core` lines from Task 2 stay):
 ```ts
@@ -381,8 +381,8 @@ view(captureEventLines({ type: 'bad-extract', reason: 'http', detail: "http 404:
 // brace text in the detail stays literal
 captureEventLines({ type: 'bad-extract', reason: 'http', detail: 'http 400: unknown field {model}', vision: VISION }, t)[0]!.text
   === 'The vision service did not accept the request — http 400: unknown field {model}.'
-// 'ko catalog': lookup('ko', 'upload.visionInUse', { model: 'm', modelSource: lookup('ko', 'upload.visionSourceSettings'), baseUrl: 'u', baseUrlSource: 'env', keySource: lookup('ko', 'upload.visionSourceNone') })
-//   === '사용 중: 모델 m (설정), URL u (env), 키 (없음).'
+// 'ko catalog': lookup('ko', 'upload.visionInUse', { model: 'm', modelSource: lookup('ko', 'upload.visionSourceSettings'), baseUrl: 'u', baseUrlSource: lookup('ko', 'upload.visionSourceEnv'), keySource: lookup('ko', 'upload.visionSourceNone') })
+//   === '사용 중: 모델 m (설정), URL u (환경변수), 키 (API Key 없음).'
 ```
 
 - [ ] **Step 2: Run** `bun test apps/web/src/uploadlines.test.ts` — expected FAIL.
