@@ -1,16 +1,17 @@
 import { DomainError, formatUsd } from '@st/core';
-import { extractFills } from '@st/ingest';
 import { buildPendingKeyboard } from '@st/telegram';
 import { t } from '@st/telegram/i18n';
 import type { Lang } from '@st/telegram/i18n';
 
-import { confirmPendingFill, ingestCapture, rejectPendingFill } from '../domain/booking';
+import { confirmPendingFill, rejectPendingFill } from '../domain/booking';
 import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/booking';
 import type { PendingRepo } from '../domain/repo-types';
 import { parseId } from '../http/params';
 import { makeBookingNotifier } from './booking-notifier';
 import { broadcastNotice } from './broadcast';
 import { pendingMessage } from './capture-pending-message';
+import { makeCaptureRouting } from './capture-route';
+import type { CaptureEvent, CaptureRouteDeps } from './capture-route';
 
 const CONFIRM_ERROR_KEYS: Record<string, string> = {
   'ticker-mismatch': 'confirm-err-ticker-mismatch',
@@ -32,20 +33,17 @@ export interface CaptureRepos extends RepoSurface {
   pendingRepo: PendingRepo;
 }
 
-export interface CaptureDeps {
+export interface CaptureDeps extends CaptureRouteDeps {
   repos: CaptureRepos;
-  vision: { baseUrl: string; model: string };
-  getVisionApiKey(): Promise<string>;
-  today(): string;
   lang?: Lang;
   // chats told about booking notices; empty: recorded for the web only
   allowedChatIds: string[];
   send(chatId: string, text: string, extra?: Record<string, unknown>): Promise<void>;
-  fetchImpl?: typeof fetch;
 }
 
 export function makeCaptureHandlers(deps: CaptureDeps) {
   const lang: Lang = deps.lang ?? 'en';
+  const routeCapture = makeCaptureRouting(deps);
 
   // "Could not read fills": recorded for System notices (no run) and then sent, to the asking chat only.
   // broadcastNotice logs a failing insert or send and never throws, so the photo handler resolves.
@@ -56,90 +54,38 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     );
   }
 
-  async function extractOrTell(chatId: string, image: { base64: string; mime: string }) {
-    const cfg = {
-      baseUrl: deps.vision.baseUrl,
-      apiKey: await deps.getVisionApiKey(),
-      model: deps.vision.model,
-      maxTokens: 4096,
-      today: deps.today(),
-    };
-    const extract = await extractFills([image], cfg, deps.fetchImpl);
-    if (!extract.ok) {
-      await tellBadExtract(chatId, extract.detail);
-      return null;
+  async function reply(chatId: string, event: CaptureEvent): Promise<void> {
+    switch (event.type) {
+      case 'unknown-run':
+        await deps.send(chatId, t('unknown-run', lang, { id: event.id }));
+        return;
+      case 'bad-extract':
+        await tellBadExtract(chatId, event.detail);
+        return;
+      case 'pin-nomatch':
+        await deps.send(chatId, t('capture-pin-nomatch', lang, { ticker: event.ticker, id: event.runId }));
+        return;
+      case 'pin-skipped':
+        await deps.send(chatId, t('capture-pin-skipped', lang, { tickers: event.tickers.join(', '), id: event.runId }));
+        return;
+      case 'no-run':
+        await deps.send(chatId, t('capture-no-run', lang, { ticker: event.ticker }));
+        return;
+      case 'ambiguous':
+        await deps.send(chatId, t('capture-ambiguous', lang, { ticker: event.ticker }));
+        return;
+      case 'outcome':
+        await sendOutcome(chatId, event.outcome);
+        return;
     }
-    return extract;
   }
 
   async function onPhoto(chatId: string, image: { base64: string; mime: string }, caption?: string): Promise<void> {
-    let pinned: { id: number; ticker: string } | null = null;
     // the run id must be the caption's FIRST token: `7`, `#7` or `/capture 7`.
     // anything else (e.g. a "NVDA 12/25" note) falls through to ticker auto-route.
     const m = /^(?:\/capture\s+)?#?(\d+)(?:\s|$)/.exec(caption?.trim() ?? '');
-    if (m) {
-      const id = Number(m[1]);
-      const run = await deps.repos.runRepo.get(id);
-      if (!run) {
-        await deps.send(chatId, t('unknown-run', lang, { id }));
-        return;
-      }
-      pinned = { id: run.id, ticker: run.ticker };
-    }
-
-    const extract = await extractOrTell(chatId, image);
-    if (!extract) return;
-
-    if (pinned) {
-      // pinned mode: book ONLY fills carrying the pinned run's own ticker — one run
-      // has exactly one ticker — and tell the user what was ignored.
-      const { id: pinId, ticker: pinTicker } = pinned;
-      const own = extract.fills.filter((f: { ticker: string }) => f.ticker === pinTicker);
-      const ignored = [...new Set(extract.fills.filter((f: { ticker: string }) => f.ticker !== pinTicker).map((f: { ticker: string }) => f.ticker))];
-      if (own.length === 0) {
-        await deps.send(chatId, t('capture-pin-nomatch', lang, { ticker: pinTicker, id: pinId }));
-        return;
-      }
-      if (ignored.length > 0) {
-        await deps.send(chatId, t('capture-pin-skipped', lang, { tickers: ignored.join(', '), id: pinId }));
-      }
-      const outcome = await ingestCapture(pinId, image, { ...extract, fills: own }, {
-        repos: deps.repos,
-        today: deps.today(),
-      });
-      await sendOutcome(chatId, outcome);
-      return;
-    }
-
-    // auto-route: each ticker group resolves to exactly one active run; groups
-    // without a unique run are skipped with a one-line notice, never abort the rest.
-    const groups = new Map<string, typeof extract.fills>();
-    for (const fill of extract.fills) {
-      const g = groups.get(fill.ticker);
-      if (g) g.push(fill);
-      else groups.set(fill.ticker, [fill]);
-    }
-    if (groups.size === 0) {
-      await tellBadExtract(chatId, 'no fills recognized');
-      return;
-    }
-    const active = (await deps.repos.runRepo.list()).filter((r) => r.status === 'active');
-    for (const [ticker, fills] of groups) {
-      const matches = active.filter((r) => r.ticker === ticker);
-      if (matches.length === 0) {
-        await deps.send(chatId, t('capture-no-run', lang, { ticker }));
-        continue;
-      }
-      if (matches.length > 1) {
-        await deps.send(chatId, t('capture-ambiguous', lang, { ticker }));
-        continue;
-      }
-      const outcome = await ingestCapture(matches[0]!.id, image, { ...extract, fills }, {
-        repos: deps.repos,
-        today: deps.today(),
-      });
-      await sendOutcome(chatId, outcome);
-    }
+    const pinnedRunId = m ? Number(m[1]) : null;
+    await routeCapture({ image, pinnedRunId }, (event) => reply(chatId, event));
   }
 
   async function sendOutcome(chatId: string, outcome: CaptureOutcome): Promise<void> {
