@@ -27,6 +27,13 @@ what the reviews found and the branch deliberately left.
 - **A newer server with an older web bundle.** A cached tab that predates
   `incompatible` renders it through its `http` branch ("did not accept the
   request — response body not json." with setup advice).
+- **System notices show only the first line of a failed capture.** A
+  failed-capture notice has no run, so its row in System notices
+  (`apps/web/src/components/SystemNotices.tsx`) is collapsed to the notice's
+  first non-blank line and expands in place on a click. With the original error
+  now on the last line, every refused-request reply shows the same first
+  sentence there ("The vision service did not accept the request."); the
+  service's own text is visible only after expanding the row.
 
 ## Test gaps and polish
 
@@ -45,8 +52,6 @@ what the reviews found and the branch deliberately left.
 - A key that contains a character outside the Basic Multilingual Plane can
   leave half of that character behind after masking (the mask works on UTF-16
   units; real keys are ASCII).
-- A 200 answer that carries an `error` object is `incompatible` with the
-  original error `no content`; the service's own message is not shown.
 - An array-valued `message` in a 200 reply is treated as a message object and
   reads as `unparseable`; no test pins it either way.
 - Telegram has no test for `$` sequences on the original-error line (its
