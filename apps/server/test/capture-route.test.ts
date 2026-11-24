@@ -19,8 +19,8 @@ function routing(opts: FakeOpts & { fetchImpl?: typeof fetch } = {}) {
     fetchImpl,
   })
   const events: CaptureEvent[] = []
-  const run = (pinnedRunId: number | null) =>
-    route({ image: { base64: PNG_B64, mime: 'image/png' }, pinnedRunId }, async (e) => { events.push(e) })
+  const run = (pinnedRunId: number | null, visionTimeoutMs?: number) =>
+    route({ image: { base64: PNG_B64, mime: 'image/png' }, pinnedRunId, visionTimeoutMs }, async (e) => { events.push(e) })
   return { ...fakes, events, run, visionCalls: () => visionCalls }
 }
 
@@ -107,5 +107,66 @@ describe('capture routing core', () => {
     }
     await expect(r.run(null)).rejects.toThrow('db-down')
     expect(r.events.map((e) => e.type)).toEqual(['outcome'])
+  })
+})
+
+describe('vision time limit', () => {
+  function switchable() {
+    let signal: AbortSignal | null | undefined
+    let impl: typeof fetch = visionFetch
+    const hanging = (async (_url: unknown, init?: RequestInit) => {
+      signal = init?.signal
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+      })
+    }) as unknown as typeof fetch
+    const recording = (async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      signal = init?.signal
+      return visionFetch(url, init)
+    }) as unknown as typeof fetch
+    const fetchImpl = ((...args: Parameters<typeof fetch>) => impl(...args)) as unknown as typeof fetch
+    return {
+      fetchImpl,
+      hang: () => { impl = hanging },
+      record: () => { impl = recording },
+      signal: () => signal,
+    }
+  }
+
+  test('a vision read slower than the limit is a bad-extract and aborts the request', async () => {
+    const f = switchable()
+    f.hang()
+    const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: f.fetchImpl })
+    await r.run(null, 20)
+    expect(r.events).toEqual([{ type: 'bad-extract', detail: 'vision timed out' }])
+    expect(f.signal()?.aborted).toBe(true)
+    expect(r.captures.length).toBe(0)
+  })
+
+  test('a timed-out file can be uploaded again', async () => {
+    const f = switchable()
+    f.hang()
+    const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: f.fetchImpl })
+    await r.run(null, 20)
+    f.record()
+    await r.run(null, 20)
+    expect(r.events).toHaveLength(2)
+    expect(r.events[1]).toMatchObject({ type: 'outcome', runId: 1, ticker: 'NVDA', outcome: { pending: [{ runId: 1, ticker: 'NVDA' }] } })
+  })
+
+  test('a read inside the limit is unaffected', async () => {
+    const r = routing({ runs: [activeRun(1, 'NVDA')] })
+    await r.run(null, 1000)
+    expect(r.events).toHaveLength(1)
+    expect(r.events[0]).toMatchObject({ type: 'outcome', runId: 1, ticker: 'NVDA' })
+  })
+
+  test('without a limit the vision request carries no signal', async () => {
+    const f = switchable()
+    f.record()
+    const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: f.fetchImpl })
+    await r.run(null)
+    expect(r.events).toHaveLength(1)
+    expect(f.signal()).toBeUndefined()
   })
 })

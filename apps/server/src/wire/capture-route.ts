@@ -22,17 +22,49 @@ export type CaptureEvent =
 
 export type CaptureEventSink = (event: CaptureEvent) => Promise<void>;
 
+export const VISION_TIMEOUT_DETAIL = 'vision timed out';
+
 export interface RouteCaptureRequest {
   image: { base64: string; mime: string };
   pinnedRunId: number | null;
+  visionTimeoutMs?: number;
 }
 
 export type RouteCapture = (req: RouteCaptureRequest, emit: CaptureEventSink) => Promise<void>;
 
+type ExtractArgs = Parameters<typeof extractFills>;
+
+// Without a limit, extractFills runs exactly as before (no signal on the fetch).
+// With one, the timer settles the race first and then aborts the in-flight request.
+async function extractWithin(
+  images: ExtractArgs[0],
+  cfg: ExtractArgs[1],
+  fetchImpl: typeof fetch | undefined,
+  timeoutMs: number | undefined,
+): Promise<Awaited<ReturnType<typeof extractFills>>> {
+  if (timeoutMs === undefined) return extractFills(images, cfg, fetchImpl);
+  const controller = new AbortController();
+  const inner = fetchImpl ?? globalThis.fetch;
+  const signalled = ((input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+    inner(input, { ...init, signal: controller.signal })) as typeof fetch;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<{ ok: false; reason: 'http'; detail: string }>((resolve) => {
+    timer = setTimeout(() => {
+      resolve({ ok: false, reason: 'http', detail: VISION_TIMEOUT_DETAIL });
+      controller.abort();
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([extractFills(images, cfg, signalled), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // The pin and auto-route rules for one screenshot, reported as events in the order
 // they happen. A throw (e.g. from a repo) propagates after the earlier events were emitted.
 export function makeCaptureRouting(deps: CaptureRouteDeps): RouteCapture {
-  return async function routeCapture({ image, pinnedRunId }, emit) {
+  return async function routeCapture({ image, pinnedRunId, visionTimeoutMs }, emit) {
     let pinned: { id: number; ticker: string } | null = null;
     if (pinnedRunId !== null) {
       const run = await deps.repos.runRepo.get(pinnedRunId);
@@ -50,7 +82,7 @@ export function makeCaptureRouting(deps: CaptureRouteDeps): RouteCapture {
       maxTokens: 4096,
       today: deps.today(),
     };
-    const extract = await extractFills([image], cfg, deps.fetchImpl);
+    const extract = await extractWithin([image], cfg, deps.fetchImpl, visionTimeoutMs);
     if (!extract.ok) {
       await emit({ type: 'bad-extract', detail: extract.detail });
       return;
