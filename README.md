@@ -172,7 +172,8 @@ The same fill screenshots can be uploaded from the web UI, with or without the b
 - Results show per file in the popup; nothing is booked there — the fills wait in **Pending** for
   confirmation, as with Telegram.
 - The server's `idleTimeout` is 60 s and the vision call is cut off at 50 s, so a TLS reverse proxy
-  in front of the app must allow at least 60 s per request.
+  in front of the app must allow at least 60 s per request. It must also accept request bodies of at
+  least 9 MB (for nginx, `client_max_body_size 9m;` — its default is 1 MB).
 
 ## Schedules
 

@@ -174,6 +174,20 @@ describe('uploadErrorLines', () => {
     ]);
   });
 
+  test('a proxy answer without a JSON body, and a run that went away', () => {
+    const text = (err: unknown) => uploadErrorLines(err, t).map((l) => l.text);
+    expect(text(new ApiError(413, 'http-413'))).toEqual([
+      'The upload was refused as too large before it reached the tracker. Images up to 8 MB are accepted, so a proxy in front of the server may have a lower limit.',
+    ]);
+    expect(text(new ApiError(502, 'http-502'))).toEqual([
+      'The server did not answer. The capture may still have completed — check Pending before uploading again.',
+    ]);
+    expect(text(new ApiError(504, 'http-504'))).toEqual([
+      'The server did not answer in time. The capture may still have completed — check Pending before uploading again.',
+    ]);
+    expect(text(new ApiError(404, 'no-run'))).toEqual(['This run no longer exists.']);
+  });
+
   test('uploadItemLines prefers the error, else flattens the events', () => {
     expect(uploadItemLines({ error: new ApiError(413, 'image-too-large') }, t).map((l) => l.text)).toEqual(['This image is larger than 8 MB.']);
     expect(
