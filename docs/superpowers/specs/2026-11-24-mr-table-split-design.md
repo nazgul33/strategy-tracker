@@ -215,7 +215,12 @@ recorded. From every such state, a normal `applyMigrations` must complete and pr
 schema and data as a clean run. To get there:
 
 - Every statement is safe to execute a second time, using MariaDB's `IF EXISTS` /
-  `IF NOT EXISTS` forms and `INSERT IGNORE` for the copy.
+  `IF NOT EXISTS` forms and `INSERT ... ON DUPLICATE KEY UPDATE` for the copy.
+  (Amended after the final review, executor's ruling: the draft said `INSERT IGNORE`. That
+  keeps a stale `mr_runs` row if one survives a botched restore, and downgrades any other copy
+  error to a warning right before the irreversible column drop. The upsert is just as
+  re-runnable and always refreshes from the live `strategy_runs` columns, which still exist
+  whenever this file runs.)
 - The copy and the column drop sit in **different migration files**, so a replayed copy never
   reads dropped columns.
 
@@ -258,7 +263,12 @@ is done (builder-check call).
 - **Back up before deploying.** The migration cannot be rolled back. Add a short "before you
   deploy this version" note to `apps/server/db/README.md` with a `mariadb-dump` command for the
   production database container (`mariadb_st_prod`), using the env variable names and no secret
-  values. No automatic backup is added to the server.
+  values. No automatic backup is added to the server. (Amended after the final review: the note
+  is an ordered procedure — check 13 migrations are recorded, stop the app, dump to a path
+  outside the repository and verify the dump completed, rehearse on a throwaway `mariadb:11.4`
+  loaded from that dump, deploy, post-check — plus a "to go back" paragraph: drop and recreate
+  the database, or drop all eleven `mr_*` tables including `mr_runs`, before loading the dump,
+  and never start an older image on a migrated database.)
 - **After merge.** The first DB-gated run or dev-server start on `main` migrates `st_test`
   forward. Any checkout still on a pre-split commit then fails on missing tables until it is
   rebased or `st_test` is recreated. Say so in the same README note.
