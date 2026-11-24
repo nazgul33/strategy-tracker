@@ -1,8 +1,9 @@
 export interface VisionConfig { baseUrl: string; apiKey: string; model: string; maxTokens: number; today?: string }
 export interface RawFill { side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee?: string; date?: string; orderType?: string; orderPrice?: string; orderedShares?: number }
-export type ExtractResult = { ok: true; fills: RawFill[] } | { ok: false; reason: 'http' | 'unparseable' | 'empty'; detail: string }
+export type ExtractResult = { ok: true; fills: RawFill[] } | { ok: false; reason: 'http' | 'unparseable' | 'incompatible' | 'empty'; detail: string }
 
 import { MPOP_FILL_EXTRACTION_PROMPT } from './prompt';
+import { maskKey } from './mask-key';
 
 const PRICE_RE = /^\d+(\.\d{1,4})?$/;
 const ORDER_PRICE_RE = /^\d{1,9}(\.\d{1,4})?$/;
@@ -64,6 +65,52 @@ function normalizeFill(raw: any): RawFill | null {
   return f;
 }
 
+const MAX_ERROR_MESSAGE = 200;
+
+const hasText = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+const isSentenceEnd = (c: number) => c === 46 || c === 63 || c === 33; // . ? !
+// A loop, not /[.?!]+$/: that regex backtracks quadratically on a long run of punctuation before other text.
+function stripTrailingPunctuation(s: string): string {
+  let end = s.length;
+  while (end > 0 && isSentenceEnd(s.charCodeAt(end - 1))) end--;
+  return s.slice(0, end).trim();
+}
+
+function pickStatedError(parsed: any): string | undefined {
+  if (hasText(parsed?.error?.message)) return parsed.error.message;
+  if (hasText(parsed?.error)) return parsed.error;
+  if (hasText(parsed?.message)) return parsed.message;
+  if (hasText(parsed?.detail)) return parsed.detail;
+  return undefined;
+}
+
+function pickErrorMessage(body: string): string {
+  try {
+    return pickStatedError(JSON.parse(body)) ?? body;
+  } catch {
+    return body;
+  }
+}
+
+// One line, key masked before the cap, no trailing sentence punctuation: the detail ends the
+// "Original error" line, and a web bundle older than that line still places it in "— {detail}.".
+function normalizeErrorText(text: string, apiKey: string): string {
+  const collapsed = text.replace(/\s+/g, ' ').trim();
+  const msg = stripTrailingPunctuation(maskKey(collapsed, apiKey));
+  const cps = [...msg];
+  return cps.length > MAX_ERROR_MESSAGE ? `${cps.slice(0, MAX_ERROR_MESSAGE - 1).join('')}…` : msg;
+}
+
+function visionErrorDetail(status: number, body: string, apiKey: string): string {
+  const msg = normalizeErrorText(pickErrorMessage(body), apiKey);
+  return msg === '' ? `http ${status}` : `http ${status}: ${msg}`;
+}
+
+function transportFailure(e: unknown, apiKey: string): ExtractResult {
+  const text = String((e as { message?: unknown } | null)?.message ?? e);
+  return { ok: false, reason: 'http', detail: normalizeErrorText(text, apiKey) || 'network error' };
+}
+
 export async function extractFills(
   images: Array<{ base64: string; mime: string }>,
   cfg: VisionConfig,
@@ -91,19 +138,36 @@ export async function extractFills(
       headers: { Authorization: `Bearer ${cfg.apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-  } catch (e: any) {
-    return { ok: false, reason: 'http', detail: String(e?.message ?? e) };
+  } catch (e) {
+    return transportFailure(e, cfg.apiKey);
   }
   if (!res.ok) {
-    return { ok: false, reason: 'http', detail: `http ${res.status}` };
+    let errBody = '';
+    try {
+      const t = typeof res.text === 'function' ? await res.text() : '';
+      if (typeof t === 'string') errBody = t;
+    } catch {}
+    return { ok: false, reason: 'http', detail: visionErrorDetail(res.status, errBody, cfg.apiKey) };
   }
   let json: any;
   try {
     json = await res.json();
-  } catch {
-    return { ok: false, reason: 'unparseable', detail: 'response body not json' };
+  } catch (e) {
+    // Only a parse failure says something about the API; a dropped or aborted read does not.
+    if (e instanceof SyntaxError) return { ok: false, reason: 'incompatible', detail: 'response body not json' };
+    return transportFailure(e, cfg.apiKey);
   }
-  const rawContent = json?.choices?.[0]?.message?.content;
+  const message = json?.choices?.[0]?.message;
+  if (typeof message !== 'object' || message === null) {
+    // A gateway that reports its failure with status 200 refused the request; say what it said.
+    const stated = pickStatedError(json);
+    const msg = stated === undefined ? '' : normalizeErrorText(stated, cfg.apiKey);
+    if (msg !== '') return { ok: false, reason: 'http', detail: `http 200: ${msg}` };
+    return { ok: false, reason: 'incompatible', detail: 'no content' };
+  }
+  // A chat-completions reply without text (content null on a refusal or a token cut-off) is a
+  // compatible API that gave no usable answer.
+  const rawContent = message.content;
   if (typeof rawContent !== 'string') {
     return { ok: false, reason: 'unparseable', detail: 'no content' };
   }

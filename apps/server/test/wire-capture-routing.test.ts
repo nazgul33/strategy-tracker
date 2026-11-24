@@ -4,6 +4,8 @@ import { t } from '@st/telegram/i18n';
 import { makeCaptureHandlers } from '../src/wire/capture';
 import { DATE_NOTICE_EN, NOTICE_EN, PNG_B64, activeRun, makeCapture, makeCaptureFakes, multiVisionFetch } from './wire-capture-fakes';
 
+const ADVICE_EN = 'This is a vision setup problem, not the screenshot. A URL or model changed in Settings applies after a server restart.';
+
 describe('capture onPhoto — dedup and failures', () => {
   test('same image for the same run is recorded as duplicate, one pending row only', async () => {
     const h = makeCapture({ runs: [activeRun(1, 'NVDA')] });
@@ -59,8 +61,8 @@ describe('capture onPhoto — dedup and failures', () => {
     const sent: { chatId: string; text: string }[] = [];
     const handlers = makeCaptureHandlers({
       repos: fakes.repos,
-      vision: { baseUrl: 'https://vision.example/v1', model: 'vision-model' },
-      getVisionApiKey: async () => 'test-vision-key',
+      vision: { baseUrl: 'https://vision.example/v1', baseUrlSource: 'env', model: 'vision-model', modelSource: 'env' },
+      getVisionApiKey: async () => ({ key: 'test-vision-key', source: 'env' as const }),
       today: () => '2026-11-10',
       allowedChatIds: [],
       fetchImpl: (async () => ({ ok: false, status: 500, text: async () => 'boom' }) as unknown as Response) as unknown as typeof fetch,
@@ -70,11 +72,19 @@ describe('capture onPhoto — dedup and failures', () => {
     expect(fakes.pending.length).toBe(0);
     expect(fakes.captures.length).toBe(0);
     expect(sent).toEqual([
-      { chatId: '777', text: 'Could not read fills from this image — http 500. Book the fill manually in the web UI.' },
+      {
+        chatId: '777',
+        text: [
+          'The vision service did not accept the request.',
+          'In use: model vision-model (env), URL https://vision.example/v1 (env), key (env).',
+          ADVICE_EN,
+          'Original error: http 500: boom',
+        ].join('\n'),
+      },
     ]);
     expect(fakes.notifications.length).toBe(1);
     expect(fakes.notifications[0]).toMatchObject({ runId: null, chatId: '777' });
-    expect(String(fakes.notifications[0]!.text)).toContain('Could not read fills from this image — http 500');
+    expect(String(fakes.notifications[0]!.text)).toContain('Original error: http 500: boom');
   });
 
   test('no active run: user is told, nothing captured', async () => {

@@ -1,3 +1,5 @@
+import type { VisionApiKey, VisionSource } from './capture-route';
+
 export interface TelegramEnv {
   token: string;
   allowedChatIds: string[];
@@ -109,6 +111,17 @@ export function parseEnv(raw: Record<string, string | undefined> = process.env):
     visionModel: get('VISION_MODEL') ?? '',
     visionApiKey: get('VISION_API_KEY') ?? '',
   };
+}
+
+/** Mirrors `settings.x || env.x`: a non-empty Settings value wins, anything else is env (even an empty one). */
+export function visionSource(saved: string | undefined): VisionSource {
+  return saved ? 'settings' : 'env';
+}
+
+export function resolveVisionApiKey(saved: string | undefined, fromEnv: string): VisionApiKey {
+  if (saved) return { key: saved, source: 'settings' };
+  if (fromEnv) return { key: fromEnv, source: 'env' };
+  return { key: '', source: 'none' };
 }
 
 const ET_FMT = new Intl.DateTimeFormat('en-CA', {

@@ -155,8 +155,9 @@ Only chat IDs on the allowlist get any response (`packages/telegram/src/bot.ts`)
   the tracker cannot tell which bucket sold a sell: that prompt has no buttons and points to the
   web Pending view). A fill dated after today (New York date) is refused everywhere, and a manual
   sell may ask for a bucket. `Yes` books it (lowest empty bucket for buys), `No` rejects. Nothing is booked without
-  that tap. Re-sending the identical photo is deduped by content hash. A screenshot the vision model
-  cannot read is answered with "Could not read fills…", and that reply is also listed under System notices.
+  that tap. Re-sending the identical photo is deduped by content hash. A screenshot that cannot be
+  read is answered with one of four messages (see "Reading a failed capture" below), and that reply
+  is also listed under System notices.
 - A fill-capture reminder goes out at 16:05 ET on trading days (nothing on weekends/holidays).
 
 ## Screenshot upload (web)
@@ -174,6 +175,45 @@ The same fill screenshots can be uploaded from the web UI, with or without the b
 - The server's `idleTimeout` is 60 s and the vision call is cut off at 50 s, so a TLS reverse proxy
   in front of the app must allow at least 60 s per request. It must also accept request bodies of at
   least 9 MB (for nginx, `client_max_body_size 9m;` — its default is 1 MB).
+
+### Reading a failed capture
+
+Telegram and the web word a failed capture the same way. Every message except "No fills were found"
+is followed by an "In use" line naming the model, URL and key source the server is running with,
+each marked `Settings` or `env` (`not set` for a missing key). The two setup-related messages (the
+first two below) then add an advice line and end with an "Original error" line. That line carries
+the vision service's own answer after its HTTP status (`http 401: …`), or the connection error, or,
+for a reply that is not OpenAI-style and states no error, the tracker's own short reason. It is
+always one line, the service's text is cut at 200 characters, and it is never translated. A URL or
+model changed in Settings applies only after a server restart; the key is re-read on every capture.
+On the web, a vision call cut off at 50 s shows only "Vision took too long to answer".
+
+- **"The vision service did not accept the request."** The service refused the request, could not
+  be reached, dropped the connection while answering, or answered with status 200 but stated an
+  error instead of a reply (shown as `http 200: …`). The original error says why — for example a
+  model name it does not serve, a rejected key, or a rate limit.
+- **"The vision service answered, but not as an OpenAI-compatible API."** Something answered at the
+  configured URL, but neither with an OpenAI chat-completions reply nor with a stated error
+  (original error `response body not json` or `no content`) — typically a base URL that points at
+  a web page or at a different kind of API. Make sure the configured vision API is OpenAI-compatible.
+- **"The vision model answered, but not in a form the tracker understands — …"**: the reply was
+  OpenAI-style, but the model's text was not usable, or there was none (`no content`: for example a
+  reasoning model that used up its tokens before answering, or a refusal). Try again; if it keeps
+  happening, the model in use is probably not suited to reading screenshots.
+- **"No fills were found in this image."**: the screenshot does not show the fills list; book the
+  fill manually.
+
+An API key longer than 8 characters is never shown in full. Where the original error echoes it, it
+appears as its first 4 and last 4 characters around four dots — `sk-LEAKCHECK-7f3a9c2e` reads
+`sk-L....9c2e`. The dots are four whatever the key's length, so the length is not shown. A partial
+echo of 8 or more consecutive characters of the key is masked the same way: the characters from the
+key's middle become four dots. The dots can come out shorter in two places: at the very end of the
+line they are trimmed with the sentence punctuation, and where the 200-character limit cuts the line
+they are cut short with it. A key of 8 characters or fewer has no middle and is never masked, so
+placeholder keys such as `test`, `local` or `ollama` change nothing. With a longer word-like
+placeholder key, an ordinary word that is 8 characters of it is partly dotted: under the key
+`sk-no-key-required` the word `required` reads `....ired`. For a vision server that needs no key,
+leave the key unset.
 
 ## Schedules
 

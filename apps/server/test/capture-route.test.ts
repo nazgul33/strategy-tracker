@@ -1,9 +1,9 @@
 import { describe, test, expect } from 'bun:test'
 import type { NewPending } from '../src/domain/repo-types'
-import { makeCaptureRouting, type CaptureEvent } from '../src/wire/capture-route'
-import { activeRun, makeCaptureFakes, multiVisionFetch, PNG_B64, visionFetch, type FakeOpts } from './wire-capture-fakes'
+import { makeCaptureRouting, type CaptureEvent, type VisionApiKey, type VisionInUse } from '../src/wire/capture-route'
+import { activeRun, keyEchoFetch, keyParts, LEAK_KEY, makeCaptureFakes, multiVisionFetch, PNG_B64, visionFetch, type FakeOpts } from './wire-capture-fakes'
 
-function routing(opts: FakeOpts & { fetchImpl?: typeof fetch } = {}) {
+function routing(opts: FakeOpts & { fetchImpl?: typeof fetch; key?: VisionApiKey } = {}) {
   const fakes = makeCaptureFakes(opts)
   const inner = opts.fetchImpl ?? visionFetch
   let visionCalls = 0
@@ -13,8 +13,8 @@ function routing(opts: FakeOpts & { fetchImpl?: typeof fetch } = {}) {
   }) as unknown as typeof fetch
   const route = makeCaptureRouting({
     repos: fakes.repos,
-    vision: { baseUrl: 'https://vision.example/v1', model: 'vision-model' },
-    getVisionApiKey: async () => 'k',
+    vision: { baseUrl: 'https://vision.example/v1', baseUrlSource: 'env', model: 'vision-model', modelSource: 'settings' },
+    getVisionApiKey: async () => opts.key ?? { key: 'k', source: 'settings' },
     today: () => '2026-11-10',
     fetchImpl,
   })
@@ -25,6 +25,9 @@ function routing(opts: FakeOpts & { fetchImpl?: typeof fetch } = {}) {
 }
 
 const vision500 = (async () => ({ ok: false, status: 500 })) as unknown as typeof fetch
+const visionSays = (content: string) =>
+  (async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) })) as unknown as typeof fetch
+const IN_USE: VisionInUse = { model: 'vision-model', modelSource: 'settings', baseUrl: 'https://vision.example/v1', baseUrlSource: 'env', keySource: 'settings' }
 
 describe('capture routing core', () => {
   test('unknown pinned run: one unknown-run event, no vision call', async () => {
@@ -38,9 +41,46 @@ describe('capture routing core', () => {
   test("vision failure is a bad-extract with the extractor's detail", async () => {
     const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: vision500 })
     await r.run(null)
-    expect(r.events).toEqual([{ type: 'bad-extract', detail: 'http 500' }])
+    expect(r.events).toEqual([{ type: 'bad-extract', reason: 'http', detail: 'http 500', vision: IN_USE }])
     expect(r.visionCalls()).toBe(1)
     expect(r.captures.length).toBe(0)
+  })
+
+  test('an unreadable answer is unparseable and names the config in use', async () => {
+    const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: visionSays("I can't read this") })
+    await r.run(null)
+    expect(r.events).toEqual([{ type: 'bad-extract', reason: 'unparseable', detail: 'no json', vision: IN_USE }])
+  })
+
+  test('a 200 answer that is not an OpenAI reply is incompatible and names the config in use', async () => {
+    const htmlPage = (async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <') } })) as unknown as typeof fetch
+    const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: htmlPage })
+    await r.run(null)
+    expect(r.events).toEqual([{ type: 'bad-extract', reason: 'incompatible', detail: 'response body not json', vision: IN_USE }])
+  })
+
+  test('an image without fills is empty and carries no config', async () => {
+    const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: visionSays('{"fills":[]}') })
+    await r.run(null)
+    expect(r.events).toEqual([{ type: 'bad-extract', reason: 'empty', detail: 'no valid fills' }])
+    expect('vision' in r.events[0]!).toBe(false)
+  })
+
+  test('no key anywhere is reported as none', async () => {
+    const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: vision500, key: { key: '', source: 'none' } })
+    await r.run(null)
+    expect(r.events).toEqual([{ type: 'bad-extract', reason: 'http', detail: 'http 500', vision: { ...IN_USE, keySource: 'none' } }])
+  })
+
+  test('the key value never reaches an event', async () => {
+    const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: keyEchoFetch, key: { key: LEAK_KEY, source: 'env' } })
+    await r.run(null)
+    expect(keyParts(JSON.stringify(r.events))).toEqual([])
+    expect(r.events[0]).toMatchObject({
+      reason: 'http',
+      detail: 'http 401: Incorrect API key provided: sk-L....9c2e; masked sk-LEA*********9c2e',
+      vision: { keySource: 'env' },
+    })
   })
 
   test('a pinned paused run books its own ticker', async () => {
@@ -139,7 +179,7 @@ describe('vision time limit', () => {
     f.hang()
     const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: f.fetchImpl })
     await r.run(null, 20)
-    expect(r.events).toEqual([{ type: 'bad-extract', detail: 'vision timed out' }])
+    expect(r.events).toEqual([{ type: 'bad-extract', reason: 'http', detail: 'vision timed out', vision: IN_USE }])
     expect(f.signal()?.aborted).toBe(true)
     expect(r.captures.length).toBe(0)
   })

@@ -10,8 +10,12 @@ export type CaptureConflictDto =
 
 export type CaptureOutcomeDto = 'duplicate' | 'rejected' | { pending?: CapturePendingRowDto[]; conflicts?: CaptureConflictDto[]; bookedEarlier?: true };
 
+export type VisionSourceDto = 'settings' | 'env';
+export interface VisionInUseDto { model: string; modelSource: VisionSourceDto; baseUrl: string; baseUrlSource: VisionSourceDto; keySource: VisionSourceDto | 'none' }
+
 export type CaptureEventDto =
-  | { type: 'bad-extract'; detail: string }
+  | { type: 'bad-extract'; reason: 'http' | 'unparseable' | 'incompatible'; detail: string; vision: VisionInUseDto }
+  | { type: 'bad-extract'; reason: 'empty'; detail: string }
   | { type: 'pin-nomatch'; runId: number; ticker: string }
   | { type: 'pin-skipped'; runId: number; tickers: string[] }
   | { type: 'no-run'; ticker: string }

@@ -1,9 +1,16 @@
 import { describe, test, expect, spyOn } from 'bun:test'
 import { makeCaptureHandlers, type CaptureDeps } from '../src/wire/capture'
 import { makeFakes } from './http-fakes'
+import { LEAK_KEY, keyEchoFetch, keyParts } from './wire-capture-fakes'
 
 const IMAGE = { base64: 'aGVsbG8=', mime: 'image/png' }
-const TEXT = 'Could not read fills from this image — http 500. Book the fill manually in the web UI.'
+const ADVICE_EN = 'This is a vision setup problem, not the screenshot. A URL or model changed in Settings applies after a server restart.'
+const TEXT = [
+  'The vision service did not accept the request.',
+  'In use: model m (env), URL https://vision.example/v1 (env), key (env).',
+  ADVICE_EN,
+  'Original error: http 500',
+].join('\n')
 // The vision endpoint answers 500, so the extract fails with detail 'http 500'.
 const vision500 = (async () => ({ ok: false, status: 500 })) as unknown as typeof fetch
 
@@ -16,8 +23,8 @@ function setup(over: Partial<CaptureDeps> = {}) {
   f.repos.notificationRepo.insert = async (n) => { events.push(`insert:${n.chatId}`); await insert(n) }
   const handlers = makeCaptureHandlers({
     repos: f.repos,
-    vision: { baseUrl: 'https://vision.example/v1', model: 'm' },
-    getVisionApiKey: async () => 'k',
+    vision: { baseUrl: 'https://vision.example/v1', baseUrlSource: 'env', model: 'm', modelSource: 'env' },
+    getVisionApiKey: async () => ({ key: 'k', source: 'env' as const }),
     today: () => '2026-11-10',
     allowedChatIds: ['111', '222'],
     fetchImpl: vision500,
@@ -66,7 +73,42 @@ describe('could not read fills replies', () => {
   test('the reply is recorded in Korean when the bot speaks Korean', async () => {
     const { f, handlers } = setup({ lang: 'ko' })
     await handlers.onPhoto('777', IMAGE)
-    expect(rows(f)).toEqual([[null, '777', '이미지에서 체결을 읽을 수 없습니다 — http 500. 웹 UI에서 직접 예약해 주세요.']])
+    expect(rows(f)).toEqual([[null, '777', [
+      '비전 서비스가 요청을 받아들이지 않았습니다.',
+      '사용 중: 모델 m (환경변수), URL https://vision.example/v1 (환경변수), 키 (환경변수).',
+      '스크린샷 문제가 아니라 비전 설정 문제입니다. 설정에서 바꾼 URL이나 모델은 서버를 다시 시작해야 적용됩니다.',
+      '원본 오류: http 500',
+    ].join('\n')]])
+  })
+
+  test('the key value never reaches a reply, a notice or a log line', async () => {
+    const leaky = { getVisionApiKey: async () => ({ key: LEAK_KEY, source: 'settings' as const }), fetchImpl: keyEchoFetch }
+    const { f, handlers, sent } = setup(leaky)
+    f.repos.notificationRepo.insert = async () => { throw new Error('db-down') }
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    const logs = spyOn(console, 'log').mockImplementation(() => {})
+    const warns = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await handlers.onPhoto('777', IMAGE)
+      expect(errors.mock.calls.length).toBeGreaterThan(0)
+      expect(keyParts(JSON.stringify(sent))).toEqual([])
+      expect(keyParts(JSON.stringify(f.notifications))).toEqual([])
+      expect(keyParts(JSON.stringify(errors.mock.calls))).toEqual([])
+      expect(keyParts(JSON.stringify(logs.mock.calls))).toEqual([])
+      expect(keyParts(JSON.stringify(warns.mock.calls))).toEqual([])
+      expect(sent[0]!.split('\n')[0]).toBe('The vision service did not accept the request.')
+      expect(sent[0]!.split('\n')[3]).toBe('Original error: http 401: Incorrect API key provided: sk-L....9c2e; masked sk-LEA*********9c2e')
+      expect(sent[0]).toContain('key (Settings)')
+    } finally {
+      errors.mockRestore()
+      logs.mockRestore()
+      warns.mockRestore()
+    }
+
+    const stored = setup(leaky)
+    await stored.handlers.onPhoto('777', IMAGE)
+    expect(rows(stored.f).length).toBe(1)
+    expect(keyParts(JSON.stringify(rows(stored.f)))).toEqual([])
   })
 
   // The empty auto-route group and the 'rejected' outcome cannot be reached through the handlers
@@ -75,12 +117,18 @@ describe('could not read fills replies', () => {
   test('every "could not read fills" reply goes through the one recording helper', async () => {
     const src = await Bun.file(new URL('../src/wire/capture.ts', import.meta.url)).text()
     const core = await Bun.file(new URL('../src/wire/capture-route.ts', import.meta.url)).text()
-    expect(src.match(/t\('capture-bad-extract'/g)).toHaveLength(1)
+    const msg = await Bun.file(new URL('../src/wire/capture-bad-extract-message.ts', import.meta.url)).text()
+    expect(src.match(/badExtractMessage\(/g)).toHaveLength(1)
+    expect(src.match(/t\('capture-bad-extract/g)).toBeNull()
     expect(src.match(/await tellBadExtract\(chatId, /g)).toHaveLength(2)
-    expect(src.match(/await tellBadExtract\(chatId, event\.detail\)/g)).toHaveLength(1)
-    expect(src.match(/await tellBadExtract\(chatId, 'no fills recognized'\)/g)).toHaveLength(1)
-    expect(core.match(/emit\(\{ type: 'bad-extract'/g)).toHaveLength(2)
-    expect(core.match(/emit\(\{ type: 'bad-extract', detail: 'no fills recognized' \}\)/g)).toHaveLength(1)
+    expect(src.match(/await tellBadExtract\(chatId, event\)/g)).toHaveLength(1)
+    expect(src.match(/await tellBadExtract\(chatId, \{ type: 'bad-extract', reason: 'empty', detail: 'no fills recognized' \}\)/g)).toHaveLength(1)
+    expect(msg.match(/t\('capture-bad-extract-/g)).toHaveLength(4)
+    expect(msg.match(/t\('capture-vision-original-error'/g)).toHaveLength(1)
+    expect(core.match(/emit\(badExtract\(/g)).toHaveLength(2)
+    expect(core.match(/emit\(badExtract\(extract\.reason, extract\.detail, /g)).toHaveLength(1)
+    expect(core.match(/emit\(badExtract\('empty', 'no fills recognized', /g)).toHaveLength(1)
+    expect(core.match(/emit\(\{ type: 'bad-extract'/g)).toBeNull()
     expect(core).not.toContain('capture-bad-extract')
   })
 })

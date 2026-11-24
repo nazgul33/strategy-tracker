@@ -201,10 +201,61 @@ describe('extract', () => {
     }
   });
 
-  test('200 with non-JSON body -> unparseable, not a crash', async () => {
+  test('200 with non-JSON body -> incompatible, not a crash', async () => {
     const f = fakeFetch([{ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } }]);
     const r = await extractFills([{ base64: 'AAA', mime: 'image/png' }], CFG, f);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('unparseable');
+    if (!r.ok) {
+      expect(r.reason).toBe('incompatible');
+      expect(r.detail).toBe('response body not json');
+    }
+  });
+
+  test('200 without message content -> incompatible', async () => {
+    const f = fakeFetch([{ ok: true, status: 200, json: async () => ({}) }]);
+    const r = await extractFills([{ base64: 'AAA', mime: 'image/png' }], CFG, f);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('incompatible');
+      expect(r.detail).toBe('no content');
+    }
+  });
+
+  const answer = (body: unknown) => fakeFetch([{ ok: true, status: 200, json: async () => body }]);
+  const failedRead = (err: Error) => fakeFetch([{ ok: true, status: 200, json: async () => { throw err; } }]);
+  const IMG = [{ base64: 'AAA', mime: 'image/png' }];
+
+  test('a well-formed reply without string content is unparseable, not incompatible', async () => {
+    const bodies = [
+      { choices: [{ message: { content: null }, finish_reason: 'length' }] },
+      { choices: [{ message: { content: null, refusal: 'no' } }] },
+      { choices: [{ message: { content: [{ type: 'text', text: '{}' }] } }] },
+      { choices: [{ message: {} }] },
+    ];
+    for (const body of bodies) {
+      expect(await extractFills(IMG, CFG, answer(body))).toEqual({ ok: false, reason: 'unparseable', detail: 'no content' });
+    }
+  });
+
+  test('a 200 answer that is not chat-completions shaped is incompatible', async () => {
+    const bodies = [{}, [], 'text', { choices: [] }, { choices: [{}] }, { choices: [{ message: null }] }];
+    for (const body of bodies) {
+      expect(await extractFills(IMG, CFG, answer(body))).toEqual({ ok: false, reason: 'incompatible', detail: 'no content' });
+    }
+  });
+
+  test('a body that fails to parse as JSON is incompatible', async () => {
+    expect(await extractFills(IMG, CFG, failedRead(new SyntaxError('Unexpected token <'))))
+      .toEqual({ ok: false, reason: 'incompatible', detail: 'response body not json' });
+  });
+
+  test('a body read that fails for another reason is an http failure', async () => {
+    expect(await extractFills(IMG, CFG, failedRead(new Error('socket connection was closed unexpectedly.'))))
+      .toEqual({ ok: false, reason: 'http', detail: 'socket connection was closed unexpectedly' });
+    expect(await extractFills(IMG, CFG, failedRead(new Error(''))))
+      .toEqual({ ok: false, reason: 'http', detail: 'network error' });
+    const leakCfg = { ...CFG, apiKey: 'sk-LEAKCHECK-7f3a9c2e' };
+    expect(await extractFills(IMG, leakCfg, failedRead(new Error('aborted for sk-LEAKCHECK-7f3a9c2e'))))
+      .toEqual({ ok: false, reason: 'http', detail: 'aborted for sk-L....9c2e' });
   });
 });

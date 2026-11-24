@@ -1,5 +1,5 @@
 import { ApiError, NetworkError } from './api';
-import type { CaptureConflictDto, CaptureEventDto, CaptureOutcomeDto, CapturePendingRowDto } from './api';
+import type { CaptureConflictDto, CaptureEventDto, CaptureOutcomeDto, CapturePendingRowDto, VisionInUseDto } from './api';
 import { errorText, type Translate } from './errortext';
 
 export const VISION_TIMEOUT_DETAIL = 'vision timed out'; // mirrors apps/server/src/wire/capture-route.ts
@@ -16,8 +16,37 @@ const line = (tone: UploadLineTone, depth: 0 | 1 | 2, text: string, href?: strin
 
 const sideText = (side: 'buy' | 'sell', t: Translate) => t(side === 'buy' ? 'orderSideBuy' : 'orderSideSell');
 
-const badExtract = (detail: string, t: Translate): UploadLine =>
-  detail === VISION_TIMEOUT_DETAIL ? line('error', 0, t('upload.visionTimeout')) : line('error', 0, t('upload.badExtract', { detail }));
+const SOURCE_KEYS = { settings: 'upload.visionSourceSettings', env: 'upload.visionSourceEnv', none: 'upload.visionSourceNone' } as const;
+
+function visionInUseLine(v: VisionInUseDto, t: Translate): UploadLine {
+  const source = (s: keyof typeof SOURCE_KEYS) => t(SOURCE_KEYS[s]);
+  const params = { model: v.model, modelSource: source(v.modelSource), baseUrl: v.baseUrl, baseUrlSource: source(v.baseUrlSource), keySource: source(v.keySource) };
+  return line('info', 1, t('upload.visionInUse', params));
+}
+
+function originalErrorLine(detail: string, t: Translate): UploadLine {
+  return line('info', 1, t('upload.visionOriginalError', { detail }));
+}
+
+const SETUP_KIND_KEYS = {
+  http: { main: 'upload.badExtractHttp', advice: 'upload.visionSetupAdvice' },
+  incompatible: { main: 'upload.badExtractIncompatible', advice: 'upload.visionIncompatibleAdvice' },
+} as const;
+
+function badExtractLines(event: Extract<CaptureEventDto, { type: 'bad-extract' }>, t: Translate): UploadLine[] {
+  if (event.reason === 'empty') return [line('error', 0, t('upload.badExtractEmpty'))];
+  if (event.reason === 'unparseable') {
+    return [line('error', 0, t('upload.badExtractUnparseable', { detail: event.detail })), visionInUseLine(event.vision, t)];
+  }
+  if (event.reason === 'http' && event.detail === VISION_TIMEOUT_DETAIL) return [line('error', 0, t('upload.visionTimeout'))];
+  const keys = SETUP_KIND_KEYS[event.reason];
+  return [
+    line('error', 0, t(keys.main)),
+    visionInUseLine(event.vision, t),
+    line('info', 1, t(keys.advice), '#/settings'),
+    originalErrorLine(event.detail, t),
+  ];
+}
 
 function conflictLine(c: CaptureConflictDto, t: Translate): UploadLine {
   const common = { side: sideText(c.side, t), shares: c.shares, ticker: c.ticker, date: c.filledOn, extracted: c.extractedPrice };
@@ -55,10 +84,10 @@ export function captureEventLines(event: CaptureEventDto, t: Translate): UploadL
   switch (event.type) {
     case 'outcome':
       if (event.outcome === 'duplicate') return [line('info', 0, t('upload.duplicate'))];
-      if (event.outcome === 'rejected') return [badExtract('no fills recognized', t)];
+      if (event.outcome === 'rejected') return [line('error', 0, t('upload.badExtractEmpty'))];
       return outcomeLines(event.runId, event.ticker, event.outcome, t);
     case 'bad-extract':
-      return [badExtract(event.detail, t)];
+      return badExtractLines(event, t);
     case 'no-run':
       return [line('info', 0, t('upload.noRun', { ticker: event.ticker }))];
     case 'ambiguous':

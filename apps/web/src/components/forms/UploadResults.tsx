@@ -28,9 +28,9 @@ export function UploadResults({ items }: { items: UploadItem[] }) {
                   {GLYPH[l.tone]}
                 </span>
                 {l.href === undefined ? (
-                  <span>{l.text}</span>
+                  <span className="min-w-0 break-words">{l.text}</span>
                 ) : (
-                  <a href={l.href} className="text-primary underline">
+                  <a href={l.href} className="min-w-0 break-words text-primary underline">
                     {l.text}
                   </a>
                 )}

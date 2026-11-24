@@ -20,11 +20,8 @@ export const catalogs: Record<string, Entry> = Object.fromEntries(
 export function lookup(lang: Lang, key: string, params?: Record<string, string | number>): string {
   const entry = catalogs[key];
   if (!entry) return key;
-  let text = entry[lang];
-  if (params) {
-    for (const [name, value] of Object.entries(params)) {
-      text = text.replaceAll(`{${name}}`, String(value));
-    }
-  }
-  return text;
+  const text = entry[lang];
+  if (!params) return text;
+  // One pass with a function replacer: values are inserted literally and never expanded again.
+  return text.replace(/\{(\w+)\}/g, (whole, name: string) => (Object.hasOwn(params, name) ? String(params[name]) : whole));
 }

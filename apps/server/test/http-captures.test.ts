@@ -2,9 +2,10 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { createApp, type HttpDeps } from '../src/http/app'
 import { declaredTooLarge, MAX_UPLOAD_BODY_BYTES } from '../src/http/routes/captures'
 import { MAX_IMAGE_BYTES } from '../src/domain/capture-image'
-import type { CaptureEvent, RouteCaptureRequest } from '../src/wire/capture-route'
+import { makeCaptureRouting, type CaptureEvent, type RouteCaptureRequest } from '../src/wire/capture-route'
 import type { PendingFillRow } from '../src/domain/booking'
 import { loginAs, makeDeps, makeFakes } from './http-fakes'
+import { keyEchoFetch, keyParts, LEAK_KEY } from './wire-capture-fakes'
 
 type App = ReturnType<typeof createApp>
 
@@ -136,13 +137,47 @@ describe('POST /api/captures', () => {
   })
 
   test('a bad-extract is a 200 result and records no notice', async () => {
-    const event: CaptureEvent = { type: 'bad-extract', detail: 'http 500' }
+    const event: CaptureEvent = {
+      type: 'bad-extract',
+      reason: 'http',
+      detail: 'http 500',
+      vision: { model: 'm', modelSource: 'settings', baseUrl: 'http://x', baseUrlSource: 'env', keySource: 'none' },
+    }
     const { app, f } = setup({ events: [event] })
     const res = await post(app, await loginAs(app), form([['image', png()]]))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ events: [event] })
     expect(f.notifications).toEqual([])
     expect(f.sent).toEqual([])
+  })
+
+  test('the key value never reaches the upload answer', async () => {
+    const f = makeFakes()
+    const app = createApp({
+      ...makeDeps(f),
+      routeCapture: makeCaptureRouting({
+        repos: f.repos,
+        vision: { baseUrl: 'http://x', baseUrlSource: 'env', model: 'm', modelSource: 'env' },
+        getVisionApiKey: async () => ({ key: LEAK_KEY, source: 'settings' }),
+        today: () => '2026-11-10',
+        fetchImpl: keyEchoFetch,
+      }),
+    })
+    const auth = await loginAs(app)
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const res = await post(app, auth, form([['image', png()]]))
+      expect(res.status).toBe(200)
+      const text = await res.text()
+      expect(keyParts(text)).toEqual([])
+      const event = JSON.parse(text).events[0]
+      expect(event).toMatchObject({ type: 'bad-extract', reason: 'http' })
+      expect(event.detail).toBe('http 401: Incorrect API key provided: sk-L....9c2e; masked sk-LEA*********9c2e')
+      expect(keyParts(JSON.stringify(errors.mock.calls))).toEqual([])
+      expect(f.notifications).toEqual([])
+    } finally {
+      errors.mockRestore()
+    }
   })
 
   test('an unexpected throw is 500 capture-failed and logged', async () => {
