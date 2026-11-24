@@ -49,6 +49,11 @@ test('cap: 200 code points kept whole, 201 cut to 199 plus an ellipsis', async (
   const spaced = Array(67).fill('ab').join('\n\n')
   expect(await detailOf(failWith(400, spaced))).toEqual(['http', `http 400: ${Array(67).fill('ab').join(' ')}`])
 })
+test('a long run of periods that is not at the end is handled in linear time', async () => {
+  const started = performance.now()
+  expect(await detailOf(failWith(500, '.'.repeat(200_000) + 'x'))).toEqual(['http', `http 500: ${'.'.repeat(199)}…`])
+  expect(performance.now() - started).toBeLessThan(1000)
+})
 test('the body is read only on a non-OK answer', async () => {
   let textCalls = 0
   const ok = (async () => ({ ok: true, status: 200, text: async () => { textCalls++; return '' }, json: async () => ({ choices: [{ message: { content: '{"fills":[]}' } }] }) })) as unknown as typeof fetch

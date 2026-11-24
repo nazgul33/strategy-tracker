@@ -68,7 +68,12 @@ const MAX_ERROR_MESSAGE = 200;
 const KEY_RUN = 8;
 
 const hasText = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
-const stripTrailingPeriods = (s: string): string => s.replace(/\.+$/, '').trim();
+// A loop, not /\.+$/: that regex backtracks quadratically on a long run of periods before other text.
+function stripTrailingPeriods(s: string): string {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 46) end--;
+  return s.slice(0, end).trim();
+}
 
 // Services echo the API key in 401 bodies, sometimes whole: a word holding the whole key
 // (keys of 4-7 chars) or any 8-char run of it (keys of 8+) is replaced.
