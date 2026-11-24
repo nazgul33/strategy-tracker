@@ -132,8 +132,8 @@ export function makeCapture(opts: FakeOpts & { today?: string; fetchImpl?: typeo
   const sent: { chatId: string; text: string; extra?: Record<string, unknown> }[] = [];
   const handlers = makeCaptureHandlers({
     repos: fakes.repos,
-    vision: { baseUrl: 'https://vision.example/v1', model: 'vision-model' },
-    getVisionApiKey: async () => 'test-vision-key',
+    vision: { baseUrl: 'https://vision.example/v1', baseUrlSource: 'env', model: 'vision-model', modelSource: 'env' },
+    getVisionApiKey: async () => ({ key: 'test-vision-key', source: 'env' as const }),
     today: () => opts.today ?? '2026-11-10',
     lang: opts.lang,
     allowedChatIds: opts.allowedChatIds ?? [],
@@ -160,5 +160,25 @@ export const NOTICE_EN = 'ℹ️ Fills from this image were already confirmed ea
 
 export const DATE_NOTICE_EN =
   '⚠️ No usable trade date was read from the screenshot, so the capture date 2026-11-10 was used. Check the date and confirm this fill in the web app\'s Pending view.';
+
+// A vision service that echoes the whole key in its 401 body (the leak the pipeline must stop),
+// plus its own masked form, which has fewer than 8 real consecutive key characters.
+export const LEAK_KEY = 'sk-LEAKCHECK-7f3a9c2e';
+
+export const keyEchoFetch = (async () => ({
+  ok: false,
+  status: 401,
+  text: async () => JSON.stringify({ error: { message: `Incorrect API key provided: ${LEAK_KEY}; masked sk-LEA*********9c2e` } }),
+})) as unknown as typeof fetch;
+
+/** Every 8-character run of LEAK_KEY found in text; [] when nothing of the key leaked. */
+export function keyParts(text: string): string[] {
+  const parts: string[] = [];
+  for (let i = 0; i + 8 <= LEAK_KEY.length; i++) {
+    const part = LEAK_KEY.slice(i, i + 8);
+    if (text.includes(part)) parts.push(part);
+  }
+  return parts;
+}
 
 export const PNG_B64 = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64');

@@ -98,7 +98,7 @@ async function main(): Promise<void> {
       fetchDailyBars: makeCachedBarReader({ upstream: barSource.upstream, repos, today: () => TODAY }),
       allowedChatIds: ['chat-1'],
       send: async (chatId: string, text: string) => { httpSends.push({ chat: chatId, text }) },
-      routeCapture: makeCaptureRouting({ repos, vision: { baseUrl: `http://127.0.0.1:${vision.port}/v1`, model: 'e2e-vision' }, getVisionApiKey: async () => 'e2e-key', today: () => TODAY }),
+      routeCapture: makeCaptureRouting({ repos, vision: { baseUrl: `http://127.0.0.1:${vision.port}/v1`, baseUrlSource: 'env', model: 'e2e-vision', modelSource: 'env' }, getVisionApiKey: async () => ({ key: 'e2e-key', source: 'env' as const }), today: () => TODAY }),
     }
     const app = createApp(httpDeps)
     const req = (method: string, path: string, body?: unknown, token?: string) =>
@@ -142,8 +142,8 @@ async function main(): Promise<void> {
     const captureMsgs: { text: string; extra?: Record<string, unknown> }[] = []
     const capture = makeCaptureHandlers({
       repos,
-      vision: { baseUrl: `http://127.0.0.1:${vision.port}/v1`, model: 'e2e-vision' },
-      getVisionApiKey: async () => 'e2e-key',
+      vision: { baseUrl: `http://127.0.0.1:${vision.port}/v1`, baseUrlSource: 'env', model: 'e2e-vision', modelSource: 'env' },
+      getVisionApiKey: async () => ({ key: 'e2e-key', source: 'env' as const }),
       today: () => TODAY,
       allowedChatIds: ['chat-1'],
       send: async (_chatId: string, text: string, extra?: Record<string, unknown>) => { captureMsgs.push({ text, extra }) },

@@ -46,7 +46,7 @@ describe('Telegram reject', () => {
     const sent: string[] = []
     const repos = { ...s.f.repos, pendingRepo: { ...s.f.repos.pendingRepo, get: async (id: number) => s.f._stores.pending.find((p: any) => p.id === id) ?? null } }
     const handlers = makeCaptureHandlers({
-      repos, vision: { baseUrl: 'http://x', model: 'm' }, getVisionApiKey: async () => 'k',
+      repos, vision: { baseUrl: 'http://x', baseUrlSource: 'env', model: 'm', modelSource: 'env' }, getVisionApiKey: async () => ({ key: 'k', source: 'env' as const }),
       today: () => TODAY, allowedChatIds: [], send: async (_chat, text) => { sent.push(text) },
     })
     return { ...s, sent, handlers }

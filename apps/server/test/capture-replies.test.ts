@@ -16,8 +16,8 @@ function setup(over: Partial<CaptureDeps> = {}) {
   f.repos.notificationRepo.insert = async (n) => { events.push(`insert:${n.chatId}`); await insert(n) }
   const handlers = makeCaptureHandlers({
     repos: f.repos,
-    vision: { baseUrl: 'https://vision.example/v1', model: 'm' },
-    getVisionApiKey: async () => 'k',
+    vision: { baseUrl: 'https://vision.example/v1', baseUrlSource: 'env', model: 'm', modelSource: 'env' },
+    getVisionApiKey: async () => ({ key: 'k', source: 'env' as const }),
     today: () => '2026-11-10',
     allowedChatIds: ['111', '222'],
     fetchImpl: vision500,
@@ -79,8 +79,10 @@ describe('could not read fills replies', () => {
     expect(src.match(/await tellBadExtract\(chatId, /g)).toHaveLength(2)
     expect(src.match(/await tellBadExtract\(chatId, event\.detail\)/g)).toHaveLength(1)
     expect(src.match(/await tellBadExtract\(chatId, 'no fills recognized'\)/g)).toHaveLength(1)
-    expect(core.match(/emit\(\{ type: 'bad-extract'/g)).toHaveLength(2)
-    expect(core.match(/emit\(\{ type: 'bad-extract', detail: 'no fills recognized' \}\)/g)).toHaveLength(1)
+    expect(core.match(/emit\(badExtract\(/g)).toHaveLength(2)
+    expect(core.match(/emit\(badExtract\(extract\.reason, extract\.detail, /g)).toHaveLength(1)
+    expect(core.match(/emit\(badExtract\('empty', 'no fills recognized', /g)).toHaveLength(1)
+    expect(core.match(/emit\(\{ type: 'bad-extract'/g)).toBeNull()
     expect(core).not.toContain('capture-bad-extract')
   })
 })

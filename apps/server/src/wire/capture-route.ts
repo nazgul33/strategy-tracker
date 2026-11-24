@@ -3,17 +3,36 @@ import { extractFills } from '@st/ingest';
 import { ingestCapture } from '../domain/booking';
 import type { CaptureOutcome, RepoSurface } from '../domain/booking';
 
+export type VisionSource = 'settings' | 'env';
+
+export interface VisionInUse {
+  model: string;
+  modelSource: VisionSource;
+  baseUrl: string;
+  baseUrlSource: VisionSource;
+  keySource: VisionSource | 'none';
+}
+
+export type BadExtractEvent =
+  | { type: 'bad-extract'; reason: 'http' | 'unparseable'; detail: string; vision: VisionInUse }
+  | { type: 'bad-extract'; reason: 'empty'; detail: string };
+
+export interface VisionApiKey {
+  key: string;
+  source: VisionSource | 'none';
+}
+
 export interface CaptureRouteDeps {
   repos: RepoSurface;
-  vision: { baseUrl: string; model: string };
-  getVisionApiKey(): Promise<string>;
+  vision: { baseUrl: string; baseUrlSource: VisionSource; model: string; modelSource: VisionSource };
+  getVisionApiKey(): Promise<VisionApiKey>;
   today(): string;
   fetchImpl?: typeof fetch;
 }
 
 export type CaptureEvent =
   | { type: 'unknown-run'; id: number }
-  | { type: 'bad-extract'; detail: string }
+  | BadExtractEvent
   | { type: 'pin-nomatch'; runId: number; ticker: string }
   | { type: 'pin-skipped'; runId: number; tickers: string[] }
   | { type: 'no-run'; ticker: string }
@@ -61,6 +80,12 @@ async function extractWithin(
   }
 }
 
+// An empty read is about the screenshot, not the setup, so it carries no vision config.
+function badExtract(reason: 'http' | 'unparseable' | 'empty', detail: string, vision: VisionInUse): BadExtractEvent {
+  if (reason === 'empty') return { type: 'bad-extract', reason, detail };
+  return { type: 'bad-extract', reason, detail, vision };
+}
+
 // The pin and auto-route rules for one screenshot, reported as events in the order
 // they happen. A throw (e.g. from a repo) propagates after the earlier events were emitted.
 export function makeCaptureRouting(deps: CaptureRouteDeps): RouteCapture {
@@ -75,16 +100,20 @@ export function makeCaptureRouting(deps: CaptureRouteDeps): RouteCapture {
       pinned = { id: run.id, ticker: run.ticker };
     }
 
+    // The key value goes only into the request; events carry its source.
+    const key = await deps.getVisionApiKey();
+    const { baseUrl, baseUrlSource, model, modelSource } = deps.vision;
+    const inUse: VisionInUse = { model, modelSource, baseUrl, baseUrlSource, keySource: key.source };
     const cfg = {
-      baseUrl: deps.vision.baseUrl,
-      apiKey: await deps.getVisionApiKey(),
-      model: deps.vision.model,
+      baseUrl,
+      apiKey: key.key,
+      model,
       maxTokens: 4096,
       today: deps.today(),
     };
     const extract = await extractWithin([image], cfg, deps.fetchImpl, visionTimeoutMs);
     if (!extract.ok) {
-      await emit({ type: 'bad-extract', detail: extract.detail });
+      await emit(badExtract(extract.reason, extract.detail, inUse));
       return;
     }
 
@@ -118,7 +147,7 @@ export function makeCaptureRouting(deps: CaptureRouteDeps): RouteCapture {
       else groups.set(fill.ticker, [fill]);
     }
     if (groups.size === 0) {
-      await emit({ type: 'bad-extract', detail: 'no fills recognized' });
+      await emit(badExtract('empty', 'no fills recognized', inUse));
       return;
     }
     const active = (await deps.repos.runRepo.list()).filter((r) => r.status === 'active');

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseEnv, todayEt } from '../src/wire/deps';
+import { parseEnv, resolveVisionApiKey, todayEt, visionSource } from '../src/wire/deps';
 
 // ---------- parseEnv ----------
 
@@ -123,6 +123,17 @@ describe('parseEnv', () => {
       }
       for (const name of ['DATABASE_URL', 'PORT', 'DEFAULT_COST_PERCENT']) expect(message).toContain(name);
     });
+  });
+});
+
+describe('vision sources', () => {
+  test('a non-empty Settings value is settings, anything else env; the key is none only when both are empty', () => {
+    expect(visionSource('http://a')).toBe('settings');
+    expect(visionSource('')).toBe('env');
+    expect(visionSource(undefined)).toBe('env');
+    expect(resolveVisionApiKey('sk-s', 'sk-e')).toEqual({ key: 'sk-s', source: 'settings' });
+    expect(resolveVisionApiKey('', 'sk-e')).toEqual({ key: 'sk-e', source: 'env' });
+    expect(resolveVisionApiKey(undefined, '')).toEqual({ key: '', source: 'none' });
   });
 });
 

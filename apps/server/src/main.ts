@@ -13,7 +13,7 @@ import { startJobs } from './pipeline/wire'
 import { runBootSweeps } from './wire/boot-sweeps'
 import { makeCaptureHandlers, type CaptureDeps } from './wire/capture'
 import { makeCaptureRouting } from './wire/capture-route'
-import { parseEnv, todayEt } from './wire/deps'
+import { parseEnv, resolveVisionApiKey, todayEt, visionSource } from './wire/deps'
 import { makeSend } from './wire/send'
 
 async function main(): Promise<void> {
@@ -38,8 +38,8 @@ async function main(): Promise<void> {
   // one routing core for the Telegram handlers and the web upload route
   const captureRouteDeps = {
     repos,
-    vision: { baseUrl: visionBaseUrl, model: visionModel },
-    getVisionApiKey: async () => (await repos.settingsRepo.getAll()).visionApiKey || env.visionApiKey,
+    vision: { baseUrl: visionBaseUrl, baseUrlSource: visionSource(settings.visionBaseUrl), model: visionModel, modelSource: visionSource(settings.visionModel) },
+    getVisionApiKey: async () => resolveVisionApiKey((await repos.settingsRepo.getAll()).visionApiKey, env.visionApiKey),
     today: todayEt,
   }
   const handlers = makeCaptureHandlers({

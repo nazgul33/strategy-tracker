@@ -14,4 +14,7 @@ test('the HTTP server allows 60 idle seconds, so a 50-second vision read answers
   expect(src).toMatch(/Bun\.serve\(\{\s*port: env\.port,\s*idleTimeout: 60,/)
   expect(src).toContain('settings.visionBaseUrl || env.visionBaseUrl')
   expect(src).toContain('settings.visionModel || env.visionModel')
+  expect(src).toContain('baseUrlSource: visionSource(settings.visionBaseUrl)')
+  expect(src).toContain('modelSource: visionSource(settings.visionModel)')
+  expect(src).toContain('resolveVisionApiKey((await repos.settingsRepo.getAll()).visionApiKey, env.visionApiKey)')
 })

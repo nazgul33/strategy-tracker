@@ -219,8 +219,8 @@ describe('capture confirm — sibling leg cancelled by a bucket-emptying sell', 
     const sent: { chatId: string; text: string }[] = [];
     const handlers = makeCaptureHandlers({
       repos: fakes.repos,
-      vision: { baseUrl: 'https://vision.example/v1', model: 'vision-model' },
-      getVisionApiKey: async () => 'k',
+      vision: { baseUrl: 'https://vision.example/v1', baseUrlSource: 'env', model: 'vision-model', modelSource: 'env' },
+      getVisionApiKey: async () => ({ key: 'k', source: 'env' as const }),
       today: () => '2026-11-10',
       allowedChatIds: opts.allowedChatIds ?? ['111', '222'],
       send: opts.send ?? (async (chatId, text) => void sent.push({ chatId, text })),

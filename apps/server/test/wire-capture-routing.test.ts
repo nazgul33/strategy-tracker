@@ -59,8 +59,8 @@ describe('capture onPhoto — dedup and failures', () => {
     const sent: { chatId: string; text: string }[] = [];
     const handlers = makeCaptureHandlers({
       repos: fakes.repos,
-      vision: { baseUrl: 'https://vision.example/v1', model: 'vision-model' },
-      getVisionApiKey: async () => 'test-vision-key',
+      vision: { baseUrl: 'https://vision.example/v1', baseUrlSource: 'env', model: 'vision-model', modelSource: 'env' },
+      getVisionApiKey: async () => ({ key: 'test-vision-key', source: 'env' as const }),
       today: () => '2026-11-10',
       allowedChatIds: [],
       fetchImpl: (async () => ({ ok: false, status: 500, text: async () => 'boom' }) as unknown as Response) as unknown as typeof fetch,
