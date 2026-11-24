@@ -90,7 +90,8 @@ function pickErrorMessage(body: string): string {
   return body;
 }
 
-// One line, key masked before the cap, no trailing sentence punctuation (it is placed in "— {detail}.").
+// One line, key masked before the cap, no trailing sentence punctuation: the detail ends the
+// "Original error" line, and a web bundle older than that line still places it in "— {detail}.".
 function normalizeErrorText(text: string, apiKey: string): string {
   const collapsed = text.replace(/\s+/g, ' ').trim();
   const msg = stripTrailingPunctuation(maskKey(collapsed, apiKey));

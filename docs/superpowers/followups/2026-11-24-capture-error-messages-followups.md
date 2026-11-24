@@ -51,5 +51,6 @@ what the reviews found and the branch deliberately left.
   reads as `unparseable`; no test pins it either way.
 - Telegram has no test for `$` sequences on the original-error line (its
   formatter inserts values literally; the web side is pinned).
-- The two masking timing tests assert a 1000 ms wall-clock bound; they catch
-  only a severe regression.
+- Four tests in `packages/ingest/test/extract-http-error.test.ts` assert a
+  1000 ms wall-clock bound (two on the trailing-punctuation strip, two on
+  masking); they catch only a severe regression.
