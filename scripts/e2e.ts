@@ -13,8 +13,8 @@
  * Flow: scratch DB st_e2e_<ts> (created + always dropped) → migrations → login
  * through the real Hono app → seeded run create → photo capture through
  * wire/capture against a fake vision model → duplicate guard → HTTP pending
- * confirm → state asserts → morning digest (+ cut-loss stops) → web viewmodels →
- * stop-fill booking → sim drafts (cached bars) → screenshot retention + vision review → deterministic sim. Steps live in e2e-*.ts.
+ * confirm → state asserts → morning digest (+ cut-loss stops) → web viewmodels → stop-fill booking →
+ * sim drafts (cached bars) → screenshot retention + vision review → web screenshot upload → deterministic sim. Steps live in e2e-*.ts.
  * Exit 0 = every pinned assertion below held.
  */
 import { getDb, closeDb, applyMigrations } from '../apps/server/src/db/client'
@@ -23,11 +23,9 @@ import { createApp, type HttpDeps } from '../apps/server/src/http/app'
 import { makeCaptureHandlers } from '../apps/server/src/wire/capture'
 import { makeCaptureRouting } from '../apps/server/src/wire/capture-route'
 import { runMorningPipeline, type DayDeps } from '../apps/server/src/pipeline/day'
-import { runSim, simulateDays } from '../apps/server/src/sim/sim'
 import { bucketCells } from '../apps/web/src/viewmodels'
 import { prevTradingDay, type ISODate } from '../packages/calendar/src/index'
 import { DEFAULT_MR_PARAMS } from '../packages/strategies/src/mean-reversion'
-import type { OHLCBar } from '../packages/market-data/src/yahoo'
 import { formatUsd, parseUsd } from '../packages/core/src/money'
 import { CATALOG } from '../packages/telegram/src/i18n'
 import { makeCachedBarReader } from '../apps/server/src/market/bars'
@@ -36,6 +34,8 @@ import { CUT_LOSS_PPM, checkPlannedStops, checkStopBooking } from './e2e-cutloss
 import { checkOrderType } from './e2e-order-type'
 import { countingUpstream, checkSimDrafts } from './e2e-sim-drafts'
 import { runVisionReview } from './e2e-vision-review'
+import { checkWebUpload } from './e2e-web-upload'
+import { checkDeterministicSim } from './e2e-sim'
 
 let checks = 0
 function ok(cond: unknown, label: string): void {
@@ -51,17 +51,6 @@ const TODAY: ISODate = '2026-11-09' // Monday
 const PREV: ISODate = prevTradingDay(TODAY) // previous open = Friday 2026-11-06
 const IMG = { base64: 'ZTJlLWZhZ2UtcG5n', mime: 'image/png' } // 'e2e-fake-png'
 const VISION_FILLS: VisionFill[] = [{ side: 'buy', ticker: 'NVDA', shares: 30, price: '179.50', fee: '0.50' }]
-
-// deterministic sim bars (myriadths via parseUsd); 4 bars → 3 sim days
-const BAR_FIXTURE: [ISODate, string, string, string, string][] = [
-  ['2026-11-06', '340.22', '346.83', '339.23', '346.38'],
-  ['2026-11-09', '342.00', '352.83', '337.08', '350.00'],
-  ['2026-11-10', '348.00', '355.40', '345.10', '351.20'],
-  ['2026-11-12', '349.00', '358.90', '348.50', '355.00'],
-]
-const BARS: OHLCBar[] = BAR_FIXTURE.map(([date, o, h, l, c]) => ({
-  date, open: parseUsd(o), high: parseUsd(h), low: parseUsd(l), close: parseUsd(c),
-}))
 
 async function main(): Promise<void> {
   const parentUrl = process.env.TEST_DATABASE_URL ?? ''
@@ -163,7 +152,11 @@ async function main(): Promise<void> {
       visionFills = fills
       try { await capture.onPhoto('chat-1', image, 'NVDA 11/9 broker fill') } finally { visionFills = VISION_FILLS }
     }
-    const ctx: E2eCtx = { ok, req, token, photo }
+    const upload: E2eCtx['upload'] = async (fills, form) => {
+      visionFills = fills
+      try { return await app.request('/api/captures', { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: form }) } finally { visionFills = VISION_FILLS }
+    }
+    const ctx: E2eCtx = { ok, req, token, photo, upload }
     await capture.onPhoto('chat-1', IMG, 'NVDA 11/9 broker fill') // no run id in caption -> ticker auto-route
     ok(
       captureMsgs.some((m) => m.text === 'Booked NVDA buy 30 sh @ $179.50 on 2026-11-09 — confirm?\n⚠️ No usable trade date was read from the screenshot, so the capture date 2026-11-09 was used. Check the date and confirm this fill in the web app\'s Pending view.' && m.extra === undefined),
@@ -274,23 +267,9 @@ async function main(): Promise<void> {
     // ---- screenshot retention: keep a corrected one, sweep the rest, vision-review list
     await runVisionReview(ctx, { reviewRowCount: async (id) => (await repos.visionReviewRepo.listForCaptures([id])).length })
 
-    // ---- deterministic sim (fixture bars, pure + persisted) ------------------
-    const simRun = { id: 0, name: 'E2E Sim', ticker: 'NVDA', strategyKey: 'mean-reversion' as const, costPpm: 1_000, buyGapPpm: 0, sellGapPpm: 0, cutLossPpm: 0, poolCents: 1_000_000, status: 'active' as const }
-    const days = simulateDays(simRun, DEFAULT_MR_PARAMS, BARS)
-    ok(days.map((d) => d.date).join(',') === '2026-11-09,2026-11-10,2026-11-12', '3 sim days from 4 bars')
-    ok(days[0]!.fills.length === 1 && days[0]!.fills[0]!.side === 'buy' && days[0]!.fills[0]!.bucketIndex === 0 &&
-      days[0]!.fills[0]!.shares === 2 && days[0]!.fills[0]!.price === 3420000n && days[0]!.fills[0]!.feeCents === 68,
-      'day1: buy 2 sh @ 342.00 fee 68c')
-    ok(days[1]!.fills.length === 2 && days[1]!.cashCents === 931_392, 'day2: sell bucket 0 + buy bucket 1, cash 931392')
-    const lastDay = days[2]!
-    ok(lastDay.fills.length === 3 && lastDay.fills[2]!.side === 'sell' && lastDay.fills[2]!.price === 3490000n,
-      'day3: forced exit liquidates held bucket at last open 349.00 (market sells fill LOO)')
-    ok(lastDay.heldCount === 0 && lastDay.cashCents === 1_000_982, 'sim ends flat with cash 1000982')
-    const simSaved = await runSim(
-      { ticker: 'NVDA', from: '2026-11-06', to: '2026-11-12', poolCents: 1_000_000, costPpm: 1_000 },
-      { fetchDailyBars: async () => BARS, repos: repos.simRepo },
-    )
-    ok(simSaved.id >= 1 && simSaved.dayCount === 3, 'runSim persists sim run + 3 day rows')
+    // ---- web screenshot upload (pinned, auto-routed, duplicate across bot and web), then the deterministic sim
+    await checkWebUpload(ctx, TODAY)
+    await checkDeterministicSim(ctx, repos.simRepo)
 
     // ---- teardown + idempotency proof -----------------------------------------
     await closeDb()

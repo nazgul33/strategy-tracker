@@ -7,6 +7,8 @@ export interface E2eCtx {
   token: string
   /** Sends a photo through the real capture handler while the fake vision endpoint answers with `fills`. */
   photo: (fills: VisionFill[], image: { base64: string; mime: string }) => Promise<void>
+  /** Posts `form` to POST /api/captures while the fake vision endpoint answers with `fills`. */
+  upload: (fills: VisionFill[], form: FormData) => Promise<Response>
 }
 
 export const jsonOf = async (r: Response): Promise<any> => r.json()
