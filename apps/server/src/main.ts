@@ -26,8 +26,8 @@ async function main(): Promise<void> {
 
   // vision/digest config: DB settings override env (api key re-read on every capture)
   const settings = await repos.settingsRepo.getAll()
-  const visionBaseUrl = settings.visionBaseUrl || (env.telegram?.visionBaseUrl ?? '')
-  const visionModel = settings.visionModel || (env.telegram?.visionModel ?? '')
+  const visionBaseUrl = settings.visionBaseUrl || env.visionBaseUrl
+  const visionModel = settings.visionModel || env.visionModel
   const digestLang = settings.digestLang === 'en' || settings.digestLang === 'ko' ? settings.digestLang : env.digestLang
 
   // bot is optional: without a token every send just logs (dev + first boot before setup)
@@ -96,6 +96,7 @@ async function main(): Promise<void> {
 
   const server = Bun.serve({
     port: env.port,
+    idleTimeout: 60, // seconds; Bun's default is 10, and a web upload waits up to 50 s for vision
     async fetch(req) {
       const path = new URL(req.url).pathname
       if (!path.startsWith('/api') && hasDist) {

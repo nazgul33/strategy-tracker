@@ -15,6 +15,9 @@ export interface EnvConfig {
   defaultCostPpm: number;
   /** null when TELEGRAM_BOT_TOKEN is unset/empty — the bot is disabled */
   telegram: TelegramEnv | null;
+  /** read with or without a token (web uploads need them too); '' when unset, required only with a token */
+  visionBaseUrl: string;
+  visionModel: string;
   visionApiKey: string;
 }
 
@@ -102,6 +105,8 @@ export function parseEnv(raw: Record<string, string | undefined> = process.env):
     digestLang,
     defaultCostPpm,
     telegram,
+    visionBaseUrl: get('VISION_BASE_URL') ?? '',
+    visionModel: get('VISION_MODEL') ?? '',
     visionApiKey: get('VISION_API_KEY') ?? '',
   };
 }
