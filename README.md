@@ -156,7 +156,7 @@ Only chat IDs on the allowlist get any response (`packages/telegram/src/bot.ts`)
   web Pending view). A fill dated after today (New York date) is refused everywhere, and a manual
   sell may ask for a bucket. `Yes` books it (lowest empty bucket for buys), `No` rejects. Nothing is booked without
   that tap. Re-sending the identical photo is deduped by content hash. A screenshot that cannot be
-  read is answered with one of three messages (see "Reading a failed capture" below), and that reply
+  read is answered with one of four messages (see "Reading a failed capture" below), and that reply
   is also listed under System notices.
 - A fill-capture reminder goes out at 16:05 ET on trading days (nothing on weekends/holidays).
 
@@ -178,22 +178,36 @@ The same fill screenshots can be uploaded from the web UI, with or without the b
 
 ### Reading a failed capture
 
-Telegram and the web word a failed capture the same way:
+Telegram and the web word a failed capture the same way. The two setup-related messages name the
+model, URL and key source the server is running with (the "In use" line, each marked `Settings` or
+`env`, `not set` for a missing key) and end with an "Original error" line: the vision service's own
+answer, or the connection error, on one line, at most 200 characters, never translated. A URL or
+model changed in Settings applies only after a server restart; the key is re-read on every capture.
+On the web, a vision call cut off at 50 s shows only "Vision took too long to answer".
 
-- **"The vision service did not accept the request — …"** is a vision setup problem, not the
-  screenshot. The text after the dash is the service's own answer (for example a model name it does
-  not serve). The "In use" line names the model, URL and key source the server is running with, each
-  marked `Settings` or `env` (`not set` for a missing key). A URL or model changed in Settings
-  applies only after a server restart; the key is re-read on every capture.
-- **"The vision model answered, but not in a form the tracker understands — …"**: try again; if it
-  keeps happening, the model in use is probably not suited to reading screenshots.
+- **"The vision service did not accept the request."** The service refused the request, could not
+  be reached, or dropped the connection while answering. The original error says why — for example
+  a model name it does not serve, a rejected key, or a rate limit.
+- **"The vision service answered, but not as an OpenAI-compatible API."** Something answered at the
+  configured URL, but not with an OpenAI chat-completions reply (original error
+  `response body not json` or `no content`) — typically a base URL that points at a web page or at a
+  different kind of API. Make sure the configured vision API is OpenAI-compatible.
+- **"The vision model answered, but not in a form the tracker understands — …"**: the reply was
+  OpenAI-style, but the model's text was not usable, or there was none (`no content`: for example a
+  reasoning model that used up its tokens before answering, or a refusal). Try again; if it keeps
+  happening, the model in use is probably not suited to reading screenshots.
 - **"No fills were found in this image."**: the screenshot does not show the fills list; book the
   fill manually.
 
-The API key itself is never shown, only where it came from. In the service's own text, any word that
-contains the key, or 8 or more consecutive characters of it, is replaced by `[redacted]`. With a
-word-like placeholder key (`test`, `local`, `sk-no-key-required`) that can also hide ordinary words,
-such as a model name containing "test": for a vision server that needs no key, leave the key unset.
+The API key is never shown in full. Where the service's answer echoes it, it appears as its first 4
+and last 4 characters around four dots — `sk-LEAKCHECK-7f3a9c2e` reads `sk-L....9c2e`, and the dots
+are always four, whatever the key's length. A partial echo of 8 or more consecutive characters of the
+key is masked the same way: the characters from the key's middle become four dots. At the very end of
+the line those dots are trimmed with the sentence punctuation. A key of 8 characters or fewer has no
+middle and is never masked, so placeholder keys such as `test`, `local` or `ollama` change nothing.
+With a longer word-like placeholder key, an ordinary word that is 8 characters of it is partly dotted:
+under the key `sk-no-key-required` the word `required` reads `....ired`. For a vision server that
+needs no key, leave the key unset.
 
 ## Schedules
 
