@@ -270,7 +270,7 @@ export function RunDetailPage({
         />
       )}
       {manualOpen && (
-        <FillDialog runId={run.id} costPpm={run.costPpm} initialSide="buy"
+        <FillDialog runId={run.id} costPpm={run.costPpm} initialSide="buy" today={run.today}
           heldBuckets={heldBucketsOf(run.state.buckets)}
           onClose={() => setManualOpen(false)}
           onSaved={() => { setManualOpen(false); setPanelKey((k) => k + 1); void reload(); }} />

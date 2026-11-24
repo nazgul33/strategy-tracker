@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { createApp } from '../src/http/app'
-import { makeFakes, makeDeps, PASSWORD, json, loginAs, createRun } from './http-fakes'
+import { makeFakes, makeDeps, PASSWORD, json, loginAs, createRun, seedTwoHeldBuckets } from './http-fakes'
 import { NO_SNAPSHOT } from './booking-fakes'
 
 describe('http pending', () => {
@@ -116,6 +116,24 @@ describe('http pending', () => {
     expect(f.fills.length).toBe(0)
     expect(f.ledger.length).toBe(0)
     expect((await f.repos.pendingRepo.get(pid))!.status).toBe('pending')
+  })
+
+  test('confirm of an untyped sell among two possible buckets -> 422 choose-bucket, row stays pending, then 200 with a bucket', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const auth = await loginAs(app)
+    const id = await createRun(app, auth, { name: 'r', ticker: 'AAPL', costPpm: 100, poolCents: 1000 })
+    await seedTwoHeldBuckets(f, id)
+    const pid = await f.repos.pendingRepo.insert({ runId: id, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 10, price: 965000n, fee: null, filledOn: '2026-11-10', status: 'pending', ...NO_SNAPSHOT })
+    const res = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({}), headers: { ...json, ...auth } })
+    expect(res.status).toBe(422)
+    expect(await res.json()).toEqual({ error: 'choose-bucket' })
+    expect(f.fills.length).toBe(0)
+    expect(f.ledger.length).toBe(0)
+    expect((await f.repos.pendingRepo.get(pid))!.status).toBe('pending')
+    const ok = await app.request(`/api/pending/${pid}/confirm`, { method: 'POST', body: JSON.stringify({ overrides: { bucketIdx: 0 } }), headers: { ...json, ...auth } })
+    expect(ok.status).toBe(200)
+    expect(f.fills.map((x) => x.bucketIdx)).toEqual([0])
   })
 
   test('confirm with invalid override shares -> 422 invalid-shares', async () => {

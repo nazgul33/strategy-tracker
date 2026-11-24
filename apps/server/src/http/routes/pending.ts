@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import { jsonBig, type HttpDeps } from '../app'
 import { DomainError, type RunState } from '@st/core'
 import { confirmPendingFill, rejectPendingFill } from '../../domain/booking'
+import { evidenceOf } from '../../domain/order-type'
+import { rowsNeedingBucket } from '../../domain/pending-flags'
 import type { PendingRow } from '../../domain/repo-types'
 import { fillBookingDeps } from '../booking-deps'
 import { parseId } from '../params'
@@ -10,7 +12,7 @@ import { parseId } from '../params'
 // to an object with null fields ("vision missed that field").
 function detectedDto(row: PendingRow) {
   if (row.detectedAt == null) return null
-  return { side: row.detectedSide ?? null, shares: row.detectedShares ?? null, price: row.detectedPrice ?? null, filledOn: row.detectedFilledOn ?? null, fee: row.detectedFee ?? null }
+  return { side: row.detectedSide ?? null, shares: row.detectedShares ?? null, price: row.detectedPrice ?? null, filledOn: row.detectedFilledOn ?? null, fee: row.detectedFee ?? null, orderType: row.detectedOrderType ?? null, orderPrice: row.detectedOrderPrice ?? null, orderedShares: row.detectedOrderedShares ?? null }
 }
 
 function heldBucketsOf(state: RunState): Array<{ index: number; shares: number }> {
@@ -22,23 +24,30 @@ export function pendingRouter(deps: HttpDeps): Hono {
   r.get('/pending', async (c) => {
     const rows = await deps.repos.pendingRepo.listPending()
     const withImage = await deps.repos.captureImageRepo.existingIds(rows.map((p) => p.captureId).filter((id) => id != null) as number[])
+    const today = deps.today()
     const perRun = new Map(await Promise.all(
       [...new Set<number>(rows.map((p) => p.runId))].map(async (runId) => {
         const run = await deps.repos.runRepo.get(runId)
-        const heldBuckets = run ? heldBucketsOf(await deps.repos.bucketRepo.loadState(runId)) : []
-        return [runId, { costPpm: run?.costPpm ?? deps.defaultSettings.defaultCostPpm, heldBuckets }] as const
+        const state = run ? await deps.repos.bucketRepo.loadState(runId) : null
+        const flagRows = rows.filter((p) => p.runId === runId).map((p) => ({ id: p.id, side: p.side, shares: p.shares, price: p.price, filledOn: p.filledOn, evidence: evidenceOf(p) }))
+        const needingBucket = state
+          ? await rowsNeedingBucket(deps.repos, runId, flagRows, today, state)
+          : new Set<number>()
+        return [runId, { costPpm: run?.costPpm ?? deps.defaultSettings.defaultCostPpm, heldBuckets: state ? heldBucketsOf(state) : [], needingBucket }] as const
       }),
     ))
     return c.json(jsonBig(rows.map((p) => {
       // feeOverride is server-internal (boot-repair bookkeeping), so it is dropped with the detected* fields.
-      const { detectedSide, detectedShares, detectedPrice, detectedFilledOn, detectedFee, detectedAt, feeOverride, ...row } = p
-      const { costPpm, heldBuckets } = perRun.get(p.runId)!
+      const { detectedSide, detectedShares, detectedPrice, detectedFilledOn, detectedFee, detectedOrderType, detectedOrderPrice, detectedOrderedShares, detectedAt, feeOverride, ...row } = p
+      const { costPpm, heldBuckets, needingBucket } = perRun.get(p.runId)!
       return {
         ...row,
         hasImage: p.captureId != null && withImage.has(p.captureId),
         detected: detectedDto(p),
         costPpm,
         heldBuckets,
+        needsBucket: needingBucket.has(p.id),
+        today,
       }
     })))
   })

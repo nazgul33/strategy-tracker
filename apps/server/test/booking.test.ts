@@ -116,7 +116,7 @@ describe('booking', () => {
     ])
     // pending sell partial 5 shares @ 2.00
     const img = { base64: 'DDDD', mime: 'image/png' }
-    const ext: ExtractResult = { ok: true, fills: [{ side: 'sell', ticker: 'AAPL', shares: 5, price: '2.00' }] }
+    const ext: ExtractResult = { ok: true, fills: [{ side: 'sell', ticker: 'AAPL', shares: 5, price: '2.00', orderType: '매도/LOC', orderPrice: '2.00' }] }
     const out = await ingestCapture(runId, img, ext, deps) as any
     await confirmPendingFill(out.pending[0].id, { filledOn: '2026-11-06' }, deps)
     const st = await f.repos.bucketRepo.loadState(runId)

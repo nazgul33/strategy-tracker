@@ -3,7 +3,7 @@ import { parseUsd } from '@st/core';
 import { buildPendingKeyboard } from '@st/telegram';
 import { t, type Lang } from '@st/telegram/i18n';
 import { NO_SNAPSHOT } from './booking-fakes';
-import { DATE_NOTICE_EN, PNG_B64, activeRun, makeCapture } from './wire-capture-fakes';
+import { DATE_NOTICE_EN, PNG_B64, activeRun, makeCapture, visionFetch } from './wire-capture-fakes';
 
 describe('capture onPhoto — happy path books via the real booking module', () => {
   test('single active run: capture is ingested, pending row created, user gets exact booked line + confirm keyboard', async () => {
@@ -153,6 +153,20 @@ describe('capture onPhoto — happy path books via the real booking module', () 
       '⚠️ 충돌: 2026-11-10 NVDA sell 4주 — 추출 가격 $200.00, 대기 중 행 #1 가격 $190.00. 먼저 해당 행을 처리하세요.',
       'NVDA buy 5주 @ $170.00 (2026-11-10) 예약 — 확인하시겠습니까?',
     ]);
+  });
+});
+
+describe('capture onPhoto — vision request', () => {
+  test('the vision request allows 4096 output tokens', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const recordingFetch = (async (url: string, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return visionFetch(url, init);
+    }) as unknown as typeof fetch;
+    const h = makeCapture({ runs: [activeRun(1, 'NVDA')], fetchImpl: recordingFetch });
+    await h.handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' });
+    expect(bodies.length).toBe(1);
+    expect(bodies[0]!.max_tokens).toBe(4096);
   });
 });
 

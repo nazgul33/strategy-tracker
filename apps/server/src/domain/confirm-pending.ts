@@ -4,6 +4,7 @@ import { bookUnlocked, finalFeeCents, type BookingDeps, type FillBookingDeps } f
 import { withRunLock } from './run-lock'
 import { requireRun } from './require-run'
 import { notifyBookingOutcome } from './booking-notify'
+import { evidenceOf } from './order-type'
 import { resolveReview } from './vision-review'
 
 // Operator corrections to what the vision model read. feeCents: null recomputes the
@@ -24,7 +25,7 @@ export interface ConfirmOverrides {
 // - setKeep throws: nothing is booked or decided; the confirm fails as a whole
 //   and the operator retries.
 // - A booking refusal (invalid-bucket, bucket-not-found, bucket-not-held,
-//   too-many-shares, no-empty-bucket, no-bucket-for-sell, a lost decide race)
+//   too-many-shares, no-empty-bucket, no-bucket-for-sell, choose-bucket, fill-date-in-future, a lost decide race)
 //   leaves the row pending and the image kept; the flag is sticky, so a later
 //   confirm or reject, with or without keep, leaves it kept.
 // - A crash or thrown write after decide flipped the row leaves it confirmed
@@ -69,6 +70,7 @@ export async function confirmPendingFill(pendingId: number, overrides: ConfirmOv
       pendingId,
       source: 'capture',
       bucketIdx: overrides?.bucketIdx ?? null,
+      order: side === 'sell' ? evidenceOf(pending) : undefined,
       // the kind of the override; the local `feeOverride` is its value (undefined = none, null = cleared)
       feeOverride: feeOverride === undefined ? 'none' : feeOverride === null ? 'cleared' : 'set',
     }, deps)

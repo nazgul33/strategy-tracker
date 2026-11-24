@@ -172,23 +172,30 @@ describe('digest', () => {
     }
   })
   test('sell-attributed names the chosen leg, the alternatives and the deciding rule in both languages', () => {
-    const WHY_PRICE_10 = 'A target fills at or above its limit, a stop at or below its trigger and a market sell at any price, so more than one order fit this price. A target at exactly the fill price wins; otherwise the only order for exactly 10 shares, if there is one; otherwise the order whose price is nearest the fill, a target before a stop at an equal distance, then the lowest bucket.'
+    const WHY_PRICE = 'More than one order of this type could have filled; the one whose price is nearest the fill price was chosen.'
     const leg = (lang: 'en' | 'ko', bucket: number, kind: string, limit: string, distance: string) =>
       t('sell-attributed-alt', lang, { bucket, leg: t(`leg-${kind}`, lang), limit, distance })
     const render = (lang: 'en' | 'ko') => t('sell-attributed', lang, {
       id: 7, ticker: 'AAPL', shares: 10, price: '96.50', chosen: leg(lang, 0, 'stop_sell', '97.00', '0.50'),
       alts: leg(lang, 9, 'sell_loc', '91.00', '5.50'), why: t('sell-attributed-why-price', lang, { shares: 10 }),
     })
-    expect(render('en')).toBe(`ℹ️ Run #7 AAPL: sell 10 sh @ $96.50 was booked to bucket 0 stop ($97.00, $0.50 away). Also possible: bucket 9 target ($91.00, $5.50 away). ${WHY_PRICE_10}`)
-    expect(render('ko')).toBe('ℹ️ 런 #7 AAPL: 매도 10주 @ $96.50 체결을 버킷 0 손절 매도 ($97.00, $0.50 차이)에 기록했습니다. 다른 후보: 버킷 9 목표가 매도 ($91.00, $5.50 차이). 목표가 매도는 지정가 이상에서, 손절 매도는 발동가 이하에서, 시장가 매도는 어떤 가격에서도 체결되므로 이 가격에 해당하는 주문이 여러 개였습니다. 지정가가 체결가와 같은 목표가 매도가 우선하고, 없으면 정확히 10주인 주문이 하나뿐일 때 그 주문이, 그것도 아니면 체결가에 가장 가까운 주문이 선택되며, 차이가 같으면 목표가 매도가 손절 매도보다 우선하고 그다음은 낮은 버킷이 우선합니다.')
+    expect(render('en')).toBe(`ℹ️ Run #7 AAPL: sell 10 sh @ $96.50 was booked to bucket 0 stop ($97.00, $0.50 away). Also possible: bucket 9 target ($91.00, $5.50 away). ${WHY_PRICE}`)
+    expect(render('ko')).toBe('ℹ️ 런 #7 AAPL: 매도 10주 @ $96.50 체결을 버킷 0 손절 매도 ($97.00, $0.50 차이)에 기록했습니다. 다른 후보: 버킷 9 목표가 매도 ($91.00, $5.50 차이). 체결된 주문으로 볼 수 있는 이 유형의 주문이 둘 이상입니다. 가격이 체결가에 가장 가까운 주문을 선택했습니다.')
     expect(t('sell-attributed-alt', 'en', { bucket: 9, leg: t('leg-sell_loc', 'en'), limit: '91.00', distance: '5.50' })).toBe('bucket 9 target ($91.00, $5.50 away)')
     expect(t('sell-attributed-alt', 'ko', { bucket: 9, leg: t('leg-sell_loc', 'ko'), limit: '91.00', distance: '5.50' })).toBe('버킷 9 목표가 매도 ($91.00, $5.50 차이)')
     expect(t('sell-attributed-alt-market', 'en', { bucket: 3, leg: t('leg-market_sell', 'en') })).toBe('bucket 3 market sell')
     expect(t('sell-attributed-alt-market', 'ko', { bucket: 3, leg: t('leg-market_sell', 'ko') })).toBe('버킷 3 시장가 매도')
     expect(t('leg-stop_sell', 'en')).toBe('stop')
-    expect(t('sell-attributed-why-market', 'en', { shares: 10 })).toBe('No target or stop fit this price and no single order is for exactly 10 shares, so the market sell of the lowest bucket wins.')
-    expect(t('sell-attributed-why-market', 'ko', { shares: 10 })).toBe('이 가격에 맞는 목표가 매도나 손절 매도가 없고 정확히 10주인 주문도 하나로 정해지지 않아 가장 낮은 버킷의 시장가 매도를 선택했습니다.')
-    expect(t('sell-attributed-why-shares', 'en', { shares: 10 })).toBe('sell-attributed-why-shares')
+    const why = (key: string, lang: 'en' | 'ko') => t(`sell-attributed-why-${key}`, lang, { shares: 10 })
+    expect(why('order-price', 'en')).toBe('More than one order of this type could have filled; the one whose limit is nearest the order price on the screenshot was chosen.')
+    expect(why('ordered-shares', 'en')).toBe('More than one order of this type could have filled; the one placed for the ordered quantity on the screenshot was chosen.')
+    expect(why('shares', 'en')).toBe('More than one order of this type could have filled; the bucket holding exactly 10 shares was chosen.')
+    expect(why('older', 'en')).toBe('More than one order of this type could have filled and nothing else told them apart; the bucket bought earliest was chosen.')
+    expect(why('shares', 'ko')).toBe('체결된 주문으로 볼 수 있는 이 유형의 주문이 둘 이상입니다. 정확히 10주를 보유한 버킷을 선택했습니다.')
+    for (const key of ['order-price', 'ordered-shares', 'shares', 'price', 'older']) {
+      for (const lang of ['en', 'ko'] as const) expect(why(key, lang)).not.toBe(`sell-attributed-why-${key}`)
+      expect(why(key, 'ko')).toMatch(/[가-힣]/)
+    }
   })
 })
 

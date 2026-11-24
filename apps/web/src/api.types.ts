@@ -2,6 +2,8 @@
 // api.ts re-exports everything here (`export type *`) so every existing
 // `import type { … } from '../api'` site keeps working unchanged.
 
+import type { DetectedDto } from './api.pending.types';
+
 // ------------------------------------------------------------------- DTOs
 export type RunStatus = 'active' | 'paused' | 'closed';
 
@@ -37,12 +39,6 @@ export interface BucketDto {
   filledOn: string | null;
 }
 
-/** A non-empty bucket a sell can be booked to. */
-export interface HeldBucketDto {
-  index: number;
-  shares: number;
-}
-
 export interface ClosedBucketDto {
   index: number;
   shares: number;
@@ -64,6 +60,8 @@ export interface RunStateDto {
 export interface RunDetailDto extends RunDto {
   progressView: ProgressViewDto;
   state: RunStateDto;
+  /** The server's New York date (YYYY-MM-DD). */
+  today?: string;
 }
 
 export interface OrderDto {
@@ -101,37 +99,7 @@ export interface NotificationDto {
   sentAt: string;
 }
 
-export interface PendingFillDto {
-  id: number;
-  runId: number;
-  captureId: number | null;
-  bucketIdx: number | null;
-  side: string;
-  ticker: string;
-  shares: number;
-  price: string; // myriadths as string
-  fee: number | null; // cents
-  filledOn: string;
-  status: string;
-  createdAt: string;
-  /** A screenshot is still stored for this row (it is shown beside the row). */
-  hasImage: boolean;
-  /** The run's cost in ppm: the fee the server derives when none is supplied is `feeCents(price, shares, costPpm)`. */
-  costPpm: number;
-  /** The row's own run's non-empty buckets; the choices a confirmed sell can be booked to. */
-  heldBuckets: HeldBucketDto[];
-  /** What vision read. `null` = the row predates the snapshot; a null field = vision missed it. */
-  detected: DetectedDto | null;
-}
-
-/** A frozen snapshot of the fields vision read; `price` is myriadths as string, `fee` cents. */
-export interface DetectedDto {
-  side: string | null;
-  shares: number | null;
-  price: string | null;
-  filledOn: string | null;
-  fee: number | null;
-}
+export type { DetectedDto, HeldBucketDto, PendingFillDto } from './api.pending.types';
 
 /** One resolved fill of a kept screenshot. `final` is null for a reject. */
 export interface VisionReviewFillDto {

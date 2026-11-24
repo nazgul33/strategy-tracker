@@ -1,7 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import { applyBuyFill, parseUsd } from '@st/core';
 import { t } from '@st/telegram/i18n';
-import type { OrderRecord } from '../src/domain/repo-types';
 import { makeCaptureHandlers } from '../src/wire/capture';
 import { NO_SNAPSHOT } from './booking-fakes';
 import { PNG_B64, activeRun, makeCapture, makeCaptureFakes, type FakeRow } from './wire-capture-fakes';
@@ -137,19 +136,15 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
     expect(h.sent.at(-1)!.text).toBe('이 매도를 처리할 수 있는 보유 버킷이 없습니다 — 수량을 확인하세요.');
   });
 
-  test('bucket-not-held is rendered from the catalog in en and ko', async () => {
+  test('a thrown bucket-not-held renders the catalog copy in en and ko', async () => {
     for (const [lang, text] of [
       ['en', 'The matched bucket is not currently held — check the side and the share count.'],
       ['ko', '매칭된 버킷이 현재 보유 중이 아닙니다 — 매매 구분과 수량을 확인하세요.'],
     ] as const) {
       const { h, p } = await capturedPending(lang);
-      p.side = 'sell';
-      // an exact-price target on a bucket nothing is held in: the sell match is loud, not silent
-      const orders: OrderRecord[] = [
-        { id: 1, runId: 1, tradeDate: '2026-11-10', kind: 'sell_loc', bucketIdx: 0, limitPrice: parseUsd('180.50'), shares: 10, status: 'open', skipReason: null, cancelReason: null, reportedAt: null },
-      ];
-      h.repos.orderRepo.listForRun = async () => orders;
-      h.repos.orderRepo.listForRunFrom = async () => orders;
+      h.repos.runRepo.get = async () => {
+        throw new Error('bucket-not-held');
+      };
       await h.handlers.onConfirm('777', `yes:${p.id}`, true);
       expect(h.sent.at(-1)!.text).toBe(text);
       expect(h.fills.length).toBe(0);
@@ -169,6 +164,21 @@ describe('capture onConfirm — human-readable errors (#7)', () => {
       expect(h.sent.at(-1)!.text).toBe(text);
       expect(h.sent.at(-1)!.text).not.toBe(t('confirm-err-unknown', lang, { code: 'bucket-not-found' }));
     }
+  });
+
+  test('Yes on a future-dated row is refused with its own text', async () => {
+    for (const lang of ['en', 'ko'] as const) {
+      const { h, p } = await capturedPending(lang);
+      p.filledOn = '2026-11-11';
+      const sentBefore = h.sent.length;
+      await h.handlers.onConfirm('777', `yes:${p.id}`, true);
+      expect(h.sent.slice(sentBefore)).toEqual([{ chatId: '777', text: t('confirm-err-fill-date-in-future', lang), extra: undefined }]);
+      expect(h.sent.at(-1)!.text).not.toStartWith('Booked');
+      expect(h.sent.at(-1)!.text).not.toBe(t('confirm-err-unknown', lang, { code: 'fill-date-in-future' }));
+      expect(p.status).toBe('pending');
+      expect(h.fills.length).toBe(0);
+    }
+    expect(t('confirm-err-fill-date-in-future', 'en')).toBe("The trade date is after today — fix the date in the web app's Pending view.");
   });
 
   test('unknown error falls back to a catalog line carrying the raw code', async () => {

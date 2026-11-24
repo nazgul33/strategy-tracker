@@ -82,6 +82,7 @@ export interface PendingRow extends ReviewedPendingRow {
   captureId: number | null; bucketIdx: number | null; side: 'buy' | 'sell'; shares: number; price: bigint
   fee: number | null; filledOn: ISODate; status: PendingStatus; createdAt: string
   feeOverride?: FeeOverrideKind | null   // server-internal: how the confirm treated the fee; never sent to a client
+  detectedOrderType?: string | null; detectedOrderPrice?: bigint | null; detectedOrderedShares?: number | null
 }
 
 export type NewPending = Omit<PendingRow, 'id' | 'createdAt'>

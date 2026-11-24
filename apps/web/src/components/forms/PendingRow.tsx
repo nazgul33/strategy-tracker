@@ -2,6 +2,7 @@ import { api, type PendingFillDto } from '../../api';
 import { useT } from '../../i18n';
 import { isoDate, priceInputValue } from '../../format';
 import { autoFeeUsd } from '../../autofee';
+import { bucketRequired, dateAfterToday, orderLine } from '../../pendingchoice';
 import { feeIsDerived, standingIssues, type RowField, type RowValues } from '../../pendingvalues';
 import { Button, Input, Select, Td } from '../ui';
 import { BucketSelect } from './BucketSelect';
@@ -51,6 +52,8 @@ interface PendingRowProps {
   onChange: (patch: Partial<RowValues>) => void;
   bucket: string;
   onBucketChange: (value: string) => void;
+  /** The server refused this row's last confirm with `choose-bucket`. */
+  bucketRefused: boolean;
   onOpenSideBySide: () => void;
   onConfirm: () => void;
   onReject: () => void;
@@ -63,6 +66,7 @@ export function PendingRow({
   onChange,
   bucket,
   onBucketChange,
+  bucketRefused,
   onOpenSideBySide,
   onConfirm,
   onReject,
@@ -71,19 +75,23 @@ export function PendingRow({
   const t = useT();
   // Every missed field is flagged until the operator has filled it in.
   const issues = standingIssues(row, values);
-  const missing = (f: RowField) => ((issues as readonly string[]).includes(f) ? 'border-warning' : '');
+  const dateLate = dateAfterToday(row, values);
+  const bucketAsked = bucketRequired(row, values, bucket, bucketRefused);
+  const missing = (f: RowField) =>
+    (issues as readonly string[]).includes(f) || (f === 'filledOn' && dateLate) ? 'border-warning' : '';
   const hintId = (f: RowField) => `pending-${row.id}-${f}-hint`;
   // Props for a field's control: its width classes, the standing-issue border, and the
   // edit hint. Solid vs dashed carries the state without colour; the title is the mouse
   // hover, and aria-describedby points at the hint span `hint(f)` renders after it.
-  const control = (f: RowField, base = '') => {
+  const control = (f: RowField, base = '', extraId?: string) => {
     const h = editHint(row, values, f);
     const className = `${base} ${missing(f)}`.trim();
-    if (h === null) return { className };
+    const describedBy = [h === null ? null : hintId(f), extraId].filter(Boolean).join(' ') || undefined;
+    if (h === null) return describedBy ? { className, 'aria-describedby': describedBy } : { className };
     const props = {
       className: `${className} ${h.look} peer`.replace(/\s+/g, ' ').trim(),
       title: t(h.key),
-      'aria-describedby': hintId(f),
+      'aria-describedby': describedBy,
     };
     return h.state === 'auto' ? props : { ...props, 'data-edit': h.state };
   };
@@ -98,9 +106,12 @@ export function PendingRow({
       </span>
     );
   };
-  const needsInput = issues.length > 0;
+  const needsInput = issues.length > 0 || dateLate || bucketAsked;
   const needsMsg = t(issues.includes('ticker') ? 'pendingNeedsTicker' : 'pendingNeedsOverride');
   const needsId = `pending-${row.id}-needs`;
+  const dateNeedsId = `pending-${row.id}-date-needs`;
+  const bucketNeedsId = `pending-${row.id}-bucket-needs`;
+  const order = orderLine(row.detected);
   const captureId = row.hasImage ? row.captureId : null;
   // A blank fee books the derived one on the server, so say which amount.
   const blankFee = values.fee.trim() === '' ? autoFeeUsd(values.shares, values.price, row.costPpm) : '';
@@ -110,7 +121,7 @@ export function PendingRow({
         <Td className="whitespace-nowrap tabular-nums">
           <Input
             type="date"
-            {...control('filledOn', 'w-36')}
+            {...control('filledOn', 'w-36', dateLate ? dateNeedsId : undefined)}
             value={values.filledOn}
             aria-label={t('pendingColDate')}
             onChange={(e) => onChange({ filledOn: e.target.value })}
@@ -130,6 +141,19 @@ export function PendingRow({
             <option value="sell">{t('orderSideSell')}</option>
           </Select>
           {hint('side')}
+          {order && (
+            <div data-order-line className="mt-1 text-xs text-muted-foreground">
+              {order.type !== null && <div>{order.type}</div>}
+              {(order.shares !== null || order.price !== null) && (
+                <div>
+                  {t('pendingOrderLine', {
+                    shares: order.shares ?? '—',
+                    price: order.price === null ? '—' : priceField(order.price),
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </Td>
         <Td className="text-right tabular-nums">
           <Input
@@ -169,7 +193,14 @@ export function PendingRow({
         </Td>
         <Td>
           {values.side === 'sell' && (
-            <BucketSelect aria-label={t('fillBucket')} value={bucket} held={row.heldBuckets} onChange={onBucketChange} />
+            <BucketSelect
+              aria-label={t('fillBucket')}
+              aria-describedby={bucketAsked ? bucketNeedsId : undefined}
+              invalid={bucketAsked}
+              value={bucket}
+              held={row.heldBuckets}
+              onChange={onBucketChange}
+            />
           )}
         </Td>
         <Td>
@@ -201,7 +232,17 @@ export function PendingRow({
         <tr data-needs-input>
           <Td colSpan={COLUMNS}>
             <div id={needsId} className="sticky left-0 w-fit max-w-[80vw] text-xs text-warning">
-              {needsMsg}
+              {issues.length > 0 && <div data-needs-line="fields">{needsMsg}</div>}
+              {dateLate && (
+                <div id={dateNeedsId} data-needs-line="date">
+                  {t('pendingDateAfterToday')}
+                </div>
+              )}
+              {bucketAsked && (
+                <div id={bucketNeedsId} data-needs-line="bucket">
+                  {t('pendingNeedsBucket')}
+                </div>
+              )}
             </div>
           </Td>
         </tr>

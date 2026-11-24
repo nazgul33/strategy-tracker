@@ -1,5 +1,5 @@
 import { expect } from 'bun:test'
-import type { RunState } from '@st/core'
+import { applyBuyFill, type RunState } from '@st/core'
 import type { HttpDeps, HttpRepoSurface, createApp } from '../src/http/app'
 import type { DayRepoSurface, FillRow, LedgerRow, NewOrder, NotificationRow, OrderRecord, OrderStatus, PendingRow, RunRow, RunStatus } from '../src/domain/repo-types'
 import type { CaptureImageInsert } from '../src/db/repos-vision'
@@ -257,4 +257,14 @@ export async function createRun(app: App, auth: Record<string, string>, body: Re
 export async function postFill(app: App, auth: Record<string, string>, id: number, body: Record<string, unknown>) {
   const res = await app.request(`/api/runs/${id}/fills`, { method: 'POST', body: JSON.stringify(body), headers: { ...json, ...auth } })
   expect(res.status).toBe(200)
+}
+
+// Buckets 0 and 9 hold 10 shares each, each with a live target and stop dated 2026-11-10 (the fake `today`): a 10-share sell at 96.50 fits both.
+export async function seedTwoHeldBuckets(f: ReturnType<typeof makeFakes>, runId: number) {
+  let s = f.states.get(runId)!
+  for (const idx of [0, 9]) s = applyBuyFill(s, idx, 10, 1_000_000n, 0, '2026-11-01')
+  f.states.set(runId, s)
+  await f.repos.orderRepo.insertMany([0, 9].flatMap((bucketIdx) => (['sell_loc', 'stop_sell'] as const).map((kind) => ({
+    runId, tradeDate: '2026-11-10', kind, bucketIdx, limitPrice: kind === 'sell_loc' ? 1_030_000n : 970_000n, shares: 10, status: 'open' as const,
+  }))))
 }

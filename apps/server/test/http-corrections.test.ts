@@ -14,10 +14,10 @@ describe('http corrections', () => {
     const post = (body: Record<string, unknown>) =>
       app.request(`/api/runs/${runId}/fills`, { method: 'POST', body: JSON.stringify(body), headers: { ...json, ...auth } })
     expect((await post({ side: 'buy', shares: 44, price: '60.00', fee: '0.00', filledOn: '2026-11-10' })).status).toBe(200)
-    expect((await post({ side: 'sell', shares: 44, price: '66.03', fee: '2.03', filledOn: '2026-11-11' })).status).toBe(200)
+    expect((await post({ side: 'sell', shares: 44, price: '66.03', fee: '2.03', filledOn: '2026-11-10' })).status).toBe(200)
     const sell = f.fills.find((x) => x.side === 'sell')!
     const id = await f.repos.correctionRepo.insert({
-      runId, fillId: sell.id, captureId: null, side: 'sell', ticker: 'SOXL', bookedShares: 44, bookedFilledOn: '2026-11-11',
+      runId, fillId: sell.id, captureId: null, side: 'sell', ticker: 'SOXL', bookedShares: 44, bookedFilledOn: '2026-11-10',
       bookedPrice: sell.price, bookedFee: sell.fee, proposedPrice: 640_700n, proposedFee: 203,
     })
     const call = (method: string, path: string) => app.request(`/api${path}`, { method, headers: auth })
@@ -29,7 +29,7 @@ describe('http corrections', () => {
     const res = await call('GET', '/corrections')
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual([{
-      id, runId, fillId: sell.id, captureId: null, side: 'sell', ticker: 'SOXL', bookedShares: 44, bookedFilledOn: '2026-11-11',
+      id, runId, fillId: sell.id, captureId: null, side: 'sell', ticker: 'SOXL', bookedShares: 44, bookedFilledOn: '2026-11-10',
       bookedPrice: '660300', bookedFee: 203, proposedPrice: '640700', proposedFee: 203,
       status: 'open', createdAt: '2026-11-15 00:00:00', stale: false,
     }])
@@ -70,7 +70,7 @@ describe('http corrections', () => {
     const { f, runId, sell, call } = await seed()
     // A zero price can never be rebooked: rebookFill's input validation rejects it as invalid-fill.
     const bad = await f.repos.correctionRepo.insert({
-      runId, fillId: sell.id, captureId: null, side: 'sell', ticker: 'SOXL', bookedShares: 44, bookedFilledOn: '2026-11-11',
+      runId, fillId: sell.id, captureId: null, side: 'sell', ticker: 'SOXL', bookedShares: 44, bookedFilledOn: '2026-11-10',
       bookedPrice: sell.price, bookedFee: sell.fee, proposedPrice: 0n, proposedFee: null,
     })
     const adjustsBefore = f.ledger.filter((l) => l.kind === 'adjust').length

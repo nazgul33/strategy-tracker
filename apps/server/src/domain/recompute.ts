@@ -68,6 +68,7 @@ export async function rebookFillUnlocked(
   const history = byIdAsc(await repos.fillRepo.listForRun(runId))
   const match = history.find((f) => f.id === edit.fillId)
   if (!match) throw new DomainError('no-fill')
+  if (edit.filledOn !== undefined && edit.filledOn !== match.filledOn && edit.filledOn > deps.today) throw new DomainError('fill-date-in-future')
 
   let price: bigint
   try {

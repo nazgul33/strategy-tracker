@@ -103,18 +103,22 @@ describe('booking', () => {
     expect(serializeState(await f.repos.bucketRepo.loadState(runId))).toBe(stateBefore)
   })
 
-  test('fallback lowest-index multiple candidates', async () => {
+  test('several holders and no order evidence need the operator\'s choice', async () => {
     const f = fakeRepos()
     const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const state = emptyState(10)
     let s = applyBuyFill(state, 0, 10, 100000n, 0, '2026-11-01')
     s = applyBuyFill(s, 1, 10, 200000n, 0, '2026-11-02')
     s = applyBuyFill(s, 2, 10, 300000n, 0, '2026-11-03')
-    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'fallback', poolCents: 1000000, costPpm: 100, initialRunState: { buckets: s.buckets, cashCents: s.cashCents, closed: s.closed, ages: s.ages } })
+    const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'choose', poolCents: 1000000, costPpm: 100, initialRunState: { buckets: s.buckets, cashCents: s.cashCents, closed: s.closed, ages: s.ages } })
     const img = { base64: 'FB', mime: 'image/png' }
     const ext: ExtractResult = { ok: true, fills: [{ side: 'sell', ticker: 'AAPL', shares: 5, price: '5.00' }] }
     const out = await ingestCapture(runId, img, ext, deps) as any
-    await confirmPendingFill(out.pending[0].id, { filledOn: '2026-11-06', price: '5.00' }, deps)
+    const pid = out.pending[0].id
+    await expect(confirmPendingFill(pid, { filledOn: '2026-11-06', price: '5.00' }, deps)).rejects.toMatchObject({ kind: 'choose-bucket' })
+    expect(f._stores.pending.find((p) => p.id === pid)!.status).toBe('pending')
+    expect(f._stores.fills).toHaveLength(0)
+    await confirmPendingFill(pid, { filledOn: '2026-11-06', price: '5.00', bucketIdx: 0 }, deps)
     const st = await f.repos.bucketRepo.loadState(runId)
     expect(st.buckets[0].shares).toBe(5)
   })
@@ -207,7 +211,7 @@ describe('buy bucket selection', () => {
     const f = fakeRepos()
     const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'next1', poolCents: 1000000, costPpm: 100, initialRunState: emptyState(3) })
-    // Full cycle in bucket 0: buy then full-size sell (fallback matching) closes it.
+    // Full cycle in bucket 0: buy then a full-size sell by the sole holder closes it.
     await manualFill(runId, { side: 'buy', shares: 5, price: '5.00', filledOn: '2026-11-02' }, deps)
     await manualFill(runId, { side: 'sell', shares: 5, price: '6.00', filledOn: '2026-11-03' }, deps)
     let state = await f.repos.bucketRepo.loadState(runId)

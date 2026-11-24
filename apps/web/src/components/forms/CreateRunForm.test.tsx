@@ -241,10 +241,20 @@ describe('CreateRunForm gap fields', () => {
     restoreFetch();
     stub = installFetchStub([
       { url: '/api/settings', json: { visionBaseUrl: '', visionModel: '', digestLang: 'en', hasVisionApiKey: false, defaultCostPpm: 700 } },
-      { method: 'POST', url: '/api/runs', status: 400, json: { error: 'invalid-body' } },
+      { method: 'POST', url: '/api/runs', status: 400, json: { error: 'invalid poolCents' } },
     ]);
     await fillAndSubmit();
-    expect(alertText()).toBe('The request failed (invalid-body).');
+    expect(alertText()).toBe('The request failed (invalid poolCents).');
+  });
+
+  it('a seed dated after today is worded', async () => {
+    restoreFetch();
+    stub = installFetchStub([
+      { url: '/api/settings', json: { visionBaseUrl: '', visionModel: '', digestLang: 'en', hasVisionApiKey: false, defaultCostPpm: 700 } },
+      { method: 'POST', url: '/api/runs', status: 422, json: { error: 'fill-date-in-future' } },
+    ]);
+    await fillAndSubmit();
+    expect(alertText()).toBe('The trade date is after today (New York time).');
   });
 
   it('a create with the server unreachable is worded', async () => {

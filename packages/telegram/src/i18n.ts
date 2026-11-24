@@ -36,6 +36,8 @@ export const CATALOG: Record<string, MsgEntry> = {
   'capture-conflict-pending': { en: '⚠️ Conflict: {side} {shares} {ticker} on {date} — extracted ${extracted}, but pending row #{id} has ${dupPrice}. Resolve that row first.', ko: '⚠️ 충돌: {date} {ticker} {side} {shares}주 — 추출 가격 ${extracted}, 대기 중 행 #{id} 가격 ${dupPrice}. 먼저 해당 행을 처리하세요.' },
   'capture-booked-earlier': { en: 'ℹ️ Fills from this image were already confirmed earlier — the rows below may be duplicates. Check before confirming.', ko: 'ℹ️ 이 이미지의 체결은 이전에 이미 확정되었습니다 — 아래 항목은 중복일 수 있으니 확인 후 확정하세요.' },
   'capture-date-substituted': { en: '⚠️ No usable trade date was read from the screenshot, so the capture date {date} was used. Check the date and confirm this fill in the web app\'s Pending view.', ko: '⚠️ 스크린샷에서 사용할 수 있는 거래일을 읽지 못해 캡처한 날짜 {date}을(를) 사용했습니다. 웹 앱의 \'확인 대기\'에서 날짜를 확인한 뒤 이 체결을 확정하세요.' },
+  'capture-date-after-today': { en: '⚠️ The trade date read from the screenshot ({date}) is after today. Fix the date and confirm this fill in the web app\'s Pending view.', ko: '⚠️ 스크린샷에서 읽은 거래일({date})이 미래 날짜입니다. 웹 앱의 \'확인 대기\'에서 날짜를 수정한 뒤 이 체결을 확정하세요.' },
+  'capture-needs-bucket': { en: '⚠️ The tracker cannot tell which bucket sold this. Choose the bucket and confirm this fill in the web app\'s Pending view.', ko: '⚠️ 이 매도가 어느 버킷의 것인지 알 수 없습니다. 웹 앱의 \'확인 대기\'에서 버킷을 선택한 뒤 이 체결을 확정하세요.' },
   'capture-bad-extract': { en: 'Could not read fills from this image — {detail}. Book the fill manually in the web UI.', ko: '이미지에서 체결을 읽을 수 없습니다 — {detail}. 웹 UI에서 직접 예약해 주세요.' },
   'capture-no-run': { en: 'No active run for {ticker} — use /capture <runId> to pick one.', ko: '{ticker}에 대한 활성 런이 없습니다 — /capture <runId>로 선택하세요.' },
   'capture-ambiguous': { en: 'Multiple active runs for {ticker} — use /capture <runId>.', ko: '{ticker}에 여러 활성 런이 있습니다 — /capture <runId>를 사용하세요.' },
@@ -51,6 +53,8 @@ export const CATALOG: Record<string, MsgEntry> = {
   'confirm-err-invalid-fee': { en: 'Invalid fee — use a whole number of cents, 0 or more.', ko: '유효하지 않은 수수료입니다 — 0 이상의 정수(센트)를 사용하세요.' },
   'confirm-err-bucket-not-held': { en: 'The matched bucket is not currently held — check the side and the share count.', ko: '매칭된 버킷이 현재 보유 중이 아닙니다 — 매매 구분과 수량을 확인하세요.' },
   'confirm-err-bucket-not-found': { en: 'That bucket no longer exists on this run; book it from the web Pending view.', ko: '이 런에 해당 버킷이 더 이상 없습니다. 웹의 대기 목록에서 처리하세요.' },
+  'confirm-err-fill-date-in-future': { en: 'The trade date is after today — fix the date in the web app\'s Pending view.', ko: '체결 날짜가 미래 날짜입니다 — 웹 앱의 \'확인 대기\'에서 날짜를 수정하세요.' },
+  'confirm-err-choose-bucket': { en: 'The tracker cannot tell which bucket sold this — choose the bucket in the web app\'s Pending view.', ko: '이 매도가 어느 버킷의 것인지 알 수 없습니다 — 웹 앱의 \'확인 대기\'에서 버킷을 선택하세요.' },
   'confirm-err-unknown': { en: 'Could not confirm this fill ({code}).', ko: '이 체결을 확정할 수 없습니다 ({code}).' },
   'unknown-run': { en: 'No run with id {id}.', ko: 'id {id}인 런이 없습니다.' },
   'no-runs': { en: 'No runs yet — start one from the web app.', ko: '아직 런이 없습니다 — 웹 앱에서 시작하세요.' },
@@ -77,13 +81,25 @@ export const CATALOG: Record<string, MsgEntry> = {
     en: 'ℹ️ Run #{id} {ticker}: sell {shares} sh @ ${price} was booked to {chosen}. Also possible: {alts}. {why}',
     ko: 'ℹ️ 런 #{id} {ticker}: 매도 {shares}주 @ ${price} 체결을 {chosen}에 기록했습니다. 다른 후보: {alts}. {why}',
   },
-  'sell-attributed-why-price': {
-    en: 'A target fills at or above its limit, a stop at or below its trigger and a market sell at any price, so more than one order fit this price. A target at exactly the fill price wins; otherwise the only order for exactly {shares} shares, if there is one; otherwise the order whose price is nearest the fill, a target before a stop at an equal distance, then the lowest bucket.',
-    ko: '목표가 매도는 지정가 이상에서, 손절 매도는 발동가 이하에서, 시장가 매도는 어떤 가격에서도 체결되므로 이 가격에 해당하는 주문이 여러 개였습니다. 지정가가 체결가와 같은 목표가 매도가 우선하고, 없으면 정확히 {shares}주인 주문이 하나뿐일 때 그 주문이, 그것도 아니면 체결가에 가장 가까운 주문이 선택되며, 차이가 같으면 목표가 매도가 손절 매도보다 우선하고 그다음은 낮은 버킷이 우선합니다.',
+  'sell-attributed-why-order-price': {
+    en: 'More than one order of this type could have filled; the one whose limit is nearest the order price on the screenshot was chosen.',
+    ko: '체결된 주문으로 볼 수 있는 이 유형의 주문이 둘 이상입니다. 스크린샷의 주문단가에 지정가가 가장 가까운 주문을 선택했습니다.',
   },
-  'sell-attributed-why-market': {
-    en: 'No target or stop fit this price and no single order is for exactly {shares} shares, so the market sell of the lowest bucket wins.',
-    ko: '이 가격에 맞는 목표가 매도나 손절 매도가 없고 정확히 {shares}주인 주문도 하나로 정해지지 않아 가장 낮은 버킷의 시장가 매도를 선택했습니다.',
+  'sell-attributed-why-ordered-shares': {
+    en: 'More than one order of this type could have filled; the one placed for the ordered quantity on the screenshot was chosen.',
+    ko: '체결된 주문으로 볼 수 있는 이 유형의 주문이 둘 이상입니다. 스크린샷의 주문수량으로 낸 주문을 선택했습니다.',
+  },
+  'sell-attributed-why-shares': {
+    en: 'More than one order of this type could have filled; the bucket holding exactly {shares} shares was chosen.',
+    ko: '체결된 주문으로 볼 수 있는 이 유형의 주문이 둘 이상입니다. 정확히 {shares}주를 보유한 버킷을 선택했습니다.',
+  },
+  'sell-attributed-why-price': {
+    en: 'More than one order of this type could have filled; the one whose price is nearest the fill price was chosen.',
+    ko: '체결된 주문으로 볼 수 있는 이 유형의 주문이 둘 이상입니다. 가격이 체결가에 가장 가까운 주문을 선택했습니다.',
+  },
+  'sell-attributed-why-older': {
+    en: 'More than one order of this type could have filled and nothing else told them apart; the bucket bought earliest was chosen.',
+    ko: '체결된 주문으로 볼 수 있는 이 유형의 주문이 둘 이상이고 다른 단서로는 구분할 수 없어, 가장 먼저 매수한 버킷을 선택했습니다.',
   },
   'cut-loss-immediate': { en: '⚠️ {n} stop trigger(s) already at or above the last close — the stop may fire as soon as it is placed', ko: '⚠️ 손절 발동가 {n}건이 이미 최근 종가 이상입니다 — 주문하자마자 체결될 수 있습니다' },
   'stop-verb': { en: 'Sell', ko: '매도' },

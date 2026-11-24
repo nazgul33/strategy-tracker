@@ -1,10 +1,12 @@
 export interface VisionConfig { baseUrl: string; apiKey: string; model: string; maxTokens: number; today?: string }
-export interface RawFill { side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee?: string; date?: string }
+export interface RawFill { side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee?: string; date?: string; orderType?: string; orderPrice?: string; orderedShares?: number }
 export type ExtractResult = { ok: true; fills: RawFill[] } | { ok: false; reason: 'http' | 'unparseable' | 'empty'; detail: string }
 
 import { MPOP_FILL_EXTRACTION_PROMPT } from './prompt';
 
 const PRICE_RE = /^\d+(\.\d{1,4})?$/;
+const ORDER_PRICE_RE = /^\d{1,9}(\.\d{1,4})?$/;
+const MAX_ORDERED_SHARES = 1_000_000_000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 86_400_000;
 
@@ -28,6 +30,9 @@ function normalizeSide(s: any): 'buy' | 'sell' | null {
 
 const stripCommas = (v: any): any => (typeof v === 'string' ? v.replace(/,/g, '') : v);
 
+// An order value is read only from a string or a number; anything else (true, [5]) is junk.
+const readNumeric = (v: any): string | null => (typeof v === 'string' || typeof v === 'number' ? String(stripCommas(v)) : null);
+
 // mPOP shows overseas tickers with a trailing exchange code ("SOXL.N" = Nasdaq);
 // runs and fills store the bare symbol. Only .N/.O/.A are stripped, so dotted
 // tickers like "BRK.B" survive.
@@ -50,6 +55,12 @@ function normalizeFill(raw: any): RawFill | null {
     // round-trip check: Date.parse silently rolls over calendar-invalid days (2026-02-30 -> 2026-03-02)
     if (!Number.isNaN(ts) && new Date(ts).toISOString().slice(0, 10) === date) f.date = date;
   }
+  const orderType = typeof raw?.orderType === 'string' ? raw.orderType.trim() : '';
+  if (orderType.length >= 1 && orderType.length <= 32) f.orderType = orderType;
+  const orderPrice = readNumeric(raw?.orderPrice);
+  if (orderPrice !== null && ORDER_PRICE_RE.test(orderPrice)) f.orderPrice = orderPrice;
+  const orderedShares = Number(readNumeric(raw?.orderedShares));
+  if (Number.isInteger(orderedShares) && orderedShares >= 1 && orderedShares <= MAX_ORDERED_SHARES) f.orderedShares = orderedShares;
   return f;
 }
 
