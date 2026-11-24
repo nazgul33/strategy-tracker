@@ -238,7 +238,7 @@ describe('extract', () => {
   });
 
   test('a 200 answer that is not chat-completions shaped is incompatible', async () => {
-    const bodies = [{}, { error: { message: 'x' } }, [], 'text', { choices: [] }, { choices: [{}] }, { choices: [{ message: null }] }];
+    const bodies = [{}, [], 'text', { choices: [] }, { choices: [{}] }, { choices: [{ message: null }] }];
     for (const body of bodies) {
       expect(await extractFills(IMG, CFG, answer(body))).toEqual({ ok: false, reason: 'incompatible', detail: 'no content' });
     }

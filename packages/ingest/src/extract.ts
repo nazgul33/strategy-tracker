@@ -76,18 +76,20 @@ function stripTrailingPunctuation(s: string): string {
   return s.slice(0, end).trim();
 }
 
-function pickErrorMessage(body: string): string {
-  let parsed: any;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    return body;
-  }
+function pickStatedError(parsed: any): string | undefined {
   if (hasText(parsed?.error?.message)) return parsed.error.message;
   if (hasText(parsed?.error)) return parsed.error;
   if (hasText(parsed?.message)) return parsed.message;
   if (hasText(parsed?.detail)) return parsed.detail;
-  return body;
+  return undefined;
+}
+
+function pickErrorMessage(body: string): string {
+  try {
+    return pickStatedError(JSON.parse(body)) ?? body;
+  } catch {
+    return body;
+  }
 }
 
 // One line, key masked before the cap, no trailing sentence punctuation: the detail ends the
@@ -157,6 +159,10 @@ export async function extractFills(
   }
   const message = json?.choices?.[0]?.message;
   if (typeof message !== 'object' || message === null) {
+    // A gateway that reports its failure with status 200 refused the request; say what it said.
+    const stated = pickStatedError(json);
+    const msg = stated === undefined ? '' : normalizeErrorText(stated, cfg.apiKey);
+    if (msg !== '') return { ok: false, reason: 'http', detail: `http 200: ${msg}` };
     return { ok: false, reason: 'incompatible', detail: 'no content' };
   }
   // A chat-completions reply without text (content null on a refusal or a token cut-off) is a
