@@ -168,7 +168,11 @@ describe('POST /api/captures', () => {
     try {
       const res = await post(app, auth, form([['image', png()]]))
       expect(res.status).toBe(200)
-      expect(keyParts(await res.text())).toEqual([])
+      const text = await res.text()
+      expect(keyParts(text)).toEqual([])
+      const event = JSON.parse(text).events[0]
+      expect(event).toMatchObject({ type: 'bad-extract', reason: 'http' })
+      expect(event.detail).toContain('[redacted]')
       expect(keyParts(JSON.stringify(errors.mock.calls))).toEqual([])
       expect(f.notifications).toEqual([])
     } finally {

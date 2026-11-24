@@ -110,6 +110,15 @@ describe('UploadDialog uploading', () => {
     expect(has('uploadClose')).toBe(false);
   });
 
+  // Only the classes can be checked: the test DOM does no layout.
+  it('a result line text, plain or a link, may shrink and wrap long unbroken text', async () => {
+    await uploadOne(OUTCOME, 7);
+    const texts = Array.from(container.querySelectorAll('[data-upload-result] li')).map((li) => li.children[1]!);
+    expect(texts.some((el) => el.tagName === 'A')).toBe(true);
+    expect(texts.some((el) => el.tagName === 'SPAN')).toBe(true);
+    for (const el of texts) expect(el.className.split(' ')).toEqual(expect.arrayContaining(['min-w-0', 'break-words']));
+  });
+
   it('global upload sends no run id', async () => {
     const { sent } = await uploadOne(OUTCOME);
     expect(sent[0]!.runId).toBeNull();
