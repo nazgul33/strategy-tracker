@@ -2,7 +2,7 @@ import { formatUsd } from '@st/core'
 import type { Run, DayPlan, DayContext, PlannedOrder } from '@st/core'
 import { dayInfo, type DayInfo } from '@st/calendar'
 import type { Lang } from './i18n'
-import { t } from './i18n'
+import { t, bucketNo } from './i18n'
 
 export type { Lang }
 
@@ -29,7 +29,7 @@ export function renderDigest(run: Run, plan: DayPlan, ctx: DayContext, lang: Lan
       const n = plan.notices[idx]
       reason = t(n.code, lang, n.params)
     }
-    lines.push(`${t('skip', lang)}  ${o.kind}  bucket ${o.bucketIndex}  ${reason}`.trim())
+    lines.push(`${t('skip', lang)}  ${o.kind}  bucket ${bucketNo(o.bucketIndex)}  ${reason}`.trim())
   }
   plan.notices.forEach((n, i) => {
     if (consumedNotices.has(i)) return
@@ -53,7 +53,7 @@ export function renderDigest(run: Run, plan: DayPlan, ctx: DayContext, lang: Lan
 
 function buyLine(o: PlannedOrder, lang: Lang): string {
   const verb = lang === 'ko' ? '매수' : 'Buy'
-  return `${verb}  LOC  ${o.shares} sh  @ ${formatUsd(o.limitPrice)}  → bucket ${o.bucketIndex}`
+  return `${verb}  LOC  ${o.shares} sh  @ ${formatUsd(o.limitPrice)}  → bucket ${bucketNo(o.bucketIndex)}`
 }
 
 function orderAge(o: PlannedOrder, ages?: Record<number, number>): number | undefined {
@@ -64,7 +64,7 @@ function sellLocLine(o: PlannedOrder, lang: Lang, ages?: Record<number, number>)
   const verb = lang === 'ko' ? '매도' : 'Sell'
   const age = orderAge(o, ages)
   const ageClause = age !== undefined ? `  (${t('age', lang, { n: age })})` : ''
-  return `${verb}  LOC  ${o.shares} sh  @ ${formatUsd(o.limitPrice)}  → bucket ${o.bucketIndex}${ageClause}`
+  return `${verb}  LOC  ${o.shares} sh  @ ${formatUsd(o.limitPrice)}  → bucket ${bucketNo(o.bucketIndex)}${ageClause}`
 }
 
 function sellRank(o: PlannedOrder): number {
@@ -73,16 +73,16 @@ function sellRank(o: PlannedOrder): number {
 
 // limitPrice on a stop_sell is the trigger price; the order fills at market once triggered.
 function stopSellLine(o: PlannedOrder, lang: Lang): string {
-  return `${t('stop-verb', lang)}  STOP  ${o.shares} sh  ${t('stop-label', lang)} ${formatUsd(o.limitPrice)}  → bucket ${o.bucketIndex}`
+  return `${t('stop-verb', lang)}  STOP  ${o.shares} sh  ${t('stop-label', lang)} ${formatUsd(o.limitPrice)}  → bucket ${bucketNo(o.bucketIndex)}`
 }
 
 function marketSellLine(o: PlannedOrder, lang: Lang, ages?: Record<number, number>): string {
   const age = orderAge(o, ages)
   const ageClause = age !== undefined ? `  (${t('age-forced', lang, { n: age })})` : ''
   if (lang === 'ko') {
-    return `매도  MARKET  ${o.shares} sh  bucket ${o.bucketIndex}${ageClause}`
+    return `매도  MARKET  ${o.shares} sh  bucket ${bucketNo(o.bucketIndex)}${ageClause}`
   }
-  return `Market  SELL  ${o.shares} sh  bucket ${o.bucketIndex}${ageClause}`
+  return `Market  SELL  ${o.shares} sh  bucket ${bucketNo(o.bucketIndex)}${ageClause}`
 }
 
 export function renderClosed(day: DayInfo, lang: Lang): string {

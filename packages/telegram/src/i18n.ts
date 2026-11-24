@@ -116,3 +116,10 @@ export function t(code: string, lang: Lang, params?: Record<string, string | num
   if (!params) return base
   return base.replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? ''))
 }
+
+// Buckets are stored 0-based (Bucket.index, bucket_idx, bucketIndex). Every text shown to
+// the operator numbers them from 1, like the web bucket board: pass bucketNo(index) as the
+// {bucket} / {index} param, never the raw index.
+export function bucketNo(index: number): number {
+  return index + 1
+}
