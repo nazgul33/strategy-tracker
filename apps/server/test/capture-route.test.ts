@@ -52,6 +52,13 @@ describe('capture routing core', () => {
     expect(r.events).toEqual([{ type: 'bad-extract', reason: 'unparseable', detail: 'no json', vision: IN_USE }])
   })
 
+  test('a 200 answer that is not an OpenAI reply is incompatible and names the config in use', async () => {
+    const htmlPage = (async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <') } })) as unknown as typeof fetch
+    const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: htmlPage })
+    await r.run(null)
+    expect(r.events).toEqual([{ type: 'bad-extract', reason: 'incompatible', detail: 'response body not json', vision: IN_USE }])
+  })
+
   test('an image without fills is empty and carries no config', async () => {
     const r = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: visionSays('{"fills":[]}') })
     await r.run(null)

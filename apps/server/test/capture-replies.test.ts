@@ -123,7 +123,7 @@ describe('could not read fills replies', () => {
     expect(src.match(/await tellBadExtract\(chatId, /g)).toHaveLength(2)
     expect(src.match(/await tellBadExtract\(chatId, event\)/g)).toHaveLength(1)
     expect(src.match(/await tellBadExtract\(chatId, \{ type: 'bad-extract', reason: 'empty', detail: 'no fills recognized' \}\)/g)).toHaveLength(1)
-    expect(msg.match(/t\('capture-bad-extract-/g)).toHaveLength(3)
+    expect(msg.match(/t\('capture-bad-extract-/g)).toHaveLength(4)
     expect(msg.match(/t\('capture-vision-original-error'/g)).toHaveLength(1)
     expect(core.match(/emit\(badExtract\(/g)).toHaveLength(2)
     expect(core.match(/emit\(badExtract\(extract\.reason, extract\.detail, /g)).toHaveLength(1)

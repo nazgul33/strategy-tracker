@@ -3,9 +3,9 @@ import type { Lang } from '@st/telegram/i18n';
 
 import type { BadExtractEvent, VisionInUse } from './capture-route';
 
-// The Telegram reply for a failed screenshot read, one line per part. A vision setup failure
-// (http) reads as four lines: the main line, the config in use, the setup advice and the
-// service's original error; an unreadable answer names the config.
+// The Telegram reply for a failed screenshot read, one line per part. The setup-related kinds
+// (http, incompatible) read as four lines: the main line, the config in use, the kind's advice
+// and the service's original error; an unreadable answer names the config.
 export function badExtractMessage(event: BadExtractEvent, lang: Lang): string {
   const { detail } = event;
   switch (event.reason) {
@@ -14,6 +14,13 @@ export function badExtractMessage(event: BadExtractEvent, lang: Lang): string {
         t('capture-bad-extract-http', lang),
         visionInUse(event.vision, lang),
         t('capture-vision-setup-advice', lang),
+        originalError(detail, lang),
+      ].join('\n');
+    case 'incompatible':
+      return [
+        t('capture-bad-extract-incompatible', lang),
+        visionInUse(event.vision, lang),
+        t('capture-vision-incompatible-advice', lang),
         originalError(detail, lang),
       ].join('\n');
     case 'unparseable':

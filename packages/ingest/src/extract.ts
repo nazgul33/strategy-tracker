@@ -1,6 +1,6 @@
 export interface VisionConfig { baseUrl: string; apiKey: string; model: string; maxTokens: number; today?: string }
 export interface RawFill { side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee?: string; date?: string; orderType?: string; orderPrice?: string; orderedShares?: number }
-export type ExtractResult = { ok: true; fills: RawFill[] } | { ok: false; reason: 'http' | 'unparseable' | 'empty'; detail: string }
+export type ExtractResult = { ok: true; fills: RawFill[] } | { ok: false; reason: 'http' | 'unparseable' | 'incompatible' | 'empty'; detail: string }
 
 import { MPOP_FILL_EXTRACTION_PROMPT } from './prompt';
 import { maskKey } from './mask-key';
@@ -145,11 +145,11 @@ export async function extractFills(
   try {
     json = await res.json();
   } catch {
-    return { ok: false, reason: 'unparseable', detail: 'response body not json' };
+    return { ok: false, reason: 'incompatible', detail: 'response body not json' };
   }
   const rawContent = json?.choices?.[0]?.message?.content;
   if (typeof rawContent !== 'string') {
-    return { ok: false, reason: 'unparseable', detail: 'no content' };
+    return { ok: false, reason: 'incompatible', detail: 'no content' };
   }
   // strip fences + find first { ... last }
   let text = rawContent.trim();

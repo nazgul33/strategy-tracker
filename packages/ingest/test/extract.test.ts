@@ -201,10 +201,23 @@ describe('extract', () => {
     }
   });
 
-  test('200 with non-JSON body -> unparseable, not a crash', async () => {
+  test('200 with non-JSON body -> incompatible, not a crash', async () => {
     const f = fakeFetch([{ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } }]);
     const r = await extractFills([{ base64: 'AAA', mime: 'image/png' }], CFG, f);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('unparseable');
+    if (!r.ok) {
+      expect(r.reason).toBe('incompatible');
+      expect(r.detail).toBe('response body not json');
+    }
+  });
+
+  test('200 without message content -> incompatible', async () => {
+    const f = fakeFetch([{ ok: true, status: 200, json: async () => ({}) }]);
+    const r = await extractFills([{ base64: 'AAA', mime: 'image/png' }], CFG, f);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('incompatible');
+      expect(r.detail).toBe('no content');
+    }
   });
 });

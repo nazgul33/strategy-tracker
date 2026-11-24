@@ -28,16 +28,22 @@ function originalErrorLine(detail: string, t: Translate): UploadLine {
   return line('info', 1, t('upload.visionOriginalError', { detail }));
 }
 
+const SETUP_KIND_KEYS = {
+  http: { main: 'upload.badExtractHttp', advice: 'upload.visionSetupAdvice' },
+  incompatible: { main: 'upload.badExtractIncompatible', advice: 'upload.visionIncompatibleAdvice' },
+} as const;
+
 function badExtractLines(event: Extract<CaptureEventDto, { type: 'bad-extract' }>, t: Translate): UploadLine[] {
   if (event.reason === 'empty') return [line('error', 0, t('upload.badExtractEmpty'))];
   if (event.reason === 'unparseable') {
     return [line('error', 0, t('upload.badExtractUnparseable', { detail: event.detail })), visionInUseLine(event.vision, t)];
   }
-  if (event.detail === VISION_TIMEOUT_DETAIL) return [line('error', 0, t('upload.visionTimeout'))];
+  if (event.reason === 'http' && event.detail === VISION_TIMEOUT_DETAIL) return [line('error', 0, t('upload.visionTimeout'))];
+  const keys = SETUP_KIND_KEYS[event.reason];
   return [
-    line('error', 0, t('upload.badExtractHttp')),
+    line('error', 0, t(keys.main)),
     visionInUseLine(event.vision, t),
-    line('info', 1, t('upload.visionSetupAdvice'), '#/settings'),
+    line('info', 1, t(keys.advice), '#/settings'),
     originalErrorLine(event.detail, t),
   ];
 }

@@ -20,6 +20,13 @@ test('ko: each kind reads as on Telegram', () => {
     '원본 오류: http 404: Not Found',
   ]);
 
+  expect(texts({ type: 'bad-extract', reason: 'incompatible', detail: 'response body not json', vision: { ...VISION, keySource: 'env' } })).toEqual([
+    '비전 서비스가 응답했지만 OpenAI 호환 API 형식이 아닙니다.',
+    '사용 중: 모델 qwen2.5-vl (설정), URL http://lm:1234/v1 (환경변수), 키 (환경변수).',
+    '설정된 비전 API가 OpenAI 호환인지 확인하세요. 설정에서 바꾼 URL이나 모델은 서버를 다시 시작해야 적용됩니다.',
+    '원본 오류: response body not json',
+  ]);
+
   expect(texts({ type: 'bad-extract', reason: 'unparseable', detail: 'no json', vision: { ...VISION, keySource: 'settings' } })).toEqual([
     '비전 모델이 응답했지만 트래커가 이해할 수 있는 형식이 아닙니다 — no json. 다시 시도하고, 계속 반복되면 비전 모델을 확인하세요.',
     '사용 중: 모델 qwen2.5-vl (설정), URL http://lm:1234/v1 (환경변수), 키 (설정).',

@@ -23,12 +23,21 @@ describe('badExtractMessage', () => {
     ].join('\n'));
   });
 
+  test('incompatible: main line, in-use line, compatibility advice, original error', () => {
+    expect(badExtractMessage({ type: 'bad-extract', reason: 'incompatible', detail: 'response body not json', vision: { ...VISION, keySource: 'env' } }, 'en')).toBe([
+      'The vision service answered, but not as an OpenAI-compatible API.',
+      'In use: model qwen2.5-vl (Settings), URL http://lm:1234/v1 (env), key (env).',
+      'Make sure the configured vision API is OpenAI-compatible. A URL or model changed in Settings applies after a server restart.',
+      'Original error: response body not json',
+    ].join('\n'));
+  });
+
   test('empty: main line only', () => {
     expect(badExtractMessage({ type: 'bad-extract', reason: 'empty', detail: 'no valid fills' }, 'en'))
       .toBe('No fills were found in this image. Check that it shows the fills list, or book the fill manually.');
   });
 
-  test('Korean, same three events', () => {
+  test('Korean, all four events', () => {
     expect(badExtractMessage({ type: 'bad-extract', reason: 'http', detail: "http 404: The model 'x' is not loaded", vision: VISION }, 'ko')).toBe([
       '비전 서비스가 요청을 받아들이지 않았습니다.',
       '사용 중: 모델 qwen2.5-vl (설정), URL http://lm:1234/v1 (환경변수), 키 (API Key 없음).',
@@ -38,6 +47,12 @@ describe('badExtractMessage', () => {
     expect(badExtractMessage({ type: 'bad-extract', reason: 'unparseable', detail: 'no json', vision: { ...VISION, keySource: 'env' } }, 'ko')).toBe([
       '비전 모델이 응답했지만 트래커가 이해할 수 있는 형식이 아닙니다 — no json. 다시 시도하고, 계속 반복되면 비전 모델을 확인하세요.',
       '사용 중: 모델 qwen2.5-vl (설정), URL http://lm:1234/v1 (환경변수), 키 (환경변수).',
+    ].join('\n'));
+    expect(badExtractMessage({ type: 'bad-extract', reason: 'incompatible', detail: 'response body not json', vision: { ...VISION, keySource: 'env' } }, 'ko')).toBe([
+      '비전 서비스가 응답했지만 OpenAI 호환 API 형식이 아닙니다.',
+      '사용 중: 모델 qwen2.5-vl (설정), URL http://lm:1234/v1 (환경변수), 키 (환경변수).',
+      '설정된 비전 API가 OpenAI 호환인지 확인하세요. 설정에서 바꾼 URL이나 모델은 서버를 다시 시작해야 적용됩니다.',
+      '원본 오류: response body not json',
     ].join('\n'));
     expect(badExtractMessage({ type: 'bad-extract', reason: 'empty', detail: 'no valid fills' }, 'ko'))
       .toBe('이 이미지에서 체결을 찾지 못했습니다. 체결 내역 화면인지 확인하거나 체결을 직접 예약하세요.');

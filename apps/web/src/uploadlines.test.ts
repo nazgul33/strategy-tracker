@@ -131,6 +131,20 @@ describe('captureEventLines', () => {
     ]);
   });
 
+  test('bad-extract incompatible: error, config in use, compatibility advice linking to Settings, and the original error', () => {
+    expect(view(captureEventLines({ type: 'bad-extract', reason: 'incompatible', detail: 'response body not json', vision: { ...VISION, keySource: 'env' } }, t))).toEqual([
+      { tone: 'error', depth: 0, text: 'The vision service answered, but not as an OpenAI-compatible API.', href: undefined },
+      { tone: 'info', depth: 1, text: 'In use: model qwen2.5-vl (Settings), URL http://lm:1234/v1 (env), key (env).', href: undefined },
+      {
+        tone: 'info',
+        depth: 1,
+        text: 'Make sure the configured vision API is OpenAI-compatible. A URL or model changed in Settings applies after a server restart.',
+        href: '#/settings',
+      },
+      { tone: 'info', depth: 1, text: 'Original error: response body not json', href: undefined },
+    ]);
+  });
+
   test('bad-extract unparseable: error and the vision config in use, no advice', () => {
     expect(view(captureEventLines({ type: 'bad-extract', reason: 'unparseable', detail: 'no json', vision: { ...VISION, keySource: 'env' } }, t))).toEqual([
       {

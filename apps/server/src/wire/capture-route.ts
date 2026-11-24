@@ -14,7 +14,7 @@ export interface VisionInUse {
 }
 
 export type BadExtractEvent =
-  | { type: 'bad-extract'; reason: 'http' | 'unparseable'; detail: string; vision: VisionInUse }
+  | { type: 'bad-extract'; reason: 'http' | 'unparseable' | 'incompatible'; detail: string; vision: VisionInUse }
   | { type: 'bad-extract'; reason: 'empty'; detail: string };
 
 export interface VisionApiKey {
@@ -81,7 +81,7 @@ async function extractWithin(
 }
 
 // An empty read is about the screenshot, not the setup, so it carries no vision config.
-function badExtract(reason: 'http' | 'unparseable' | 'empty', detail: string, vision: VisionInUse): BadExtractEvent {
+function badExtract(reason: 'http' | 'unparseable' | 'incompatible' | 'empty', detail: string, vision: VisionInUse): BadExtractEvent {
   if (reason === 'empty') return { type: 'bad-extract', reason, detail };
   return { type: 'bad-extract', reason, detail, vision };
 }
