@@ -12,6 +12,7 @@ import { runMorningPipeline, type DayDeps } from './pipeline/day'
 import { startJobs } from './pipeline/wire'
 import { runBootSweeps } from './wire/boot-sweeps'
 import { makeCaptureHandlers, type CaptureDeps } from './wire/capture'
+import { makeCaptureRouting } from './wire/capture-route'
 import { parseEnv, todayEt } from './wire/deps'
 import { makeSend } from './wire/send'
 
@@ -26,19 +27,23 @@ async function main(): Promise<void> {
 
   // vision/digest config: DB settings override env (api key re-read on every capture)
   const settings = await repos.settingsRepo.getAll()
-  const visionBaseUrl = settings.visionBaseUrl || (env.telegram?.visionBaseUrl ?? '')
-  const visionModel = settings.visionModel || (env.telegram?.visionModel ?? '')
+  const visionBaseUrl = settings.visionBaseUrl || env.visionBaseUrl
+  const visionModel = settings.visionModel || env.visionModel
   const digestLang = settings.digestLang === 'en' || settings.digestLang === 'ko' ? settings.digestLang : env.digestLang
 
   // bot is optional: without a token every send just logs (dev + first boot before setup)
   let bot: ReturnType<typeof createBot> | null = null
   const send: CaptureDeps['send'] = makeSend(() => bot?.api ?? null)
 
-  const handlers = makeCaptureHandlers({
+  // one routing core for the Telegram handlers and the web upload route
+  const captureRouteDeps = {
     repos,
     vision: { baseUrl: visionBaseUrl, model: visionModel },
     getVisionApiKey: async () => (await repos.settingsRepo.getAll()).visionApiKey || env.visionApiKey,
     today: todayEt,
+  }
+  const handlers = makeCaptureHandlers({
+    ...captureRouteDeps,
     lang: digestLang,
     allowedChatIds: env.telegram?.allowedChatIds ?? [],
     send,
@@ -88,6 +93,7 @@ async function main(): Promise<void> {
     fetchDailyBars: makeCachedBarReader({ upstream: fetchDailyBars, repos, today: todayEt }),
     allowedChatIds: tg?.allowedChatIds ?? [],
     send,
+    routeCapture: makeCaptureRouting(captureRouteDeps),
   })
 
   // web build if `bun run --cwd apps/web build` was run; SPA fallback for deep links
@@ -96,6 +102,7 @@ async function main(): Promise<void> {
 
   const server = Bun.serve({
     port: env.port,
+    idleTimeout: 60, // seconds; Bun's default is 10, and a web upload waits up to 50 s for vision
     async fetch(req) {
       const path = new URL(req.url).pathname
       if (!path.startsWith('/api') && hasDist) {

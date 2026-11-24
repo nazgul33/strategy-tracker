@@ -2,11 +2,11 @@
 
 A personal, self-hosted tool that **guides** daily stock trading and keeps the books. Orders are
 placed manually on 삼성증권 mPOP (Korean mobile app, US stocks); this app computes what to order,
-sends daily Telegram digests per strategy run, reads mPOP fill screenshots back via Telegram,
-extracts the fills with a configurable OpenAI-compatible vision endpoint, and books them only after
-explicit confirmation. It never touches a brokerage API or places anything. A web UI tracks
-progress per run (buckets, entry price, age, P&L), simulation mode replays historical trading days
-through the same engine, and all copy ships in English and Korean. Full design:
+sends daily Telegram digests per strategy run, reads mPOP fill screenshots back via Telegram or a
+web upload, extracts the fills with a configurable OpenAI-compatible vision endpoint, and books them
+only after explicit confirmation. It never touches a brokerage API or places anything. A web UI
+tracks progress per run (buckets, entry price, age, P&L), simulation mode replays historical trading
+days through the same engine, and all copy ships in English and Korean. Full design:
 [`docs/superpowers/specs/2026-11-10-strategy-tracker-design.md`](docs/superpowers/specs/2026-11-10-strategy-tracker-design.md).
 
 Built as a Bun + TypeScript monorepo: pure domain packages in `packages/`, one server process in
@@ -69,14 +69,14 @@ unset.
 | `DEFAULT_COST_PERCENT` | no | `0.07` | per-side trading cost prefilled for new runs and sims, as a percent with up to 3 decimals (`0` = no cost, max `100`) |
 | `TELEGRAM_BOT_TOKEN` | no | unset | unset ⇒ bot disabled and no allowed chats, so nothing is sent; every notice (pipeline, reminder, nudge, order-cancel, booking) is still recorded (chat `web`) and listed under System notices (per-run ones also in the run's Notifications tab) |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | when token set | — | comma-separated Telegram chat IDs |
-| `VISION_BASE_URL` | when token set | — | OpenAI-compatible vision endpoint base URL |
-| `VISION_MODEL` | when token set | — | model name for fill extraction |
+| `VISION_BASE_URL` | when token set | — | OpenAI-compatible vision endpoint base URL; read with or without a token; needed for any screenshot reading (Telegram or web upload) |
+| `VISION_MODEL` | when token set | — | model name for fill extraction; read with or without a token; needed for any screenshot reading (Telegram or web upload) |
 | `VISION_API_KEY` | no | empty | can also be set later in the web Settings page |
 
 Settings stored in the DB `settings` table **override the env values** for vision base URL, model,
-and digest language at boot, and the vision **API key is re-read from the DB on every capture**, so
-changes made in Settings apply without a restart (`apps/server/src/main.ts`,
-`apps/server/src/wire/capture.ts`).
+and digest language. Those three are read **at boot**, so a change to them needs a restart; the
+vision **API key is re-read from the DB on every capture**, so a new key applies without a restart
+(`apps/server/src/main.ts`).
 
 ## Deployment
 
@@ -159,6 +159,21 @@ Only chat IDs on the allowlist get any response (`packages/telegram/src/bot.ts`)
   cannot read is answered with "Could not read fills…", and that reply is also listed under System notices.
 - A fill-capture reminder goes out at 16:05 ET on trading days (nothing on weekends/holidays).
 
+## Screenshot upload (web)
+
+The same fill screenshots can be uploaded from the web UI, with or without the bot
+(`POST /api/captures`, `apps/server/src/http/routes/captures.ts`). It needs `VISION_BASE_URL` /
+`VISION_MODEL` (or their Settings values); without them the upload answers 503.
+
+- **Upload screenshot** on a run's page pins the fills to that run; fills for other tickers are
+  ignored. The same button on the **Pending** page auto-routes by ticker to the one active run, with
+  the same rules as an uncaptioned Telegram photo.
+- Accepted types are JPEG, PNG, WebP and GIF, up to 8 MB per file (HEIC is not supported).
+- Results show per file in the popup; nothing is booked there — the fills wait in **Pending** for
+  confirmation, as with Telegram.
+- The server's `idleTimeout` is 60 s and the vision call is cut off at 50 s, so a TLS reverse proxy
+  in front of the app must allow at least 60 s per request. It must also accept request bodies of at
+  least 9 MB (for nginx, `client_max_body_size 9m;` — its default is 1 MB).
 
 ## Schedules
 

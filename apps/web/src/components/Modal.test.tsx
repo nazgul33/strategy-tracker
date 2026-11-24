@@ -373,6 +373,33 @@ describe('Modal focus behaviour', () => {
     expect(document.querySelector('[inert]')).toBeNull();
   });
 
+  it('a non-dismissible dialog ignores Escape, the backdrop and ✕', async () => {
+    let calls = 0;
+    const onClose = () => {
+      calls += 1;
+    };
+    const render = (dismissible: boolean) =>
+      act(async () =>
+        root.render(d(Modal, { title: 'Busy', onClose, dismissible, children: d('button', null, 'a') })),
+      );
+    await render(false);
+    act(() => {
+      window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    });
+    await click(document.querySelector('[role=dialog]')!);
+    const close = headerClose(topPanel());
+    await click(close);
+    expect(calls).toBe(0);
+    expect(close.hasAttribute('disabled')).toBe(true);
+    expect(close.classList.contains('disabled:opacity-50')).toBe(true);
+
+    await render(true);
+    act(() => {
+      window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    });
+    expect(calls).toBe(1);
+  });
+
   it('keeps the header close button in the tab order', async () => {
     await show();
     const close = headerClose(topPanel());

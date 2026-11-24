@@ -20,7 +20,7 @@ const modalOpeners = new WeakMap<Element, HTMLElement | null>();
  * returns it: a `data-autofocus` child, else the body's first control. React
  * does not write `autoFocus` to the DOM, so a child that sets `autoFocus` also
  * sets `data-autofocus` to be findable here. */
-function modalInitialFocus(panel: HTMLElement): HTMLElement | null {
+export function modalInitialFocus(panel: HTMLElement): HTMLElement | null {
   const preferred = panel.querySelector<HTMLElement>('[data-autofocus]');
   if (preferred) return preferred;
   const body = panel.querySelector<HTMLElement>('[data-modal-body]');
@@ -56,12 +56,14 @@ function captureOpener(active: HTMLElement | null): { raw: HTMLElement | null; b
 
 /** Simple fixed-overlay modal used by the dialogs (pool edit, new run); `wide` makes room for side-by-side content.
  * Traps focus inside the panel, closes on Escape unless `closeOnEscape` is off, and returns focus to its opener.
+ * `dismissible={false}` turns off the backdrop, the ✕ and Escape together (work in flight).
  * The page behind is inert while it is open. */
 export function Modal({
   title,
   onClose,
   wide = false,
   closeOnEscape = true,
+  dismissible = true,
   children,
 }: {
   title: string;
@@ -69,6 +71,8 @@ export function Modal({
   wide?: boolean;
   /** Opt out of the Escape key for panels whose buttons carry the meaning. */
   closeOnEscape?: boolean;
+  /** When false, nothing on the dialog's chrome closes it: backdrop, ✕ (disabled) and Escape. */
+  dismissible?: boolean;
   children: React.ReactNode;
 }) {
   const t = useT();
@@ -128,7 +132,7 @@ export function Modal({
       const dialogs = Array.from(document.querySelectorAll('[role=dialog]')).filter((el) => el.closest('[inert]') === null);
       if (dialogs[dialogs.length - 1] !== panel.closest('[role=dialog]')) return; // another panel owns the keystroke
       if (ev.key === 'Escape') {
-        if (!closeOnEscape) return; // opt-out: the buttons carry the meaning
+        if (!closeOnEscape || !dismissible) return; // opt-out: the buttons carry the meaning
         ev.preventDefault();
         onClose();
         return;
@@ -152,7 +156,7 @@ export function Modal({
       if (ev.shiftKey) (index === 0 ? last : focusables[index - 1]!).focus();
       else (index === focusables.length - 1 ? first : focusables[index + 1]!).focus();
     },
-    [closeOnEscape, onClose],
+    [closeOnEscape, dismissible, onClose],
   );
   useEffect(() => {
     window.addEventListener('keydown', onKeyDown);
@@ -162,7 +166,7 @@ export function Modal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-background/70 p-4 pt-16 backdrop-blur-sm"
-      onClick={onClose}
+      onClick={dismissible ? onClose : undefined}
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -176,7 +180,13 @@ export function Modal({
       >
         <div className="mb-3 flex items-center justify-between gap-4">
           <h3 className="text-sm font-semibold">{title}</h3>
-          <button type="button" aria-label={t('cancel')} className="text-muted-foreground hover:text-foreground" onClick={onClose}>
+          <button
+            type="button"
+            aria-label={t('cancel')}
+            className="text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!dismissible}
+            onClick={onClose}
+          >
             ✕
           </button>
         </div>

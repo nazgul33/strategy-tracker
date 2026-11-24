@@ -40,6 +40,31 @@ describe('parseEnv', () => {
     expect(cfg.telegram).toBeNull();
   });
 
+  test('vision variables are read without a bot token', () => {
+    const cfg = parseEnv({
+      DATABASE_URL: 'mysql://x', APP_PASSWORD: 'p', SESSION_SECRET: 's',
+      VISION_BASE_URL: 'https://vision.example/v1', VISION_MODEL: 'vision-model',
+    });
+    expect(cfg.telegram).toBeNull();
+    expect(cfg.visionBaseUrl).toBe('https://vision.example/v1');
+    expect(cfg.visionModel).toBe('vision-model');
+  });
+
+  test('without a token the vision variables are optional', () => {
+    const base = { DATABASE_URL: 'mysql://x', APP_PASSWORD: 'p', SESSION_SECRET: 's' };
+    for (const env of [base, { ...base, VISION_BASE_URL: '  ', VISION_MODEL: '  ' }]) {
+      const cfg = parseEnv(env);
+      expect(cfg.visionBaseUrl).toBe('');
+      expect(cfg.visionModel).toBe('');
+    }
+  });
+
+  test("with a token the top-level vision values are the bot's", () => {
+    const cfg = parseEnv(FULL_ENV);
+    expect(cfg.visionBaseUrl).toBe(cfg.telegram!.visionBaseUrl);
+    expect(cfg.visionModel).toBe(cfg.telegram!.visionModel);
+  });
+
   test('one error lists every missing variable name', () => {
     let message = '';
     try {

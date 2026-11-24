@@ -1,6 +1,8 @@
 // Typed client for the Hono JSON API (apps/server/src/http). Bigint fields
 // arrive as decimal *strings* (jsonBig), cents/fees as numbers. Prices and
 // fees the client *sends* are USD strings ("12.34"), parsed via ./usd (which wraps @st/core).
+import { ApiError, call, type Http } from './api.call';
+import type { CaptureEventDto } from './api.captures.types';
 import type { NoticePageDto } from './api.notices';
 import { simConfigBody } from './api.sim';
 import type {
@@ -26,53 +28,9 @@ import type {
 
 export type * from './api.types';
 export type * from './api.notices';
+export type * from './api.captures.types';
+export { ApiError, NetworkError, type ApiErrorCode, type Http } from './api.call';
 export { usdOrNull, usdFeeOrNull, ungroupUsd, usdToCents } from './usd';
-
-export type Http = (url: string, init?: RequestInit) => Promise<Response>;
-
-/** Server error codes (Hono routes + domain errors) plus the `http-${status}`
- * fallback for responses without a JSON `{error}` body. */
-export type ApiErrorCode =
-  | 'unauthorized'
-  | 'not-found'
-  | 'no-run'
-  | 'not-pending'
-  | 'ticker-mismatch'
-  | 'order-not-found'
-  | 'order-not-open'
-  | 'invalid-reason'
-  | 'invalid-body'
-  | 'not-last'
-  | 'no-bucket-for-sell'
-  | 'no-empty-bucket'
-  | 'no-fill'
-  | 'invalid-fill'
-  | 'immutable-field'
-  | 'bucket-not-empty'
-  | 'bucket-not-found'
-  | 'bucket-not-held'
-  | 'invalid-bucket'
-  | 'choose-bucket'
-  | 'fill-date-in-future'
-  | 'invalid-shares'
-  | 'too-many-shares'
-  | 'correction-not-found'
-  | 'correction-not-open'
-  | 'correction-stale'
-  | 'sim-finalized'
-  | 'pipeline-error'
-  | `http-${number}`;
-
-export class ApiError extends Error {
-  constructor(readonly status: number, readonly code: ApiErrorCode) {
-    super(code);
-  }
-}
-
-/** The request never got an answer (server down, offline, DNS). The browser's message is kept. */
-export class NetworkError extends Error {
-  override name = 'NetworkError';
-}
 
 // ---------------------------------------------------------------- auth token
 let memoryToken: string | null = null;
@@ -159,6 +117,8 @@ export interface Api {
   deleteSimRun(id: number): Promise<void>;
   listSimRuns(): Promise<SimRunDto[]>;
   getSimRun(id: number): Promise<SimDetailDto>;
+  /** Multipart upload of one screenshot; `runId` pins it to that run, otherwise it auto-routes by ticker. */
+  uploadCapture(file: File, runId?: number): Promise<CaptureEventDto[]>;
 }
 
 export function createApi(http: Http, opts: { getToken: () => string | null } = { getToken }): Api {
@@ -265,27 +225,17 @@ export function createApi(http: Http, opts: { getToken: () => string | null } = 
     deleteSimRun: (id) => send<unknown>('DELETE', `/api/sim/${id}`).then(() => undefined),
     listSimRuns: () => get<SimRunDto[]>('/api/sim'),
     getSimRun: (id) => get<SimDetailDto>(`/api/sim/${id}`),
+    uploadCapture: (file, runId) => {
+      const form = new FormData();
+      form.append('image', file);
+      if (runId !== undefined) form.append('runId', String(runId));
+      return call<{ events?: unknown }>(http, '/api/captures', { method: 'POST', headers: headers(), body: form }).then((r) => {
+        // A proxy or SPA fallback can answer 200 with something else; call() has the status no more.
+        if (!Array.isArray(r.events)) throw new ApiError(200, 'http-200');
+        return r.events as CaptureEventDto[];
+      });
+    },
   };
-}
-
-async function call<T>(http: Http, url: string, init?: RequestInit): Promise<T> {
-  let res: Response;
-  try {
-    res = await http(url, init);
-  } catch (e) {
-    throw new NetworkError(e instanceof Error ? e.message : String(e), { cause: e });
-  }
-  let body: Record<string, unknown> = {};
-  try {
-    body = (await res.json()) as Record<string, unknown>;
-  } catch {
-    body = {};
-  }
-  if (!res.ok) {
-    const code = typeof body.error === 'string' ? body.error : `http-${res.status}`;
-    throw new ApiError(res.status, code as ApiErrorCode);
-  }
-  return body as T;
 }
 
 /** Shared client for the app (pages/hooks). Tests build their own via createApi. */

@@ -70,11 +70,17 @@ describe('could not read fills replies', () => {
   })
 
   // The empty auto-route group and the 'rejected' outcome cannot be reached through the handlers
-  // (see extractFills and ingestCapture), so their wiring is pinned on the source.
+  // (see extractFills and ingestCapture), so their wiring is pinned on the source of both
+  // wire/capture-route.ts (which emits bad-extract) and wire/capture.ts (which replies to it).
   test('every "could not read fills" reply goes through the one recording helper', async () => {
     const src = await Bun.file(new URL('../src/wire/capture.ts', import.meta.url)).text()
+    const core = await Bun.file(new URL('../src/wire/capture-route.ts', import.meta.url)).text()
     expect(src.match(/t\('capture-bad-extract'/g)).toHaveLength(1)
-    expect(src.match(/await tellBadExtract\(chatId, /g)).toHaveLength(3)
-    expect(src.match(/await tellBadExtract\(chatId, 'no fills recognized'\)/g)).toHaveLength(2)
+    expect(src.match(/await tellBadExtract\(chatId, /g)).toHaveLength(2)
+    expect(src.match(/await tellBadExtract\(chatId, event\.detail\)/g)).toHaveLength(1)
+    expect(src.match(/await tellBadExtract\(chatId, 'no fills recognized'\)/g)).toHaveLength(1)
+    expect(core.match(/emit\(\{ type: 'bad-extract'/g)).toHaveLength(2)
+    expect(core.match(/emit\(\{ type: 'bad-extract', detail: 'no fills recognized' \}\)/g)).toHaveLength(1)
+    expect(core).not.toContain('capture-bad-extract')
   })
 })

@@ -14,10 +14,11 @@ import { FillDialog } from '../components/forms/FillDialog';
 import { CorrectionList } from '../components/forms/CorrectionList';
 import { useKeepNotices } from '../components/forms/KeepNotices';
 import { PendingTable } from '../components/forms/PendingTable';
+import { UploadDialog, type UploadCloseOutcome } from '../components/forms/UploadDialog';
+import { RunHeader } from '../components/RunHeader';
 import { FillsPanel, NotificationsPanel, OrdersPanel } from '../components/RunPanels';
 import { RunHistory } from '../components/RunHistory';
 import {
-  Badge,
   Button,
   Card,
   ErrorNote,
@@ -27,9 +28,9 @@ import {
   Stat,
 } from '../components/ui';
 import { errorText } from '../errortext';
-import { centsUsd, costPercentText, gapText, isoDateTime, percent, signedCentsUsd } from '../format';
+import { centsUsd, gapText, percent, signedCentsUsd } from '../format';
 import { useT } from '../i18n';
-import { enumLabelKey, heldBucketsOf, pnlBadgeTone, runActions, runStatusTone, toneFor } from '../viewmodels';
+import { heldBucketsOf, pnlBadgeTone, toneFor } from '../viewmodels';
 
 type Tab = 'orders' | 'pending' | 'fills' | 'history' | 'notifications';
 
@@ -66,6 +67,8 @@ export function RunDetailPage({
   const [showClose, setShowClose] = useState(false);
   const [showPool, setShowPool] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadKey, setUploadKey] = useState(0);
   const [recalcResult, setRecalcResult] = useState<RecalcResult | null>(null);
   const [latestClose, setLatestClose] = useState<string | null>(null);
 
@@ -119,41 +122,15 @@ export function RunDetailPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-xl font-semibold">
-            {run.name}
-            <span className="font-mono text-sm text-muted-foreground">{run.ticker}</span>
-            <Badge tone={runStatusTone(run.status)}>{t(enumLabelKey('status', run.status))}</Badge>
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {run.strategyKey === 'mean-reversion' ? t('runStrategyMr') : run.strategyKey} · {costPercentText(run.costPpm)}{' '}
-            · {centsUsd(run.poolCents)} · {isoDateTime(run.createdAt)}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => setShowPool(true)}>{t('poolEdit')}</Button>
-          {runActions(run.status).map((action) =>
-            action === 'close' ? (
-              <Button key={action} variant="danger" onClick={() => setShowClose(true)}>
-                {t('actionClose')}
-              </Button>
-            ) : (
-              <Button
-                key={action}
-                variant={action === 'pause' ? 'secondary' : 'primary'}
-                busy={busyStatus === (action === 'pause' ? 'paused' : 'active')}
-                onClick={() => void setStatus(action === 'pause' ? 'paused' : 'active')}
-              >
-                {t(action === 'pause' ? 'actionPause' : 'actionResume')}
-              </Button>
-            ),
-          )}
-          <Button data-testid="tabManual" variant="secondary" onClick={() => setManualOpen(true)}>
-            {t('tabManual')}
-          </Button>
-        </div>
-      </div>
+      <RunHeader
+        run={run}
+        busyStatus={busyStatus}
+        onEditPool={() => setShowPool(true)}
+        onAskClose={() => setShowClose(true)}
+        onSetStatus={(status) => void setStatus(status)}
+        onAddFill={() => setManualOpen(true)}
+        onUpload={() => setUploadOpen(true)}
+      />
 
       {actionError !== null && <ErrorNote message={actionError} />}
 
@@ -206,7 +183,7 @@ export function RunDetailPage({
             {/* Both are keyed on tabKey (a tab click remounts them) but not on panelKey: each reloads itself
                 after an action, and the pending table re-reads in place when refreshKey changes. */}
             <CorrectionList
-              key={`c${tabKey}`}
+              key={`c${tabKey}-${uploadKey}`}
               runId={id}
               onChanged={() => {
                 setPanelKey((k) => k + 1); // re-read the panelKey-keyed panels and the run
@@ -274,6 +251,22 @@ export function RunDetailPage({
           heldBuckets={heldBucketsOf(run.state.buckets)}
           onClose={() => setManualOpen(false)}
           onSaved={() => { setManualOpen(false); setPanelKey((k) => k + 1); void reload(); }} />
+      )}
+      {uploadOpen && (
+        <UploadDialog
+          runId={run.id}
+          onClose={({ uploaded, goToPending }: UploadCloseOutcome) => {
+            setUploadOpen(false);
+            if (!uploaded) return;
+            setUploadKey((k) => k + 1);
+            // Already on Pending: re-read in place, since a tab switch remounts the table and drops typed edits.
+            if (goToPending && tab !== 'pending') selectTab('pending');
+            else {
+              setPanelKey((k) => k + 1);
+              void reload();
+            }
+          }}
+        />
       )}
       {recalcResult !== null && (
         <div data-testid="recalcResult">
