@@ -49,7 +49,8 @@ function chunk(lines: string[]): string[] {
   return chunks.length ? chunks : ['']
 }
 
-const buyLine = (shares: number, targetCents: number, lang: Lang) => t('vr-buy-line', lang, { shares, target: usd(targetCents) })
+const buyLine = (shares: number, targetCents: number, lastClose: bigint, lang: Lang) =>
+  shares > 0 ? t('vr-buy-line', lang, { shares, target: usd(targetCents) }) : t('vr-buy-small', lang, { target: usd(targetCents), price: px(lastClose) })
 const lastCloseLine = (price: bigint, date: string, lang: Lang) => t('vr-last-close', lang, { price: px(price), date })
 const targetLine = (v: number, min: number, max: number, lang: Lang) => t('vr-target', lang, { v: usd(v), min: usd(min), max: usd(max) })
 
@@ -62,7 +63,7 @@ export function renderVrCycle(v: VrCycleView, lang: Lang): string[] {
   ]
   if (v.depositCents !== 0) lines.push(t(v.depositCents > 0 ? 'vr-deposit' : 'vr-withdraw', lang, { amount: usd(Math.abs(v.depositCents)) }))
   if (v.vKept) lines.push(t('vr-v-kept', lang))
-  if (v.instruction) lines.push(t('vr-no-ladder', lang), buyLine(v.instruction.shares, v.instruction.targetCents, lang))
+  if (v.instruction) lines.push(t('vr-no-ladder', lang), buyLine(v.instruction.shares, v.instruction.targetCents, v.lastClose, lang))
   else lines.push(...side(v.buy, 'buy', lang, true), ...side(v.sell, 'sell', lang, true))
   return chunk(lines)
 }
@@ -71,7 +72,7 @@ export function renderVrBuyInstruction(v: VrBuyView, lang: Lang): string {
   return [
     t('vr-buy-head', lang, { name: v.name, ticker: v.ticker }),
     lastCloseLine(v.lastClose, v.lastCloseDate, lang),
-    buyLine(v.shares, v.targetCents, lang),
+    buyLine(v.shares, v.targetCents, v.lastClose, lang),
   ].join('\n')
 }
 

@@ -13,7 +13,15 @@ export function VrRunsPage() {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => vrApi.listRuns(), []);
   const [showNew, setShowNew] = useState(false);
+  const [created, setCreated] = useState(false);
   const runs = data ?? [];
+
+  // A run created in the dialog is not in the list yet, however the dialog is closed.
+  const closeNew = () => {
+    setShowNew(false);
+    if (created) void reload();
+    setCreated(false);
+  };
 
   return (
     <div className="space-y-4">
@@ -70,14 +78,8 @@ export function VrRunsPage() {
       </Card>
 
       {showNew && (
-        <Modal title={t('vr.new')} onClose={() => setShowNew(false)} closeOnEscape={false}>
-          <VrCreateForm
-            onCreated={() => {
-              setShowNew(false);
-              void reload();
-            }}
-            onCancel={() => setShowNew(false)}
-          />
+        <Modal title={t('vr.new')} onClose={closeNew} closeOnEscape={false}>
+          <VrCreateForm onRunCreated={() => setCreated(true)} onCreated={closeNew} onCancel={closeNew} />
         </Modal>
       )}
     </div>

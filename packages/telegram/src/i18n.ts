@@ -138,9 +138,22 @@ export const CATALOG: Record<string, MsgEntry> = {
   'vr-no-ladder': { en: 'No shares held, so this cycle has no ladder.', ko: '보유 주식이 없어 이번 사이클에는 매매 단계가 없습니다.' },
   'vr-buy-head': { en: '{name}  {ticker} — VR buy instruction', ko: '{name}  {ticker} — VR 매수 안내' },
   'vr-buy-line': { en: 'Buy {shares} sh (target {target} ÷ last close). Order type is your choice.', ko: '{shares}주를 매수하세요 (목표 {target} ÷ 최근 종가). 주문 유형은 자유롭게 정하세요.' },
+  'vr-buy-small': { en: 'The target ({target}) is less than the price of one share at the last close ({price}), so there is nothing to buy yet.', ko: '목표 금액({target})이 최근 종가 기준 1주 가격({price})보다 작아 아직 매수할 수 없습니다.' },
   'vr-run-line': { en: 'VR run #{id} {ticker}', ko: 'VR 런 #{id} {ticker}' },
   'vr-holdings': { en: 'Shares: {shares}  Pool: {pool}', ko: '보유: {shares}주  Pool: {pool}' },
   'vr-no-cycle': { en: 'No cycle yet', ko: '아직 사이클이 없습니다' },
+  'vr-warn-data-error': {
+    en: 'VR market data error — the last close for {ticker} is missing or out of date, so run #{id} was skipped this morning. It will be retried on the next morning run; orders already placed are not affected.',
+    ko: 'VR 시세 데이터 오류 — {ticker}의 최근 종가가 없거나 오래되어 오늘 아침에는 런 #{id}을(를) 건너뛰었습니다. 다음 아침 실행에서 다시 시도하며, 이미 낸 주문에는 영향이 없습니다.',
+  },
+  'vr-warn-run-error': {
+    en: 'VR run error — run #{id} ({ticker}) could not be processed this morning. Open the run\'s page in the web app to check it.',
+    ko: 'VR 런 오류 — 런 #{id} ({ticker})을(를) 오늘 아침에 처리하지 못했습니다. 웹 앱에서 이 런의 페이지를 열어 확인하세요.',
+  },
+  'vr-warn-list-error': {
+    en: 'VR run error — the Value Rebalancing runs could not be loaded this morning; mean-reversion runs were processed as usual.',
+    ko: 'VR 런 오류 — 오늘 아침 Value Rebalancing 런 목록을 불러오지 못했습니다. 평균 회귀 런은 평소대로 처리했습니다.',
+  },
 }
 
 export function t(code: string, lang: Lang, params?: Record<string, string | number>): string {

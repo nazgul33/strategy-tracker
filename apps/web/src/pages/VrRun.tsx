@@ -95,7 +95,7 @@ export function VrRunPage({ id }: { id: number }) {
         <div className="flex flex-wrap items-center gap-2">
           {runActions(run.status).map((action) =>
             action === 'close' ? (
-              <Button key={action} variant="danger" onClick={() => setShowClose(true)}>
+              <Button key={action} variant="danger" disabled={busyStatus !== null} onClick={() => setShowClose(true)}>
                 {t('actionClose')}
               </Button>
             ) : (
@@ -103,13 +103,14 @@ export function VrRunPage({ id }: { id: number }) {
                 key={action}
                 variant={action === 'pause' ? 'secondary' : 'primary'}
                 busy={busyStatus === (action === 'pause' ? 'paused' : 'active')}
+                disabled={busyStatus !== null}
                 onClick={() => void setStatus(action === 'pause' ? 'paused' : 'active')}
               >
                 {t(action === 'pause' ? 'actionPause' : 'actionResume')}
               </Button>
             ),
           )}
-          <Button onClick={() => setShowSettings(true)}>{t('vr.settings')}</Button>
+          {run.status !== 'closed' && <Button onClick={() => setShowSettings(true)}>{t('vr.settings')}</Button>}
         </div>
       </div>
 
@@ -145,16 +146,17 @@ export function VrRunPage({ id }: { id: number }) {
       </Card>
 
       {showClose && (
-        <Modal title={t('actionClose')} onClose={() => setShowClose(false)}>
+        <Modal title={t('actionClose')} onClose={() => setShowClose(false)} dismissible={busyStatus !== 'closed'}>
           <p className="mb-4 text-sm">{t('confirmClose')}</p>
           <div className="flex justify-end gap-2">
-            <Button onClick={() => setShowClose(false)}>{t('cancel')}</Button>
+            <Button disabled={busyStatus === 'closed'} onClick={() => setShowClose(false)}>
+              {t('cancel')}
+            </Button>
             <Button
               variant="danger"
               busy={busyStatus === 'closed'}
               onClick={() => {
-                setShowClose(false);
-                void setStatus('closed');
+                void setStatus('closed').then(() => setShowClose(false));
               }}
             >
               {t('confirm')}

@@ -2,6 +2,7 @@ import { describe, test, expect, spyOn } from 'bun:test'
 import { emptyState } from '@st/core'
 import { DEFAULT_MR_PARAMS } from '@st/strategies'
 import { DEFAULT_VR_SETTINGS, buyRungs } from '@st/strategies/value-rebalancing'
+import { t } from '@st/telegram/i18n'
 import { renderVrBuyInstruction } from '@st/telegram/vr'
 import { runMorningPipeline, type DayDeps } from '../src/pipeline/day'
 import type { NewVrCycle } from '../src/domain/vr/repo-types'
@@ -55,8 +56,9 @@ function cycle1(runId: number, over: Partial<NewVrCycle> = {}): NewVrCycle {
   }
 }
 
-const WARN_EN = (id: number, tk: string) => `Market data error — run #${id} ${tk}: last close unavailable or stale. Today's orders for this run could not be computed.`
-const RUN_ERR = (id: number, tk: string) => `Morning pipeline error — run #${id} ${tk}: today's orders could not be planned. Check this run's Orders tab in the web app; if today's orders are missing, run the morning pipeline again.`
+const WARN_EN = (id: number, tk: string) => `VR market data error — the last close for ${tk} is missing or out of date, so run #${id} was skipped this morning. It will be retried on the next morning run; orders already placed are not affected.`
+const RUN_ERR = (id: number, tk: string) => `VR run error — run #${id} (${tk}) could not be processed this morning. Open the run's page in the web app to check it.`
+const LIST_ERR = 'VR run error — the Value Rebalancing runs could not be loaded this morning; mean-reversion runs were processed as usual.'
 const BUY_HEAD = 'Q  TQQQ — VR buy instruction'
 
 describe('VR morning job: the first day', () => {
@@ -253,6 +255,61 @@ describe('VR morning job: failures and isolation', () => {
     expect(f.notifications[0]).toMatchObject({ runId: 100001, chatId: 'c1', text: WARN_EN(100001, 'TQQQ') })
   })
 
+  test('a stale close in mid-cycle with shares: nothing is due, so no notice and the run completes', async () => {
+    const { f, deps, sent, vrId } = await setup({ today: () => '2026-12-01', fetchLastClose: async () => ({ date: '2026-11-27', close: 520_000n }) })
+    await f.repos.vrCycleRepo.open(cycle1(vrId), null)
+    await buy(f, vrId, 100, 500_000n, '2026-11-20')
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      expect(await runMorningPipeline(deps)).toBe('sent')
+      expect(log).toHaveBeenCalled()
+    } finally {
+      log.mockRestore()
+    }
+    expect(sent).toEqual([])
+    expect(f.notifications).toEqual([])
+  })
+
+  test('a failed close fetch in mid-cycle with shares is not reported either', async () => {
+    const { f, deps, sent, vrId } = await setup({ today: () => '2026-12-01', fetchLastClose: async () => { throw new Error('yahoo down') } })
+    await f.repos.vrCycleRepo.open(cycle1(vrId), null)
+    await buy(f, vrId, 100, 500_000n, '2026-11-20')
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      expect(await runMorningPipeline(deps)).toBe('sent')
+    } finally {
+      errors.mockRestore()
+      log.mockRestore()
+    }
+    expect(sent).toEqual([])
+  })
+
+  test('a stale close on the due day: the VR data-error text, counted as failed', async () => {
+    const { f, deps, sent, vrId } = await setup({ fetchLastClose: async () => ({ date: '2026-12-03', close: 520_000n }) })
+    await f.repos.vrCycleRepo.open(cycle1(vrId), null)
+    await buy(f, vrId, 100, 500_000n, '2026-11-20')
+    expect(await runMorningPipeline(deps)).toBe('data-error')
+    expect(sent).toEqual([WARN_EN(vrId, 'TQQQ')])
+    expect(f.vr.cycles).toHaveLength(1)
+  })
+
+  test('a stale close when cycle 1 is due: the VR data-error text and no cycle', async () => {
+    const { f, deps, sent, vrId } = await setup({ fetchLastClose: async () => ({ date: '2026-12-03', close: 520_000n }) })
+    await buy(f, vrId, 100, 500_000n, '2026-12-04')
+    expect(await runMorningPipeline(deps)).toBe('data-error')
+    expect(sent).toEqual([WARN_EN(vrId, 'TQQQ')])
+    expect(f.vr.cycles).toEqual([])
+  })
+
+  test('the VR data-error text in Korean', async () => {
+    const { deps, sent } = await setup({ digestLang: 'ko', fetchLastClose: async () => ({ date: '2026-12-03', close: 520_000n }) })
+    await runMorningPipeline(deps)
+    expect(sent[0]).toBe(t('vr-warn-data-error', 'ko', { id: 100001, ticker: 'TQQQ' }))
+    expect(sent[0]).toMatch(/TQQQ.*#100001|#100001.*TQQQ/)
+    expect(sent[0]).not.toContain('{')
+  })
+
   test('a stale VR close next to an MR run that completes still reports sent', async () => {
     const { f, deps, sent } = await setup({
       fetchLastClose: async (tk) => ({ date: tk === 'TQQQ' ? '2026-12-03' : '2026-12-04', close: 3402300n }),
@@ -274,12 +331,71 @@ describe('VR morning job: failures and isolation', () => {
     try {
       expect(await runMorningPipeline(deps)).toBe('sent')
       expect(sent[0]).toBe(RUN_ERR(100001, 'TQQQ'))
+      expect(f.notifications[0]).toMatchObject({ runId: 100001, text: RUN_ERR(100001, 'TQQQ') })
       expect(sent[1]).toStartWith('R  SOXL — VR buy instruction')
       expect(sent).toHaveLength(2)
       expect(errors).toHaveBeenCalledWith('morning VR run failed:', { runId: 100001, ticker: 'TQQQ' }, 'Error: db-down')
     } finally {
       errors.mockRestore()
     }
+  })
+
+  test('the VR run list throwing after the MR runs went out: the MR digest, the list warning, and sent', async () => {
+    const { f, deps, sent } = await setup({ fetchLastClose: async () => ({ date: '2026-12-04', close: 3402300n }) }, { mr: 'TSLA' })
+    f.repos.vrRunRepo.list = async () => { throw new Error('vr-list-down') }
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(await runMorningPipeline(deps)).toBe('sent')
+      expect(errors).toHaveBeenCalled()
+    } finally {
+      errors.mockRestore()
+    }
+    expect(f.orders.length).toBeGreaterThan(0)
+    expect(sent.length).toBeGreaterThan(1)
+    expect(sent.at(-1)).toBe(LIST_ERR)
+    expect(sent.some((x) => x.includes('stopped before any run was planned'))).toBe(false)
+    expect(f.notifications.at(-1)).toMatchObject({ runId: null, text: LIST_ERR })
+  })
+
+  test('the VR run list throwing with no MR run: one failure, so the data-error result, not a throw', async () => {
+    const { f, deps, sent } = await setup({}, { vr: null })
+    f.repos.vrRunRepo.list = async () => { throw new Error('vr-list-down') }
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(await runMorningPipeline(deps)).toBe('data-error')
+    } finally {
+      errors.mockRestore()
+    }
+    expect(sent).toEqual([LIST_ERR])
+  })
+
+  test('a run paused between the list and the lock does nothing', async () => {
+    const { f, deps, sent, vrId } = await setup()
+    await buy(f, vrId, 100, 500_000n, '2026-12-04')
+    const real = f.repos.vrRunRepo.list
+    f.repos.vrRunRepo.list = async () => {
+      const rows = await real()
+      await f.repos.vrRunRepo.updateStatus(vrId, 'paused')
+      return rows
+    }
+    expect(await runMorningPipeline(deps)).toBe('sent')
+    expect(f.vr.cycles).toEqual([])
+    expect(sent).toEqual([])
+    expect(f.notifications).toEqual([])
+  })
+
+  test('settings changed between the list and the lock are the ones used', async () => {
+    const { f, deps, vrId } = await setup()
+    await f.repos.vrCycleRepo.open(cycle1(vrId), null)
+    await buy(f, vrId, 100, 500_000n, '2026-11-20')
+    const real = f.repos.vrRunRepo.list
+    f.repos.vrRunRepo.list = async () => {
+      const rows = await real()
+      await f.repos.vrRunRepo.updateSettings(vrId, { ...DEFAULT_VR_SETTINGS, cycleDepositCents: 25_000 })
+      return rows
+    }
+    await runMorningPipeline(deps)
+    expect(f.vr.cycles[1]).toMatchObject({ seq: 2, depositCents: 25_000 })
   })
 
   test('an MR run and a VR run on one ticker: the MR output is what it is without the VR run', async () => {

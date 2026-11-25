@@ -42,7 +42,7 @@ export function VrLadders({ detail }: { detail: VrRunDetailDto }) {
   if (buyInstruction !== null && lastClose !== null) {
     return (
       <p data-testid="vrBuyInstruction" className="text-sm">
-        {t('vr.buyInstruction', {
+        {t(buyInstruction.shares > 0 ? 'vr.buyInstruction' : 'vr.buyInstructionSmall', {
           shares: buyInstruction.shares,
           amount: centsUsd(buyInstruction.targetCents),
           close: priceUsd(lastClose.close),

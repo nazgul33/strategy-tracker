@@ -6,13 +6,13 @@ import type { NewVrCycle } from '../src/domain/vr/repo-types'
 import { makeFakes } from './http-fakes'
 
 // Cycle 1 is scheduled 2026-12-07 and the run holds 100 shares.
-async function setup(over: Partial<DayDeps> = {}) {
+async function setup(over: Partial<DayDeps> = {}, start = '2026-12-07') {
   const f = makeFakes()
   const vrId = await f.repos.vrRunRepo.create({
     ...DEFAULT_VR_SETTINGS, ticker: 'TQQQ', name: 'Q', costPpm: 0, initialVCents: 500_000, openingCashCents: 1_000_000, openedOn: '2026-11-20',
   })
   const cycle: NewVrCycle = {
-    runId: vrId, seq: 1, scheduledStart: '2026-12-07', startDate: '2026-12-07', vCents: 500_000, bandMinCents: 425_000, bandMaxCents: 575_000,
+    runId: vrId, seq: 1, scheduledStart: start, startDate: start, vCents: 500_000, bandMinCents: 425_000, bandMaxCents: 575_000,
     openShares: 100, openPoolCents: 500_000, buyBudgetCents: 250_000, buyLot: 2, sellLot: 1,
     prevClose: null, evalCents: null, poolBeforeCents: null, g: 10, formula: 'skill', depositCents: 0, vKept: false, openFillId: 0,
   }
@@ -61,6 +61,30 @@ describe('VR cycle schedule', () => {
 
     await runMorningPipeline(deps)
     expect(f.vr.cycles).toHaveLength(2)
+  })
+
+  test('a start that falls on a market holiday opens on the next trading day and keeps the anchor', async () => {
+    const { f, deps, sent, vrId, setDay } = await setup({}, '2026-12-11')
+
+    setDay('2026-12-25', '2026-12-24')
+    expect(await runMorningPipeline(deps)).toBe('closed')
+    expect(f.vr.cycles).toHaveLength(1)
+
+    setDay('2026-12-28', '2026-12-24')
+    expect(await runMorningPipeline(deps)).toBe('sent')
+    expect(f.vr.cycles).toHaveLength(2)
+    expect(f.vr.cycles[1]).toMatchObject({ runId: vrId, seq: 2, startDate: '2026-12-28', scheduledStart: '2026-12-25' })
+
+    sent.length = 0
+    setDay('2027-01-07', '2027-01-06')
+    expect(await runMorningPipeline(deps)).toBe('sent')
+    expect(f.vr.cycles).toHaveLength(2)
+    expect(sent).toEqual([])
+
+    setDay('2027-01-08', '2027-01-07')
+    expect(await runMorningPipeline(deps)).toBe('sent')
+    expect(f.vr.cycles).toHaveLength(3)
+    expect(f.vr.cycles[2]).toMatchObject({ seq: 3, startDate: '2027-01-08', scheduledStart: '2027-01-08' })
   })
 
   test('a closed run is skipped too', async () => {

@@ -95,6 +95,18 @@ describe('the small VR messages', () => {
     expect(renderVrBuyInstruction(v, 'ko')).toContain('$5000.00')
   })
 
+  test('a target below the price of one share says so instead of "buy 0 shares"', () => {
+    const v = { runId: 100001, name: 'Q', ticker: 'TQQQ', shares: 0, targetCents: 4000, lastClose: 500000n, lastCloseDate: '2026-12-04' }
+    expect(renderVrBuyInstruction(v, 'en')).toBe(
+      'Q  TQQQ — VR buy instruction\nLast close: $50.00 (2026-12-04)\nThe target ($40.00) is less than the price of one share at the last close ($50.00), so there is nothing to buy yet.')
+    const ko = renderVrBuyInstruction(v, 'ko')
+    expect(ko).not.toContain('0주')
+    expect(moneyTokens(ko)).toEqual(['$50.00', '$40.00', '$50.00'])
+    const cycle = renderVrCycle({ ...VIEW, shares: 0, buy: [], sell: [], lastClose: 500000n, instruction: { shares: 0, targetCents: 4000 } }, 'en')[0]!
+    expect(cycle).toContain('The target ($40.00) is less than the price of one share at the last close ($50.00)')
+    expect(cycle).not.toContain('Buy 0 sh')
+  })
+
   test('renderVrStatus with and without a cycle', () => {
     const base = { runId: 100001, ticker: 'TQQQ', shares: 177, poolCents: 80000, vCents: 935000, bandMinCents: 794750, bandMaxCents: 1075250 }
     expect(renderVrStatus(base, 'en')).toBe('VR run #100001 TQQQ\nShares: 177  Pool: $800.00\nV: $9350.00  Band: $7947.50 – $10752.50')

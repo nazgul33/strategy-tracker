@@ -21,7 +21,16 @@ import {
 
 const FORMULAS: VrFormula[] = ['skill', 'basic'];
 
-export function VrCreateForm({ onCreated, onCancel }: { onCreated: (id: number) => void; onCancel: () => void }) {
+export function VrCreateForm({
+  onCreated,
+  onCancel,
+  onRunCreated,
+}: {
+  onCreated: (id: number) => void;
+  onCancel: () => void;
+  /** Called once the server has created the run, before the dialog is closed. */
+  onRunCreated?: (id: number) => void;
+}) {
   const t = useT();
   const [name, setName] = useState('');
   const [ticker, setTicker] = useState('');
@@ -68,6 +77,7 @@ export function VrCreateForm({ onCreated, onCancel }: { onCreated: (id: number) 
         costPpm: percentTextToPpm(cost.trim(), 3),
       });
       setCreatedId(res.id);
+      onRunCreated?.(res.id);
     } catch (err) {
       setError(errorText(err, t, 'vrErr'));
     } finally {

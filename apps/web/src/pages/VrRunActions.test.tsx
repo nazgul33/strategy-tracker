@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { inputByTestId } from '../testing/dom';
 import { installFetchStub, restoreFetch } from '../testing/fetchStub';
 import type { FetchCalls } from '../testing/fetchStub';
+import { holdNext } from '../testing/holdFetch';
 import { goOffline } from '../testing/offline';
 import { VR_DETAIL, VR_RUN } from '../testing/vr';
 
@@ -143,12 +144,50 @@ describe('VrRunPage status actions', () => {
     );
   });
 
-  it('a closed run has no status buttons but keeps Settings', async () => {
+  it('a closed run has no status buttons and no Settings', async () => {
     detail = withStatus('closed');
     await render();
-    for (const text of ['Pause', 'Resume', 'Close']) expect(findButton(text)).toBeUndefined();
-    expect(findButton('Settings')).toBeDefined();
+    for (const text of ['Pause', 'Resume', 'Close', 'Settings']) expect(findButton(text)).toBeUndefined();
+    expect(findButton('Fills')).toBeDefined();
     expect(container.querySelector('h1')!.textContent).toContain('Closed');
+  });
+
+  it('disables the other status buttons while a status change is in flight', async () => {
+    await render();
+    const held = holdNext('PATCH', '/api/vr/runs/5');
+    await act(async () => buttonByText('Pause').click());
+    const status = [...document.querySelectorAll('button')].filter((b) => ['…', 'Close'].includes(b.textContent ?? ''));
+    expect(status).toHaveLength(2);
+    expect(status.every((b) => b.disabled)).toBe(true);
+    held.release();
+    await flush();
+    expect(calls).toHaveLength(1);
+  });
+
+  it('keeps the Close confirmation open and busy until the request settles', async () => {
+    await render();
+    await click('Close');
+    const held = holdNext('PATCH', '/api/vr/runs/5');
+    await act(async () => buttonByText('Confirm').click());
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog).toBeTruthy();
+    const busy = [...dialog.querySelectorAll('button')].find((b) => b.textContent === '…')!;
+    expect(busy.disabled).toBe(true);
+    expect(buttonByText('Cancel').disabled).toBe(true);
+    held.release();
+    await flush();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(calls).toHaveLength(1);
+  });
+
+  it('closes the confirmation after a failed close and shows the error', async () => {
+    patch.status = 409;
+    patch.json = { error: 'invalid transition' };
+    await render();
+    await click('Close');
+    await click('Confirm');
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector('[role="alert"]')!.textContent).toBe('The request failed (invalid transition).');
   });
 
   it('Settings opens the dialog prefilled from the run', async () => {

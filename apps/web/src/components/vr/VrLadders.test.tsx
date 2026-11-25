@@ -101,6 +101,20 @@ describe('VrLadders', () => {
     expect(byId('vrBuyInstruction')!.textContent).toBe('Buy 203 shares, about $9,350.00 at the last close of $46.00 on 2026-12-08.');
   });
 
+  it('says the target is below one share instead of "buy 0 shares"', async () => {
+    await render(
+      vrDetail({
+        books: { ...VR_DETAIL.books, shares: 0 },
+        buyInstruction: { shares: 0, targetCents: 4_000 },
+        ladder: EMPTY,
+      }),
+    );
+    only('vrBuyInstruction');
+    expect(byId('vrBuyInstruction')!.textContent).toBe(
+      'The target of $40.00 is less than the price of one share at the last close of $46.00 on 2026-12-08, so there is nothing to buy yet.',
+    );
+  });
+
   it('says the instruction arrives with the morning message when there is no shares and no close', async () => {
     await render(
       vrDetail({

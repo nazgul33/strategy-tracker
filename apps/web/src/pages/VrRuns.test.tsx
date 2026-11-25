@@ -163,4 +163,42 @@ describe('VrRunsPage', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(listGets).toBeGreaterThan(before);
   });
+
+  async function createRun() {
+    await render();
+    await act(async () => buttonByText('New VR run').click());
+    await flush();
+    await act(async () => setInputValue(inputByTestId('vrTickerInput'), 'soxl'));
+    await act(async () => setInputValue(inputByTestId('vrCashInput'), '5000'));
+    await act(async () => buttonByText('Create').click());
+    await flush();
+  }
+
+  it('closing the form with Cancel after a run was created reloads the list', async () => {
+    await createRun();
+    const before = listGets;
+    await act(async () => buttonByText('Cancel').click());
+    await flush();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(listGets).toBeGreaterThan(before);
+  });
+
+  it('closing the form with the dialog close button after a run was created reloads the list', async () => {
+    await createRun();
+    const before = listGets;
+    await act(async () => (document.querySelector('[role="dialog"] button[aria-label]') as HTMLButtonElement).click());
+    await flush();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(listGets).toBeGreaterThan(before);
+  });
+
+  it('Cancel before any run was created does not reload the list', async () => {
+    await render();
+    await act(async () => buttonByText('New VR run').click());
+    await flush();
+    const before = listGets;
+    await act(async () => buttonByText('Cancel').click());
+    await flush();
+    expect(listGets).toBe(before);
+  });
 });

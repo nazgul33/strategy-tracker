@@ -133,6 +133,7 @@ describe('VrRunPage', () => {
     expect(stat('Budget left')).toBe('$364.55');
     expect(statValueEl('Budget left').nextElementSibling!.textContent).toBe('of $500.00');
     expect(stat('Value')).toBe('$9,098.46');
+    expect(statValueEl('Value').nextElementSibling!.textContent).toBe('at $46.00 on 2026-12-08');
     expect(stat('Net invested')).toBe('$10,000.00');
     expect(stat('Profit')).toBe('-$901.54');
     expect(statValueEl('Profit').classList.contains('text-destructive')).toBe(true);
@@ -170,6 +171,7 @@ describe('VrRunPage', () => {
     };
     await render();
     expect(stat('Value')).toBe('—');
+    expect(statValueEl('Value').nextElementSibling).toBeNull();
     expect(stat('Profit')).toBe('—');
     expect(statValueEl('Profit').classList.contains('text-destructive')).toBe(false);
     expect(stat('Average cost')).toBe('$51.03');

@@ -37,7 +37,15 @@ export function VrSummary({ detail }: { detail: VrRunDetailDto }) {
           value={centsUsd(detail.budgetLeftCents)}
           sub={c === null ? undefined : t('vr.budgetOf', { total: centsUsd(c.buyBudgetCents) })}
         />
-        <Stat label={t('vr.colValue')} value={centsUsd(b.valueCents)} />
+        <Stat
+          label={t('vr.colValue')}
+          value={centsUsd(b.valueCents)}
+          sub={
+            detail.lastClose === null
+              ? undefined
+              : t('vr.valueAt', { close: priceUsd(detail.lastClose.close), date: isoDate(detail.lastClose.date) })
+          }
+        />
         <Stat label={t('vr.netInvested')} value={centsUsd(b.netInvestedCents)} />
         <Stat
           label={t('vr.profit')}

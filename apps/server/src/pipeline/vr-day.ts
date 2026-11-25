@@ -9,18 +9,27 @@ import { withRunLock } from '../domain/run-lock'
 import type { DayRepoSurface } from '../domain/repo-types'
 import type { NewVrCashMove, NewVrCycle, VrCycleRow, VrFillRow, VrRunRow } from '../domain/vr/repo-types'
 import { ladderOf, toEngineFill } from '../domain/vr/view'
-import { fetchCheckedClose } from './close'
+import { fetchClose, type CheckedClose } from './close'
 import type { DayDeps } from './day'
 import { notifyDay } from './notify'
 
 type Decision =
   | { kind: 'vr-buy'; targetCents: number }
   | { kind: 'vr-cycle'; cycle: VrCycleRow; books: VrBooks; fills: VrFillRow[] }
+// Something is due this morning but there is no usable close to act on.
+const NEEDS_CLOSE = 'needs-close'
+type Outcome = Decision | typeof NEEDS_CLOSE | null
 
-/** Walks the active VR runs in ascending id; one run never takes the others down. */
+/** Walks the active VR runs in ascending id; one run never takes the others down, and neither does a failing list. */
 export async function processVrRuns(deps: DayDeps, today: ISODate): Promise<{ completed: number; failed: number }> {
-  // A throw from the list is not caught here: it reaches the pipeline's own catch, as the MR run list does.
-  const runs = (await deps.repos.vrRunRepo.list()).filter((r) => r.status === 'active')
+  let runs: VrRunRow[]
+  try {
+    runs = (await deps.repos.vrRunRepo.list()).filter((r) => r.status === 'active')
+  } catch (e) {
+    console.error('morning VR run list failed:', String(e))
+    await notifyDay(deps, null, t('vr-warn-list-error', deps.digestLang), 'vr-list-error')
+    return { completed: 0, failed: 1 }
+  }
   let completed = 0
   let failed = 0
   for (const run of runs) {
@@ -30,23 +39,34 @@ export async function processVrRuns(deps: DayDeps, today: ISODate): Promise<{ co
   return { completed, failed }
 }
 
-async function processVrRun(deps: DayDeps, run: VrRunRow, today: ISODate): Promise<'completed' | 'failed'> {
+async function processVrRun(deps: DayDeps, listed: VrRunRow, today: ISODate): Promise<'completed' | 'failed'> {
   try {
-    const fetched = await fetchCheckedClose(deps, run, today)
-    if (!fetched) return 'failed'
+    const fetched = await fetchClose(deps, listed.ticker, today)
     // Reads and writes only, inside the lock; sends happen outside it (the lock is not reentrant).
-    const decision = await withRunLock(run.id, () => decide(deps.repos, run, today, fetched.close))
+    // The run is read again here: a pause or a settings change since the list is honoured.
+    const step = await withRunLock(listed.id, async () => {
+      const run = await deps.repos.vrRunRepo.get(listed.id)
+      if (!run || run.status !== 'active') return null
+      return { run, outcome: await decide(deps.repos, run, today, fetched) }
+    })
+    if (!step) return 'completed'
+    const { run, outcome } = step
+    if (outcome === NEEDS_CLOSE) {
+      await notifyDay(deps, run.id, t('vr-warn-data-error', deps.digestLang, { id: run.id, ticker: run.ticker }), 'data-error')
+      return 'failed'
+    }
+    if (!fetched) console.log('morning VR run: close missing or stale, nothing due:', { runId: run.id, ticker: run.ticker })
     // The buy instruction is sent again on every run of the pipeline that day, as MR re-notifies a planned run.
-    if (decision) await notifyDay(deps, run.id, render(decision, run, fetched, deps.digestLang), decision.kind)
+    if (outcome && fetched) await notifyDay(deps, run.id, render(outcome, run, fetched, deps.digestLang), outcome.kind)
     return 'completed'
   } catch (e) {
-    console.error('morning VR run failed:', { runId: run.id, ticker: run.ticker }, String(e))
-    await notifyDay(deps, run.id, t('warn-run-error', deps.digestLang, { id: run.id, ticker: run.ticker }), 'run-error')
+    console.error('morning VR run failed:', { runId: listed.id, ticker: listed.ticker }, String(e))
+    await notifyDay(deps, listed.id, t('vr-warn-run-error', deps.digestLang, { id: listed.id, ticker: listed.ticker }), 'run-error')
     return 'failed'
   }
 }
 
-async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, close: bigint): Promise<Decision | null> {
+async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, fetched: CheckedClose | null): Promise<Outcome> {
   const fills = await repos.vrFillRepo.listForRun(run.id)
   const moves = await repos.vrCashRepo.listForRun(run.id)
   const latest = await repos.vrCycleRepo.latest(run.id)
@@ -61,6 +81,7 @@ async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, clos
   }
 
   if (!latest) {
+    if (!fetched) return NEEDS_CLOSE
     if (books.shares <= 0) return { kind: 'vr-buy', targetCents: run.initialVCents }
     const band = vrBand(run.initialVCents, run.bandPpm)
     // Cycle 1 books no deposit, whatever the settings say.
@@ -74,10 +95,12 @@ async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, clos
   }
 
   if (latest.startDate >= today) return null
-  if (!cycleDue(latest.scheduledStart, today)) {
-    return books.shares > 0 ? null : { kind: 'vr-buy', targetCents: latest.vCents }
-  }
+  const due = cycleDue(latest.scheduledStart, today)
+  if (!due && books.shares > 0) return null
+  if (!fetched) return NEEDS_CLOSE
+  if (!due) return { kind: 'vr-buy', targetCents: latest.vCents }
 
+  const close = fetched.close
   const evalNow = evalCents(books.shares, close)
   const deposit = run.cycleDepositCents
   const { vCents, kept } = nextV({ vCents: latest.vCents, poolCents: books.poolCents, evalCents: evalNow, settings: run })
@@ -92,7 +115,7 @@ async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, clos
   }, deposit === 0 ? null : { runId: run.id, kind: deposit > 0 ? 'deposit' : 'withdraw', amountCents: deposit, movedOn: today, note: null })
 }
 
-function render(d: Decision, run: VrRunRow, fetched: { close: bigint; closeDate: ISODate }, lang: DayDeps['digestLang']) {
+function render(d: Decision, run: VrRunRow, fetched: CheckedClose, lang: DayDeps['digestLang']) {
   if (d.kind === 'vr-buy') {
     return renderVrBuyInstruction({
       runId: run.id, name: run.name, ticker: run.ticker, shares: buyInstructionShares(d.targetCents, fetched.close),

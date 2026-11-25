@@ -7,9 +7,9 @@ import { activeRun, makeCapture } from './wire-capture-fakes';
 type Harness = ReturnType<typeof makeCapture>;
 
 // Reference VR run: 177 shares, Pool $800.00, cycle 1 from 2026-11-02 with V $9350.00.
-async function seedVr(h: Harness): Promise<number> {
+async function seedVr(h: Harness, n = 0): Promise<number> {
   const runId = await h.repos.vrRunRepo.create({
-    ...DEFAULT_VR_SETTINGS, ticker: 'TQQQ', name: 'Q', costPpm: 0, initialVCents: 935000, openingCashCents: 965000, openedOn: '2026-10-30',
+    ...DEFAULT_VR_SETTINGS, ticker: 'TQQQ', name: n === 0 ? 'Q' : `Q${n}`, costPpm: 0, initialVCents: 935000, openingCashCents: 965000, openedOn: '2026-10-30',
   });
   await h.repos.vrFillRepo.insert({ runId, side: 'buy', shares: 177, price: 500_000n, fee: 0, filledOn: '2026-10-30', source: 'manual' });
   await h.repos.vrCycleRepo.open(
@@ -122,5 +122,41 @@ describe('VR blocks in /orders', () => {
     await h.repos.vrRunRepo.updateStatus(id, 'paused');
     await h.handlers.onOrders('777');
     expect(h.sent[0]!.text).toBe('No orders due on 2026-11-10.');
+  });
+});
+
+describe('long replies', () => {
+  const manyRuns = async (count: number) => {
+    const h = makeCapture({ runs: [] });
+    for (let i = 0; i < count; i++) await seedVr(h, i);
+    return h;
+  };
+  const blocksOf = (h: Harness) => h.sent.flatMap((m) => m.text.split('\n\n'));
+
+  test('/orders with many VR runs goes out in several messages, split only between blocks', async () => {
+    const h = await manyRuns(20);
+    await h.handlers.onOrders('777');
+    expect(h.sent.length).toBeGreaterThan(1);
+    for (const m of h.sent) expect(m.text.length).toBeLessThanOrEqual(4000);
+    expect(blocksOf(h)).toHaveLength(20);
+    for (const b of blocksOf(h)) expect(b).toStartWith('VR run #');
+    expect(blocksOf(h).map((b) => b.split('\n')[0])).toEqual(Array.from({ length: 20 }, (_, i) => `VR run #${100001 + i} TQQQ`));
+    for (const b of blocksOf(h)) expect(b.endsWith('$78.49  $79.65')).toBe(true);
+  });
+
+  test('/status with many VR runs goes out in several messages, split only between blocks', async () => {
+    const h = await manyRuns(60);
+    await h.handlers.onStatus('777');
+    expect(h.sent.length).toBeGreaterThan(1);
+    for (const m of h.sent) expect(m.text.length).toBeLessThanOrEqual(4000);
+    expect(blocksOf(h)).toHaveLength(60);
+    for (const b of blocksOf(h)) expect(b.split('\n')).toHaveLength(3);
+  });
+
+  test('a reply that fits stays one message, joined by a blank line', async () => {
+    const h = await manyRuns(3);
+    await h.handlers.onStatus('777');
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0]!.text.split('\n\n')).toHaveLength(3);
   });
 });

@@ -29,6 +29,8 @@ afterAll(() => {
 
 const NOTE =
   'Saved. This entry is dated before the current cycle started, so the V values of earlier cycles are not recalculated.';
+const DELETED_NOTE =
+  'Deleted. This entry was dated before the current cycle started, so the V values of earlier cycles are not recalculated.';
 
 describe('VrFillDialog focus, Escape and the earlier-cycle note', () => {
   let container: HTMLDivElement;
@@ -178,7 +180,9 @@ describe('VrFillDialog focus, Escape and the earlier-cycle note', () => {
   it('shows the note after deleting a fill dated before the cycle, without a re-read', async () => {
     await mount({ fill: VR_FILLS[1], startOnDelete: true });
     await h.click('Delete for real');
-    expect(elementByTestId('vrEarlierCycleNote').textContent).toBe(NOTE);
+    expect(elementByTestId('vrEarlierCycleNote').textContent).toBe(DELETED_NOTE);
+    expect(document.querySelector('[role="dialog"]')!.textContent).toContain('Deleted');
+    expect(document.querySelector('[role="dialog"]')!.textContent).not.toContain('Saved');
     expect(fillGets).toBe(0);
     expect(saved).toBe(0);
     await h.click('Close');

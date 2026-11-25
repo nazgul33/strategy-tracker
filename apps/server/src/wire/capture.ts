@@ -14,6 +14,7 @@ import { badExtractMessage } from './capture-bad-extract-message';
 import { pendingMessage } from './capture-pending-message';
 import { makeCaptureRouting } from './capture-route';
 import type { BadExtractEvent, CaptureEvent, CaptureRouteDeps } from './capture-route';
+import { sendBlocks } from './send-blocks';
 import { vrOrdersBlocks, vrStatusBlocks } from './vr-status';
 
 const CONFIRM_ERROR_KEYS: Record<string, string> = {
@@ -208,7 +209,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       await deps.send(chatId, t('no-runs', lang));
       return;
     }
-    await deps.send(chatId, blocks.join('\n\n'));
+    await sendBlocks(deps.send, chatId, blocks);
   }
 
   async function onOrders(chatId: string): Promise<void> {
@@ -243,7 +244,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       await deps.send(chatId, t('no-orders', lang, { date }));
       return;
     }
-    await deps.send(chatId, blocks.join('\n\n'));
+    await sendBlocks(deps.send, chatId, blocks);
   }
 
   return { onPhoto, onConfirm, onStatus, onOrders };

@@ -27,7 +27,7 @@ export interface VrFillDialogProps {
   onSaved: () => void;
 }
 
-type Step = 'form' | 'delete' | 'earlier';
+type Step = 'form' | 'delete' | 'earlier' | 'earlierDeleted';
 
 export function VrFillDialog({ runId, costPpm, today, fill, startOnDelete = false, onClose, onSaved }: VrFillDialogProps) {
   const t = useT();
@@ -99,7 +99,7 @@ export function VrFillDialog({ runId, costPpm, today, fill, startOnDelete = fals
     setError(null);
     try {
       await vrApi.deleteFill(runId, fill.id);
-      if (fill.beforeCycle) setStep('earlier');
+      if (fill.beforeCycle) setStep('earlierDeleted');
       else finish();
     } catch (err) {
       setError(errorText(err, t, 'vrErr'));
@@ -114,15 +114,16 @@ export function VrFillDialog({ runId, costPpm, today, fill, startOnDelete = fals
     </p>
   );
 
-  if (step === 'earlier') {
+  if (step === 'earlier' || step === 'earlierDeleted') {
+    const deleted = step === 'earlierDeleted';
     return (
-      <Modal title={t('saved')} onClose={finish} closeOnEscape={false}>
+      <Modal title={t(deleted ? 'vr.fillDeletedTitle' : 'saved')} onClose={finish} closeOnEscape={false}>
         <p
           role="status"
           data-testid="vrEarlierCycleNote"
           className="rounded-md bg-warning/10 px-2 py-1.5 text-sm text-warning"
         >
-          {t('vr.earlierCycleNote')}
+          {t(deleted ? 'vr.fillDeletedNote' : 'vr.earlierCycleNote')}
         </p>
         <div className="mt-3 flex justify-end">
           <Button autoFocus data-autofocus onClick={finish}>
