@@ -11,7 +11,7 @@
   "bucketBoard": "버킷",
   "bucketBuyPrice": "매수 {price}",
   "bucketEmpty": "비어 있음",
-  "bucketForceSell": "강제 매수",
+  "bucketForceSell": "강제 매도",
   "bucketLabel": "버킷 {n}",
   "bucketPnl": "{amount}",
   "bucketSellTarget": "목표 {price}",
