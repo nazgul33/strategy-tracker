@@ -19,7 +19,6 @@ export interface VrRung { shares: number; price: bigint }
 
 const C = BigInt(VR_LADDER_COVER_PPM)
 const M = 1_000_000n
-const SCALE = 1_000_000_000n
 const SPAN = BigInt(VR_MAX_RUNGS - 1)
 
 function big(name: string, x: number): bigint {
@@ -96,7 +95,10 @@ export function nextV(i: { vCents: number; poolCents: number; evalCents: number;
   const gb = BigInt(g)
   let next = v + roundDiv(big('poolCents', i.poolCents), gb) + big('cycleDepositCents', cycleDepositCents)
   if (formula === 'skill') {
-    next += roundDiv((big('evalCents', i.evalCents) - v) * SCALE, isqrt(4n * gb * SCALE * SCALE))
+    const diff = big('evalCents', i.evalCents) - v
+    const a = diff < 0n ? -diff : diff
+    const term = (isqrt((a * a) / gb) + 1n) / 2n
+    next += diff < 0n ? -term : term
   }
   if (next <= 0n) return { vCents: i.vCents, kept: true }
   return { vCents: num(next), kept: false }

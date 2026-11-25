@@ -27,6 +27,16 @@ describe('next V and band', () => {
   test('skill formula: a negative E - V term lowers V', () => {
     expect(nextV({ vCents: 1_587_105, poolCents: 0, evalCents: 1_483_755, settings: DEFAULT_VR_SETTINGS })).toEqual({ vCents: 1_570_764, kept: false })
   })
+  test('skill formula: a term just below a half cent rounds down in magnitude', () => {
+    const s = { ...DEFAULT_VR_SETTINGS, g: 2 }
+    // true term is -344,410.4999...
+    expect(nextV({ vCents: 2_000_000_000, poolCents: 0, evalCents: 2_000_000_000 - 974_140, settings: s })).toEqual({ vCents: 2_000_000_000 - 344_410, kept: false })
+  })
+  test('skill formula: exact halves round away from zero', () => {
+    const s = { ...DEFAULT_VR_SETTINGS, g: 1 }
+    expect(nextV({ vCents: 1_000, poolCents: 0, evalCents: 1, settings: s })).toEqual({ vCents: 500, kept: false })
+    expect(nextV({ vCents: 1_000, poolCents: 0, evalCents: 1_003, settings: s })).toEqual({ vCents: 1_002, kept: false })
+  })
   test('a withdrawal larger than everything else keeps the input V', () => {
     const s = { ...DEFAULT_VR_SETTINGS, cycleDepositCents: -200_000 }
     expect(nextV({ vCents: 100_000, poolCents: 0, evalCents: 0, settings: s })).toEqual({ vCents: 100_000, kept: true })
