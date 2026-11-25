@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { createApp } from '../src/http/app'
-import { makeFakes, makeDeps, loginAs, createRun } from './http-fakes'
+import { makeFakes, makeDeps, loginAs, createRun, json } from './http-fakes'
 import { FAKE_CREATED_AT } from './booking-fakes'
 
 async function setup() {
@@ -23,12 +23,14 @@ async function mixedFeed() {
   await s.add(null, '42', 'closed'); await s.add(99, 'web', 'orphan'); await s.add(1, '42', 'skip')
   return s
 }
-// Records every getMany call and makes list() throw.
+// Records every shared getMany call and makes every other way to read runs throw.
 function watchRuns(f: Awaited<ReturnType<typeof setup>>['f']) {
   const calls: number[][] = []
-  const getMany = f.repos.runRepo.getMany
-  f.repos.runRepo.getMany = async (ids) => { calls.push([...ids]); return getMany(ids) }
+  const getMany = f.repos.sharedRunRepo.getMany
+  f.repos.sharedRunRepo.getMany = async (ids) => { calls.push([...ids]); return getMany(ids) }
   f.repos.runRepo.list = async () => { throw new Error('the feed must not list every run') }
+  f.repos.vrRunRepo.list = async () => { throw new Error('the feed must not list every run') }
+  f.repos.runRepo.getMany = async () => { throw new Error('the feed reads runs through sharedRunRepo') }
   return calls
 }
 
@@ -38,7 +40,9 @@ describe('GET /api/notifications', () => {
     const calls = watchRuns(f)
     const { status, body } = await get('/api/notifications')
     expect(status).toBe(200)
-    expect(body.entries.map((e: { runId: number | null; ticker: string | null }) => [e.runId, e.ticker])).toEqual([[1, 'AAPL'], [99, null], [null, null], [3, 'NVDA'], [1, 'AAPL']])
+    expect(body.entries.map((e: { runId: number | null; ticker: string | null; strategyKey: string | null }) => [e.runId, e.ticker, e.strategyKey])).toEqual([
+      [1, 'AAPL', 'mean-reversion'], [99, null, null], [null, null, null], [3, 'NVDA', 'mean-reversion'], [1, 'AAPL', 'mean-reversion'],
+    ])
     expect(calls.map((ids) => [...ids].sort((a, b) => a - b))).toEqual([[1, 3, 99]])
   })
 
@@ -64,12 +68,23 @@ describe('GET /api/notifications', () => {
     await add(99, 'web', 'orphan')
     expect(await get('/api/notifications')).toEqual({ status: 200, body: {
       entries: [
-        { id: 4, runId: 99, ticker: null, text: 'orphan', sentAt: FAKE_CREATED_AT, chatIds: ['web'] },
-        { id: 3, runId: null, ticker: null, text: 'closed', sentAt: FAKE_CREATED_AT, chatIds: ['42'] },
-        { id: 2, runId: 1, ticker: 'AAPL', text: 'digest', sentAt: FAKE_CREATED_AT, chatIds: ['42', '43'] },
+        { id: 4, runId: 99, ticker: null, strategyKey: null, text: 'orphan', sentAt: FAKE_CREATED_AT, chatIds: ['web'] },
+        { id: 3, runId: null, ticker: null, strategyKey: null, text: 'closed', sentAt: FAKE_CREATED_AT, chatIds: ['42'] },
+        { id: 2, runId: 1, ticker: 'AAPL', strategyKey: 'mean-reversion', text: 'digest', sentAt: FAKE_CREATED_AT, chatIds: ['42', '43'] },
       ],
       nextBefore: null,
     } })
+  })
+
+  test("a VR run's notice carries its ticker and strategy", async () => {
+    const { app, auth, add, get } = await setup()
+    const res = await app.request('/api/vr/runs', { method: 'POST', headers: { ...json, ...auth }, body: JSON.stringify({ name: 'vr', ticker: 'TQQQ', cashCents: 1_000_000 }) })
+    expect(res.status).toBe(201)
+    const { id } = await res.json()
+    await add(id, '42', 'cycle')
+    expect((await get('/api/notifications')).body.entries).toEqual([
+      { id: 1, runId: id, ticker: 'TQQQ', strategyKey: 'value-rebalancing', text: 'cycle', sentAt: FAKE_CREATED_AT, chatIds: ['42'] },
+    ])
   })
 
   test('pages 20 at a time by default and before continues without repeats', async () => {
