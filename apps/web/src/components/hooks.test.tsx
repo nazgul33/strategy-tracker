@@ -35,4 +35,15 @@ describe('parseHash', () => {
     expect(parseHash('#/pending?tab=notifications&notice=1')).toStrictEqual({ page: 'pending' });
     expect(parseHash('#/runs?tab=notifications')).toStrictEqual({ page: 'runs' });
   });
+
+  it('parses the VR routes', () => {
+    expect(parseHash('#/vr')).toStrictEqual({ page: 'vrRuns' });
+    expect(parseHash('#/vr/3')).toStrictEqual({ page: 'vrRun', id: 3 });
+  });
+
+  it('rejects malformed VR routes', () => {
+    for (const hash of ['#/vr/abc', '#/vr/0', '#/vr/1/x']) {
+      expect(parseHash(hash)).toStrictEqual({ page: 'notFound', hash });
+    }
+  });
 });
