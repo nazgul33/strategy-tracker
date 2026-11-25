@@ -97,7 +97,9 @@ export async function editVrFill(run: VrRunRow, fillId: number, body: unknown, d
 export async function deleteVrFill(run: VrRunRow, fillId: number, deps: VrBookingDeps): Promise<void> {
   await withRunLock(run.id, async () => {
     if (!(await deps.repos.vrFillRepo.get(run.id, fillId))) throw new VrNotFoundError()
-    checkTotal((await deps.repos.vrFillRepo.listForRun(run.id)).filter((f) => f.id !== fillId))
+    const rows = (await deps.repos.vrFillRepo.listForRun(run.id)).filter((f) => f.id !== fillId)
+    checkTotal(rows)
+    checkBooks(rows, await deps.repos.vrCashRepo.listForRun(run.id))
     await deps.repos.vrFillRepo.deleteById(run.id, fillId)
   })
 }
@@ -140,6 +142,8 @@ export async function deleteVrCash(run: VrRunRow, cashId: number, deps: VrBookin
     const move = await deps.repos.vrCashRepo.get(run.id, cashId)
     if (!move) throw new VrNotFoundError()
     if (move.kind === 'open') throw new DomainError('vr-open-required')
+    const moves = (await deps.repos.vrCashRepo.listForRun(run.id)).filter((m) => m.id !== cashId)
+    checkBooks(await deps.repos.vrFillRepo.listForRun(run.id), moves)
     await deps.repos.vrCashRepo.deleteById(run.id, cashId)
   })
 }

@@ -83,6 +83,21 @@ describe('fills that the books cannot hold', () => {
     expect((await s.req('GET', '/api/vr/runs')).status).toBe(200)
   })
 
+  test('a delete that would push the Pool out of range is refused and the sell stays', async () => {
+    const s = await withRun()
+    const day = '2026-11-04'
+    const big = { shares: 1_000_000_000, price: '90071.9925', fee: '0', filledOn: day }
+    expect((await s.req('POST', s.url, { ...big, side: 'buy' })).status).toBe(201)
+    const sell = await s.req('POST', s.url, { ...big, side: 'sell' })
+    expect(sell.status).toBe(201)
+    expect((await s.req('POST', s.url, { side: 'buy', shares: 1, price: '0.0001', fee: '21474836.47', filledOn: day })).status).toBe(201)
+    expect(await s.req('DELETE', `${s.url}/${sell.body.id}`)).toEqual({ status: 422, body: { error: 'vr-too-large' } })
+    expect(s.f.vr.fills.map((f) => f.id)).toContain(sell.body.id)
+    expect(s.f.vr.fills).toHaveLength(3)
+    expect((await s.req('GET', `/api/vr/runs/${s.id}`)).status).toBe(200)
+    expect((await s.req('GET', '/api/vr/runs')).status).toBe(200)
+  })
+
   test('the same through PUT leaves the fill as it was', async () => {
     const s = await withRun()
     const fillId = await seedFill(s, s.id, 'buy', 10, 451_500n, 0, '2026-11-01')

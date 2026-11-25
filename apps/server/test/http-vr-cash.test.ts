@@ -84,6 +84,25 @@ describe('cash moves that the books cannot hold', () => {
   })
 })
 
+describe('a cash delete that the books cannot hold', () => {
+  test('deleting a withdrawal that keeps the Pool under the safe-integer limit is refused and the move stays', async () => {
+    const s = await withRun()
+    const fills = `/api/vr/runs/${s.id}/fills`
+    const withdraw = await s.req('POST', s.url, { kind: 'withdraw', amountCents: -2_000_000_000, movedOn: '2026-11-05' })
+    expect((await s.req('POST', s.url, { kind: 'deposit', amountCents: 1_000_000_000, movedOn: '2026-11-05' })).status).toBe(201)
+    const big = { shares: 1_000_000_000, fee: '0', filledOn: '2026-11-04' }
+    expect((await s.req('POST', fills, { ...big, side: 'buy', price: '0.0001' })).status).toBe(201)
+    expect((await s.req('POST', fills, { ...big, side: 'sell', price: '90071.9925' })).status).toBe(201)
+    expect((await s.req('GET', `/api/vr/runs/${s.id}`)).status).toBe(200)
+    expect(await s.req('DELETE', `${s.url}/${withdraw.body.id}`)).toEqual({ status: 422, body: { error: 'vr-too-large' } })
+    expect(s.f.vr.cash.map((m) => m.id)).toContain(withdraw.body.id)
+    expect(s.f.vr.cash).toHaveLength(3)
+    expect((await s.req('GET', s.url)).body).toHaveLength(3)
+    expect((await s.req('GET', `/api/vr/runs/${s.id}`)).status).toBe(200)
+    expect((await s.req('GET', '/api/vr/runs')).status).toBe(200)
+  })
+})
+
 describe('PUT /api/vr/runs/:id/cash/:cashId', () => {
   test('edits amount, date and note of a deposit; the kind stays', async () => {
     const s = await withRun()
