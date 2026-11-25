@@ -3,7 +3,7 @@ import { parseUsd } from '@st/core/money'
 import type { ExtractResult } from '@st/ingest'
 import { ingestCapture, type FillBookingDeps, type PendingDecisionPatch, type PendingFillRow } from '../src/domain/booking'
 import type { DetectedValues, FinalValues, ReviewedPendingRow } from '../src/domain/vision-review'
-import type { pendingFills } from '../src/db/schema'
+import type { mrPendingFills } from '../src/db/schema'
 import { fakeRepos, silentNotifier } from './booking-fakes'
 
 export const TODAY = '2026-11-06'
@@ -16,11 +16,11 @@ export const final = (over: Partial<FinalValues> = {}): FinalValues => ({
   side: 'buy', shares: 10, price: parseUsd('180.50'), filledOn: '2026-11-04', fee: 12, ...over,
 })
 
-// A pending_fills row must carry every column resolveReview reads; a rename fails tsc here.
-export const asReviewed = (r: typeof pendingFills.$inferSelect): ReviewedPendingRow => r
+// An mr_pending_fills row must carry every column resolveReview reads; a rename fails tsc here.
+export const asReviewed = (r: typeof mrPendingFills.$inferSelect): ReviewedPendingRow => r
 
-// Every key the confirm patch writes must be a pending_fills column; a rename fails tsc here.
-export const asPatch = (p: PendingDecisionPatch): Pick<typeof pendingFills.$inferInsert, keyof PendingDecisionPatch> => p
+// Every key the confirm patch writes must be a mr_pending_fills column; a rename fails tsc here.
+export const asPatch = (p: PendingDecisionPatch): Pick<typeof mrPendingFills.$inferInsert, keyof PendingDecisionPatch> => p
 
 export const legacyRow = (): ReviewedPendingRow => ({
   id: 1, runId: 1, ticker: 'AAPL', detectedSide: null, detectedShares: null, detectedPrice: null,

@@ -145,7 +145,7 @@ describeIf('db integration', () => {
       await repos.captureImageRepo.setKeep(captureId)
       const id = await repos.pendingRepo.insert({ runId, captureId, bucketIdx: null, side: 'buy', ticker: 'V', shares: 1, price: 100n, fee: 5, filledOn: '2026-02-10', status: 'pending', ...NO_SNAPSHOT })
       expect(await repos.pendingRepo.decide(id, 'confirmed', { side: 'buy', shares: 1, price: 100n, fee: 0, filledOn: '2026-02-10', bucketIdx: 0, feeOverride: 'cleared' })).toBe(true)
-      expect(await selectRows(sql`select fee_override from pending_fills where id = ${id}`)).toEqual([{ fee_override: 'cleared' }])
+      expect(await selectRows(sql`select fee_override from mr_pending_fills where id = ${id}`)).toEqual([{ fee_override: 'cleared' }])
       expect(await repos.visionReviewRepo.listUnfrozenKept()).toContainEqual(expect.objectContaining({ id, feeOverride: 'cleared' }))
     })
   })

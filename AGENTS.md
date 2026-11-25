@@ -28,7 +28,7 @@ packages/          each package also has package.json tsconfig.json
 apps/server/       drizzle.config.ts package.json tsconfig.json
   src/
     main.ts
-    db/schema.ts db/client.ts db/db-type.ts db/repos.ts db/repos-bars.ts db/repos-sim.ts db/repos-vision.ts
+    db/schema.ts db/client.ts db/db-type.ts db/repos.ts db/repos-mr-runs.ts db/repos-bars.ts db/repos-sim.ts db/repos-vision.ts
     domain/booking.ts domain/confirm-pending.ts domain/capture-claim.ts domain/capture-corrections.ts domain/capture-dedup.ts domain/booking-notify.ts domain/capture-image.ts domain/correction-types.ts domain/corrections.ts domain/notice-feed.ts domain/order-ops.ts domain/order-type.ts domain/pending-flags.ts domain/ppm.ts domain/recompute.ts domain/repo-types.ts domain/require-run.ts domain/retire-legs.ts domain/run-lock.ts domain/sell-attribute.ts domain/sell-match.ts domain/vision-review.ts
     wire/deps.ts wire/capture.ts wire/capture-pending-message.ts wire/capture-bad-extract-message.ts wire/booking-notifier.ts wire/broadcast.ts wire/boot-sweeps.ts wire/send.ts wire/capture-route.ts
     pipeline/day.ts pipeline/wire.ts
@@ -36,8 +36,8 @@ apps/server/       drizzle.config.ts package.json tsconfig.json
     sim/sim.ts sim/serialize.ts
     http/app.ts http/auth.ts http/booking-deps.ts http/params.ts http/routes/{runs,fills,pending,corrections,sim,settings,notifications,vision-review,captures}.ts
   db/              README.md
-  db/migrations/   0000_fantastic_thunderbolts.sql … 0012_fearless_darkhawk.sql (+ meta/)
-  test/            *.test.ts per area (booking, booking-* [guards, capture-*, confirm-overrides, sell-legs, sell-cancel, sell-notify, future-date, order-type], rebooking, rebooking-* [delete, legs, delete-legs], retire-legs, sell-attribution, sell-attribute, sell-attribute-cases, sell-matching, order-type, pending-flags, sell-bucket-override, http-bucket-override, booking-notifier, broadcast, vision-review, vision-review-* [fee, reject], notice-feed, capture-bad-extract-message, capture-claim, capture-image, capture-replies, capture-route, corrections, fake-corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, send, calendar-2028, day, day-notices, day-failures, day-unconfirmed, day-data-error, day-run-lock, migration-sql, sim, sim-cut-loss, sim-run, wire, wire-capture-* [photo, routing, confirm, status, choice], http-* [incl. runs-fills-gaps, runs-cutloss, fill-edit-legs, fill-delete-legs, future-date, captures], db*, confirm-keep-order, refreeze-kept, main-boot-order, repo-surface-types) + fake-corrections.ts fake-sim.ts http-fakes.ts booking-fakes.ts bars-fakes.ts sell-fixture.ts sell-attribute-fixture.ts wire-capture-fakes.ts rebooking-fixture.ts vision-review-fixture.ts sim-fixture.ts day-fakes.ts type-assert.ts
+  db/migrations/   0000_fantastic_thunderbolts.sql … 0015_strategy_runs_trim.sql (+ meta/)
+  test/            *.test.ts per area (booking, booking-* [guards, capture-*, confirm-overrides, sell-legs, sell-cancel, sell-notify, future-date, order-type], rebooking, rebooking-* [delete, legs, delete-legs], retire-legs, sell-attribution, sell-attribute, sell-attribute-cases, sell-matching, order-type, pending-flags, sell-bucket-override, http-bucket-override, booking-notifier, broadcast, vision-review, vision-review-* [fee, reject], notice-feed, capture-bad-extract-message, capture-claim, capture-image, capture-replies, capture-route, corrections, fake-corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, send, calendar-2028, day, day-notices, day-failures, day-unconfirmed, day-data-error, day-run-lock, migration-sql, sim, sim-cut-loss, sim-run, wire, wire-capture-* [photo, routing, confirm, status, choice], http-* [incl. runs-fills-gaps, runs-cutloss, fill-edit-legs, fill-delete-legs, future-date, captures], db* [incl. db-mr-split, db-run-scope], confirm-keep-order, refreeze-kept, main-boot-order, repo-surface-types) + fake-corrections.ts fake-sim.ts http-fakes.ts booking-fakes.ts bars-fakes.ts sell-fixture.ts sell-attribute-fixture.ts wire-capture-fakes.ts rebooking-fixture.ts vision-review-fixture.ts mr-split-fixture.ts sim-fixture.ts day-fakes.ts type-assert.ts
 apps/web/          package.json tsconfig.json index.html vite.config.ts tailwind.config.ts postcss.config.js .gitignore
 apps/web/src/      main.tsx App.tsx style.css api.ts api.call.ts api.sim.ts api.notices.ts api.types.ts api.pending.types.ts api.captures.types.ts autofee.ts defaultcost.ts errortext.ts format.ts pendingchoice.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts paging.ts priceHistory.ts simconfig.ts simerrors.ts simview.ts uploadlines.ts uploadpick.ts usd.ts visionreviewerrors.ts (+ colocated *.test.ts(x))
   testing/{dom,fetchStub,fillDialog,holdFetch,offline,pendingRow,pendingTable,runDetail,scrollShim,upload,visionReview}.ts   (shared test fixtures, no DOM needed at import time; fetchStub.test.ts)
@@ -59,7 +59,7 @@ scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-order-type.ts e2e-sim.ts
 - `bun run dev` is a pointer, not a server — run `bun run --cwd apps/server dev` (or `bun run --cwd apps/web dev`)
 - `docker compose up` (app listens on 127.0.0.1:8080 by default)
 - E2E smoke (see Test matrix for the scratch DB): `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun scripts/e2e.ts`
-- Drizzle migrations: edit `apps/server/src/db/schema.ts`, then `bun run --cwd apps/server db:generate` (writes SQL + `meta/` snapshots into `apps/server/db/migrations/`). They are applied automatically at server startup (`applyMigrations` in `db/client.ts`, resolves from `process.cwd()` — hence all entry points run from the repo root); `db:migrate` exists for a manual apply. Hand-appended statements (the backfills in 0007 and 0010) are pinned in `apps/server/test/migration-sql.test.ts`, because regenerating a migration drops them.
+- Drizzle migrations: edit `apps/server/src/db/schema.ts`, then `bun run --cwd apps/server db:generate` (writes SQL + `meta/` snapshots into `apps/server/db/migrations/`). They are applied automatically at server startup (`applyMigrations` in `db/client.ts`, resolves from `process.cwd()` — hence all entry points run from the repo root); `db:migrate` exists for a manual apply. Hand-appended statements (the backfills in 0007 and 0010) are pinned in `apps/server/test/migration-sql.test.ts`, because regenerating a migration drops them. Migrations `0013`–`0015` (the `mr_` split) are hand-written (created with `drizzle-kit generate --custom`) and pinned in `apps/server/test/migration-sql.test.ts`; the last snapshot was aligned with `schema.ts` by hand.
 
 ## Test matrix
 
@@ -69,7 +69,7 @@ scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-order-type.ts e2e-sim.ts
 | DB integration | yes | `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun test` |
 | Operator E2E smoke | yes | `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun scripts/e2e.ts` (run from repo root) |
 
-`scripts/e2e.ts` never touches the `st_test` tables: it creates a fresh `st_e2e_*` scratch DB, runs migrations on it, drives the real HTTP app + capture pipeline against it (fake vision endpoint on 127.0.0.1), and always drops the scratch DB — including on failure. (The DB suite likewise creates and drops its own scratch databases: `st_janitor_*` in `apps/server/test/db-vision-janitor.test.ts` and `st_simlist_*` in `apps/server/test/db-sim-list.test.ts`.) Bars, closes and the calendar cross-check are injected, so it works offline.
+`scripts/e2e.ts` never touches the `st_test` tables: it creates a fresh `st_e2e_*` scratch DB, runs migrations on it, drives the real HTTP app + capture pipeline against it (fake vision endpoint on 127.0.0.1), and always drops the scratch DB — including on failure. (The DB suite likewise creates and drops its own scratch databases: `st_janitor_*` in `apps/server/test/db-vision-janitor.test.ts`, `st_simlist_*` in `apps/server/test/db-sim-list.test.ts` and `st_mrsplit_*` in `apps/server/test/db-mr-split.test.ts`.) Bars, closes and the calendar cross-check are injected, so it works offline.
 
 - Test DB: `docker run -d --name st-mariadb-test -e MARIADB_ROOT_PASSWORD=test -e MARIADB_DATABASE=st_test -p 127.0.0.1:3307:3306 mariadb:11`
 
@@ -82,6 +82,7 @@ The NYSE calendar is committed static data (`NYSE_YEARS` in `packages/calendar/s
 - No source file > ~300 lines; split by responsibility; no flat god-modules.
 - `packages/*` never import `apps/*`.
 - Money via `@st/core/money` bigint myriadths — never float; cost in integer ppm.
+- Strategy-specific tables carry a prefix (`mr_` mean reversion; `vr_` and `ib_` reserved). Shared tables: `strategy_runs`, `captures`, `capture_images`, `notifications`, `settings`, `price_history`, `bar_coverage`. `runRepo` joins `mr_runs`, so it returns mean-reversion runs only.
 - All user-facing copy via en/ko catalogs.
 - Schedules in `America/New_York`.
 - `fetch` always injectable for tests.

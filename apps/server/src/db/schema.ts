@@ -8,24 +8,28 @@ export const strategyRuns = mysqlTable('strategy_runs', {
   strategyKey: varchar('strategy_key', { length: 64 }).notNull(),
   ticker: varchar('ticker', { length: 16 }).notNull(),
   name: varchar('name', { length: 128 }).notNull().unique(),
-  poolCents: int('pool_cents').notNull(),
   costPpm: int('cost_ppm').notNull(),
-  buyGapPpm: int('buy_gap_ppm').notNull().default(0),
-  sellGapPpm: int('sell_gap_ppm').notNull().default(0),
-  cutLossPpm: int('cut_loss_ppm').notNull().default(0),
   status: mysqlEnum('status', ['active', 'paused', 'closed']).notNull().default('active'),
-  stateJson: text('state_json').notNull(),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 })
 
-export const poolEdits = mysqlTable('pool_edits', {
+export const mrRuns = mysqlTable('mr_runs', {
+  runId: int('run_id').primaryKey(),
+  poolCents: int('pool_cents').notNull(),
+  buyGapPpm: int('buy_gap_ppm').notNull().default(0),
+  sellGapPpm: int('sell_gap_ppm').notNull().default(0),
+  cutLossPpm: int('cut_loss_ppm').notNull().default(0),
+  stateJson: text('state_json').notNull(),
+})
+
+export const mrPoolEdits = mysqlTable('mr_pool_edits', {
   id: int('id').primaryKey().autoincrement(),
   runId: int('run_id').notNull(),
   poolCents: int('pool_cents').notNull(),
   editedAt: timestamp('edited_at', { mode: 'string' }).notNull().defaultNow(),
 })
 
-export const buckets = mysqlTable('buckets', {
+export const mrBuckets = mysqlTable('mr_buckets', {
   id: int('id').primaryKey().autoincrement(),
   runId: int('run_id').notNull(),
   idx: int('idx').notNull(),
@@ -36,7 +40,7 @@ export const buckets = mysqlTable('buckets', {
   filledOn: date('filled_on', { mode: 'string' }),
 })
 
-export const orders = mysqlTable('orders', {
+export const mrOrders = mysqlTable('mr_orders', {
   id: int('id').primaryKey().autoincrement(),
   runId: int('run_id').notNull(),
   tradeDate: date('trade_date', { mode: 'string' }).notNull(),
@@ -49,8 +53,8 @@ export const orders = mysqlTable('orders', {
   cancelReason: varchar('cancel_reason', { length: 32 }),
   reportedAt: timestamp('reported_at', { mode: 'string' }),
 }, (t) => ({
-  runTradeDateIdx: index('orders_run_trade_date_idx').on(t.runId, t.tradeDate),
-  tradeDateIdx: index('orders_trade_date_idx').on(t.tradeDate),
+  runTradeDateIdx: index('mr_orders_run_trade_date_idx').on(t.runId, t.tradeDate),
+  tradeDateIdx: index('mr_orders_trade_date_idx').on(t.tradeDate),
 }))
 
 export const captures = mysqlTable('captures', {
@@ -64,7 +68,7 @@ export const captures = mysqlTable('captures', {
   runHashUnique: uniqueIndex('captures_run_hash_unique').on(t.runId, t.imageHash),
 }))
 
-export const pendingFills = mysqlTable('pending_fills', {
+export const mrPendingFills = mysqlTable('mr_pending_fills', {
   id: int('id').primaryKey().autoincrement(),
   runId: int('run_id').notNull(),
   captureId: int('capture_id'),
@@ -105,7 +109,7 @@ export const captureImages = mysqlTable('capture_images', {
 })
 
 // One frozen detected-vs-final record per resolved fill.
-export const visionReviews = mysqlTable('vision_reviews', {
+export const mrVisionReviews = mysqlTable('mr_vision_reviews', {
   id: int('id').primaryKey().autoincrement(),
   runId: int('run_id').notNull(),
   captureId: int('capture_id').notNull(),
@@ -126,11 +130,11 @@ export const visionReviews = mysqlTable('vision_reviews', {
   feeOverridden: boolean('fee_overridden').notNull(),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 }, (t) => ({
-  pendingFillUnique: uniqueIndex('vision_reviews_pending_fill_unique').on(t.pendingFillId),
-  captureIdx: index('vision_reviews_capture_idx').on(t.captureId),
+  pendingFillUnique: uniqueIndex('mr_vision_reviews_pending_fill_unique').on(t.pendingFillId),
+  captureIdx: index('mr_vision_reviews_capture_idx').on(t.captureId),
 }))
 
-export const fillCorrections = mysqlTable('fill_corrections', {
+export const mrFillCorrections = mysqlTable('mr_fill_corrections', {
   id: int('id').primaryKey().autoincrement(),
   runId: int('run_id').notNull(),
   fillId: int('fill_id').notNull(),
@@ -146,10 +150,10 @@ export const fillCorrections = mysqlTable('fill_corrections', {
   status: mysqlEnum('status', ['open', 'applied', 'dismissed']).notNull().default('open'),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 }, (t) => ({
-  fillIdx: index('fill_corrections_fill_idx').on(t.fillId),
+  fillIdx: index('mr_fill_corrections_fill_idx').on(t.fillId),
 }))
 
-export const fills = mysqlTable('fills', {
+export const mrFills = mysqlTable('mr_fills', {
   id: int('id').primaryKey().autoincrement(),
   runId: int('run_id').notNull(),
   bucketIdx: int('bucket_idx').notNull(),
@@ -163,7 +167,7 @@ export const fills = mysqlTable('fills', {
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 })
 
-export const ledger = mysqlTable('ledger', {
+export const mrLedger = mysqlTable('mr_ledger', {
   id: int('id').primaryKey().autoincrement(),
   runId: int('run_id').notNull(),
   ts: timestamp('ts', { mode: 'string' }).notNull().defaultNow(),
@@ -180,7 +184,7 @@ export const notifications = mysqlTable('notifications', {
   sentAt: timestamp('sent_at', { mode: 'string' }).notNull().defaultNow(),
 })
 
-export const simRuns = mysqlTable('sim_runs', {
+export const mrSimRuns = mysqlTable('mr_sim_runs', {
   id: int('id').primaryKey().autoincrement(),
   ticker: varchar('ticker', { length: 16 }).notNull(),
   fromDate: date('from_date', { mode: 'string' }).notNull(),
@@ -194,10 +198,10 @@ export const simRuns = mysqlTable('sim_runs', {
   draft: boolean('draft').notNull().default(true),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 }, (t) => ({
-  draftCreatedIdx: index('sim_runs_draft_created_idx').on(t.draft, t.createdAt),
+  draftCreatedIdx: index('mr_sim_runs_draft_created_idx').on(t.draft, t.createdAt),
 }))
 
-export const simDays = mysqlTable('sim_days', {
+export const mrSimDays = mysqlTable('mr_sim_days', {
   id: int('id').primaryKey().autoincrement(),
   simRunId: int('sim_run_id').notNull(),
   tradeDate: date('trade_date', { mode: 'string' }).notNull(),
@@ -205,7 +209,7 @@ export const simDays = mysqlTable('sim_days', {
   stateJson: text('state_json').notNull(),
   eventsJson: text('events_json').notNull(),
 }, (t) => ({
-  simRunTradeIdx: index('sim_days_sim_run_trade_idx').on(t.simRunId, t.tradeDate),
+  simRunTradeIdx: index('mr_sim_days_sim_run_trade_idx').on(t.simRunId, t.tradeDate),
 }))
 
 export const settings = mysqlTable('settings', {

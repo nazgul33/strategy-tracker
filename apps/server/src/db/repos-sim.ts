@@ -29,7 +29,7 @@ export function getSimRepo(db: Db) {
   return {
     // New runs are drafts until finalize().
     async insertRun(input: { ticker: string; fromDate: string; toDate: string; poolCents: number; costPpm: number; buyGapPpm: number; sellGapPpm: number; cutLossPpm: number; paramsJson: string }): Promise<number> {
-      const [res] = await db.insert(s.simRuns).values({
+      const [res] = await db.insert(s.mrSimRuns).values({
         ticker: input.ticker, fromDate: input.fromDate, toDate: input.toDate,
         poolCents: input.poolCents, costPpm: input.costPpm, buyGapPpm: input.buyGapPpm, sellGapPpm: input.sellGapPpm,
         cutLossPpm: input.cutLossPpm, paramsJson: input.paramsJson, draft: true,
@@ -38,56 +38,56 @@ export function getSimRepo(db: Db) {
     },
     async insertDays(rows: DayRow[]) {
       if (!rows.length) return
-      await db.insert(s.simDays).values(dayValues(rows))
+      await db.insert(s.mrSimDays).values(dayValues(rows))
     },
     // Re-run of a draft: config and day set change together or not at all. The config UPDATE is
     // conditional on draft = true and holds the row lock until commit, so a run saved or discarded
     // after the caller's check is left alone (false) and a concurrent save waits for this write.
     async rewriteDraft(id: number, v: ConfigRow, rows: DayRow[]): Promise<boolean> {
       return db.transaction(async (tx) => {
-        const res = await tx.update(s.simRuns).set(configValues(v)).where(and(eq(s.simRuns.id, id), eq(s.simRuns.draft, true)))
+        const res = await tx.update(s.mrSimRuns).set(configValues(v)).where(and(eq(s.mrSimRuns.id, id), eq(s.mrSimRuns.draft, true)))
         if (affected(res) === 0) return false
-        await tx.delete(s.simDays).where(eq(s.simDays.simRunId, id))
-        if (rows.length) await tx.insert(s.simDays).values(dayValues(rows))
+        await tx.delete(s.mrSimDays).where(eq(s.mrSimDays.simRunId, id))
+        if (rows.length) await tx.insert(s.mrSimDays).values(dayValues(rows))
         return true
       })
     },
     // Draft -> saved, once: false when the run is missing or already saved.
     async finalize(id: number): Promise<boolean> {
-      const res = await db.update(s.simRuns).set({ draft: false }).where(and(eq(s.simRuns.id, id), eq(s.simRuns.draft, true)))
+      const res = await db.update(s.mrSimRuns).set({ draft: false }).where(and(eq(s.mrSimRuns.id, id), eq(s.mrSimRuns.draft, true)))
       return affected(res) > 0
     },
     // Drafts only: a saved run is never deleted here.
     async deleteRun(id: number): Promise<boolean> {
       return db.transaction(async (tx) => {
-        const res = await tx.delete(s.simRuns).where(and(eq(s.simRuns.id, id), eq(s.simRuns.draft, true)))
+        const res = await tx.delete(s.mrSimRuns).where(and(eq(s.mrSimRuns.id, id), eq(s.mrSimRuns.draft, true)))
         if (affected(res) === 0) return false
-        await tx.delete(s.simDays).where(eq(s.simDays.simRunId, id))
+        await tx.delete(s.mrSimDays).where(eq(s.mrSimDays.simRunId, id))
         return true
       })
     },
     async sweepDrafts(createdBefore: Date): Promise<number> {
       return db.transaction(async (tx) => {
-        const stale = await tx.select({ id: s.simRuns.id }).from(s.simRuns)
-          .where(and(eq(s.simRuns.draft, true), lt(s.simRuns.createdAt, sql`FROM_UNIXTIME(${Math.floor(createdBefore.getTime() / 1000)})`)))
+        const stale = await tx.select({ id: s.mrSimRuns.id }).from(s.mrSimRuns)
+          .where(and(eq(s.mrSimRuns.draft, true), lt(s.mrSimRuns.createdAt, sql`FROM_UNIXTIME(${Math.floor(createdBefore.getTime() / 1000)})`)))
           .for('update')
         const ids: number[] = stale.map((r) => r.id)
         if (ids.length === 0) return 0
-        await tx.delete(s.simDays).where(inArray(s.simDays.simRunId, ids))
-        const res = await tx.delete(s.simRuns).where(and(inArray(s.simRuns.id, ids), eq(s.simRuns.draft, true)))
+        await tx.delete(s.mrSimDays).where(inArray(s.mrSimDays.simRunId, ids))
+        const res = await tx.delete(s.mrSimRuns).where(and(inArray(s.mrSimRuns.id, ids), eq(s.mrSimRuns.draft, true)))
         // The ids, not just the count: this deletes rows nothing else can restore,
         // so an unexpected sweep must be reconstructible from the log.
         console.log(`[simRepo] swept draft sim run ids: ${ids.join(', ')}`)
         return affected(res)
       })
     },
-    async listRuns() { return db.select().from(s.simRuns).orderBy(desc(s.simRuns.id)) },
+    async listRuns() { return db.select().from(s.mrSimRuns).orderBy(desc(s.mrSimRuns.id)) },
     async getRun(id: number): Promise<SimRunRow | null> {
-      const rows = await db.select().from(s.simRuns).where(eq(s.simRuns.id, id))
+      const rows = await db.select().from(s.mrSimRuns).where(eq(s.mrSimRuns.id, id))
       return rows[0] ?? null
     },
     async listDays(id: number) {
-      return db.select().from(s.simDays).where(eq(s.simDays.simRunId, id)).orderBy(s.simDays.tradeDate)
+      return db.select().from(s.mrSimDays).where(eq(s.mrSimDays.simRunId, id)).orderBy(s.mrSimDays.tradeDate)
     },
   }
 }

@@ -1,203 +1,116 @@
-import type { Bucket, ClosedBucket, RunState } from '@st/core'
 import { eq, and, sql, inArray, isNull, lt, desc } from 'drizzle-orm'
 import * as s from './schema'
-import type { Db, DbOrTx } from './db-type'
+import type { Db } from './db-type'
+import { getMrRunRepos } from './repos-mr-runs'
 import { getSimRepo } from './repos-sim'
 import { getBarRepos } from './repos-bars'
 import { getVisionRepos } from './repos-vision'
 import type { CorrectionRepo, CorrectionRow } from '../domain/correction-types'
 import type {
-  CaptureRepo, CaptureStatus, FillPatch, FillRepo, LedgerRepo, NewCapture, NewFill, NewLedgerEntry, NewNotification, NewOrder, NewRun,
-  NotificationRepo, OrderRepo, OrderRecord, PendingRepo, PendingRow, RunRepo, RunRow, RunStatus,
+  CaptureRepo, CaptureStatus, FillPatch, FillRepo, LedgerRepo, NewCapture, NewFill, NewLedgerEntry, NewNotification,
+  NotificationRepo, OrderRepo, OrderRecord, PendingRepo, PendingRow,
 } from '../domain/repo-types'
 
-// bigints are stored as strings in state_json
-type StoredBucket = Omit<Bucket, 'buyPrice'> & { buyPrice?: string | null }
-type StoredClosed = Omit<ClosedBucket, 'buyPrice' | 'soldPrice'> & { buyPrice: string; soldPrice: string }
-
-function serializeState(state: RunState): string {
-  return JSON.stringify(state, (_, v) => typeof v === 'bigint' ? v.toString() : v)
-}
-
 export function getRepos(db: Db) {
-  async function saveStateWith(q: DbOrTx, runId: number, state: RunState) {
-    await q.update(s.strategyRuns).set({ stateJson: serializeState(state) }).where(eq(s.strategyRuns.id, runId))
-    await q.delete(s.buckets).where(eq(s.buckets.runId, runId))
-    if (state.buckets.length) {
-      await q.insert(s.buckets).values(state.buckets.map((b) => ({
-        runId, idx: b.index, state: b.state, shares: b.shares,
-        buyPriceMyriadths: b.state === 'empty' ? null : b.buyPrice,
-        buyFeeCents: b.buyFeeCents, filledOn: b.state === 'empty' ? null : b.filledOn,
-      })))
-    }
-  }
-
-  const runRepo = {
-    async list(): Promise<RunRow[]> { return db.select().from(s.strategyRuns) },
-    async get(id: number): Promise<RunRow | null> {
-      const rows = await db.select().from(s.strategyRuns).where(eq(s.strategyRuns.id, id))
-      return rows[0] ?? null
-    },
-    async getMany(ids: number[]): Promise<RunRow[]> {
-      if (ids.length === 0) return []
-      return db.select().from(s.strategyRuns).where(inArray(s.strategyRuns.id, ids))
-    },
-    async create(input: NewRun): Promise<number> {
-      const state = input.initialRunState ?? { buckets: [], cashCents: input.poolCents, closed: [], ages: {} }
-      return db.transaction(async (tx) => {
-        const [res] = await tx.insert(s.strategyRuns).values({
-          strategyKey: input.strategyKey, ticker: input.ticker, name: input.name,
-          poolCents: input.poolCents, costPpm: input.costPpm, stateJson: serializeState(state),
-          buyGapPpm: input.buyGapPpm ?? 0, sellGapPpm: input.sellGapPpm ?? 0,
-          cutLossPpm: input.cutLossPpm ?? 0,
-        })
-        const runId = res.insertId
-        if (input.initialRunState) {
-          await saveStateWith(tx, runId, input.initialRunState)
-        }
-        return runId
-      })
-    },
-    async updateStatus(id: number, status: RunStatus): Promise<void> {
-      await db.update(s.strategyRuns).set({ status }).where(eq(s.strategyRuns.id, id))
-    },
-    async updateStatusMany(ids: number[], from: RunStatus[], to: RunStatus): Promise<number> {
-      if (ids.length === 0 || from.length === 0) return 0
-      const [res] = await db.update(s.strategyRuns).set({ status: to })
-        .where(and(inArray(s.strategyRuns.id, ids), inArray(s.strategyRuns.status, from)))
-      return res.affectedRows
-    },
-    async updatePool(id: number, poolCents: number): Promise<void> {
-      await db.update(s.strategyRuns).set({ poolCents }).where(eq(s.strategyRuns.id, id))
-    },
-    async updateOrderShaping(id: number, v: { buyGapPpm: number; sellGapPpm: number; cutLossPpm: number }): Promise<void> {
-      await db.update(s.strategyRuns).set({ buyGapPpm: v.buyGapPpm, sellGapPpm: v.sellGapPpm, cutLossPpm: v.cutLossPpm }).where(eq(s.strategyRuns.id, id))
-    },
-  } satisfies RunRepo
-
-  const bucketRepo = {
-    async saveState(runId: number, state: RunState) {
-      await db.transaction(async (tx) => saveStateWith(tx, runId, state))
-    },
-    async saveStateWithOrders(runId: number, state: RunState, orders: NewOrder[]) {
-      await db.transaction(async (tx) => {
-        if (orders.length) await tx.insert(s.orders).values(orders)
-        await saveStateWith(tx, runId, state)
-      })
-    },
-    async loadState(runId: number): Promise<RunState> {
-      const rows = await db.select().from(s.strategyRuns).where(eq(s.strategyRuns.id, runId))
-      const raw: { buckets?: StoredBucket[]; cashCents: number; closed?: StoredClosed[]; ages?: Record<string, number> } = JSON.parse(rows[0].stateJson)
-      // rehydrate bigints and age keys
-      const rehydrateBucket = (b: StoredBucket) => ({ ...b, buyPrice: BigInt(b.buyPrice ?? 0) })
-      const ages: Record<number, number> = {}
-      for (const k of Object.keys(raw.ages ?? {})) ages[Number(k)] = raw.ages![k]
-      return {
-        buckets: (raw.buckets ?? []).map(rehydrateBucket),
-        cashCents: raw.cashCents,
-        closed: (raw.closed ?? []).map((c) => ({ ...c, buyPrice: BigInt(c.buyPrice), soldPrice: BigInt(c.soldPrice) })),
-        ages,
-      }
-    },
-  }
+  const { runRepo, bucketRepo } = getMrRunRepos(db)
 
   const orderRepo = {
     async insertMany(orders) {
       if (!orders.length) return
-      await db.insert(s.orders).values(orders)
+      await db.insert(s.mrOrders).values(orders)
     },
     async get(id): Promise<OrderRecord | null> {
-      const rows = await db.select().from(s.orders).where(eq(s.orders.id, id))
+      const rows = await db.select().from(s.mrOrders).where(eq(s.mrOrders.id, id))
       return rows[0] ?? null
     },
     async listForDate(date) {
-      return db.select().from(s.orders).where(sql`${s.orders.tradeDate} = ${date}`)
+      return db.select().from(s.mrOrders).where(sql`${s.mrOrders.tradeDate} = ${date}`)
     },
     async markStale(date) {
-      const [res] = await db.update(s.orders).set({ status: 'stale' }).where(and(eq(s.orders.status, 'open'), sql`${s.orders.tradeDate} < ${date}`))
+      const [res] = await db.update(s.mrOrders).set({ status: 'stale' }).where(and(eq(s.mrOrders.status, 'open'), sql`${s.mrOrders.tradeDate} < ${date}`))
       return res.affectedRows
     },
     async setStatus(id, status, cancelReason?) {
-      await db.update(s.orders)
+      await db.update(s.mrOrders)
         .set({ status, ...(cancelReason !== undefined ? { cancelReason } : {}) })
-        .where(eq(s.orders.id, id))
+        .where(eq(s.mrOrders.id, id))
     },
     async listForRun(runId, date?) {
-      if (date) return db.select().from(s.orders).where(and(eq(s.orders.runId, runId), sql`${s.orders.tradeDate} = ${date}`))
-      return db.select().from(s.orders).where(eq(s.orders.runId, runId))
+      if (date) return db.select().from(s.mrOrders).where(and(eq(s.mrOrders.runId, runId), sql`${s.mrOrders.tradeDate} = ${date}`))
+      return db.select().from(s.mrOrders).where(eq(s.mrOrders.runId, runId))
     },
     async listForRunFrom(runId, fromDate) {
-      return db.select().from(s.orders).where(and(eq(s.orders.runId, runId), sql`${s.orders.tradeDate} >= ${fromDate}`)).orderBy(s.orders.id)
+      return db.select().from(s.mrOrders).where(and(eq(s.mrOrders.runId, runId), sql`${s.mrOrders.tradeDate} >= ${fromDate}`)).orderBy(s.mrOrders.id)
     },
     async listUnreportedStale(runId) {
-      return db.select().from(s.orders)
-        .where(and(eq(s.orders.runId, runId), eq(s.orders.status, 'stale'), isNull(s.orders.reportedAt)))
-        .orderBy(s.orders.id)
+      return db.select().from(s.mrOrders)
+        .where(and(eq(s.mrOrders.runId, runId), eq(s.mrOrders.status, 'stale'), isNull(s.mrOrders.reportedAt)))
+        .orderBy(s.mrOrders.id)
     },
     async markReported(ids) {
       if (!ids.length) return
-      await db.update(s.orders).set({ reportedAt: sql`now()` }).where(inArray(s.orders.id, ids))
+      await db.update(s.mrOrders).set({ reportedAt: sql`now()` }).where(inArray(s.mrOrders.id, ids))
     },
   } satisfies OrderRepo
 
   const fillRepo = {
-    async insert(fill: NewFill): Promise<void> { await db.insert(s.fills).values(fill) },
-    async listForRun(runId: number) { return db.select().from(s.fills).where(eq(s.fills.runId, runId)).orderBy(s.fills.id) },
+    async insert(fill: NewFill): Promise<void> { await db.insert(s.mrFills).values(fill) },
+    async listForRun(runId: number) { return db.select().from(s.mrFills).where(eq(s.mrFills.runId, runId)).orderBy(s.mrFills.id) },
     // Run-scoped guard: a foreign fillId can never be touched. Field names
-    // match the fills schema; price is bigint myriadths.
+    // match the mr_fills schema; price is bigint myriadths.
     async update(runId: number, fillId: number, patch: FillPatch): Promise<void> {
-      await db.update(s.fills).set(patch).where(and(eq(s.fills.id, fillId), eq(s.fills.runId, runId)))
+      await db.update(s.mrFills).set(patch).where(and(eq(s.mrFills.id, fillId), eq(s.mrFills.runId, runId)))
     },
     // Run-scoped guard: a foreign fillId can never be touched. No-op when absent.
     async deleteById(runId: number, fillId: number): Promise<void> {
-      await db.delete(s.fills).where(and(eq(s.fills.id, fillId), eq(s.fills.runId, runId)))
+      await db.delete(s.mrFills).where(and(eq(s.mrFills.id, fillId), eq(s.mrFills.runId, runId)))
     },
   } satisfies FillRepo
 
   async function hasPendingWithStatus(captureId: number, status: 'pending' | 'confirmed'): Promise<boolean> {
-    const rows = await db.select({ id: s.pendingFills.id }).from(s.pendingFills)
-      .where(and(eq(s.pendingFills.captureId, captureId), eq(s.pendingFills.status, status))).limit(1)
+    const rows = await db.select({ id: s.mrPendingFills.id }).from(s.mrPendingFills)
+      .where(and(eq(s.mrPendingFills.captureId, captureId), eq(s.mrPendingFills.status, status))).limit(1)
     return rows.length > 0
   }
 
   const pendingRepo = {
-    async insert(p) { const [r] = await db.insert(s.pendingFills).values(p); return r.insertId },
-    async listPending() { return db.select().from(s.pendingFills).where(eq(s.pendingFills.status, 'pending')) },
+    async insert(p) { const [r] = await db.insert(s.mrPendingFills).values(p); return r.insertId },
+    async listPending() { return db.select().from(s.mrPendingFills).where(eq(s.mrPendingFills.status, 'pending')) },
     async hasLiveForCapture(captureId) { return hasPendingWithStatus(captureId, 'pending') },
     async hasConfirmedForCapture(captureId) { return hasPendingWithStatus(captureId, 'confirmed') },
-    async get(id): Promise<PendingRow | null> { const rows = await db.select().from(s.pendingFills).where(eq(s.pendingFills.id, id)); return rows[0] ?? null },
+    async get(id): Promise<PendingRow | null> { const rows = await db.select().from(s.mrPendingFills).where(eq(s.mrPendingFills.id, id)); return rows[0] ?? null },
     async decide(id, status, edited?) {
       const patch = { status, ...edited }
-      const [res] = await db.update(s.pendingFills).set(patch).where(and(eq(s.pendingFills.id, id), eq(s.pendingFills.status, 'pending')))
+      const [res] = await db.update(s.mrPendingFills).set(patch).where(and(eq(s.mrPendingFills.id, id), eq(s.mrPendingFills.status, 'pending')))
       return res.affectedRows > 0
     },
   } satisfies PendingRepo
 
   const correctionRepo = {
-    async insert(c) { const [r] = await db.insert(s.fillCorrections).values(c); return r.insertId },
+    async insert(c) { const [r] = await db.insert(s.mrFillCorrections).values(c); return r.insertId },
     async get(id): Promise<CorrectionRow | null> {
-      const rows = await db.select().from(s.fillCorrections).where(eq(s.fillCorrections.id, id))
+      const rows = await db.select().from(s.mrFillCorrections).where(eq(s.mrFillCorrections.id, id))
       return rows[0] ?? null
     },
     async listOpen() {
-      return db.select().from(s.fillCorrections).where(eq(s.fillCorrections.status, 'open')).orderBy(s.fillCorrections.id)
+      return db.select().from(s.mrFillCorrections).where(eq(s.mrFillCorrections.status, 'open')).orderBy(s.mrFillCorrections.id)
     },
     // Same "only from open" guard as pendingRepo.decide.
     async decide(id, status) {
-      const [res] = await db.update(s.fillCorrections).set({ status })
-        .where(and(eq(s.fillCorrections.id, id), eq(s.fillCorrections.status, 'open')))
+      const [res] = await db.update(s.mrFillCorrections).set({ status })
+        .where(and(eq(s.mrFillCorrections.id, id), eq(s.mrFillCorrections.status, 'open')))
       return res.affectedRows > 0
     },
     // Applied corrections never block; dismissed ones stick ("I checked, the booked price is right").
     // The caller drops snapshot-stale rows.
     async listBlocking(fillId, proposedPrice) {
-      return db.select().from(s.fillCorrections)
-        .where(and(eq(s.fillCorrections.fillId, fillId), eq(s.fillCorrections.proposedPrice, proposedPrice), inArray(s.fillCorrections.status, ['open', 'dismissed'])))
-        .orderBy(s.fillCorrections.id)
+      return db.select().from(s.mrFillCorrections)
+        .where(and(eq(s.mrFillCorrections.fillId, fillId), eq(s.mrFillCorrections.proposedPrice, proposedPrice), inArray(s.mrFillCorrections.status, ['open', 'dismissed'])))
+        .orderBy(s.mrFillCorrections.id)
     },
     async hasOpenForCapture(captureId) {
-      const rows = await db.select({ id: s.fillCorrections.id }).from(s.fillCorrections)
-        .where(and(eq(s.fillCorrections.captureId, captureId), eq(s.fillCorrections.status, 'open'))).limit(1)
+      const rows = await db.select({ id: s.mrFillCorrections.id }).from(s.mrFillCorrections)
+        .where(and(eq(s.mrFillCorrections.captureId, captureId), eq(s.mrFillCorrections.status, 'open'))).limit(1)
       return rows.length > 0
     },
   } satisfies CorrectionRepo
@@ -225,8 +138,8 @@ export function getRepos(db: Db) {
   } satisfies CaptureRepo
 
   const ledgerRepo = {
-    async insert(l: NewLedgerEntry): Promise<void> { await db.insert(s.ledger).values(l) },
-    async listForRun(runId: number) { return db.select().from(s.ledger).where(eq(s.ledger.runId, runId)) },
+    async insert(l: NewLedgerEntry): Promise<void> { await db.insert(s.mrLedger).values(l) },
+    async listForRun(runId: number) { return db.select().from(s.mrLedger).where(eq(s.mrLedger.runId, runId)) },
   } satisfies LedgerRepo
 
   const notificationRepo = {
@@ -250,7 +163,7 @@ export function getRepos(db: Db) {
   }
   const poolEditRepo = {
     async insert(input: { runId: number; poolCents: number }) {
-      await db.insert(s.poolEdits).values({ runId: input.runId, poolCents: input.poolCents })
+      await db.insert(s.mrPoolEdits).values({ runId: input.runId, poolCents: input.poolCents })
     },
   }
   const simRepo = getSimRepo(db)

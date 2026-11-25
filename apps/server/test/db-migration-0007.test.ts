@@ -56,20 +56,20 @@ describeIf('db integration', () => {
       // The chunk's presence is also asserted without a database in
       // migration-sql.test.ts; here it is really executed.
       //
-      // Careful: that chunk is an unscoped `UPDATE sim_runs SET draft = 0`, so it
+      // Careful: that chunk is an unscoped `UPDATE mr_sim_runs SET draft = 0`, so it
       // clears the draft flag on every row in the shared test database. That is safe
       // only because bun runs test files sequentially and this describe block is the
       // last one in this file — keep it last, and keep any new draft assertion after
       // this test creating its own rows.
       const id = await repos.simRepo.insertRun(simInput())
-      await db.execute(sql.raw(`UPDATE sim_runs SET draft = 1 WHERE id = ${id}`))
+      await db.execute(sql.raw(`UPDATE mr_sim_runs SET draft = 1 WHERE id = ${id}`))
       const migrationsDir = fileURLToPath(new URL('../db/migrations/', import.meta.url))
       const [file] = [...new Bun.Glob('0007_*.sql').scanSync({ cwd: migrationsDir })].sort()
       expect(file).toBeDefined()
       const text = await Bun.file(migrationsDir + file).text()
       const backfill = text.split('--> statement-breakpoint').map((c) => c.trim()).find((c) => /UPDATE\s+`sim_runs`\s+SET\s+`draft`\s*=\s*0/.test(c))
       expect(backfill).toBeDefined()
-      await db.execute(sql.raw(backfill!))
+      await db.execute(sql.raw(backfill!.replace('`sim_runs`', '`mr_sim_runs`')))
       expect((await find(id)).draft).toBe(false)
     })
 
@@ -110,7 +110,7 @@ describeIf('db integration', () => {
       const oldSaved = await repos.simRepo.insertRun(simInput())
       await repos.simRepo.finalize(oldSaved)
       await repos.simRepo.insertDays([dayRow(oldDraft, '2026-03-02'), dayRow(oldSaved, '2026-03-02')])
-      await db.execute(sql.raw(`UPDATE sim_runs SET created_at = '2020-01-01 00:00:00' WHERE id IN (${oldDraft}, ${oldSaved})`))
+      await db.execute(sql.raw(`UPDATE mr_sim_runs SET created_at = '2020-01-01 00:00:00' WHERE id IN (${oldDraft}, ${oldSaved})`))
       const freshDraft = await repos.simRepo.insertRun(simInput())
 
       // the deleted ids must be recoverable from the log, not just their count

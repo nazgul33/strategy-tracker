@@ -31,7 +31,7 @@ async function capturePending(c: E2eCtx, shares: number, price: string, image: {
   return rows[0]
 }
 
-// Direct count of a capture's frozen vision_reviews rows; unlike the HTTP list it also sees unkept captures.
+// Direct count of a capture's frozen mr_vision_reviews rows; unlike the HTTP list it also sees unkept captures.
 export interface VisionReviewDb { reviewRowCount(captureId: number): Promise<number> }
 
 export async function runVisionReview(c: E2eCtx, db: VisionReviewDb): Promise<void> {
@@ -63,12 +63,12 @@ export async function runVisionReview(c: E2eCtx, db: VisionReviewDb): Promise<vo
   c.ok(fillA.detected.shares === fillA.final.shares && fillA.detected.side === fillA.final.side && fillA.detected.fee === fillA.final.fee,
     'untouched fields (shares, side, fee) are identical in detected and final')
   c.ok((await imageOf(c, captureA)).status === 200, 'the kept screenshot survives its last pending fill resolving')
-  c.ok((await db.reviewRowCount(captureA)) === 1, 'the kept capture has its frozen vision_reviews row')
+  c.ok((await db.reviewRowCount(captureA)) === 1, 'the kept capture has its frozen mr_vision_reviews row')
 
   const discard = await c.req('DELETE', `/vision-reviews/${captureA}`, undefined, c.token)
   c.ok(discard.status === 200, 'DELETE /vision-reviews/:captureId -> 200')
   c.ok((await entriesOf(c)).length === 0, 'discarded entry is gone from the list')
-  c.ok((await db.reviewRowCount(captureA)) === 0, 'discarding removed the vision_reviews row')
+  c.ok((await db.reviewRowCount(captureA)) === 0, 'discarding removed the mr_vision_reviews row')
   c.ok((await imageOf(c, captureA)).status === 404, 'discarded entry took its image with it')
   c.ok((await c.req('DELETE', `/vision-reviews/${captureA}`, undefined, c.token)).status === 404, 'discarding again -> 404')
 
@@ -80,7 +80,7 @@ export async function runVisionReview(c: E2eCtx, db: VisionReviewDb): Promise<vo
   const confirmB = await c.req('POST', `/pending/${rowB.id}/confirm`, { keepImage: false }, c.token)
   c.ok(confirmB.status === 200, 'untouched confirm -> 200')
   c.ok((await imageOf(c, captureB)).status === 404, 'untouched confirm swept the screenshot bytes')
-  c.ok((await db.reviewRowCount(captureB)) === 0, 'untouched confirm swept the frozen vision_reviews row')
+  c.ok((await db.reviewRowCount(captureB)) === 0, 'untouched confirm swept the frozen mr_vision_reviews row')
   c.ok((await entriesOf(c)).length === 0, 'untouched confirm lists no kept entry (the list shows kept captures only)')
 
   // ---- C: corrected, not kept -----------------------------------------------
@@ -90,7 +90,7 @@ export async function runVisionReview(c: E2eCtx, db: VisionReviewDb): Promise<vo
   const confirmC = await c.req('POST', `/pending/${rowC.id}/confirm`, { overrides: { price: '173.10' }, keepImage: false }, c.token)
   c.ok(confirmC.status === 200, 'corrected confirm without keep -> 200')
   c.ok((await imageOf(c, captureC)).status === 404, 'a correction alone does not keep the screenshot')
-  c.ok((await db.reviewRowCount(captureC)) === 0, 'a correction alone swept the frozen vision_reviews row')
+  c.ok((await db.reviewRowCount(captureC)) === 0, 'a correction alone swept the frozen mr_vision_reviews row')
   c.ok((await entriesOf(c)).length === 0, 'a correction alone lists no kept entry')
 
   // ---- D: no fee and no date from vision, confirmed beside a kept sibling ------
@@ -123,7 +123,7 @@ export async function runVisionReview(c: E2eCtx, db: VisionReviewDb): Promise<vo
   c.ok(bareFill.feeOverridden === false, 'the derived fee is not recorded as supplied by the operator')
   c.ok(bareFill.detected.filledOn === null && bareFill.final.filledOn === '2026-11-09' && bareFill.edited === true,
     `filling in the date vision missed is a recorded edit: ${JSON.stringify([bareFill.detected.filledOn, bareFill.final.filledOn, bareFill.edited])}`)
-  c.ok((await db.reviewRowCount(captureD)) === 2, 'capture D has both frozen vision_reviews rows before the discard')
+  c.ok((await db.reviewRowCount(captureD)) === 2, 'capture D has both frozen mr_vision_reviews rows before the discard')
   c.ok((await c.req('DELETE', `/vision-reviews/${captureD}`, undefined, c.token)).status === 200, 'discarding capture D from the review tab -> 200')
-  c.ok((await db.reviewRowCount(captureD)) === 0, 'discarding capture D removed its vision_reviews rows')
+  c.ok((await db.reviewRowCount(captureD)) === 0, 'discarding capture D removed its mr_vision_reviews rows')
 }

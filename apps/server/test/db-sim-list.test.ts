@@ -59,7 +59,7 @@ describeIf('simRepo.listRuns / sweepDrafts', () => {
     const x = await repos.simRepo.insertRun(input())
     const y = await repos.simRepo.insertRun(input())
     await repos.simRepo.insertDays([day(x, '2026-03-02'), day(y, '2026-03-02'), day(y, '2026-03-03')])
-    await db.execute(sql.raw(`UPDATE sim_runs SET created_at = '2001-01-01 00:00:00' WHERE id IN (${x}, ${y})`))
+    await db.execute(sql.raw(`UPDATE mr_sim_runs SET created_at = '2001-01-01 00:00:00' WHERE id IN (${x}, ${y})`))
     const log = spyOn(console, 'log').mockImplementation(() => {})
     let swept: number
     try {
@@ -85,7 +85,7 @@ describeIf('simRepo.listRuns / sweepDrafts', () => {
     const mk = async (ageSec: number, finalize = false) => {
       const id: number = await repos.simRepo.insertRun(input())
       if (finalize) await repos.simRepo.finalize(id)
-      await db.execute(sql.raw(`UPDATE sim_runs SET created_at = FROM_UNIXTIME(${nowSec - ageSec}) WHERE id = ${id}`))
+      await db.execute(sql.raw(`UPDATE mr_sim_runs SET created_at = FROM_UNIXTIME(${nowSec - ageSec}) WHERE id = ${id}`))
       return id
     }
     const keep6d = await mk(6 * DAY_S)

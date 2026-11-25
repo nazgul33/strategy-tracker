@@ -43,7 +43,7 @@ export function getVisionRepos(db: Db) {
     // The image and its frozen rows go together or not at all.
     async discard(captureId: number): Promise<void> {
       await db.transaction(async (tx) => {
-        await tx.delete(s.visionReviews).where(eq(s.visionReviews.captureId, captureId))
+        await tx.delete(s.mrVisionReviews).where(eq(s.mrVisionReviews.captureId, captureId))
         await tx.delete(s.captureImages).where(eq(s.captureImages.captureId, captureId))
       })
     },
@@ -53,23 +53,23 @@ export function getVisionRepos(db: Db) {
     // of a resolution that asked for no keep would delete an image it is still about to freeze.
     async sweepOrphans(): Promise<number[]> {
       return db.transaction(async (tx) => {
-        const liveFor = (captureId: AnyMySqlColumn) => tx.select({ one: sql`1` }).from(s.pendingFills)
-          .where(and(eq(s.pendingFills.captureId, captureId), eq(s.pendingFills.status, 'pending')))
+        const liveFor = (captureId: AnyMySqlColumn) => tx.select({ one: sql`1` }).from(s.mrPendingFills)
+          .where(and(eq(s.mrPendingFills.captureId, captureId), eq(s.mrPendingFills.status, 'pending')))
         const unkept = await tx.select({ captureId: s.captureImages.captureId }).from(s.captureImages)
           .where(and(eq(s.captureImages.keep, false), notExists(liveFor(s.captureImages.captureId))))
           .for('update')
         const imageIds: number[] = unkept.map((r) => r.captureId)
         if (imageIds.length) {
-          await tx.delete(s.visionReviews).where(inArray(s.visionReviews.captureId, imageIds))
+          await tx.delete(s.mrVisionReviews).where(inArray(s.mrVisionReviews.captureId, imageIds))
           await tx.delete(s.captureImages).where(inArray(s.captureImages.captureId, imageIds))
         }
         const imageFor = (captureId: AnyMySqlColumn) => tx.select({ one: sql`1` }).from(s.captureImages)
           .where(eq(s.captureImages.captureId, captureId))
-        const frozen = await tx.selectDistinct({ captureId: s.visionReviews.captureId }).from(s.visionReviews)
-          .where(and(notExists(imageFor(s.visionReviews.captureId)), notExists(liveFor(s.visionReviews.captureId))))
+        const frozen = await tx.selectDistinct({ captureId: s.mrVisionReviews.captureId }).from(s.mrVisionReviews)
+          .where(and(notExists(imageFor(s.mrVisionReviews.captureId)), notExists(liveFor(s.mrVisionReviews.captureId))))
           .for('update')
         const frozenIds: number[] = frozen.map((r) => r.captureId)
-        if (frozenIds.length) await tx.delete(s.visionReviews).where(inArray(s.visionReviews.captureId, frozenIds))
+        if (frozenIds.length) await tx.delete(s.mrVisionReviews).where(inArray(s.mrVisionReviews.captureId, frozenIds))
         return [...new Set([...imageIds, ...frozenIds])].sort((a, b) => a - b)
       })
     },
@@ -84,24 +84,24 @@ export function getVisionRepos(db: Db) {
 
   const visionReviewRepo = {
     async insertIgnore(row: VisionReviewInsert): Promise<void> {
-      await db.insert(s.visionReviews).values(row)
+      await db.insert(s.mrVisionReviews).values(row)
         .onDuplicateKeyUpdate({ set: { pendingFillId: row.pendingFillId } })
     },
     // Resolved rows of a kept image that have no frozen record: what a crash between a
     // confirm's flip and its freeze leaves behind. Siblings are not looked at.
     async listUnfrozenKept(): Promise<UnfrozenPendingRow[]> {
-      const frozen = db.select({ one: sql`1` }).from(s.visionReviews).where(eq(s.visionReviews.pendingFillId, s.pendingFills.id))
+      const frozen = db.select({ one: sql`1` }).from(s.mrVisionReviews).where(eq(s.mrVisionReviews.pendingFillId, s.mrPendingFills.id))
       const rows = await db.select({
-        id: s.pendingFills.id, runId: s.pendingFills.runId, ticker: s.pendingFills.ticker, captureId: s.pendingFills.captureId,
-        status: s.pendingFills.status, side: s.pendingFills.side, shares: s.pendingFills.shares, price: s.pendingFills.price,
-        fee: s.pendingFills.fee, filledOn: s.pendingFills.filledOn, feeOverride: s.pendingFills.feeOverride,
-        detectedSide: s.pendingFills.detectedSide, detectedShares: s.pendingFills.detectedShares,
-        detectedPrice: s.pendingFills.detectedPrice, detectedFilledOn: s.pendingFills.detectedFilledOn,
-        detectedFee: s.pendingFills.detectedFee, detectedAt: s.pendingFills.detectedAt,
-      }).from(s.pendingFills)
-        .innerJoin(s.captureImages, and(eq(s.captureImages.captureId, s.pendingFills.captureId), eq(s.captureImages.keep, true)))
-        .where(and(inArray(s.pendingFills.status, ['confirmed', 'rejected']), notExists(frozen)))
-        .orderBy(s.pendingFills.id)
+        id: s.mrPendingFills.id, runId: s.mrPendingFills.runId, ticker: s.mrPendingFills.ticker, captureId: s.mrPendingFills.captureId,
+        status: s.mrPendingFills.status, side: s.mrPendingFills.side, shares: s.mrPendingFills.shares, price: s.mrPendingFills.price,
+        fee: s.mrPendingFills.fee, filledOn: s.mrPendingFills.filledOn, feeOverride: s.mrPendingFills.feeOverride,
+        detectedSide: s.mrPendingFills.detectedSide, detectedShares: s.mrPendingFills.detectedShares,
+        detectedPrice: s.mrPendingFills.detectedPrice, detectedFilledOn: s.mrPendingFills.detectedFilledOn,
+        detectedFee: s.mrPendingFills.detectedFee, detectedAt: s.mrPendingFills.detectedAt,
+      }).from(s.mrPendingFills)
+        .innerJoin(s.captureImages, and(eq(s.captureImages.captureId, s.mrPendingFills.captureId), eq(s.captureImages.keep, true)))
+        .where(and(inArray(s.mrPendingFills.status, ['confirmed', 'rejected']), notExists(frozen)))
+        .orderBy(s.mrPendingFills.id)
       // Redundant with the inner join and the status filter; narrows the column types.
       return rows.filter((r): r is typeof r & { captureId: number; status: 'confirmed' | 'rejected' } =>
         r.captureId !== null && (r.status === 'confirmed' || r.status === 'rejected'))
@@ -109,19 +109,19 @@ export function getVisionRepos(db: Db) {
     async listForCaptures(captureIds: number[]): Promise<VisionReviewRow[]> {
       if (!captureIds.length) return []
       return db.select({
-        id: s.visionReviews.id, runId: s.visionReviews.runId, captureId: s.visionReviews.captureId,
-        pendingFillId: s.visionReviews.pendingFillId, ticker: s.visionReviews.ticker, outcome: s.visionReviews.outcome,
-        detectedSide: s.visionReviews.detectedSide, detectedShares: s.visionReviews.detectedShares,
-        detectedPrice: s.visionReviews.detectedPrice, detectedFilledOn: s.visionReviews.detectedFilledOn,
-        detectedFee: s.visionReviews.detectedFee,
-        finalSide: s.visionReviews.finalSide, finalShares: s.visionReviews.finalShares,
-        finalPrice: s.visionReviews.finalPrice, finalFilledOn: s.visionReviews.finalFilledOn,
-        finalFee: s.visionReviews.finalFee,
-        edited: s.visionReviews.edited, feeOverridden: s.visionReviews.feeOverridden, createdAt: s.visionReviews.createdAt,
-      }).from(s.visionReviews).where(inArray(s.visionReviews.captureId, captureIds)).orderBy(s.visionReviews.id)
+        id: s.mrVisionReviews.id, runId: s.mrVisionReviews.runId, captureId: s.mrVisionReviews.captureId,
+        pendingFillId: s.mrVisionReviews.pendingFillId, ticker: s.mrVisionReviews.ticker, outcome: s.mrVisionReviews.outcome,
+        detectedSide: s.mrVisionReviews.detectedSide, detectedShares: s.mrVisionReviews.detectedShares,
+        detectedPrice: s.mrVisionReviews.detectedPrice, detectedFilledOn: s.mrVisionReviews.detectedFilledOn,
+        detectedFee: s.mrVisionReviews.detectedFee,
+        finalSide: s.mrVisionReviews.finalSide, finalShares: s.mrVisionReviews.finalShares,
+        finalPrice: s.mrVisionReviews.finalPrice, finalFilledOn: s.mrVisionReviews.finalFilledOn,
+        finalFee: s.mrVisionReviews.finalFee,
+        edited: s.mrVisionReviews.edited, feeOverridden: s.mrVisionReviews.feeOverridden, createdAt: s.mrVisionReviews.createdAt,
+      }).from(s.mrVisionReviews).where(inArray(s.mrVisionReviews.captureId, captureIds)).orderBy(s.mrVisionReviews.id)
     },
     async deleteFor(captureId: number): Promise<void> {
-      await db.delete(s.visionReviews).where(eq(s.visionReviews.captureId, captureId))
+      await db.delete(s.mrVisionReviews).where(eq(s.mrVisionReviews.captureId, captureId))
     },
   }
 
