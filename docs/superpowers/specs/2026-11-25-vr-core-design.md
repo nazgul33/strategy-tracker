@@ -28,8 +28,9 @@ run starts from cash only ("new"); the **skill formula** is used for V.
 
 The cafe posts could not be read (login-gated). The rules below come from a public guide that
 cites them post by post (d-capitalism.com/vr) and, for the skill formula, from several blogs
-that quote it. Where the cafe differs, the cafe wins; the owner should flag it. Three points are
-uncertain and are listed under "Uncertain points in the source".
+that quote it. Where the cafe differs, the cafe wins; the owner should flag it. The points the
+source leaves open were ruled on by the owner and are listed under "Owner's rulings on the gaps
+in the source".
 
 ## Goals
 
@@ -127,13 +128,13 @@ formula (default skill), band (default 15%), Pool spend limit (default 50%), dep
 
 For the current share count n ≥ 1 in the current cycle:
 
-- **Buy rungs:** one share each at `min ÷ n`, `min ÷ (n+1)`, `min ÷ (n+2)`, …, rounded to the
-  nearest cent. Rungs are listed while their running total fits in the budget still unspent this
+- **Buy rungs:** one share each at `min ÷ n`, `min ÷ (n+1)`, `min ÷ (n+2)`, …, **truncated** to
+  the cent (owner's rule: a buy price is never rounded up). Rungs are listed while their running total fits in the budget still unspent this
   cycle (budget minus price × shares of the buys dated in the cycle) and in the Pool itself.
   Fees are left out of both checks, as in the source's table (designer's call), so the ladder
   never exceeds the budget before fees.
-- **Sell rungs:** one share each at `max ÷ n`, `max ÷ (n−1)`, …, rounded to the nearest cent,
-  stopping while one share is still held: the ladder never offers the last share (designer's
+- **Sell rungs:** one share each at `max ÷ n`, `max ÷ (n−1)`, …, **rounded up** to the cent
+  (owner's rule: a sell price is never rounded down), stopping while one share is still held: the ladder never offers the last share (designer's
   call, so the run does not sell itself out).
 - Telegram shows the first 10 rungs of each side and the total count; the web page shows all.
 
@@ -141,21 +142,24 @@ For the current share count n ≥ 1 in the current cycle:
 
 - Basic: V 9,000.00, Pool 1,000.00, G 10, D 250.00 → next V 9,350.00; band 7,947.50 to
   10,752.50. (From the guide.)
-- Buy rungs: min 10,509.46, 176 shares → 59.71, 59.38, 59.04, 58.71, 58.39; a Pool of 383.14
-  falls to 323.43, 264.05, 205.01, 146.30, 87.91. (The guide's table, matching to the cent.)
+- Buy rungs: min 10,509.46, 176 shares → 59.71, 59.37, 59.04, 58.71, 58.38; a Pool of 383.14
+  falls to 323.43, 264.06, 205.02, 146.31, 87.93. (The guide's table shows 59.38 and 58.39 for
+  the second and fifth rung because it rounds to the nearest cent; the owner's truncation rule
+  takes precedence.)
+- Sell rungs: max 10,752.50, 177 shares → 60.75, 61.10 (`60.7486…` and `61.0937…` rounded up).
 - Skill: V 14,837.55, Pool 0.50, G 10, E 15,871.05, D 130.00 → next V **15,131.01**
   (`1,033.50 ÷ 6.3245553… = 163.41`, plus `0.05` and `130.00`).
 
-### Uncertain points in the source
+### Owner's rulings on the gaps in the source
 
-1. **Skill formula precision.** The blog example above arrives at 15,131.13 because it rounds
-   2√10 to 6.32 by hand. This design uses the exact root. If the cafe's sheet rounds, V differs
-   by a few cents to a few dollars per cycle.
-2. **Sell rungs.** The guide says the cafe gives no numeric sell table; the sell rule here
-   mirrors the buy rule.
-3. **Where the buy rungs stop.** The guide states the spend limit as a share of the Pool
-   (75% / 50% / 25% for adding / lump sum / withdrawing), yet its own example table lists a
-   fifth rung that passes 75%. This design stops before the rung that would exceed the budget.
+1. **Skill formula precision.** The exact square root is used. (A blog example reaches
+   15,131.13 for the case above by rounding 2√10 to 6.32 by hand.)
+2. **Sell rungs.** The source gives no numeric sell table. The sell rule mirrors the buy rule:
+   buy when the price falls below the range, sell when it rises above it.
+3. **Where the buy rungs stop.** The spend limit starts at 50% of the Pool and is a per-run
+   setting. Rungs stop before the one that would exceed the cycle's budget.
+4. **Price rounding.** Buy prices are truncated to the cent and sell prices rounded up to the
+   cent. V, the band, E and money amounts are rounded to the nearest cent.
 
 ## Books
 
@@ -247,18 +251,18 @@ catalogs. Existing MR pages are unchanged; the MR runs list still lists MR runs 
 TQQQ lump sum  [active]                         [Pause] [Close] [Settings]
 Cycle 3 · Dec 7 – Dec 20 · next cycle Dec 21
 V $9,350.00    band $7,947.50 – $10,752.50    G 10 · skill formula
-Shares 177     Pool $954.81    budget left $454.84 of $500.00
-Value $9,096.81   net invested $10,000.00   profit −$903.19   avg cost $51.07
+Shares 177     Pool $954.82    budget left $454.85 of $500.00
+Value $9,096.82   net invested $10,000.00   profit −$903.18   avg cost $51.07
 
 Buy ladder (1 share each)         Sell ladder (1 share each)
  to shares  price                  to shares  price
  178        44.90                  176        60.75
- 179        44.65                  175        61.09
+ 179        44.64                  175        61.10
  ...                               ...
 
 [Fills] [Cash] [Cycles] [Alerts]
  date        side  shares  price   fee      [Add fill]
- 2026-12-08  buy   1       45.16   0.03     edit · delete
+ 2026-12-08  buy   1       45.15   0.03     edit · delete
 ```
 
 (The cycle opened with 176 shares and a Pool of $1,000.00; the one fill shown has been booked;
@@ -267,7 +271,7 @@ instead of the ladder.
 
 ## Verification
 
-- Engine unit tests, including the three worked examples and edge cases (0 shares, one share
+- Engine unit tests, including the four worked examples and edge cases (0 shares, one share
   held so no sell rung, empty Pool, budget exactly reached, a negative `E − V` term rounding,
   withdrawal driving V non-positive).
 - Repository and booking tests against a database; HTTP tests; morning-job tests with fakes
