@@ -6,6 +6,7 @@ import type { Lang } from '@st/telegram/i18n';
 import { confirmPendingFill, rejectPendingFill } from '../domain/booking';
 import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/booking';
 import type { PendingRepo } from '../domain/repo-types';
+import type { VrRepos } from '../domain/vr/repo-types';
 import { parseId } from '../http/params';
 import { makeBookingNotifier } from './booking-notifier';
 import { broadcastNotice } from './broadcast';
@@ -30,7 +31,7 @@ const CONFIRM_ERROR_KEYS: Record<string, string> = {
   'choose-bucket': 'confirm-err-choose-bucket',
 };
 
-export interface CaptureRepos extends RepoSurface {
+export interface CaptureRepos extends RepoSurface, VrRepos {
   pendingRepo: PendingRepo;
 }
 

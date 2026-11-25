@@ -6,6 +6,7 @@ import type { CaptureImageInsert } from '../src/db/repos-vision';
 import type { VisionReviewInsert } from '../src/domain/vision-review';
 import { makeCaptureHandlers, type CaptureRepos } from '../src/wire/capture';
 import { fakeCorrectionRepo } from './fake-corrections';
+import { makeVrFakes } from './vr-fakes';
 import type { Expect, IsNever, ArityMismatches } from './type-assert';
 
 // ---------- capture handlers ----------
@@ -112,8 +113,10 @@ export function makeCaptureFakes(opts: FakeOpts = {}) {
   // Ingest stores the screenshot and a resolution archives it; these tests do not inspect either.
   const captureImageRepo = { async insertIgnore(_row: CaptureImageInsert) { return true }, async getBytes(_captureId: number) { return null }, async isKept(_captureId: number) { return false }, async setKeep(_captureId: number) {}, async deleteFor(_captureId: number) {}, async discard(_captureId: number) {}, async listKept(_limit: number) { return [] } };
   const visionReviewRepo = { async insertIgnore(_row: VisionReviewInsert) {}, async listForCaptures(_captureIds: number[]) { return [] }, async deleteFor(_captureId: number) {} };
-  const repos = { runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, captureImageRepo, visionReviewRepo, ledgerRepo, notificationRepo } satisfies CaptureRepos;
-  return { repos, pending, fills, ledger, notifications, captures, corrections: correctionFake.store, stateFor };
+  const vrFakes = makeVrFakes({ otherRuns: () => runs });
+  const repos = { ...vrFakes.repos, runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, captureImageRepo, visionReviewRepo, ledgerRepo, notificationRepo } satisfies CaptureRepos;
+  const vr = { runs: vrFakes.runs, cycles: vrFakes.cycles, fills: vrFakes.fills, cash: vrFakes.cash };
+  return { repos, vr, pending, fills, ledger, notifications, captures, corrections: correctionFake.store, stateFor };
 }
 
 export const visionFetch = (async (url: string) => {

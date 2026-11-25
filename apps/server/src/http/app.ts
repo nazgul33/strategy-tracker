@@ -2,12 +2,14 @@ import { Hono } from 'hono'
 import type { RepoSurface } from '../domain/booking'
 import type { OHLCBar } from '@st/market-data'
 import type { FillRepo, NotificationRepo, OrderRepo, PendingRepo, RunRepo } from '../domain/repo-types'
+import type { SharedRunRepo, VrRepos } from '../domain/vr/repo-types'
 import type { SimRepoSurface } from '../sim/sim'
 import { authMiddleware, makeToken } from './auth'
 import type { BarCacheRepos } from '../market/bars'
 import type { RouteCapture } from '../wire/capture-route'
 
-export interface HttpRepoSurface extends RepoSurface {
+export interface HttpRepoSurface extends RepoSurface, VrRepos {
+  sharedRunRepo: SharedRunRepo
   priceHistoryRepo: BarCacheRepos['priceHistoryRepo'] & {
     upsertMany(rows: { ticker: string; tradeDate: string; close: bigint }[]): Promise<number>
     listForTicker(ticker: string, from?: string): Promise<{ tradeDate: string; close: bigint }[]>

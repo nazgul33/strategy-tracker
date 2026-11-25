@@ -7,6 +7,9 @@ import type { CaptureRepos } from '../src/wire/capture'
 import type { Expect, IsNever, ArityMismatches } from './type-assert'
 import type { fakeRepos } from './booking-fakes'
 import type { makeFakes } from './http-fakes'
+import type { getVrRepos } from '../src/db/repos-vr'
+import type { NewVrCycle, SharedRunRepo, VrRepos } from '../src/domain/vr/repo-types'
+import type { makeVrFakes } from './vr-fakes'
 
 export function _dbPins(g: typeof getRepos) {
   // @ts-expect-error the real repositories need a Drizzle database
@@ -60,11 +63,28 @@ export async function _restPins(r: HttpRepoSurface, d: HttpDeps) {
   const _c: string = (await d.fetchDailyBars('X', '2026-01-01', '2026-01-02'))[0]!.close
 }
 
+export async function _vrPins(r: HttpRepoSurface) {
+  // @ts-expect-error getMany takes a list of run ids
+  await r.sharedRunRepo.getMany(1)
+  // @ts-expect-error 'done' is not a run status
+  await r.vrRunRepo.updateStatus(1, 'done')
+  // @ts-expect-error 'turbo' is not a VR formula
+  await r.vrRunRepo.updateSettings(1, { g: 10, formula: 'turbo', bandPpm: 1, spendLimitPpm: 1, cycleDepositCents: 0 })
+  // @ts-expect-error a cycle's previous close is bigint myriadths
+  await r.vrCycleRepo.open({ ...({} as NewVrCycle), prevClose: '1' }, null)
+  // @ts-expect-error a fill price is bigint myriadths
+  await r.vrFillRepo.update(1, 2, { side: 'buy', shares: 1, price: 1, fee: 0, filledOn: '2026-01-01' })
+  // @ts-expect-error cash amounts are integer cents
+  await r.vrCashRepo.update(1, 2, { amountCents: '5', movedOn: '2026-01-01', note: null })
+}
+
 export type _real = Expect<IsNever<ArityMismatches<ReturnType<typeof getRepos>, HttpRepoSurface>>>
 export type _realCapture = Expect<IsNever<ArityMismatches<ReturnType<typeof getRepos>, CaptureRepos>>>
 export type _realDay = Expect<IsNever<ArityMismatches<ReturnType<typeof getRepos>, DayRepoSurface>>>
 export type _booking = Expect<IsNever<ArityMismatches<ReturnType<typeof fakeRepos>['repos'], RepoSurface>>>
 export type _http = Expect<IsNever<ArityMismatches<ReturnType<typeof makeFakes>['repos'], HttpRepoSurface>>>
+export type _realVr = Expect<IsNever<ArityMismatches<ReturnType<typeof getVrRepos>, VrRepos & { sharedRunRepo: SharedRunRepo }>>>
+export type _vrFake = Expect<IsNever<ArityMismatches<ReturnType<typeof makeVrFakes>['repos'], VrRepos & { sharedRunRepo: SharedRunRepo }>>>
 // @ts-expect-error a fake that drops listForRun's date is caught
 export type _neg = Expect<IsNever<ArityMismatches<{ orderRepo: { listForRun(runId: number): Promise<[]> } }, Pick<RepoSurface, 'orderRepo'>>>>
 

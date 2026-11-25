@@ -1,5 +1,5 @@
 import type { Bucket, ClosedBucket, RunState } from '@st/core'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, exists } from 'drizzle-orm'
 import * as s from './schema'
 import type { Db, DbOrTx } from './db-type'
 import type { NewOrder, NewRun, RunRepo, RunRow, RunStatus } from '../domain/repo-types'
@@ -23,6 +23,8 @@ const runColumns = {
 export function getMrRunRepos(db: Db) {
   // A fresh builder per call; each chain calls .where/.orderBy at most once.
   const runs = () => db.select(runColumns).from(s.strategyRuns).innerJoin(s.mrRuns, eq(s.mrRuns.runId, s.strategyRuns.id))
+
+  const hasMrRow = () => exists(db.select({ runId: s.mrRuns.runId }).from(s.mrRuns).where(eq(s.mrRuns.runId, s.strategyRuns.id)))
 
   async function saveStateWith(q: DbOrTx, runId: number, state: RunState) {
     await q.update(s.mrRuns).set({ stateJson: serializeState(state) }).where(eq(s.mrRuns.runId, runId))
@@ -65,12 +67,12 @@ export function getMrRunRepos(db: Db) {
       })
     },
     async updateStatus(id: number, status: RunStatus): Promise<void> {
-      await db.update(s.strategyRuns).set({ status }).where(eq(s.strategyRuns.id, id))
+      await db.update(s.strategyRuns).set({ status }).where(and(eq(s.strategyRuns.id, id), hasMrRow()))
     },
     async updateStatusMany(ids: number[], from: RunStatus[], to: RunStatus): Promise<number> {
       if (ids.length === 0 || from.length === 0) return 0
       const [res] = await db.update(s.strategyRuns).set({ status: to })
-        .where(and(inArray(s.strategyRuns.id, ids), inArray(s.strategyRuns.status, from)))
+        .where(and(inArray(s.strategyRuns.id, ids), inArray(s.strategyRuns.status, from), hasMrRow()))
       return res.affectedRows
     },
     async updatePool(id: number, poolCents: number): Promise<void> {

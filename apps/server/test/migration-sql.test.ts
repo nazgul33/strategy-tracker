@@ -82,7 +82,7 @@ ON DUPLICATE KEY UPDATE \`pool_cents\` = VALUES(\`pool_cents\`), \`buy_gap_ppm\`
     journal.entries.forEach((e, i) => {
       if (i > 0) expect(e.when).toBeGreaterThan(journal.entries[i - 1]!.when)
     })
-    expect(journal.entries.slice(-3).map((e) => e.tag)).toEqual(NEW_TAGS)
+    expect(journal.entries.slice(13, 16).map((e) => e.tag)).toEqual(NEW_TAGS)
   })
 
   test('0013 renames ten tables in one statement, then seven indexes', async () => {
@@ -119,5 +119,19 @@ ON DUPLICATE KEY UPDATE \`pool_cents\` = VALUES(\`pool_cents\`), \`buy_gap_ppm\`
       const text = await Bun.file(`${migrationsDir}${tag}.sql`).text()
       expect(/INSERT\s+(IGNORE\s+)?INTO\s+`mr_runs`/.test(text) && /DROP\s+COLUMN/i.test(text)).toBe(false)
     }
+  })
+})
+
+describe('vr tables migration', () => {
+  const migrationsDir = fileURLToPath(new URL('../db/migrations/', import.meta.url))
+
+  test('the VR tables migration creates four tables and touches no other table', async () => {
+    const files = [...new Bun.Glob('0016_*.sql').scanSync({ cwd: migrationsDir })]
+    expect(files).toHaveLength(1)
+    const text = await Bun.file(migrationsDir + files[0]).text()
+    for (const t of ['vr_runs', 'vr_cycles', 'vr_fills', 'vr_cash_moves']) expect(text).toContain(`CREATE TABLE \`${t}\``)
+    expect(text.match(/CREATE TABLE/g)).toHaveLength(4)
+    expect(text).not.toMatch(/ALTER TABLE|DROP|RENAME/i)
+    for (const m of text.matchAll(/(?:CREATE TABLE|ON) `(\w+)`/g)) expect(m[1]!.startsWith('vr_')).toBe(true)
   })
 })

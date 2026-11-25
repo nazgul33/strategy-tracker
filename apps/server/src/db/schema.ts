@@ -242,4 +242,6 @@ export const barCoverage = mysqlTable('bar_coverage', {
   tickerIdx: index('bar_coverage_ticker_idx').on(t.ticker),
 }))
 
+export * from './schema-vr'
+
 import { uniqueIndex } from 'drizzle-orm/mysql-core'
