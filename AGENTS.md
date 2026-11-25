@@ -8,7 +8,7 @@
 
 ## Project overview
 
-Self-hosted stock trade strategy tracker (Bun + TypeScript monorepo). Tracks mean-reversion strategy runs, captures fills via screenshots, and manages sell orders. See `docs/superpowers/specs/2026-11-10-strategy-tracker-design.md`.
+Self-hosted stock trade strategy tracker (Bun + TypeScript monorepo). Tracks mean-reversion and Value Rebalancing (VR) strategy runs, captures mean-reversion fills via screenshots, and manages sell orders. See `docs/superpowers/specs/2026-11-10-strategy-tracker-design.md` and, for VR, `docs/superpowers/specs/2026-11-25-vr-core-design.md`. VR runs are booked by hand (no screenshot capture yet).
 
 ## Repo map
 
@@ -22,33 +22,35 @@ packages/          each package also has package.json tsconfig.json
   core/src/        money.ts domain.ts fills.ts index.ts      (+ core/test/*)
   calendar/src/    index.ts nyse-data.ts crosscheck.ts       (+ calendar/test/*)
   market-data/src/ yahoo.ts                                  (+ market-data/test/*)
-  strategies/src/  index.ts mean-reversion.ts                (+ strategies/test/*)
+  strategies/src/  index.ts mean-reversion.ts value-rebalancing.ts (+ strategies/test/*)
   ingest/src/      extract.ts mask-key.ts prompt.ts          (+ ingest/test/*)
-  telegram/src/    digest.ts bot.ts i18n.ts                  (+ telegram/test/*)
+  telegram/src/    digest.ts bot.ts i18n.ts vr.ts            (+ telegram/test/*)
 apps/server/       drizzle.config.ts package.json tsconfig.json
   src/
     main.ts
-    db/schema.ts db/client.ts db/db-type.ts db/repos.ts db/repos-mr-runs.ts db/repos-bars.ts db/repos-sim.ts db/repos-vision.ts
-    domain/booking.ts domain/confirm-pending.ts domain/capture-claim.ts domain/capture-corrections.ts domain/capture-dedup.ts domain/booking-notify.ts domain/capture-image.ts domain/correction-types.ts domain/corrections.ts domain/notice-feed.ts domain/order-ops.ts domain/order-type.ts domain/pending-flags.ts domain/ppm.ts domain/recompute.ts domain/repo-types.ts domain/require-run.ts domain/retire-legs.ts domain/run-lock.ts domain/sell-attribute.ts domain/sell-match.ts domain/vision-review.ts
-    wire/deps.ts wire/capture.ts wire/capture-pending-message.ts wire/capture-bad-extract-message.ts wire/booking-notifier.ts wire/broadcast.ts wire/boot-sweeps.ts wire/send.ts wire/capture-route.ts
-    pipeline/day.ts pipeline/wire.ts
+    db/schema.ts db/client.ts db/db-type.ts db/repos.ts db/repos-mr-runs.ts db/repos-bars.ts db/repos-sim.ts db/repos-vision.ts db/schema-vr.ts db/repos-vr.ts
+    domain/booking.ts domain/confirm-pending.ts domain/capture-claim.ts domain/capture-corrections.ts domain/capture-dedup.ts domain/booking-notify.ts domain/capture-image.ts domain/correction-types.ts domain/corrections.ts domain/notice-feed.ts domain/order-ops.ts domain/order-type.ts domain/pending-flags.ts domain/ppm.ts domain/recompute.ts domain/repo-types.ts domain/require-run.ts domain/retire-legs.ts domain/run-lock.ts domain/sell-attribute.ts domain/sell-match.ts domain/vision-review.ts domain/vr/{repo-types,view,booking,runs}.ts
+    wire/deps.ts wire/capture.ts wire/capture-pending-message.ts wire/capture-bad-extract-message.ts wire/booking-notifier.ts wire/broadcast.ts wire/boot-sweeps.ts wire/send.ts wire/capture-route.ts wire/vr-status.ts
+    pipeline/day.ts pipeline/vr-day.ts pipeline/close.ts pipeline/notify.ts pipeline/wire.ts
     market/bars.ts
     sim/sim.ts sim/serialize.ts
-    http/app.ts http/auth.ts http/booking-deps.ts http/params.ts http/routes/{runs,fills,pending,corrections,sim,settings,notifications,vision-review,captures}.ts
+    http/app.ts http/auth.ts http/booking-deps.ts http/params.ts http/routes/{runs,fills,pending,corrections,sim,settings,notifications,vision-review,captures,vr,vr-entries}.ts
   db/              README.md
-  db/migrations/   0000_fantastic_thunderbolts.sql … 0015_strategy_runs_trim.sql (+ meta/)
-  test/            *.test.ts per area (booking, booking-* [guards, capture-*, confirm-overrides, sell-legs, sell-cancel, sell-notify, future-date, order-type], rebooking, rebooking-* [delete, legs, delete-legs], retire-legs, sell-attribution, sell-attribute, sell-attribute-cases, sell-matching, order-type, pending-flags, sell-bucket-override, http-bucket-override, booking-notifier, broadcast, vision-review, vision-review-* [fee, reject], notice-feed, capture-bad-extract-message, capture-claim, capture-image, capture-replies, capture-route, corrections, fake-corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, send, calendar-2028, day, day-notices, day-failures, day-unconfirmed, day-data-error, day-run-lock, migration-sql, sim, sim-cut-loss, sim-run, wire, wire-capture-* [photo, routing, confirm, status, choice], http-* [incl. runs-fills-gaps, runs-cutloss, fill-edit-legs, fill-delete-legs, future-date, captures], db* [incl. db-mr-split, db-run-scope], confirm-keep-order, refreeze-kept, main-boot-order, repo-surface-types) + fake-corrections.ts fake-sim.ts http-fakes.ts booking-fakes.ts bars-fakes.ts sell-fixture.ts sell-attribute-fixture.ts wire-capture-fakes.ts rebooking-fixture.ts vision-review-fixture.ts mr-split-fixture.ts sim-fixture.ts day-fakes.ts type-assert.ts
+  db/migrations/   0000_fantastic_thunderbolts.sql … 0016_vr_tables.sql (+ meta/)
+  test/            *.test.ts per area (booking, booking-* [guards, capture-*, confirm-overrides, sell-legs, sell-cancel, sell-notify, future-date, order-type], rebooking, rebooking-* [delete, legs, delete-legs], retire-legs, sell-attribution, sell-attribute, sell-attribute-cases, sell-matching, order-type, pending-flags, sell-bucket-override, http-bucket-override, booking-notifier, broadcast, vision-review, vision-review-* [fee, reject], notice-feed, capture-bad-extract-message, capture-claim, capture-image, capture-replies, capture-route, corrections, fake-corrections, recalc, run-lock-writers, ppm, bars, bars-chunking, bars-db, boot-sweeps, send, calendar-2028, day, day-notices, day-failures, day-unconfirmed, day-data-error, day-run-lock, vr-day, vr-day-schedule, vr-view, wire-vr-status, migration-sql, sim, sim-cut-loss, sim-run, wire, wire-capture-* [photo, routing, confirm, status, choice], http-* [incl. runs-fills-gaps, runs-cutloss, fill-edit-legs, fill-delete-legs, future-date, captures, vr-runs, vr-fills, vr-cash], db* [incl. db-mr-split, db-run-scope, db-vr], confirm-keep-order, refreeze-kept, main-boot-order, repo-surface-types) + fake-corrections.ts fake-sim.ts http-fakes.ts booking-fakes.ts bars-fakes.ts sell-fixture.ts sell-attribute-fixture.ts wire-capture-fakes.ts rebooking-fixture.ts vision-review-fixture.ts mr-split-fixture.ts sim-fixture.ts day-fakes.ts vr-fakes.ts vr-http-fixture.ts type-assert.ts
 apps/web/          package.json tsconfig.json index.html vite.config.ts tailwind.config.ts postcss.config.js .gitignore
-apps/web/src/      main.tsx App.tsx style.css api.ts api.call.ts api.sim.ts api.notices.ts api.types.ts api.pending.types.ts api.captures.types.ts autofee.ts defaultcost.ts errortext.ts format.ts pendingchoice.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts paging.ts priceHistory.ts simconfig.ts simerrors.ts simview.ts uploadlines.ts uploadpick.ts usd.ts visionreviewerrors.ts (+ colocated *.test.ts(x))
-  testing/{dom,fetchStub,fillDialog,holdFetch,offline,pendingRow,pendingTable,runDetail,scrollShim,upload,visionReview}.ts   (shared test fixtures, no DOM needed at import time; fetchStub.test.ts)
-  components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,Pager,SystemNotices,PriceChart,RecalcSummary,RunHeader,RunPanels,RunHistory,ScreenshotLink,VisionReviewEntry,Modal,inert,hooks,ui,forms/*}
+apps/web/src/      main.tsx App.tsx style.css api.ts api.call.ts api.sim.ts api.notices.ts api.types.ts api.pending.types.ts api.captures.types.ts api.vr.ts api.vr.types.ts autofee.ts defaultcost.ts errortext.ts format.ts pendingchoice.ts pendingvalues.ts viewmodels.ts cutloss.ts gaps.ts paging.ts priceHistory.ts simconfig.ts simerrors.ts simview.ts uploadlines.ts uploadpick.ts usd.ts visionreviewerrors.ts (+ colocated *.test.ts(x), incl. AppVr.test.tsx)
+  testing/{dom,fetchStub,fillDialog,holdFetch,offline,pendingRow,pendingTable,runDetail,scrollShim,upload,visionReview,vr,vrDialog}.ts   (shared test fixtures, no DOM needed at import time; fetchStub.test.ts)
+  components/{Layout,ThemeLangToggle,BucketBoard,OrderTable,FillTable,SimReplay,NoticeList,Pager,SystemNotices,PriceChart,RecalcSummary,RunHeader,RunPanels,RunHistory,ScreenshotLink,VisionReviewEntry,Modal,inert,hooks,ui,forms/*,vr/*}
+  components/vr/{VrCashDialog,VrCashPanel,VrCreateForm,VrCyclesPanel,VrDeleteStep,VrFillDialog,VrFillsPanel,VrLadders,VrPanelState,VrSettingsModal,VrSummary,vrText}   (+ colocated tests)
   components/forms/{BucketSelect,CorrectionList,CreateRunForm,DefaultFeePrompt,EditRunModal,FillDeleteStep,FillDialog,KeepImagePrompt,KeepNotices,PendingReviewDialog,PendingRow,PendingTable,SimConfigFields,SimConfigPanel,UploadDialog,UploadPicker,UploadResults,pendingHints}
-  pages/{RunsList,RunDetail,Sim,SimRun,Settings,Login,Pending,VisionReview}.tsx
+  pages/{RunsList,RunDetail,Sim,SimRun,Settings,Login,Pending,VisionReview,VrRuns,VrRun}.tsx
   i18n/catalog.ts i18n/index.tsx i18n/en.json i18n/ko.json
-scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-order-type.ts e2e-sim.ts e2e-sim-drafts.ts e2e-vision-review.ts e2e-web-upload.ts tsconfig.json
+scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-order-type.ts e2e-sim.ts e2e-sim-drafts.ts e2e-vr.ts e2e-vision-review.ts e2e-web-upload.ts tsconfig.json
                    — operator smoke on a scratch DB (see Test matrix); e2e.ts sets up and drives the step modules in order
                    (e2e-ctx.ts = shared ctx incl. the `photo` capture helper; e2e-vision-review.ts = screenshot retention; e2e-order-type.ts = order-type attribution + future-dated fill;
-                   e2e-sim.ts = deterministic sim fixtures + step; e2e-web-upload.ts = multipart uploads through POST /api/captures)
+                   e2e-sim.ts = deterministic sim fixtures + step; e2e-web-upload.ts = multipart uploads through POST /api/captures;
+                   e2e-vr.ts = Value Rebalancing run: buy instruction, cycle 1 and its ladder, books, pause and close)
 ```
 
 ## Commands
@@ -59,7 +61,7 @@ scripts/           e2e.ts e2e-ctx.ts e2e-cutloss.ts e2e-order-type.ts e2e-sim.ts
 - `bun run dev` is a pointer, not a server — run `bun run --cwd apps/server dev` (or `bun run --cwd apps/web dev`)
 - `docker compose up` (app listens on 127.0.0.1:8080 by default)
 - E2E smoke (see Test matrix for the scratch DB): `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test bun scripts/e2e.ts`
-- Drizzle migrations: edit `apps/server/src/db/schema.ts`, then `bun run --cwd apps/server db:generate` (writes SQL + `meta/` snapshots into `apps/server/db/migrations/`). They are applied automatically at server startup (`applyMigrations` in `db/client.ts`, resolves from `process.cwd()` — hence all entry points run from the repo root); `db:migrate` exists for a manual apply. Hand-appended statements (the backfills in 0007 and 0010) are pinned in `apps/server/test/migration-sql.test.ts`, because regenerating a migration drops them. Migrations `0013`–`0015` (the `mr_` split) are hand-written (created with `drizzle-kit generate --custom`) and pinned in `apps/server/test/migration-sql.test.ts`; the last snapshot was aligned with `schema.ts` by hand.
+- Drizzle migrations: edit `apps/server/src/db/schema.ts`, then `bun run --cwd apps/server db:generate` (writes SQL + `meta/` snapshots into `apps/server/db/migrations/`). They are applied automatically at server startup (`applyMigrations` in `db/client.ts`, resolves from `process.cwd()` — hence all entry points run from the repo root); `db:migrate` exists for a manual apply. Hand-appended statements (the backfills in 0007 and 0010) are pinned in `apps/server/test/migration-sql.test.ts`, because regenerating a migration drops them. Migrations `0013`–`0015` (the `mr_` split) are hand-written (created with `drizzle-kit generate --custom`) and pinned in `apps/server/test/migration-sql.test.ts`; the `0015` snapshot was aligned with `schema.ts` by hand. `0016_vr_tables.sql` (the `vr_` tables, defined in `db/schema-vr.ts` and re-exported from `schema.ts`) is plain `drizzle-kit generate` output.
 
 ## Test matrix
 
@@ -82,7 +84,8 @@ The NYSE calendar is committed static data (`NYSE_YEARS` in `packages/calendar/s
 - No source file > ~300 lines; split by responsibility; no flat god-modules.
 - `packages/*` never import `apps/*`.
 - Money via `@st/core/money` bigint myriadths — never float; cost in integer ppm.
-- Strategy-specific tables carry a prefix (`mr_` mean reversion; `vr_` and `ib_` reserved). Shared tables: `strategy_runs`, `captures`, `capture_images`, `notifications`, `settings`, `price_history`, `bar_coverage`. `runRepo` joins `mr_runs`, so it returns mean-reversion runs only.
+- Strategy-specific tables carry a prefix (`mr_` mean reversion; `vr_` value rebalancing; `ib_` reserved). Shared tables: `strategy_runs`, `captures`, `capture_images`, `notifications`, `settings`, `price_history`, `bar_coverage`. `runRepo` joins `mr_runs`, so it returns mean-reversion runs only.
+- VR books (shares, Pool) are computed from `vr_fills` and `vr_cash_moves`, never stored; the ladder is computed, never stored. Buy rung prices are floored to the cent, sell rung prices ceilinged; at most 30 rungs a side, with the lot sized so they cover a 30% move.
 - All user-facing copy via en/ko catalogs.
 - Schedules in `America/New_York`.
 - `fetch` always injectable for tests.
