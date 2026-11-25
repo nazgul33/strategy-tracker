@@ -31,7 +31,7 @@ describe('POST /api/vr/runs/:id/cash', () => {
 
   const bad: [string, Record<string, unknown>][] = [
     ['invalid-kind', { kind: 'bonus' }], ['invalid-kind', { kind: undefined }],
-    ['invalid-amount', { amountCents: -1 }], ['invalid-amount', { amountCents: 0 }], ['invalid-amount', { amountCents: 1.5 }], ['invalid-amount', { amountCents: '5' }],
+    ['invalid-amount', { amountCents: 2_147_483_648 }], ['invalid-amount', { amountCents: -1 }], ['invalid-amount', { amountCents: 0 }], ['invalid-amount', { amountCents: 1.5 }], ['invalid-amount', { amountCents: '5' }],
     ['invalid-amount', { kind: 'withdraw', amountCents: 5 }], ['invalid-amount', { kind: 'withdraw', amountCents: 0 }],
     ['invalid-amount', { kind: 'adjust', amountCents: 0 }], ['invalid-amount', { kind: 'adjust', amountCents: 0.5 }],
     ['invalid-date', { movedOn: '05-11-2026' }], ['invalid-date', { movedOn: '2026-02-30' }], ['invalid-date', { movedOn: undefined }],
@@ -56,6 +56,31 @@ describe('POST /api/vr/runs/:id/cash', () => {
   test('a withdrawal may take the Pool negative', async () => {
     const s = await withRun()
     expect((await s.req('POST', s.url, { kind: 'withdraw', amountCents: -2_000_000, movedOn: '2026-11-06' })).status).toBe(201)
+  })
+})
+
+describe('cash moves that the books cannot hold', () => {
+  // A buy that leaves the Pool a few hundred million cents short of the safe-integer limit.
+  async function nearLimit() {
+    const s = await withRun()
+    await s.f.repos.vrFillRepo.insert({ runId: s.id, side: 'buy', shares: 1_000_000_000, price: 900_719_900n, fee: 0, filledOn: '2026-11-01', source: 'manual' })
+    expect((await s.req('GET', `/api/vr/runs/${s.id}`)).status).toBe(200)
+    return s
+  }
+  const withdraw = { kind: 'withdraw', amountCents: -2_000_000_000, movedOn: '2026-11-06' }
+
+  test('a move that overflows the books is refused on add and nothing is written', async () => {
+    const s = await nearLimit()
+    expect(await s.req('POST', s.url, withdraw)).toEqual({ status: 422, body: { error: 'vr-too-large' } })
+    expect(s.f.vr.cash).toHaveLength(1)
+    expect((await s.req('GET', `/api/vr/runs/${s.id}`)).status).toBe(200)
+  })
+
+  test('the same through PUT leaves the move as it was', async () => {
+    const s = await nearLimit()
+    const { body } = await s.req('POST', s.url, { ...withdraw, amountCents: -100 })
+    expect(await s.req('PUT', `${s.url}/${body.id}`, { amountCents: -2_000_000_000, movedOn: '2026-11-06' })).toEqual({ status: 422, body: { error: 'vr-too-large' } })
+    expect(s.f.vr.cash[1]!.amountCents).toBe(-100)
   })
 })
 

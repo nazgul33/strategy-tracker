@@ -1,6 +1,6 @@
 import { DomainError, type ISODate } from '@st/core'
 import { centsFromUsd, feeCents, parseUsd } from '@st/core/money'
-import type { VrCashKind } from '@st/strategies/value-rebalancing'
+import { vrBooks, type VrCashKind, type VrCashMove } from '@st/strategies/value-rebalancing'
 import { withRunLock } from '../run-lock'
 import { isInt32 } from './runs'
 import type { VrCashMoveRow, VrCashPatch, VrFillPatch, VrFillRow, VrRepos, VrRunRow } from './repo-types'
@@ -12,7 +12,6 @@ export interface VrBookingDeps {
   today: ISODate
 }
 
-const MAX_PRICE = 1_000_000_000n
 const MAX_NOTE = 255
 const CASH_KINDS: readonly VrCashKind[] = ['open', 'deposit', 'withdraw', 'adjust']
 
@@ -37,7 +36,7 @@ export function parseVrFillBody(body: any, costPpm: number): VrFillPatch {
   const shares = body?.shares
   if (!isInt32(shares) || shares <= 0) throw new DomainError('invalid-shares')
   const price = usd(body?.price, 'invalid-price')
-  if (price <= 0n || price > MAX_PRICE) throw new DomainError('invalid-price')
+  if (price <= 0n) throw new DomainError('invalid-price')
   let fee: number
   if (body?.fee === undefined || body.fee === null) fee = feeCents(price, shares, costPpm)
   else {
@@ -58,6 +57,16 @@ function checkTotal(rows: Pick<VrFillRow, 'side' | 'shares'>[]): void {
   if (sharesTotal(rows) < 0) throw new DomainError('vr-negative-shares')
 }
 
+/** The books of the would-be entries must stay inside the safe integer range, or every read of the run would answer 500. */
+function checkBooks(fills: VrFillPatch[], moves: VrCashMove[]): void {
+  try {
+    vrBooks(fills.map((f) => ({ side: f.side, shares: f.shares, price: f.price, feeCents: f.fee, filledOn: f.filledOn })), moves)
+  } catch (e) {
+    if (e instanceof RangeError) throw new DomainError('vr-too-large')
+    throw e
+  }
+}
+
 function checkFillDate(patch: VrFillPatch, deps: VrBookingDeps): void {
   if (patch.filledOn > deps.today) throw new DomainError('fill-date-in-future')
 }
@@ -66,7 +75,9 @@ export async function addVrFill(run: VrRunRow, body: unknown, deps: VrBookingDep
   const patch = parseVrFillBody(body, run.costPpm)
   checkFillDate(patch, deps)
   return withRunLock(run.id, async () => {
-    checkTotal([...(await deps.repos.vrFillRepo.listForRun(run.id)), patch])
+    const rows = [...(await deps.repos.vrFillRepo.listForRun(run.id)), patch]
+    checkTotal(rows)
+    checkBooks(rows, await deps.repos.vrCashRepo.listForRun(run.id))
     return deps.repos.vrFillRepo.insert({ runId: run.id, ...patch, source: 'manual' })
   })
 }
@@ -76,8 +87,9 @@ export async function editVrFill(run: VrRunRow, fillId: number, body: unknown, d
     if (!(await deps.repos.vrFillRepo.get(run.id, fillId))) throw new VrNotFoundError()
     const patch = parseVrFillBody(body, run.costPpm)
     checkFillDate(patch, deps)
-    const rows = await deps.repos.vrFillRepo.listForRun(run.id)
-    checkTotal(rows.map((f) => (f.id === fillId ? patch : f)))
+    const rows = (await deps.repos.vrFillRepo.listForRun(run.id)).map((f) => (f.id === fillId ? patch : f))
+    checkTotal(rows)
+    checkBooks(rows, await deps.repos.vrCashRepo.listForRun(run.id))
     await deps.repos.vrFillRepo.update(run.id, fillId, patch)
   })
 }
@@ -106,14 +118,20 @@ export async function addVrCash(run: VrRunRow, body: unknown, deps: VrBookingDep
   if (!CASH_KINDS.includes(kind)) throw new DomainError('invalid-kind')
   const patch = parseCashFields(kind, body, deps)
   if (kind === 'open') throw new DomainError('vr-open-required')
-  return withRunLock(run.id, () => deps.repos.vrCashRepo.insert({ runId: run.id, kind, ...patch, cycleId: null }))
+  return withRunLock(run.id, async () => {
+    checkBooks(await deps.repos.vrFillRepo.listForRun(run.id), [...(await deps.repos.vrCashRepo.listForRun(run.id)), { kind, ...patch }])
+    return deps.repos.vrCashRepo.insert({ runId: run.id, kind, ...patch, cycleId: null })
+  })
 }
 
 export async function editVrCash(run: VrRunRow, cashId: number, body: unknown, deps: VrBookingDeps): Promise<void> {
   await withRunLock(run.id, async () => {
     const move: VrCashMoveRow | null = await deps.repos.vrCashRepo.get(run.id, cashId)
     if (!move) throw new VrNotFoundError()
-    await deps.repos.vrCashRepo.update(run.id, cashId, parseCashFields(move.kind, body, deps))
+    const patch = parseCashFields(move.kind, body, deps)
+    const moves = await deps.repos.vrCashRepo.listForRun(run.id)
+    checkBooks(await deps.repos.vrFillRepo.listForRun(run.id), moves.map((m) => (m.id === cashId ? { kind: m.kind, ...patch } : m)))
+    await deps.repos.vrCashRepo.update(run.id, cashId, patch)
   })
 }
 

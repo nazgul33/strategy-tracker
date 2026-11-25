@@ -36,9 +36,9 @@ describe('POST /api/vr/runs/:id/fills', () => {
 
   const bad: [string, Record<string, unknown>][] = [
     ['invalid-side', { side: 'hold' }], ['invalid-side', { side: undefined }],
-    ['invalid-shares', { shares: 0 }], ['invalid-shares', { shares: 1.5 }], ['invalid-shares', { shares: '3' }],
+    ['invalid-shares', { shares: 0 }], ['invalid-shares', { shares: 1.5 }], ['invalid-shares', { shares: '3' }], ['invalid-shares', { shares: 2_147_483_648 }],
     ['invalid-price', { price: '0' }], ['invalid-price', { price: 'abc' }], ['invalid-price', { price: '1.23456' }], ['invalid-price', { price: 45.15 }], ['invalid-price', { price: '-1' }],
-    ['invalid-fee', { fee: '-1' }], ['invalid-fee', { fee: 'x' }], ['invalid-fee', { fee: 1 }],
+    ['invalid-fee', { fee: '-1' }], ['invalid-fee', { fee: 'x' }], ['invalid-fee', { fee: 1 }], ['invalid-fee', { fee: '21474836.48' }],
     ['invalid-date', { filledOn: '2026/11/01' }], ['invalid-date', { filledOn: '2026-13-45' }], ['invalid-date', { filledOn: undefined }],
     ['fill-date-in-future', { filledOn: '2026-11-11' }],
   ]
@@ -64,13 +64,42 @@ describe('POST /api/vr/runs/:id/fills', () => {
   })
 })
 
+describe('fills that the books cannot hold', () => {
+  const HUGE = { side: 'buy', shares: 2_000_000_000, price: '50000.00', fee: '0', filledOn: '2026-11-04' }
+
+  test('a price above $100,000 is accepted', async () => {
+    const s = await withRun()
+    expect((await s.req('POST', s.url, { ...BUY, shares: 1, price: '750000.00' })).status).toBe(201)
+    expect((await s.req('GET', s.url)).body[0]).toMatchObject({ shares: 1, price: '7500000000' })
+  })
+
+  test('a fill that overflows the books is refused, nothing is written and the reads still work', async () => {
+    const s = await withRun()
+    await seedFill(s, s.id, 'buy', 10, 451_500n, 0, '2026-11-01')
+    expect(await s.req('POST', s.url, HUGE)).toEqual({ status: 422, body: { error: 'vr-too-large' } })
+    expect(s.f.vr.fills).toHaveLength(1)
+    expect((await s.req('GET', s.url)).body).toHaveLength(1)
+    expect((await s.req('GET', `/api/vr/runs/${s.id}`)).status).toBe(200)
+    expect((await s.req('GET', '/api/vr/runs')).status).toBe(200)
+  })
+
+  test('the same through PUT leaves the fill as it was', async () => {
+    const s = await withRun()
+    const fillId = await seedFill(s, s.id, 'buy', 10, 451_500n, 0, '2026-11-01')
+    expect(await s.req('PUT', `${s.url}/${fillId}`, HUGE)).toEqual({ status: 422, body: { error: 'vr-too-large' } })
+    expect(s.f.vr.fills[0]).toMatchObject({ shares: 10, price: 451_500n, filledOn: '2026-11-01' })
+    expect((await s.req('GET', `/api/vr/runs/${s.id}`)).status).toBe(200)
+    expect((await s.req('GET', '/api/vr/runs')).status).toBe(200)
+  })
+})
+
 describe('PUT /api/vr/runs/:id/fills/:fillId', () => {
   test('replaces the fill, recomputes an absent fee and keeps the source', async () => {
     const s = await withRun()
-    const fillId = await seedFill(s, s.id, 'buy', 10, 451_500n, 99, '2026-11-01')
+    const fillId = await s.f.repos.vrFillRepo.insert({ runId: s.id, side: 'buy', shares: 10, price: 451_500n, fee: 99, filledOn: '2026-11-01', source: 'capture' })
     const res = await s.req('PUT', `${s.url}/${fillId}`, { side: 'buy', shares: 5, price: '50', filledOn: '2026-11-02' })
     expect(res).toEqual({ status: 204, body: null })
-    expect(s.f.vr.fills[0]).toMatchObject({ shares: 5, price: 500_000n, filledOn: '2026-11-02', fee: feeCents(500_000n, 5, 700), source: 'manual' })
+    expect(s.f.vr.fills[0]).toMatchObject({ shares: 5, price: 500_000n, filledOn: '2026-11-02', fee: feeCents(500_000n, 5, 700), source: 'capture' })
   })
 
   test('turning a buy into a sell below 0 is refused', async () => {

@@ -13,6 +13,8 @@ export class VrBadInput extends Error {
 }
 
 export const INT32_MAX = 2_147_483_647
+const MAX_NAME = 128
+const MAX_TICKER = 16
 
 /** An integer the INT columns hold; anything wider would answer 500 at the database. */
 export const isInt32 = (x: unknown): x is number => Number.isInteger(x) && Math.abs(x as number) <= INT32_MAX
@@ -42,8 +44,8 @@ export function parseVrSettings(body: any, withDefaults: boolean): VrSettings {
 const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() !== ''
 
 export function parseVrCreate(body: any, defaultCostPpm: number, today: ISODate): NewVrRun {
-  if (!nonEmpty(body?.name)) throw new VrBadInput('name')
-  if (!nonEmpty(body?.ticker)) throw new VrBadInput('ticker')
+  if (!nonEmpty(body?.name) || body.name.length > MAX_NAME) throw new VrBadInput('name')
+  if (!nonEmpty(body?.ticker) || body.ticker.length > MAX_TICKER) throw new VrBadInput('ticker')
   const cashCents = intIn('cashCents', body?.cashCents, 1, INT32_MAX)
   const initialStockCents = intIn('initialStockCents', present(body?.initialStockCents) ? body.initialStockCents : Math.floor(cashCents / 2), 1, cashCents)
   const settings = parseVrSettings(body, true)

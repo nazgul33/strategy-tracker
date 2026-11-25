@@ -28,6 +28,12 @@ describe('POST /api/vr/runs', () => {
     expect(s.f.vr.runs[0]).toMatchObject({ g: 20, formula: 'basic', bandPpm: 100_000, spendLimitPpm: 0, cycleDepositCents: -5_000, costPpm: 0, initialVCents: 300_000 })
   })
 
+  test('a name of 128 characters and a ticker of 16 are accepted', async () => {
+    const s = await vrSetup()
+    expect((await s.req('POST', '/api/vr/runs', { ...BASE, name: 'n'.repeat(128), ticker: 't'.repeat(16) })).status).toBe(201)
+    expect(s.f.vr.runs[0]).toMatchObject({ name: 'n'.repeat(128), ticker: 't'.repeat(16) })
+  })
+
   test('the default stock share is checked after it is applied', async () => {
     const s = await vrSetup()
     expect(await s.req('POST', '/api/vr/runs', { ...BASE, cashCents: 1 })).toEqual({ status: 400, body: { error: 'invalid initialStockCents' } })
@@ -40,7 +46,8 @@ describe('POST /api/vr/runs', () => {
     ['g', { g: 0 }], ['g', { g: 1001 }], ['g', { g: 1.5 }],
     ['formula', { formula: 'x' }], ['bandPpm', { bandPpm: 0 }], ['bandPpm', { bandPpm: 1_000_000 }],
     ['spendLimitPpm', { spendLimitPpm: -1 }], ['spendLimitPpm', { spendLimitPpm: 1_000_001 }],
-    ['cycleDepositCents', { cycleDepositCents: 1.5 }], ['cycleDepositCents', { cycleDepositCents: 'a' }],
+    ['cycleDepositCents', { cycleDepositCents: 1.5 }], ['cycleDepositCents', { cycleDepositCents: 'a' }], ['cycleDepositCents', { cycleDepositCents: 2_147_483_648 }],
+    ['cashCents', { cashCents: 2_147_483_648 }], ['name', { name: 'x'.repeat(129) }], ['ticker', { ticker: 'x'.repeat(17) }],
     ['costPpm', { costPpm: 5 }], ['costPpm', { costPpm: 1_000_010 }],
   ]
   for (const [field, patch] of bad) {
