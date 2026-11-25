@@ -63,6 +63,11 @@ describe('captureEventLines', () => {
     expect(lines.map((l) => l.depth)).toEqual([0, 1, 1, 2, 2, 2]);
   });
 
+  test('a row with mergeHint points to Pending to choose the bucket', () => {
+    const lines = captureEventLines(outcome({ pending: [row({ mergeHint: true })] }), t);
+    expect(view(lines).at(-1)).toEqual({ tone: 'warn', depth: 2, text: 'Several buys in this screenshot: choose the bucket in Pending.', href: undefined });
+  });
+
   test('booked-earlier warning sits above the pending head', () => {
     const lines = captureEventLines(outcome({ pending: [row()], bookedEarlier: true }), t);
     expect(view(lines)).toEqual([

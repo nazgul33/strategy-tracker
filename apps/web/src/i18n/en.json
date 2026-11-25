@@ -469,6 +469,7 @@
   "upload.badExtractIncompatible": "The vision service answered, but not as an OpenAI-compatible API.",
   "upload.badExtractUnparseable": "The vision model answered, but not in a form the tracker understands — {detail}. Try again; if it keeps happening, check the vision model.",
   "upload.bookedEarlier": "Fills from this image were already confirmed earlier — the rows below may be duplicates. Check before confirming.",
+  "upload.buysSeveral": "Several buys in this screenshot: choose the bucket in Pending.",
   "upload.choose": "choose files",
   "upload.conflict": "{side} {shares} {ticker} on {date} — read ${extracted}, booked fill #{id} has ${dupPrice}. Correction listed in Pending.",
   "upload.conflictDismissed": "{side} {shares} {ticker} on {date} — read ${extracted}, booked fill #{id} has ${dupPrice}. You dismissed this correction before; not listed again.",

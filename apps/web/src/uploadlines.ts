@@ -62,6 +62,7 @@ function rowLines(r: CapturePendingRowDto, t: Translate): UploadLine[] {
   if (r.detectedFilledOn === null) lines.push(line('warn', 2, t('upload.dateSubstituted', { date: r.filledOn })));
   if (r.dateAfterToday) lines.push(line('warn', 2, t('upload.dateAfterToday', { date: r.filledOn })));
   if (r.needsBucket) lines.push(line('warn', 2, t('upload.needsBucket')));
+  if (r.mergeHint) lines.push(line('warn', 2, t('upload.buysSeveral')));
   return lines;
 }
 

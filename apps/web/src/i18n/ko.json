@@ -469,6 +469,7 @@
   "upload.badExtractIncompatible": "비전 서비스가 응답했지만 OpenAI 호환 API 형식이 아닙니다.",
   "upload.badExtractUnparseable": "비전 모델이 응답했지만 트래커가 이해할 수 있는 형식이 아닙니다 — {detail}. 다시 시도하고, 계속 반복되면 비전 모델을 확인하세요.",
   "upload.bookedEarlier": "이 이미지의 체결은 이전에 이미 확정되었습니다 — 아래 항목은 중복일 수 있으니 확인 후 확정하세요.",
+  "upload.buysSeveral": "이 스크린샷에 매수 체결이 여러 건 있습니다: '확인 대기'에서 버킷을 고르세요.",
   "upload.choose": "파일 선택",
   "upload.conflict": "{date} {ticker} {side} {shares}주 — 읽은 가격 ${extracted}, 예약된 체결 #{id} 가격 ${dupPrice}. 수정 제안은 '확인 대기'에서 처리하세요.",
   "upload.conflictDismissed": "{date} {ticker} {side} {shares}주 — 읽은 가격 ${extracted}, 예약된 체결 #{id} 가격 ${dupPrice}. 이전에 무시한 수정 제안이므로 다시 표시하지 않습니다.",
