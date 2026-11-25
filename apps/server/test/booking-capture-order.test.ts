@@ -72,4 +72,23 @@ describe('ingestCapture row flags', () => {
       logged.mockRestore()
     }
   })
+
+  test('mergeHint marks every buy of a capture holding two buys on one date, and not the sell', async () => {
+    const buyOn = (shares: number) => ({ side: 'buy' as const, ticker: 'AAPL', shares, price: '50.00', date: '2026-11-10' })
+    const { pending } = await ingest([buyOn(3), buyOn(4), sell], 'HINT-SAME-DAY')
+    expect(pending.map(r => [r.side, r.mergeHint])).toEqual([['buy', true], ['buy', true], ['sell', false]])
+  })
+
+  test('mergeHint marks buys on different dates too', async () => {
+    const { pending } = await ingest([
+      { side: 'buy', ticker: 'AAPL', shares: 3, price: '50.00', date: '2026-11-09' },
+      { side: 'buy', ticker: 'AAPL', shares: 4, price: '51.00', date: '2026-11-10' },
+    ], 'HINT-DIFF-DAY')
+    expect(pending.map(r => r.mergeHint)).toEqual([true, true])
+  })
+
+  test('a single buy has no mergeHint', async () => {
+    const { pending } = await ingest([{ side: 'buy', ticker: 'AAPL', shares: 3, price: '50.00', date: D }], 'HINT-ONE')
+    expect(pending[0]).toMatchObject({ mergeHint: false })
+  })
 })

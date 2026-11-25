@@ -75,10 +75,16 @@ describe('an operator-chosen bucket on a sell', () => {
     await expectUntouched(s, [10, 0, 0, 0, 0, 0, 0, 0, 0, 10])
   })
 
-  test('a bucketIdx on a buy, or one that is not a non-negative integer, is invalid-bucket', async () => {
+  test('a bucketIdx that is not a non-negative integer is invalid-bucket on a sell and on a buy', async () => {
     const s = await sellSetup(held43, book43())
-    await expect(manualFill(s.runId, { side: 'buy', shares: 5, price: '50.00', filledOn: D, bucketIdx: 4 }, s.deps)).rejects.toThrow('invalid-bucket')
     for (const bad of [1.5, -1, '9' as any]) await expect(forced(s, 10, '96.50', bad)).rejects.toThrow('invalid-bucket')
+    await expect(manualFill(s.runId, { side: 'buy', shares: 5, price: '50.00', filledOn: D, bucketIdx: -1 }, s.deps)).rejects.toThrow('invalid-bucket')
+    await expectUntouched(s, [10, 0, 0, 0, 0, 0, 0, 0, 0, 10])
+  })
+
+  test('a buy with a bucketIdx on an empty bucket is bucket-not-held', async () => {
+    const s = await sellSetup(held43, book43())
+    await expect(manualFill(s.runId, { side: 'buy', shares: 5, price: '50.00', filledOn: D, bucketIdx: 4 }, s.deps)).rejects.toMatchObject({ kind: 'bucket-not-held' })
     await expectUntouched(s, [10, 0, 0, 0, 0, 0, 0, 0, 0, 10])
   })
 
@@ -107,10 +113,19 @@ describe('an operator-chosen bucket on a pending confirm', () => {
     expect(s.rec.attributions).toEqual([])
   })
 
-  test('a confirm that turns the row into a buy with a bucketIdx is invalid-bucket and leaves the row pending', async () => {
+  test('a confirm that turns the row into a buy with a bucketIdx adds it to that held bucket', async () => {
     const s = await sellSetup(held43, book43())
     const pid = await pendingSell(s)
-    await expect(confirmPendingFill(pid, { side: 'buy', bucketIdx: 9 }, s.deps)).rejects.toThrow('invalid-bucket')
+    await confirmPendingFill(pid, { side: 'buy', bucketIdx: 9 }, s.deps)
+    expect(lastFill(s.f)).toMatchObject({ side: 'buy', bucketIdx: 9 })
+    expect((await heldShares(s.f, s.runId))[9]).toBe(20)
+    expect(s.f._stores.pending.find((p: any) => p.id === pid)).toMatchObject({ status: 'confirmed', bucketIdx: 9 })
+  })
+
+  test('a confirm that turns the row into a buy with a malformed bucketIdx is invalid-bucket and leaves the row pending', async () => {
+    const s = await sellSetup(held43, book43())
+    const pid = await pendingSell(s)
+    await expect(confirmPendingFill(pid, { side: 'buy', bucketIdx: -1 }, s.deps)).rejects.toThrow('invalid-bucket')
     expect(s.f._stores.pending.find((p: any) => p.id === pid)!.status).toBe('pending')
     expect(s.f._stores.fills).toEqual([])
   })

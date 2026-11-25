@@ -25,6 +25,8 @@ export interface PendingFillDto {
   costPpm: number;
   /** The row's own run's non-empty buckets; the choices a confirmed sell can be booked to. */
   heldBuckets: HeldBucketDto[];
+  /** The held buckets a confirmed buy can be added to (not force-sell, not partly sold). */
+  mergeableBuckets: HeldBucketDto[];
   /** What vision read. `null` = the row predates the snapshot; a null field = vision missed it. */
   detected: DetectedDto | null;
   /** A dry run says this sell could belong to several buckets right now; never true for a buy. */

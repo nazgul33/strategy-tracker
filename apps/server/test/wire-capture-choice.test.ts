@@ -69,7 +69,7 @@ describe('capture rows the operator must act on', () => {
   test('the notice lines come in order: substituted date, date after today, then bucket', () => {
     const row: PendingFillRow = {
       id: 1, runId: 1, captureId: 1, side: 'sell', ticker: 'NVDA', shares: 5, price: '190.00', fee: null,
-      filledOn: '2026-11-12', detectedFilledOn: null, status: 'pending', needsBucket: true, dateAfterToday: true,
+      filledOn: '2026-11-12', detectedFilledOn: null, status: 'pending', needsBucket: true, dateAfterToday: true, mergeHint: false,
     };
     const { text, buttons } = pendingMessage(row, 'en');
     expect(buttons).toBe(false);
@@ -78,6 +78,16 @@ describe('capture rows the operator must act on', () => {
       t('capture-date-after-today', 'en', { date: '2026-11-12' }),
       t('capture-needs-bucket', 'en'),
     ]);
+  });
+
+  test('a mergeHint row ends with the several-buys line and has no buttons', () => {
+    const row: PendingFillRow = {
+      id: 1, runId: 1, captureId: 1, side: 'buy', ticker: 'NVDA', shares: 5, price: '190.00', fee: null,
+      filledOn: '2026-11-12', detectedFilledOn: '2026-11-12', status: 'pending', needsBucket: false, dateAfterToday: false, mergeHint: true,
+    };
+    const { text, buttons } = pendingMessage(row, 'en');
+    expect(buttons).toBe(false);
+    expect(text.split('\n').at(-1)).toBe(t('capture-buys-several', 'en'));
   });
 
   test('Yes on a row that now needs a choice is refused and books nothing', async () => {

@@ -1,4 +1,4 @@
-import { applyBuyFill, applySellFill, DomainError, nextBuyBucketIndex, parseUsd, type ISODate, type RunState } from '@st/core'
+import { addBuyFill, applyBuyFill, applySellFill, DomainError, nextBuyBucketIndex, sameDayBuyBucketIndex, parseUsd, type ISODate, type RunState } from '@st/core'
 import { feeCents, centsFromUsd, formatUsd } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { ExtractResult, RawFill } from '@st/ingest'
@@ -47,7 +47,7 @@ export type CaptureOutcome =
   | { pending: PendingFillRow[]; conflicts: CaptureConflict[]; bookedEarlier?: true }
   | { conflicts: CaptureConflict[] }
 
-export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; detectedFilledOn: ISODate | null; status: string; needsBucket: boolean; dateAfterToday: boolean }
+export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; detectedFilledOn: ISODate | null; status: string; needsBucket: boolean; dateAfterToday: boolean; mergeHint: boolean }
 
 export interface BookInput {
   runId: number
@@ -58,7 +58,7 @@ export interface BookInput {
   filledOn: ISODate
   pendingId?: number | null
   source: FillSource
-  bucketIdx?: number | null  // sell only: the operator's bucket; null/undefined = automatic
+  bucketIdx?: number | null  // the operator's bucket (a buy adds to that held bucket); null/undefined = automatic
   order?: OrderEvidence  // sell only: what the screenshot said about the order; absent = no evidence
   feeOverride?: FeeOverrideKind  // the KIND of fee override, stored on the pending row; read only with pendingId, absent = 'none'
 }
@@ -84,10 +84,7 @@ export function finalFeeCents(run: { costPpm: number }, price: bigint, shares: n
 }
 
 export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<BookedOutcome> {
-  if (input.bucketIdx != null) {
-    const usable = input.side === 'sell' && Number.isInteger(input.bucketIdx) && input.bucketIdx >= 0
-    if (!usable) throw new Error('invalid-bucket')
-  }
+  if (input.bucketIdx != null && !(Number.isInteger(input.bucketIdx) && input.bucketIdx >= 0)) throw new Error('invalid-bucket')
   if (input.filledOn > deps.today) throw new DomainError('fill-date-in-future')
   const repos = deps.repos
   const run = await requireRun(repos, input.runId)
@@ -102,11 +99,18 @@ export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise
   let attribution: SellAttribution | null = null
 
   if (input.side === 'buy') {
-    const picked = nextBuyBucketIndex(state)
-    if (picked === null) throw new Error('no-empty-bucket')
-    bucketIdx = picked
-    next = applyBuyFill(state, bucketIdx, input.shares, priceBigInt, finalFee, input.filledOn)
-    next.ages[bucketIdx] = ageBuckets(next.ages, deps.today, { [bucketIdx]: input.filledOn })[bucketIdx]!
+    // A chosen bucket, or else the same-day bucket, takes the buy as a merge (addBuyFill keeps its fill date and age).
+    const merge = input.bucketIdx ?? sameDayBuyBucketIndex(state, input.filledOn)
+    if (merge !== null) {
+      bucketIdx = merge
+      next = addBuyFill(state, bucketIdx, input.shares, priceBigInt, finalFee)
+    } else {
+      const picked = nextBuyBucketIndex(state, input.filledOn)
+      if (picked === null) throw new Error('no-empty-bucket')
+      bucketIdx = picked
+      next = applyBuyFill(state, bucketIdx, input.shares, priceBigInt, finalFee, input.filledOn)
+      next.ages[bucketIdx] = ageBuckets(next.ages, deps.today, { [bucketIdx]: input.filledOn })[bucketIdx]!
+    }
     // matching buy_loc order (lookup only; flip after ledger)
     const orders = await repos.orderRepo.listForDate(input.filledOn)
     const match = orders.find((o) => o.runId === input.runId && o.kind === 'buy_loc' && (o.status === 'open' || o.status === 'stale'))
@@ -187,13 +191,16 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
         price: formatUsd(parseUsd(f.price)),
         fee: feeCentsVal === null ? null : formatUsd(BigInt(feeCentsVal) * 100n),
         filledOn, detectedFilledOn: f.date ?? null, status: 'pending',
-        needsBucket: false, dateAfterToday: filledOn > deps.today,
+        needsBucket: false, dateAfterToday: filledOn > deps.today, mergeHint: false,
       })
       flagRows.push({ id: pendingId, side: f.side, shares: f.shares, price: parseUsd(f.price), filledOn, evidence: evidenceOf({ detectedOrderType, detectedOrderPrice, detectedOrderedShares }) })
     }
     if (pendingRows.length > 0) await storeCaptureImage(repos, captureId, image)
     const needingBucket = await rowsNeedingBucket(repos, runId, flagRows, deps.today)
     for (const row of pendingRows) row.needsBucket = needingBucket.has(row.id)
+    // Two or more buys in one capture may belong to one bucket: point the operator at the web view.
+    const buyCount = pendingRows.filter(r => r.side === 'buy').length
+    for (const row of pendingRows) row.mergeHint = row.side === 'buy' && buyCount >= 2
     if (fresh.length === 0) return { conflicts }
     const earlier = claim.bookedEarlier ? { bookedEarlier: true as const } : {}
     if (conflicts.length > 0) return { pending: pendingRows, conflicts, ...earlier }

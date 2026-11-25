@@ -1,6 +1,6 @@
 // Wire shapes of POST /api/captures (apps/server/src/wire/capture-route.ts).
 // Prices and fees are the USD strings the server formats ('180.50'), not myriadths.
-export interface CapturePendingRowDto { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: string; detectedFilledOn: string | null; status: string; needsBucket: boolean; dateAfterToday: boolean }
+export interface CapturePendingRowDto { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: string; detectedFilledOn: string | null; status: string; needsBucket: boolean; dateAfterToday: boolean; mergeHint: boolean }
 
 interface CaptureConflictBaseDto { side: 'buy' | 'sell'; ticker: string; shares: number; extractedPrice: string; extractedFee: string | null; filledOn: string }
 

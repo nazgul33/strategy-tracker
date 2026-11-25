@@ -11,7 +11,7 @@ type App = ReturnType<typeof createApp>
 
 const PENDING_ROW: PendingFillRow = {
   id: 1, runId: 7, captureId: 1, side: 'buy', ticker: 'NVDA', shares: 30, price: '179.50', fee: '0.50',
-  filledOn: '2026-11-10', detectedFilledOn: '2026-11-10', status: 'pending', needsBucket: false, dateAfterToday: false,
+  filledOn: '2026-11-10', detectedFilledOn: '2026-11-10', status: 'pending', needsBucket: false, dateAfterToday: false, mergeHint: false,
 }
 
 function png(size = 4): File {

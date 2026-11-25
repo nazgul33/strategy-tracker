@@ -41,6 +41,18 @@ const SELL_TEN: PendingFillDto = {
   heldBuckets: [{ index: 1, shares: 5 }],
 };
 
+const BUY_NINE: PendingFillDto = {
+  ...ROW,
+  id: 9,
+  runId: 7,
+  side: 'buy',
+  heldBuckets: [
+    { index: 1, shares: 10 },
+    { index: 5, shares: 26 },
+  ],
+  mergeableBuckets: [{ index: 5, shares: 26 }],
+};
+
 async function flush() {
   for (let i = 0; i < 5; i += 1) {
     await act(async () => {
@@ -151,15 +163,30 @@ describe('PendingTable bucket selector', () => {
     expect(calls[0]!.body).toEqual({});
   });
 
-  it('a bucket chosen and then the side switched to buy posts no bucketIdx', async () => {
-    const calls = await renderRows([SELL_NINE]);
+  it('a bucket chosen on a buy row posts it as bucketIdx', async () => {
+    const calls = await renderRows([BUY_NINE]);
+    await choose(bucketSelect(9), '5');
+    await confirmRow(9);
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.body).toEqual({ overrides: { bucketIdx: 5 } });
+  });
+
+  it('a bucket chosen on a sell row is dropped when the side is switched to buy', async () => {
+    const calls = await renderRows([{ ...SELL_NINE, mergeableBuckets: [{ index: 3, shares: 4 }] }]);
     await choose(bucketSelect(9), '3');
     await choose(sideSelect(9), 'buy');
-    expect(bucketSelect(9)).toBeNull();
     await confirmRow(9);
     await pressButton('Keep for review');
-    expect(calls.length).toBe(1);
     expect((calls[0]!.body as { overrides: unknown }).overrides).toEqual({ side: 'buy' });
+  });
+
+  it('a bucket chosen on a buy row is dropped when the side is switched to sell', async () => {
+    const calls = await renderRows([BUY_NINE]);
+    await choose(bucketSelect(9), '5');
+    await choose(sideSelect(9), 'sell');
+    await confirmRow(9);
+    await pressButton('Keep for review');
+    expect((calls[0]!.body as { overrides: unknown }).overrides).toEqual({ side: 'sell' });
   });
 
   it('a chosen bucket survives the default-fee popup and the keep prompt', async () => {
@@ -173,9 +200,9 @@ describe('PendingTable bucket selector', () => {
     expect((calls[0]!.body as { overrides: { bucketIdx?: number } }).overrides.bucketIdx).toBe(3);
   });
 
-  it('a buy row shows no bucket selector', async () => {
-    await renderRows([ROW]);
-    expect(bucketSelect(9)).toBeNull();
+  it('a buy row offers Automatic and Add to bucket N for each mergeable bucket only', async () => {
+    await renderRows([BUY_NINE]);
+    expect(optionTexts(bucketSelect(9))).toEqual(['Automatic', 'Add to bucket 6 · 26 sh']);
   });
 
   it('a row whose side vision missed shows no bucket selector', async () => {

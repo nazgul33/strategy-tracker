@@ -38,6 +38,7 @@ const SELL_ROW = {
   status: 'pending',
   needsBucket: true,
   dateAfterToday: false,
+  mergeHint: false,
 };
 const OUTCOME: UploadAnswer = { json: { events: [{ type: 'outcome', runId: 7, ticker: 'NVDA', outcome: { pending: [SELL_ROW] } }] } };
 const DUPLICATE: UploadAnswer = { json: { events: [{ type: 'outcome', runId: 1, ticker: 'NVDA', outcome: 'duplicate' }] } };

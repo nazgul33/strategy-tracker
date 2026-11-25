@@ -28,6 +28,7 @@ const CONFIRM_ERROR_KEYS: Record<string, string> = {
   'invalid-fee': 'confirm-err-invalid-fee',
   'bucket-not-held': 'confirm-err-bucket-not-held',
   'bucket-not-found': 'confirm-err-bucket-not-found',
+  'bucket-not-mergeable': 'confirm-err-bucket-not-mergeable',
   'fill-date-in-future': 'confirm-err-fill-date-in-future',
   'choose-bucket': 'confirm-err-choose-bucket',
 };

@@ -9,7 +9,7 @@ import { resolveReview } from './vision-review'
 
 // Operator corrections to what the vision model read. feeCents: null recomputes the
 // fee from the run's costPpm; undefined keeps the fee captured on the pending row.
-// bucketIdx forces the sell's bucket (sell only; null/undefined = automatic).
+// bucketIdx forces the bucket: a sell books there, a buy is added to that held bucket (null/undefined = automatic).
 export interface ConfirmOverrides {
   shares?: number
   price?: string
@@ -25,7 +25,7 @@ export interface ConfirmOverrides {
 // - setKeep throws: nothing is booked or decided; the confirm fails as a whole
 //   and the operator retries.
 // - A booking refusal (invalid-bucket, bucket-not-found, bucket-not-held,
-//   too-many-shares, no-empty-bucket, no-bucket-for-sell, choose-bucket, fill-date-in-future, a lost decide race)
+//   bucket-not-mergeable, too-many-shares, no-empty-bucket, no-bucket-for-sell, choose-bucket, fill-date-in-future, a lost decide race)
 //   leaves the row pending and the image kept; the flag is sticky, so a later
 //   confirm or reject, with or without keep, leaves it kept.
 // - A crash or thrown write after decide flipped the row leaves it confirmed

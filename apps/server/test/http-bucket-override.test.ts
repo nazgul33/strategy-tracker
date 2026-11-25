@@ -59,10 +59,21 @@ describe('bucket override on POST /runs/:id/fills', () => {
     const notHeld = await postFill({ ...sell, bucketIdx: 5 })
     expect(notHeld.status).toBe(422)
     expect(await notHeld.json()).toEqual({ error: 'bucket-not-held' })
-    const buy = await postFill({ side: 'buy', shares: 1, price: '90.00', filledOn: D, bucketIdx: 0 })
+    const buy = await postFill({ side: 'buy', shares: 1, price: '90.00', filledOn: D, bucketIdx: -1 })
     expect(buy.status).toBe(422)
     expect(await buy.json()).toEqual({ error: 'invalid-bucket' })
+    const buyEmpty = await postFill({ side: 'buy', shares: 1, price: '90.00', filledOn: D, bucketIdx: 5 })
+    expect(buyEmpty.status).toBe(422)
+    expect(await buyEmpty.json()).toEqual({ error: 'bucket-not-held' })
     expect(f.fills).toHaveLength(before)
+  })
+
+  test('a buy with bucketIdx adds to that held bucket', async () => {
+    const { f, id, postFill } = await setup()
+    const res = await postFill({ side: 'buy', shares: 5, price: '90.00', filledOn: D, bucketIdx: 0 })
+    expect(res.status).toBe(200)
+    expect(f.fills.filter((x) => x.side === 'buy' && x.source === 'manual')).toMatchObject([{ bucketIdx: 0, shares: 5 }])
+    expect(f.states.get(id)!.buckets[0]!.shares).toBe(15)
   })
 })
 
@@ -77,11 +88,20 @@ describe('bucket override on POST /pending/:id/confirm', () => {
     expect(f.states.get(id)!.buckets[1]!.state).toBe('empty')
   })
 
-  test('a bucketIdx on a buy is 422 invalid-bucket and the row stays pending', async () => {
+  test('a bucketIdx on a buy adds it to that held bucket', async () => {
+    const { f, id, addPending, confirm } = await setup()
+    const pid = await addPending({ side: 'buy', shares: 1, price: 900000n })
+    const res = await confirm(pid, { overrides: { bucketIdx: 0 } })
+    expect(res.status).toBe(200)
+    expect(f.states.get(id)!.buckets[0]!.shares).toBe(11)
+    expect(f.pending.find((p) => p.id === pid)!.status).toBe('confirmed')
+  })
+
+  test('a malformed bucketIdx on a buy is 422 invalid-bucket and the row stays pending', async () => {
     const { f, addPending, confirm } = await setup()
     const pid = await addPending({ side: 'buy', shares: 1, price: 900000n })
     const before = f.fills.length
-    const res = await confirm(pid, { overrides: { bucketIdx: 0 } })
+    const res = await confirm(pid, { overrides: { bucketIdx: -1 } })
     expect(res.status).toBe(422)
     expect(await res.json()).toEqual({ error: 'invalid-bucket' })
     expect(f.fills).toHaveLength(before)
@@ -111,6 +131,21 @@ describe('GET /api/pending heldBuckets', () => {
     await addPending()
     const rows = await (await app.request('/api/pending', { headers: auth })).json()
     expect(rows[0].heldBuckets).toEqual([{ index: 0, shares: 10 }, { index: 1, shares: 10 }])
+  })
+
+  test('mergeableBuckets leaves out a force_sell bucket and a partly sold bucket', async () => {
+    const { f, app, auth, id, addPending } = await setup()
+    await addPending({ side: 'buy' })
+    let rows = await (await app.request('/api/pending', { headers: auth })).json()
+    expect(rows[0].mergeableBuckets).toEqual([{ index: 0, shares: 10 }, { index: 1, shares: 10 }])
+    f.states.get(id)!.buckets[1]!.state = 'force_sell'
+    rows = await (await app.request('/api/pending', { headers: auth })).json()
+    expect(rows[0].heldBuckets).toEqual([{ index: 0, shares: 10 }, { index: 1, shares: 10 }])
+    expect(rows[0].mergeableBuckets).toEqual([{ index: 0, shares: 10 }])
+    const b0 = f.states.get(id)!.buckets[0]!
+    f.states.get(id)!.closed.push({ index: 0, openedOn: b0.filledOn, closedOn: D } as any)
+    rows = await (await app.request('/api/pending', { headers: auth })).json()
+    expect(rows[0].mergeableBuckets).toEqual([])
   })
 
   test('gives a row whose run is gone no buckets', async () => {
