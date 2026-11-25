@@ -10,7 +10,7 @@ possibly on the same ticker. As with MR, he places every order himself; the app 
 tells him what to place on Telegram, and keeps the books.
 
 VR's maths is light but easy to get wrong by hand: every two weeks a new target value V, a band
-around it, and a ladder of one-share limit orders whose prices depend on how many shares he
+around it, and a ladder of limit orders whose prices depend on how many shares he
 holds. The app takes that over.
 
 This is **piece 2a** of the roadmap agreed with the owner:
@@ -37,7 +37,7 @@ in the source".
 - Create a VR run from cash, get told how many shares to buy to start, and from then on receive
   one Telegram message per two-week cycle with the new V, the band, and the buy and sell ladders.
 - Keep VR books (shares, Pool) from fills and cash movements typed in on the VR run page.
-- A VR run page that always shows the current ladder for the current share count.
+- A VR run page that always shows what is left of the current cycle's ladder.
 - MR behaves exactly as before. A VR run and an MR run may share a ticker.
 - Screenshot intake is untouched in this piece: a screenshot still goes to MR runs only, so a
   screenshot of a VR fill on a ticker that also has an MR run lands in that MR run's pending
@@ -51,7 +51,7 @@ in the source".
 - A VR simulator or backtest.
 - Charts (V / band / value over time). The cycle history is a table for now.
 - Recomputing past cycles' V after a late or edited fill (see "Late and edited entries").
-- More than one share per rung, automatic switching between deposit styles, Infinite Buy.
+- Automatic switching between deposit styles, Infinite Buy.
 
 ## Anti-goals
 
@@ -74,10 +74,10 @@ numbers, so recomputing is cheap, and editing or deleting an entry can never lea
 of step. MR needed a large body of re-booking code for exactly that problem.
 
 **Ladder (designer's call).** A stored orders table with open/filled status versus **computing
-the ladder on demand — chosen.** A rung's price is a function of the band and the share count
-only, so the ladder for "now" follows from the current books. Extra or missed fills need no
-special handling: the ladder simply continues from the shares actually held, which is also what
-the source says to do.
+the ladder — chosen.** The ladder is a function of the cycle row (band, opening share count,
+lot sizes, budget), so it is computed when needed, and what is left of it follows from the fills
+dated in the cycle. Each new cycle starts its ladder from the shares actually held, which is
+also what the source says to do after extra or missed fills.
 
 ## The method, as built
 
@@ -126,29 +126,44 @@ formula (default skill), band (default 15%), Pool spend limit (default 50%), dep
 
 ### The ladder
 
-For the current share count n ≥ 1 in the current cycle:
+The ladder is fixed when the cycle opens, from the share count n held at that moment. It is the
+set of orders he places at the broker for the two weeks.
 
-- **Buy rungs:** one share each at `min ÷ n`, `min ÷ (n+1)`, `min ÷ (n+2)`, …, **truncated** to
-  the cent (owner's rule: a buy price is never rounded up). Rungs are listed while their running total fits in the budget still unspent this
-  cycle (budget minus price × shares of the buys dated in the cycle) and in the Pool itself.
-  Fees are left out of both checks, as in the source's table (designer's call), so the ladder
-  never exceeds the budget before fees.
-- **Sell rungs:** one share each at `max ÷ n`, `max ÷ (n−1)`, …, **rounded up** to the cent
-  (owner's rule: a sell price is never rounded down), stopping while one share is still held: the ladder never offers the last share (designer's
-  call, so the run does not sell itself out).
-- Telegram shows the first 10 rungs of each side and the total count; the web page shows all.
+- **At most 30 rungs per side, sized to cover a 30% price move** (owner's rule). The shares per
+  rung (the lot) is the smallest whole number with which 30 rungs reach a price 30% beyond the
+  first rung:
+  - buy lot = `ceil(3n ÷ 203)` (from `n ÷ (n + 29 × lot) ≤ 0.70`)
+  - sell lot = `ceil(3n ÷ 377)` (from `n ÷ (n − 29 × lot) ≥ 1.30`)
+  - each at least 1. The two lots are stored on the cycle.
+- **Buy rungs:** rung i (from 0) buys one lot at `min ÷ (n + i × lot)`, **truncated** to the cent
+  (owner's rule: a buy price is never rounded up). The side ends after the first rung priced at
+  or below 70% of the first rung, at 30 rungs, or before a rung whose cost would take the
+  running total over the cycle's buy budget or the opening Pool, whichever comes first. Fees are
+  left out of the budget check, as in the source's table (designer's call), so the ladder never
+  exceeds the budget before fees.
+- **Sell rungs:** rung j (from 0) sells one lot at `max ÷ (n − j × lot)`, **rounded up** to the
+  cent (owner's rule: a sell price is never rounded down). The side ends after the first rung
+  priced at or above 130% of the first rung, at 30 rungs, or before a rung that would leave no
+  share: the ladder never sells the run out (designer's call).
+- **During the cycle** the page and `/orders` show what is left. Shares bought in the cycle
+  (fills dated on or after its start) use up the buy rungs in order, and shares sold use up the
+  sell rungs; a partly filled rung shows its remaining shares. Buys and sells are counted
+  separately, as the two sets of resting orders are.
+- If the cycle opened with no shares there is no ladder until the next cycle.
+- Telegram and the web page show every rung.
 
 ### Worked examples (pinned as tests)
 
 - Basic: V 9,000.00, Pool 1,000.00, G 10, D 250.00 → next V 9,350.00; band 7,947.50 to
   10,752.50. (From the guide.)
-- Buy rungs: min 10,509.46, 176 shares → 59.71, 59.37, 59.04, 58.71, 58.38; a Pool of 383.14
-  falls to 323.43, 264.06, 205.02, 146.31, 87.93. (The guide's table shows 59.38 and 58.39 for
-  the second and fifth rung because it rounds to the nearest cent; the owner's truncation rule
-  takes precedence.)
-- Sell rungs: max 10,752.50, 177 shares → 60.75, 61.10 (`60.7486…` and `61.0937…` rounded up).
-- Skill: V 14,837.55, Pool 0.50, G 10, E 15,871.05, D 130.00 → next V **15,131.01**
-  (`1,033.50 ÷ 6.3245553… = 163.41`, plus `0.05` and `130.00`).
+- Lots: 176 shares → buy lot 3, sell lot 2; 50 shares → 1 and 1; 1,000 shares → 15 and 8.
+- Buy rungs: min 10,509.46, 176 shares, lot 3 → 59.71, 58.71, 57.74, 56.80, … 27 rungs in all,
+  the last at 41.37 (the first at or below 70% of 59.71, which is 41.79).
+- Buy truncation, one share per rung: min 10,509.46, 176 shares → 59.71, 59.37, 59.04, 58.71,
+  58.38. (The guide's table shows 59.38 and 58.39 for the second and fifth because it rounds to
+  the nearest cent; the owner's truncation rule takes precedence.)
+- Sell rungs: max 10,752.50, 177 shares, lot 2 → 60.75, 61.45, 62.16, … 22 rungs in all, the
+  last at 79.65 (the first at or above 130% of 60.75, which is 78.97).
 
 ### Owner's rulings on the gaps in the source
 
@@ -160,6 +175,8 @@ For the current share count n ≥ 1 in the current cycle:
    setting. Rungs stop before the one that would exceed the cycle's budget.
 4. **Price rounding.** Buy prices are truncated to the cent and sell prices rounded up to the
    cent. V, the band, E and money amounts are rounded to the nearest cent.
+5. **Ladder size.** At most 30 rungs per side; the shares per rung grow until 30 rungs cover a
+   30% price move. (The source's ladder is one share per rung with no stated end.)
 
 ## Books
 
@@ -199,7 +216,8 @@ New tables, generated by drizzle-kit in the normal way (no hand-written SQL):
 - `vr_runs` — one row per VR run, keyed by `run_id` (= `strategy_runs.id`): G, formula, band,
   spend limit, deposit per cycle, initial stock amount.
 - `vr_cycles` — one row per cycle: run, sequence number, scheduled start, actual start, V, band
-  min and max, opening shares, opening Pool, buy budget, and the inputs listed above.
+  min and max, opening shares, opening Pool, buy budget, buy and sell lot, and the inputs listed
+  above.
 - `vr_fills`, `vr_cash_moves` — the two histories.
 
 `strategy_runs` gets VR rows with `strategy_key = 'value-rebalancing'`. Name, ticker, status and
@@ -228,7 +246,7 @@ trade cost stay there. Messages are recorded in the shared `notifications` table
 - **Booking:** adding, editing and deleting fills and cash movements, serialized per run with
   the existing run lock.
 - **Telegram:** buy instruction and cycle message in English and Korean; `/status` and
-  `/orders` include VR runs (holdings, Pool, V and band; first rungs of each side). The "no
+  `/orders` include VR runs (holdings, Pool, V and band; the rungs still open). The "no
   runs" and "no orders" replies are sent only when neither strategy has anything to show; with
   MR runs only, both commands reply exactly as today.
 - **HTTP** under `/api/vr`: list and create runs; run detail (settings, books, current cycle,
@@ -251,28 +269,29 @@ catalogs. Existing MR pages are unchanged; the MR runs list still lists MR runs 
 TQQQ lump sum  [active]                         [Pause] [Close] [Settings]
 Cycle 3 · Dec 7 – Dec 20 · next cycle Dec 21
 V $9,350.00    band $7,947.50 – $10,752.50    G 10 · skill formula
-Shares 177     Pool $954.82    budget left $454.85 of $500.00
-Value $9,096.82   net invested $10,000.00   profit −$903.18   avg cost $51.07
+Shares 179     Pool $864.46    budget left $364.55 of $500.00
+Value $9,098.46   net invested $10,000.00   profit −$901.54   avg cost $51.01
 
-Buy ladder (1 share each)         Sell ladder (1 share each)
- to shares  price                  to shares  price
- 178        44.90                  176        60.75
- 179        44.64                  175        61.10
- ...                               ...
+Buy ladder (2 of 3 rungs left)    Sell ladder (22 rungs)
+ shares  price                     shares  price
+ 3       44.39                     2       61.10
+ 3       43.66                     2       61.80
+                                   ...
 
 [Fills] [Cash] [Cycles] [Alerts]
  date        side  shares  price   fee      [Add fill]
- 2026-12-08  buy   1       45.15   0.03     edit · delete
+ 2026-12-08  buy   3       45.15   0.09     edit · delete
 ```
 
-(The cycle opened with 176 shares and a Pool of $1,000.00; the one fill shown has been booked;
+(The cycle opened with 176 shares and a Pool of $1,000.00, so the buy lot is 3 and the sell
+lot 2; the $500.00 budget allowed three buy rungs, and the one fill shown has used the first;
 the last close is $46.00.) While the run holds no shares the page shows the buy instruction
 instead of the ladder.
 
 ## Verification
 
-- Engine unit tests, including the four worked examples and edge cases (0 shares, one share
-  held so no sell rung, empty Pool, budget exactly reached, a negative `E − V` term rounding,
+- Engine unit tests, including the worked examples and edge cases (0 shares, one share
+  held so no sell rung, empty Pool, budget exactly reached, a partly filled rung, a negative `E − V` term rounding,
   withdrawal driving V non-positive).
 - Repository and booking tests against a database; HTTP tests; morning-job tests with fakes
   (buy instruction, cycle 1 without a deposit, shares back to 0 after cycle 1, roll on the due day, holiday shift keeps the anchor, late job
