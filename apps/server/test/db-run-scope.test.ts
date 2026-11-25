@@ -37,6 +37,21 @@ describeIf('db integration: run scope', () => {
     }
   })
 
+  test('MR status writes skip a run without an mr_runs row', async () => {
+    const uniq = Date.now()
+    const mrId = await repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'SS' + uniq, name: 'scope-st-mr-' + uniq, poolCents: 1000, costPpm: 10 })
+    const [res] = await db.execute(sql`INSERT INTO strategy_runs (strategy_key, ticker, name, cost_ppm) VALUES ('value-rebalancing', 'TQQQ', ${'scope-st-vr-' + uniq}, 10)`) as unknown as [{ insertId: number }, unknown]
+    const otherId = res.insertId
+    try {
+      await repos.runRepo.updateStatus(otherId, 'paused')
+      expect(await repos.runRepo.updateStatusMany([mrId, otherId], ['active'], 'paused')).toBe(1)
+      expect(await selectRows(sql`SELECT status FROM strategy_runs WHERE id = ${otherId}`)).toEqual([{ status: 'active' }])
+      expect((await repos.runRepo.get(mrId))!.status).toBe('paused')
+    } finally {
+      await db.execute(sql`DELETE FROM strategy_runs WHERE id = ${otherId}`)
+    }
+  })
+
   test('list returns runs in ascending id order', async () => {
     const ids = (await repos.runRepo.list()).map((r) => r.id)
     expect(ids).toEqual([...ids].sort((a, b) => a - b))

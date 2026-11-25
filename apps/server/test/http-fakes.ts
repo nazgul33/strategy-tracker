@@ -7,6 +7,7 @@ import type { VisionReviewRow } from '../src/domain/vision-review'
 import { fakeCorrectionRepo } from './fake-corrections'
 import { fakeSimRepo } from './fake-sim'
 import { fakeRunRow, FAKE_CREATED_AT } from './booking-fakes'
+import { makeVrFakes } from './vr-fakes'
 import { normTicker } from '../src/db/repos-bars'
 
 export function makeFakes() {
@@ -215,11 +216,13 @@ export function makeFakes() {
       coverage.push({ ticker, fromDate: from, toDate: to })
     },
   } satisfies HttpRepoSurface['barCoverageRepo']
+  const vrFakes = makeVrFakes({ otherRuns: () => runs })
   const repos = {
-    runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, captureImageRepo, visionReviewRepo, ledgerRepo, notificationRepo,
+    ...vrFakes.repos, runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, captureImageRepo, visionReviewRepo, ledgerRepo, notificationRepo,
     settingsRepo, poolEditRepo, simRepo, priceHistoryRepo, barCoverageRepo,
   } satisfies HttpRepoSurface
-  return { repos, corrections: correctionFake.store, runs, poolEdits, fills, ledger, orders, pending, captureImages, visionReviews, notifications, sent, settings, states, simRuns, simDays, priceHistory, coverage }
+  const vr = { runs: vrFakes.runs, cycles: vrFakes.cycles, fills: vrFakes.fills, cash: vrFakes.cash }
+  return { repos, vr, corrections: correctionFake.store, runs, poolEdits, fills, ledger, orders, pending, captureImages, visionReviews, notifications, sent, settings, states, simRuns, simDays, priceHistory, coverage }
 }
 
 export const PASSWORD = 'secret'

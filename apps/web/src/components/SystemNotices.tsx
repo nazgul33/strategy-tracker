@@ -1,5 +1,5 @@
 // Global notice feed under the runs table: run notices link to the run's
-// Notifications tab; global ones (calendar, reminders, pipeline errors) and
+// Notifications tab (VR run notices link to the VR run page); global ones (calendar, reminders, pipeline errors) and
 // notices whose run no longer exists expand in place. The page remounts this
 // component (key) to reload page one.
 import { useState } from 'react';
@@ -97,7 +97,11 @@ export function SystemNotices() {
                         </button>
                       ) : (
                         <a
-                          href={`#/runs/${e.runId}?tab=notifications&notice=${e.id}`}
+                          href={
+                            e.strategyKey === 'value-rebalancing'
+                              ? `#/vr/${e.runId}`
+                              : `#/runs/${e.runId}?tab=notifications&notice=${e.id}`
+                          }
                           className="block truncate text-primary hover:underline"
                         >
                           {firstLine(e.text)}

@@ -14,7 +14,7 @@
  * through the real Hono app → seeded run create → photo capture through
  * wire/capture against a fake vision model → duplicate guard → HTTP pending
  * confirm → state asserts → morning digest (+ cut-loss stops) → web viewmodels → stop-fill booking →
- * sim drafts (cached bars) → screenshot retention + vision review → web screenshot upload → deterministic sim. Steps live in e2e-*.ts.
+ * sim drafts (cached bars) → screenshot retention + vision review → web screenshot upload → deterministic sim → Value Rebalancing. Steps live in e2e-*.ts.
  * Exit 0 = every pinned assertion below held.
  */
 import { getDb, closeDb, applyMigrations } from '../apps/server/src/db/client'
@@ -36,6 +36,7 @@ import { countingUpstream, checkSimDrafts } from './e2e-sim-drafts'
 import { runVisionReview } from './e2e-vision-review'
 import { checkWebUpload } from './e2e-web-upload'
 import { checkDeterministicSim } from './e2e-sim'
+import { checkVr, storingCloses } from './e2e-vr'
 
 let checks = 0
 function ok(cond: unknown, label: string): void {
@@ -270,6 +271,7 @@ async function main(): Promise<void> {
     // ---- web screenshot upload (pinned, auto-routed, duplicate across bot and web), then the deterministic sim
     await checkWebUpload(ctx, TODAY)
     await checkDeterministicSim(ctx, repos.simRepo)
+    await checkVr(ctx, TODAY, () => runMorningPipeline(storingCloses(dayDeps, repos.priceHistoryRepo)), sent) // Value Rebalancing: closes stored as main.ts does
 
     // ---- teardown + idempotency proof -----------------------------------------
     await closeDb()

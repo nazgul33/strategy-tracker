@@ -6,6 +6,7 @@ import type { Lang } from '@st/telegram/i18n';
 import { confirmPendingFill, rejectPendingFill } from '../domain/booking';
 import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/booking';
 import type { PendingRepo } from '../domain/repo-types';
+import type { VrRepos } from '../domain/vr/repo-types';
 import { parseId } from '../http/params';
 import { makeBookingNotifier } from './booking-notifier';
 import { broadcastNotice } from './broadcast';
@@ -13,6 +14,8 @@ import { badExtractMessage } from './capture-bad-extract-message';
 import { pendingMessage } from './capture-pending-message';
 import { makeCaptureRouting } from './capture-route';
 import type { BadExtractEvent, CaptureEvent, CaptureRouteDeps } from './capture-route';
+import { sendBlocks } from './send-blocks';
+import { vrOrdersBlocks, vrStatusBlocks } from './vr-status';
 
 const CONFIRM_ERROR_KEYS: Record<string, string> = {
   'ticker-mismatch': 'confirm-err-ticker-mismatch',
@@ -31,7 +34,7 @@ const CONFIRM_ERROR_KEYS: Record<string, string> = {
   'choose-bucket': 'confirm-err-choose-bucket',
 };
 
-export interface CaptureRepos extends RepoSurface {
+export interface CaptureRepos extends RepoSurface, VrRepos {
   pendingRepo: PendingRepo;
 }
 
@@ -183,10 +186,6 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
 
   async function onStatus(chatId: string): Promise<void> {
     const runs = (await deps.repos.runRepo.list()).filter((r) => r.status === 'active');
-    if (runs.length === 0) {
-      await deps.send(chatId, t('no-runs', lang));
-      return;
-    }
     const blocks: string[] = [];
     for (const run of runs) {
       const st = await deps.repos.bucketRepo.loadState(run.id);
@@ -205,40 +204,47 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       }
       blocks.push(lines.join('\n'));
     }
-    await deps.send(chatId, blocks.join('\n\n'));
+    blocks.push(...(await vrStatusBlocks(deps.repos, lang)));
+    if (blocks.length === 0) {
+      await deps.send(chatId, t('no-runs', lang));
+      return;
+    }
+    await sendBlocks(deps.send, chatId, blocks);
   }
 
   async function onOrders(chatId: string): Promise<void> {
     const date = deps.today();
     const orders = await deps.repos.orderRepo.listForDate(date);
-    if (orders.length === 0) {
-      await deps.send(chatId, t('no-orders', lang, { date }));
-      return;
-    }
-    const tickerOf = new Map((await deps.repos.runRepo.list()).map((r) => [r.id, r.ticker]));
-    const byRun = new Map<number, string[]>();
-    for (const o of orders) {
-      const line = t('orders-line', lang, {
-        id: o.id,
-        kind: o.kind,
-        shares: o.shares,
-        price: formatUsd(o.limitPrice),
-      });
-      const group = byRun.get(o.runId);
-      if (group) group.push(line);
-      else byRun.set(o.runId, [line]);
-    }
-    const blocks = [...byRun.keys()]
-      .sort((a, b) => a - b)
-      .map((runId) => {
+    const blocks: string[] = [];
+    if (orders.length > 0) {
+      const tickerOf = new Map((await deps.repos.runRepo.list()).map((r) => [r.id, r.ticker]));
+      const byRun = new Map<number, string[]>();
+      for (const o of orders) {
+        const line = t('orders-line', lang, {
+          id: o.id,
+          kind: o.kind,
+          shares: o.shares,
+          price: formatUsd(o.limitPrice),
+        });
+        const group = byRun.get(o.runId);
+        if (group) group.push(line);
+        else byRun.set(o.runId, [line]);
+      }
+      for (const runId of [...byRun.keys()].sort((a, b) => a - b)) {
         const ticker = tickerOf.get(runId);
         const header =
           ticker === undefined
             ? t('orders-run-missing', lang, { id: runId })
             : t('status-run-line', lang, { id: runId, ticker });
-        return [header, ...byRun.get(runId)!].join('\n');
-      });
-    await deps.send(chatId, blocks.join('\n\n'));
+        blocks.push([header, ...byRun.get(runId)!].join('\n'));
+      }
+    }
+    blocks.push(...(await vrOrdersBlocks(deps.repos, lang)));
+    if (blocks.length === 0) {
+      await deps.send(chatId, t('no-orders', lang, { date }));
+      return;
+    }
+    await sendBlocks(deps.send, chatId, blocks);
   }
 
   return { onPhoto, onConfirm, onStatus, onOrders };

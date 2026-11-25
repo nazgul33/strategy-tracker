@@ -105,6 +105,8 @@ export type Route =
   | { page: 'visionReview' }
   | { page: 'sim' }
   | { page: 'simRun'; id: number }
+  | { page: 'vrRuns' }
+  | { page: 'vrRun'; id: number }
   | { page: 'settings' }
   | { page: 'login' }
   | { page: 'notFound'; hash: string };
@@ -139,6 +141,13 @@ export function parseHash(hash: string): Route {
       if (parts.length === 2) {
         const id = Number(parts[1]);
         if (Number.isInteger(id) && id > 0) return { page: 'simRun', id };
+      }
+      return { page: 'notFound', hash };
+    case 'vr':
+      if (parts.length === 1) return { page: 'vrRuns' };
+      if (parts.length === 2) {
+        const id = Number(parts[1]);
+        if (Number.isInteger(id) && id > 0) return { page: 'vrRun', id };
       }
       return { page: 'notFound', hash };
     case 'settings':

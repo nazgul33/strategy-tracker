@@ -1,4 +1,4 @@
-// Tiny hash router: #/runs, #/runs/:id, #/pending, #/vision-review, #/sim, #/sim/:id,
+// Tiny hash router: #/runs, #/runs/:id, #/vr, #/vr/:id, #/pending, #/vision-review, #/sim, #/sim/:id,
 // #/settings, #/login. Auth = a token in sessionStorage; without one every
 // page (except login) redirects to #/login.
 import { useEffect } from 'react';
@@ -10,6 +10,8 @@ import { Layout } from './components/Layout';
 import { LoginPage } from './pages/Login';
 import { RunsListPage } from './pages/RunsList';
 import { RunDetailPage } from './pages/RunDetail';
+import { VrRunsPage } from './pages/VrRuns';
+import { VrRunPage } from './pages/VrRun';
 import { PendingPage } from './pages/Pending';
 import { VisionReviewPage } from './pages/VisionReview';
 import { SimPage } from './pages/Sim';
@@ -32,6 +34,10 @@ function pageFor(route: Route) {
         ),
         nav: 'runs' as const,
       };
+    case 'vrRuns':
+      return { node: <VrRunsPage />, nav: 'vr' as const };
+    case 'vrRun':
+      return { node: <VrRunPage key={route.id} id={route.id} />, nav: 'vr' as const };
     case 'pending':
       return { node: <PendingPage />, nav: 'pending' as const };
     case 'visionReview':

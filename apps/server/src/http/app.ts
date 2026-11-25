@@ -2,12 +2,14 @@ import { Hono } from 'hono'
 import type { RepoSurface } from '../domain/booking'
 import type { OHLCBar } from '@st/market-data'
 import type { FillRepo, NotificationRepo, OrderRepo, PendingRepo, RunRepo } from '../domain/repo-types'
+import type { SharedRunRepo, VrRepos } from '../domain/vr/repo-types'
 import type { SimRepoSurface } from '../sim/sim'
 import { authMiddleware, makeToken } from './auth'
 import type { BarCacheRepos } from '../market/bars'
 import type { RouteCapture } from '../wire/capture-route'
 
-export interface HttpRepoSurface extends RepoSurface {
+export interface HttpRepoSurface extends RepoSurface, VrRepos {
+  sharedRunRepo: SharedRunRepo
   priceHistoryRepo: BarCacheRepos['priceHistoryRepo'] & {
     upsertMany(rows: { ticker: string; tradeDate: string; close: bigint }[]): Promise<number>
     listForTicker(ticker: string, from?: string): Promise<{ tradeDate: string; close: bigint }[]>
@@ -47,6 +49,7 @@ import { notificationsRouter } from './routes/notifications'
 import { simRouter } from './routes/sim'
 import { visionReviewRouter } from './routes/vision-review'
 import { capturesRouter } from './routes/captures'
+import { vrRouter } from './routes/vr'
 
 export function jsonBig(x: unknown): unknown {
   return JSON.parse(JSON.stringify(x, (_k, v) => typeof v === 'bigint' ? v.toString() : v))
@@ -75,6 +78,7 @@ export function createApp(deps: HttpDeps): Hono {
   app.route('/api', notificationsRouter(deps))
   app.route('/api', capturesRouter(deps))
   app.route('/api/sim', simRouter(deps))
+  app.route('/api/vr', vrRouter(deps))
   app.post('/api/trigger/morning', async (c) => {
     try {
       const result = await deps.triggerMorning()

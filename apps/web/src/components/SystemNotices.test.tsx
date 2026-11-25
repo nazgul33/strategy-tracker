@@ -110,6 +110,23 @@ describe('SystemNotices', () => {
     expect(container.querySelector('a[href^="#/runs/8"]')).toBeNull();
   });
 
+  it('a VR run row links to the VR run page; MR rows keep their tab link; a gone VR run expands in place', async () => {
+    first.json = {
+      nextBefore: null,
+      entries: [
+        { id: 20, runId: 5, ticker: 'TQQQ', strategyKey: 'value-rebalancing', text: 'TQQQ lump sum\nCycle 3', sentAt: '2026-12-07T12:30:00.000Z', chatIds: ['42'] },
+        { id: 19, runId: 3, ticker: 'NVDA', strategyKey: 'mean-reversion', text: 'Growth  NVDA', sentAt: '2026-12-07T12:30:00.000Z', chatIds: ['42'] },
+        { id: 18, runId: 6, ticker: null, strategyKey: null, text: 'gone VR run', sentAt: '2026-12-06T12:30:00.000Z', chatIds: ['42'] },
+      ],
+    };
+    await render();
+    expect(container.querySelector('a[href="#/vr/5"]')!.textContent).toBe('TQQQ lump sum');
+    expect(container.querySelector('a[href^="#/runs/5"]')).toBeNull();
+    expect(container.querySelector('a[href="#/runs/3?tab=notifications&notice=19"]')).not.toBeNull();
+    expect(container.querySelector('tbody tr:nth-child(3) button')!.textContent).toBe('gone VR run');
+    expect(cells(2)).toEqual(['#5 TQQQ', '#3 NVDA', '#6']);
+  });
+
   it('a notice whose run is gone expands in place and keeps its run number', async () => {
     await render();
     const button = () => container.querySelector('tbody tr:nth-child(3) button') as HTMLButtonElement;

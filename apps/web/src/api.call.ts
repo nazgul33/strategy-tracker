@@ -35,6 +35,19 @@ export type ApiErrorCode =
   | 'image-too-large'
   | 'capture-failed'
   | 'vision-not-configured'
+  // VR routes (/api/vr)
+  | 'vr-name-taken'
+  | 'vr-negative-shares'
+  | 'vr-too-large'
+  | 'vr-open-required'
+  | 'invalid-side'
+  | 'invalid-price'
+  | 'invalid-fee'
+  | 'invalid-date'
+  | 'invalid-kind'
+  | 'invalid-amount'
+  | 'invalid-note'
+  | 'cash-date-in-future'
   | `http-${number}`;
 
 export class ApiError extends Error {
