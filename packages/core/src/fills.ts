@@ -23,14 +23,19 @@ export function emptyState(bucketCount: number): RunState {
  * Bucket a next buy should take: the lowest empty index never present in
  * `closed` (never used), else the lowest empty (previously closed) index,
  * else null when no bucket is empty. Shared by planning and booking so
- * the two can never drift.
+ * the two can never drift. With `buyOn`, buckets that closed a tranche on
+ * that day are skipped (no sell and buy on the same day in one bucket).
  */
-export function nextBuyBucketIndex(state: RunState): number | null {
+export function nextBuyBucketIndex(state: RunState, buyOn?: ISODate): number | null {
   const closedIdx = new Set(state.closed.map((c) => c.index))
+  const closedToday = new Set(
+    buyOn === undefined ? [] : state.closed.filter((c) => c.closedOn === buyOn).map((c) => c.index),
+  )
   let fresh: number | null = null
   let fallback: number | null = null
   for (const b of state.buckets) {
     if (b.state !== 'empty') continue
+    if (closedToday.has(b.index)) continue
     // Min explicitly so "lowest" never relies on bucket array order.
     if (closedIdx.has(b.index)) fallback = fallback === null ? b.index : Math.min(fallback, b.index)
     else fresh = fresh === null ? b.index : Math.min(fresh, b.index)
@@ -81,6 +86,50 @@ export function applyBuyFill(
   nb.filledOn = filledOn
   next.ages[bucketIndex] = 0
   next.cashCents -= cost + feeCents
+  return next
+}
+
+/**
+ * True for a `held` bucket that has not been partly sold: no closed tranche
+ * of this index was opened on the bucket's current `filledOn`.
+ */
+export function isMergeableBucket(state: RunState, bucketIndex: number): boolean {
+  const b = state.buckets[bucketIndex]
+  if (!b || b.state !== 'held') return false
+  return !state.closed.some((c) => c.index === bucketIndex && c.openedOn === b.filledOn)
+}
+
+/** Lowest mergeable bucket filled on `filledOn`, else null. */
+export function sameDayBuyBucketIndex(state: RunState, filledOn: ISODate): number | null {
+  let best: number | null = null
+  for (const b of state.buckets) {
+    if (b.filledOn !== filledOn || !isMergeableBucket(state, b.index)) continue
+    best = best === null ? b.index : Math.min(best, b.index)
+  }
+  return best
+}
+
+/** Adds another execution of a buy to a held bucket at the weighted-average price. */
+export function addBuyFill(
+  state: RunState,
+  bucketIndex: number,
+  shares: number,
+  price: bigint,
+  feeCents: number,
+): RunState {
+  const bucket = state.buckets[bucketIndex]
+  if (!bucket) throw new DomainError('bucket-not-found')
+  if (bucket.state === 'empty') throw new DomainError('bucket-not-held')
+  if (!isMergeableBucket(state, bucketIndex)) throw new DomainError('bucket-not-mergeable')
+  if (!Number.isInteger(shares) || shares <= 0) throw new DomainError('invalid-shares')
+  const next = clone(state)
+  const nb = next.buckets[bucketIndex]!
+  const n = BigInt(shares)
+  const total = BigInt(bucket.shares) + n
+  nb.buyPrice = roundDiv(bucket.buyPrice * BigInt(bucket.shares) + price * n, total)
+  nb.shares = bucket.shares + shares
+  nb.buyFeeCents = bucket.buyFeeCents + feeCents
+  next.cashCents -= Number(roundDiv(price * n, 100n)) + feeCents
   return next
 }
 

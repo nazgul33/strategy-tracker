@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'bun:test'
-import { emptyState, applyBuyFill, applySellFill, advanceDay, nextBuyBucketIndex } from '../src/fills'
+import { emptyState, applyBuyFill, applySellFill, advanceDay, nextBuyBucketIndex, addBuyFill, isMergeableBucket, sameDayBuyBucketIndex } from '../src/fills'
 import { DomainError } from '../src/domain'
 import { roundDiv } from '../src/money'
 
@@ -270,4 +270,108 @@ test('over-sell guard survives partial rows', () => {
   const b = applyBuyFill(s, 0, 300, 1000000n, 0)
   const p = applySellFill(b, 0, 250, 1020000n, 0)
   expect(() => applySellFill(p, 0, 51, 1020000n, 0)).toThrow() // DomainError too-many-shares
+})
+
+function tranche(index: number, openedOn: string, closedOn: string) {
+  return { index, shares: 1, buyPrice: 100n, soldPrice: 110n, buyFeeCents: 0, sellFeeCents: 0, openedOn, closedOn }
+}
+
+describe('addBuyFill', () => {
+  const D = '2026-11-24'
+  function held() {
+    const s = emptyState(10)
+    s.cashCents = 5_000_000
+    return applyBuyFill(s, 5, 26, 378500n, 69, D)
+  }
+
+  test('merges the 2026-11-24 rungs into one bucket at the weighted average', () => {
+    const a = addBuyFill(held(), 5, 26, 371000n, 68)
+    const b = addBuyFill(a, 5, 94, 319896n, 210)
+    const bk = b.buckets[5]!
+    expect(bk.shares).toBe(146)
+    expect(bk.buyPrice).toBe(339433n)
+    expect(bk.buyFeeCents).toBe(347)
+    expect(bk.filledOn).toBe(D)
+    expect(bk.state).toBe('held')
+    const c = (p: bigint, n: bigint) => Number(roundDiv(p * n, 100n))
+    expect(b.cashCents).toBe(
+      5_000_000 - (c(378500n, 26n) + 69) - (c(371000n, 26n) + 68) - (c(319896n, 94n) + 210),
+    )
+  })
+
+  test('refuses an empty bucket with bucket-not-held', () => {
+    expect(() => addBuyFill(emptyState(3), 1, 5, 100n, 0)).toThrow(new DomainError('bucket-not-held'))
+  })
+
+  test('refuses an unknown bucket and bad shares', () => {
+    expect(() => addBuyFill(held(), 99, 5, 100n, 0)).toThrow(new DomainError('bucket-not-found'))
+    expect(() => addBuyFill(held(), 5, 0, 100n, 0)).toThrow(new DomainError('invalid-shares'))
+  })
+
+  test('keeps the age', () => {
+    const s = held()
+    s.ages[5] = 3
+    expect(addBuyFill(s, 5, 2, 100n, 0).ages[5]).toBe(3)
+  })
+
+  test('refuses a force_sell bucket with bucket-not-mergeable', () => {
+    const s = held()
+    s.buckets[5]!.state = 'force_sell'
+    expect(() => addBuyFill(s, 5, 2, 100n, 0)).toThrow(new DomainError('bucket-not-mergeable'))
+  })
+
+  test('refuses a partly sold bucket with bucket-not-mergeable', () => {
+    const s = applyBuyFill(emptyState(2), 0, 10, 1000000n, 0, D)
+    const p = applySellFill(s, 0, 4, 1100000n, 0, D)
+    expect(() => addBuyFill(p, 0, 6, 800000n, 0)).toThrow(new DomainError('bucket-not-mergeable'))
+  })
+})
+
+describe('nextBuyBucketIndex with buyOn', () => {
+  const D = '2026-11-24'
+  test('skips buckets closed on the buy day', () => {
+    const s = emptyState(3)
+    s.closed = [tranche(0, 'a', D), tranche(1, 'a', '2026-11-20'), tranche(2, 'a', D)]
+    expect(nextBuyBucketIndex(s)).toBe(0)
+    expect(nextBuyBucketIndex(s, D)).toBe(1)
+    s.closed.push(tranche(1, 'b', D))
+    expect(nextBuyBucketIndex(s, D)).toBeNull()
+  })
+  test('still prefers a never-used bucket', () => {
+    const s = emptyState(4)
+    s.closed = [tranche(0, 'a', D), tranche(1, 'a', '2026-11-20'), tranche(2, 'a', D)]
+    expect(nextBuyBucketIndex(s, D)).toBe(3)
+  })
+})
+
+describe('isMergeableBucket', () => {
+  const D = '2026-11-24'
+  test('held is mergeable; empty, force_sell, partly sold are not', () => {
+    const s = applyBuyFill(emptyState(4), 0, 10, 1000000n, 0, D)
+    expect(isMergeableBucket(s, 0)).toBe(true)
+    expect(isMergeableBucket(s, 1)).toBe(false)
+    const f = applyBuyFill(emptyState(1), 0, 10, 1000000n, 0, D)
+    f.buckets[0]!.state = 'force_sell'
+    expect(isMergeableBucket(f, 0)).toBe(false)
+    expect(isMergeableBucket(applySellFill(s, 0, 4, 1100000n, 0, D), 0)).toBe(false)
+  })
+  test('an older closed tranche on the index does not block a later re-buy', () => {
+    const s = applyBuyFill(emptyState(1), 0, 10, 1000000n, 0, D)
+    s.closed = [tranche(0, '2026-11-01', '2026-11-10')]
+    expect(isMergeableBucket(s, 0)).toBe(true)
+  })
+})
+
+describe('sameDayBuyBucketIndex', () => {
+  test('lowest mergeable bucket held on that day', () => {
+    let s = emptyState(8)
+    s = applyBuyFill(s, 5, 10, 1000000n, 0, '2026-11-24')
+    s = applyBuyFill(s, 3, 10, 1000000n, 0, '2026-11-24')
+    s = applyBuyFill(s, 1, 10, 1000000n, 0, '2026-11-20')
+    expect(sameDayBuyBucketIndex(s, '2026-11-24')).toBe(3)
+    expect(sameDayBuyBucketIndex(s, '2026-11-20')).toBe(1)
+    expect(sameDayBuyBucketIndex(s, '2026-11-25')).toBeNull()
+    const p = applySellFill(s, 3, 4, 1100000n, 0, '2026-11-24')
+    expect(sameDayBuyBucketIndex(p, '2026-11-24')).toBe(5)
+  })
 })
