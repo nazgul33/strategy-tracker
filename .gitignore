@@ -7,3 +7,4 @@ build/
 data/
 .superpowers/
 docker-compose.*.yml
+backup/
