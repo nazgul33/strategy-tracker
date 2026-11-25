@@ -7,6 +7,7 @@
     "@st/calendar": "workspace:*"
   },
   "exports": {
-    ".": "./src/mean-reversion.ts"
+    ".": "./src/mean-reversion.ts",
+    "./value-rebalancing": "./src/value-rebalancing.ts"
   }
 }
