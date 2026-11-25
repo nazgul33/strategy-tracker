@@ -16,7 +16,7 @@ async function seedVr(h: Harness): Promise<number> {
     {
       runId, seq: 1, scheduledStart: '2026-11-02', startDate: '2026-11-02', vCents: 935000, bandMinCents: 794750, bandMaxCents: 1075250,
       openShares: 177, openPoolCents: 80000, buyBudgetCents: 40000, buyLot: 3, sellLot: 2,
-      prevClose: null, evalCents: null, poolBeforeCents: null, g: 10, formula: 'skill', depositCents: 0, vKept: false,
+      prevClose: null, evalCents: null, poolBeforeCents: null, g: 10, formula: 'skill', depositCents: 0, vKept: false, openFillId: 0,
     },
     null,
   );

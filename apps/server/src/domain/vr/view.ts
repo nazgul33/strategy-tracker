@@ -78,13 +78,19 @@ function booksOf(i: VrViewInput, fills: VrFill[]): VrBooksView {
   }
 }
 
-export function ladderOf(cycle: VrCycleRow | null, shares: number, fills: VrFill[]): VrLadder {
+/** The fills that count against the cycle's ladder and budget: booked after it opened and dated on or after its start. */
+export function cycleFills(cycle: VrCycleRow, fills: readonly VrFillRow[]): VrFill[] {
+  return fills.filter((f) => f.id > cycle.openFillId && f.filledOn >= cycle.startDate).map(toEngineFill)
+}
+
+export function ladderOf(cycle: VrCycleRow | null, shares: number, fills: readonly VrFillRow[]): VrLadder {
   if (cycle === null || cycle.openShares === 0 || shares === 0) return { buy: [], sell: [], buyTotal: 0, sellTotal: 0 }
   const buyAll = buyRungs({ minCents: cycle.bandMinCents, openShares: cycle.openShares, lot: cycle.buyLot, budgetCents: cycle.buyBudgetCents, poolCents: cycle.openPoolCents })
   const sellAll = sellRungs({ maxCents: cycle.bandMaxCents, openShares: cycle.openShares, lot: cycle.sellLot })
+  const counted = cycleFills(cycle, fills)
   return {
-    buy: remainingRungs(buyAll, sharesInCycle(fills, cycle.startDate, 'buy')),
-    sell: remainingRungs(sellAll, sharesInCycle(fills, cycle.startDate, 'sell')),
+    buy: remainingRungs(buyAll, sharesInCycle(counted, cycle.startDate, 'buy')),
+    sell: remainingRungs(sellAll, sharesInCycle(counted, cycle.startDate, 'sell')),
     buyTotal: buyAll.length,
     sellTotal: sellAll.length,
   }
@@ -100,9 +106,9 @@ export function buildVrDetail(i: VrViewInput & { today: ISODate }): VrRunDetail 
     lastClose: i.lastClose,
     books,
     cycle: i.cycle === null ? null : cycleView(i.cycle),
-    budgetLeftCents: i.cycle === null ? null : Math.max(0, i.cycle.buyBudgetCents - spentInCycleCents(fills, i.cycle.startDate)),
+    budgetLeftCents: i.cycle === null ? null : Math.max(0, i.cycle.buyBudgetCents - spentInCycleCents(cycleFills(i.cycle, i.fills), i.cycle.startDate)),
     buyInstruction: books.shares === 0 && i.lastClose !== null ? { shares: buyInstructionShares(target, i.lastClose.close), targetCents: target } : null,
-    ladder: ladderOf(i.cycle, books.shares, fills),
+    ladder: ladderOf(i.cycle, books.shares, i.fills),
   }
 }
 

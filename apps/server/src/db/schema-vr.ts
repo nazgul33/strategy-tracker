@@ -31,6 +31,7 @@ export const vrCycles = mysqlTable('vr_cycles', {
   formula: mysqlEnum('formula', ['basic', 'skill']).notNull(),
   depositCents: int('deposit_cents').notNull().default(0),
   vKept: boolean('v_kept').notNull().default(false),
+  openFillId: int('open_fill_id').notNull().default(0),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 }, (t) => ({
   runSeqUnique: uniqueIndex('vr_cycles_run_seq_unique').on(t.runId, t.seq),

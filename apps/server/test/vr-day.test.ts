@@ -1,7 +1,7 @@
 import { describe, test, expect, spyOn } from 'bun:test'
 import { emptyState } from '@st/core'
 import { DEFAULT_MR_PARAMS } from '@st/strategies'
-import { DEFAULT_VR_SETTINGS } from '@st/strategies/value-rebalancing'
+import { DEFAULT_VR_SETTINGS, buyRungs } from '@st/strategies/value-rebalancing'
 import { renderVrBuyInstruction } from '@st/telegram/vr'
 import { runMorningPipeline, type DayDeps } from '../src/pipeline/day'
 import type { NewVrCycle } from '../src/domain/vr/repo-types'
@@ -51,7 +51,7 @@ function cycle1(runId: number, over: Partial<NewVrCycle> = {}): NewVrCycle {
   return {
     runId, seq: 1, scheduledStart: '2026-11-23', startDate: '2026-11-23', vCents: 500_000, bandMinCents: 425_000, bandMaxCents: 575_000,
     openShares: 100, openPoolCents: 500_000, buyBudgetCents: 250_000, buyLot: 2, sellLot: 1,
-    prevClose: null, evalCents: null, poolBeforeCents: null, g: 10, formula: 'skill', depositCents: 0, vKept: false, ...over,
+    prevClose: null, evalCents: null, poolBeforeCents: null, g: 10, formula: 'skill', depositCents: 0, vKept: false, openFillId: 0, ...over,
   }
 }
 
@@ -73,13 +73,13 @@ describe('VR morning job: the first day', () => {
 
   test('shares and no cycle: cycle 1, no deposit even when one is configured', async () => {
     const { f, deps, sent, vrId } = await setup({}, { deposit: 25_000 })
-    await buy(f, vrId, 100, 500_000n, '2026-12-04')
+    const fillId = await buy(f, vrId, 100, 500_000n, '2026-12-04')
     expect(await runMorningPipeline(deps)).toBe('sent')
     expect(f.vr.cycles).toHaveLength(1)
     expect(f.vr.cycles[0]).toMatchObject({
       runId: vrId, seq: 1, scheduledStart: '2026-12-07', startDate: '2026-12-07', vCents: 500_000, bandMinCents: 425_000, bandMaxCents: 575_000,
       openShares: 100, openPoolCents: 500_000, buyBudgetCents: 250_000, buyLot: 2, sellLot: 1,
-      prevClose: null, evalCents: null, poolBeforeCents: null, g: 10, formula: 'skill', depositCents: 0, vKept: false,
+      prevClose: null, evalCents: null, poolBeforeCents: null, g: 10, formula: 'skill', depositCents: 0, vKept: false, openFillId: fillId,
     })
     expect(f.vr.cash.map((m) => m.kind)).toEqual(['open'])
     expect(sent).toHaveLength(1)
@@ -90,6 +90,58 @@ describe('VR morning job: the first day', () => {
     expect(sent[0]).toContain('Sell 25 rungs, 1 sh each:')
     expect(f.notifications).toHaveLength(1)
     expect(f.notifications[0]!.text).toBe(sent[0]!)
+  })
+})
+
+describe('VR morning job: fills already booked when a cycle opens', () => {
+  test('cycle 1 on the day the opening buy is dated: its id is stored and the message lists every buy rung', async () => {
+    const { f, deps, sent, vrId } = await setup()
+    await buy(f, vrId, 40, 400_000n, '2026-12-03')
+    const openingId = await buy(f, vrId, 60, 500_000n, '2026-12-07')
+    expect(await runMorningPipeline(deps)).toBe('sent')
+    expect(f.vr.cycles).toHaveLength(1)
+    expect(f.vr.cycles[0]).toMatchObject({ seq: 1, startDate: '2026-12-07', openShares: 100, openFillId: openingId })
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toContain('Buy 23 rungs, 2 sh each:')
+    expect(sent[0]).not.toContain('no rungs')
+    expect(sent[0]).toContain('Sell 25 rungs, 1 sh each:')
+    const before = { cycles: f.vr.cycles.length, sent: sent.length, notes: f.notifications.length }
+    expect(await runMorningPipeline(deps)).toBe('sent')
+    expect({ cycles: f.vr.cycles.length, sent: sent.length, notes: f.notifications.length }).toEqual(before)
+  })
+
+  test('the stored id is the highest fill id of the run, whatever the dates', async () => {
+    const { f, deps, vrId } = await setup()
+    await buy(f, vrId, 1, 500_000n, '2026-12-04')
+    const last = await buy(f, vrId, 1, 500_000n, '2026-11-02')
+    await runMorningPipeline(deps)
+    expect(f.vr.cycles[0]!.openFillId).toBe(last)
+  })
+
+  test('a roll with no fill in the books stores 0', async () => {
+    const { f, deps, vrId } = await setup()
+    await f.repos.vrCycleRepo.open(cycle1(vrId), null)
+    await runMorningPipeline(deps)
+    expect(f.vr.cycles[1]).toMatchObject({ seq: 2, openShares: 0, openFillId: 0 })
+  })
+
+  test('a roll day with a fill dated that day already booked: the new cycle lists every rung', async () => {
+    const { f, deps, sent, vrId } = await setup()
+    await f.repos.vrCycleRepo.open(cycle1(vrId), null)
+    await buy(f, vrId, 100, 500_000n, '2026-11-20')
+    const todays = await buy(f, vrId, 2, 520_000n, '2026-12-07')
+    expect(await runMorningPipeline(deps)).toBe('sent')
+    expect(f.vr.cycles).toHaveLength(2)
+    const c2 = f.vr.cycles[1]!
+    expect(c2).toMatchObject({ seq: 2, startDate: '2026-12-07', openShares: 102, openFillId: todays })
+    const all = buyRungs({ minCents: c2.bandMinCents, openShares: c2.openShares, lot: c2.buyLot, budgetCents: c2.buyBudgetCents, poolCents: c2.openPoolCents })
+    expect(all.length).toBeGreaterThan(1)
+    expect(sent[0]).toContain(`Buy ${all.length} rungs, ${c2.buyLot} sh each:`)
+    expect(sent[0]).not.toContain('no rungs')
+    sent.length = 0
+    await runMorningPipeline(deps)
+    expect(f.vr.cycles).toHaveLength(2)
+    expect(sent).toEqual([])
   })
 })
 
@@ -120,7 +172,7 @@ describe('VR morning job: an existing cycle', () => {
     expect(c2).toMatchObject({
       runId: vrId, seq: 2, scheduledStart: '2026-12-07', startDate: '2026-12-07', vCents: 578_162, bandMinCents: 491_438, bandMaxCents: 664_886,
       openShares: 100, openPoolCents: 525_000, buyBudgetCents: 262_500, buyLot: 2, sellLot: 1,
-      prevClose: 520_000n, evalCents: 520_000, poolBeforeCents: 500_000, g: 10, formula: 'skill', depositCents: 25_000, vKept: false,
+      prevClose: 520_000n, evalCents: 520_000, poolBeforeCents: 500_000, g: 10, formula: 'skill', depositCents: 25_000, vKept: false, openFillId: 1,
     })
     expect(f.vr.cash.filter((m) => m.kind === 'deposit')).toEqual([
       expect.objectContaining({ kind: 'deposit', amountCents: 25_000, movedOn: '2026-12-07', cycleId: c2.id, note: null, runId: vrId }),

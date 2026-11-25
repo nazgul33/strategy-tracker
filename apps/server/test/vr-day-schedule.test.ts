@@ -14,7 +14,7 @@ async function setup(over: Partial<DayDeps> = {}) {
   const cycle: NewVrCycle = {
     runId: vrId, seq: 1, scheduledStart: '2026-12-07', startDate: '2026-12-07', vCents: 500_000, bandMinCents: 425_000, bandMaxCents: 575_000,
     openShares: 100, openPoolCents: 500_000, buyBudgetCents: 250_000, buyLot: 2, sellLot: 1,
-    prevClose: null, evalCents: null, poolBeforeCents: null, g: 10, formula: 'skill', depositCents: 0, vKept: false,
+    prevClose: null, evalCents: null, poolBeforeCents: null, g: 10, formula: 'skill', depositCents: 0, vKept: false, openFillId: 0,
   }
   await f.repos.vrCycleRepo.open(cycle, null)
   await f.repos.vrFillRepo.insert({ runId: vrId, side: 'buy', shares: 100, price: 500_000n, fee: 0, filledOn: '2026-12-04', source: 'manual' })

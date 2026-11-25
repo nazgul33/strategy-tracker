@@ -16,9 +16,9 @@ async function activeBlocks(repos: VrRepos, build: (run: VrRunRow) => Promise<st
 }
 
 async function load(repos: VrRepos, runId: number) {
-  const fills = (await repos.vrFillRepo.listForRun(runId)).map(toEngineFill)
+  const fills = await repos.vrFillRepo.listForRun(runId)
   const moves = await repos.vrCashRepo.listForRun(runId)
-  return { fills, books: vrBooks(fills, moves), cycle: await repos.vrCycleRepo.latest(runId) }
+  return { fills, books: vrBooks(fills.map(toEngineFill), moves), cycle: await repos.vrCycleRepo.latest(runId) }
 }
 
 export function vrStatusBlocks(repos: VrRepos, lang: Lang): Promise<string[]> {

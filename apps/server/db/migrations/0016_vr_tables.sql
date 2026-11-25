@@ -31,6 +31,7 @@ CREATE TABLE `vr_cycles` (
 	`formula` enum('basic','skill') NOT NULL,
 	`deposit_cents` int NOT NULL DEFAULT 0,
 	`v_kept` boolean NOT NULL DEFAULT false,
+	`open_fill_id` int NOT NULL DEFAULT 0,
 	`created_at` timestamp NOT NULL DEFAULT (now()),
 	CONSTRAINT `vr_cycles_id` PRIMARY KEY(`id`),
 	CONSTRAINT `vr_cycles_run_seq_unique` UNIQUE(`run_id`,`seq`)

@@ -26,7 +26,7 @@ export async function seedCycle(s: VrSetup, runId: number, over: Partial<NewVrCy
   return s.f.repos.vrCycleRepo.open({
     runId, seq: 1, scheduledStart: '2026-11-03', startDate: '2026-11-03', vCents: 935_000, bandMinCents: 794_750, bandMaxCents: 1_075_250,
     openShares: 176, openPoolCents: 100_000, buyBudgetCents: 50_000, buyLot: 3, sellLot: 2,
-    prevClose: null, evalCents: null, poolBeforeCents: null, ...DEFAULT_VR_SETTINGS, depositCents: 0, vKept: false, ...over,
+    prevClose: null, evalCents: null, poolBeforeCents: null, ...DEFAULT_VR_SETTINGS, depositCents: 0, vKept: false, openFillId: 0, ...over,
   }, null)
 }
 

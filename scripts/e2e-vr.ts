@@ -7,7 +7,7 @@
  */
 import { prevTradingDay } from '../packages/calendar/src/index'
 import { formatUsd } from '../packages/core/src/money'
-import { buyLot, sellLot } from '../packages/strategies/src/value-rebalancing'
+import { buyLot, buyRungs, sellLot, sellRungs } from '../packages/strategies/src/value-rebalancing'
 import type { DayDeps } from '../apps/server/src/pipeline/day'
 import { jsonOf, type E2eCtx } from './e2e-ctx'
 
@@ -31,11 +31,11 @@ export async function checkVr(c: E2eCtx, today: string, runMorning: () => Promis
   }
 
   // ---- 1. create: listed under /vr/runs, never under /runs ------------------
-  const id = await create('E2E VR', 'VRTQ', 1_000_000)
+  const id = await create('E2E VR', 'VRTQ', 10_000_000)
   const detail = async () => jsonOf(await c.req('GET', `/vr/runs/${id}`, undefined, c.token))
   const listed = (await list()).find((r) => r.id === id)
-  c.ok(listed?.ticker === 'VRTQ' && listed.status === 'active' && listed.initialVCents === 500_000 && listed.shares === 0 && listed.poolCents === 1_000_000 && listed.vCents === null,
-    `GET /api/vr/runs lists the new run: V 5000.00 from half the cash, Pool 10000.00, no cycle: ${JSON.stringify(listed)}`)
+  c.ok(listed?.ticker === 'VRTQ' && listed.status === 'active' && listed.initialVCents === 5_000_000 && listed.shares === 0 && listed.poolCents === 10_000_000 && listed.vCents === null,
+    `GET /api/vr/runs lists the new run: V 50000.00 from half the cash, Pool 100000.00, no cycle: ${JSON.stringify(listed)}`)
   const mrRuns = (await jsonOf(await c.req('GET', '/runs', undefined, c.token))) as any[]
   c.ok(!mrRuns.some((r) => r.id === id), 'GET /api/runs (mean reversion) does not list the VR run')
 
@@ -43,34 +43,40 @@ export async function checkVr(c: E2eCtx, today: string, runMorning: () => Promis
   const quietBefore = msgsOf('VRTQ').length
   c.ok((await runMorning()) === 'sent', 'morning pipeline ran with the VR run active')
   const first = msgsOf('VRTQ').slice(quietBefore)
-  c.ok(first.length === 1 && first[0]!.text.includes('E2E VR  VRTQ — VR buy instruction') && first[0]!.text.includes('Buy 27 sh (target $5000.00 ÷ last close)'),
-    `one new VR message: the buy instruction for 27 sh against a 5000.00 target: ${JSON.stringify(first.map((m) => m.text))}`)
+  c.ok(first.length === 1 && first[0]!.text.includes('E2E VR  VRTQ — VR buy instruction') && first[0]!.text.includes('Buy 277 sh (target $50000.00 ÷ last close)'),
+    `one new VR message: the buy instruction for 277 sh against a 50000.00 target: ${JSON.stringify(first.map((m) => m.text))}`)
   const d1 = await detail()
-  c.ok(d1.cycle === null && d1.buyInstruction?.shares === 27 && d1.buyInstruction.targetCents === 500_000 && d1.lastClose?.date === prev && d1.lastClose.close === '1800000',
-    'run detail: no cycle yet, buyInstruction 27 sh / 500000c, last close 180.00 of the previous trading day')
+  c.ok(d1.cycle === null && d1.buyInstruction?.shares === 277 && d1.buyInstruction.targetCents === 5_000_000 && d1.lastClose?.date === prev && d1.lastClose.close === '1800000',
+    'run detail: no cycle yet, buyInstruction 277 sh / 5000000c, last close 180.00 of the previous trading day')
 
-  // ---- 3. book the opening buy (dated before the cycle opens), then cycle 1 --
-  const opening = await post(`/vr/runs/${id}/fills`, { side: 'buy', shares: 27, price: '180.00', fee: '0.50', filledOn: prev })
-  c.ok(opening.status === 201, 'POST /api/vr/runs/:id/fills opening buy 27 sh @ 180.00 -> 201')
+  // ---- 3. book the opening buy (dated today, the day cycle 1 opens), then cycle 1
+  const opening = await post(`/vr/runs/${id}/fills`, { side: 'buy', shares: 277, price: '180.00', fee: '0.50', filledOn: today })
+  c.ok(opening.status === 201, 'POST /api/vr/runs/:id/fills opening buy 277 sh @ 180.00 -> 201')
   const cycleBefore = msgsOf('VRTQ').length
   c.ok((await runMorning()) === 'sent', 'morning pipeline ran after the opening buy')
   const opened = msgsOf('VRTQ').slice(cycleBefore)
   c.ok(opened.length === 1 && opened[0]!.text.includes(`E2E VR  VRTQ — VR cycle 1: ${today} to`), `one new VR message: the cycle 1 digest: ${JSON.stringify(opened.map((m) => m.text.slice(0, 60)))}`)
   const d3 = await detail()
   const cy = d3.cycle
-  c.ok(cy?.seq === 1 && cy.vCents === 500_000 && cy.bandMinCents === 425_000 && cy.bandMaxCents === 575_000 && cy.openShares === 27,
-    'cycle 1: V 5000.00, band 4250.00 to 5750.00, 27 shares at the start')
-  c.ok(cy.buyLot === buyLot(27) && cy.sellLot === sellLot(27), `cycle 1 lots equal buyLot(27)=${buyLot(27)} and sellLot(27)=${sellLot(27)}`)
+  c.ok(cy?.seq === 1 && cy.vCents === 5_000_000 && cy.bandMinCents === 4_250_000 && cy.bandMaxCents === 5_750_000 && cy.openShares === 277,
+    'cycle 1: V 50000.00, band 42500.00 to 57500.00, 277 shares at the start')
+  c.ok(cy.buyLot === 5 && cy.sellLot === 3 && cy.buyLot === buyLot(277) && cy.sellLot === sellLot(277), `cycle 1 lots are 5 and 3, as buyLot(277) and sellLot(277) give`)
   const { buy, sell } = d3.ladder
   c.ok(buy.length >= 1 && buy.length <= 30 && sell.length >= 1 && sell.length <= 30 && d3.ladder.buyTotal === buy.length && d3.ladder.sellTotal === sell.length,
     `ladder has ${buy.length} buy and ${sell.length} sell rungs, each side within 1..30`)
   const wholeCents = [...buy, ...sell].every((r: any) => BigInt(r.price) % CENT === 0n)
-  const firstBuy = BigInt(Math.floor(cy.bandMinCents / cy.openShares)) * CENT
-  const firstSell = BigInt(Math.floor((cy.bandMaxCents + cy.openShares - 1) / cy.openShares)) * CENT
-  c.ok(wholeCents && BigInt(buy[0].price) === firstBuy && BigInt(sell[0].price) === firstSell,
-    `rung prices are whole cents; first buy ${buy[0].price} = floor(bandMin / shares), first sell ${sell[0].price} = ceil(bandMax / shares)`)
-  c.ok(d3.budgetLeftCents === 256_975 && d3.books.shares === 27 && d3.books.poolCents === 513_950,
-    'budget left 2569.75 (half of the 5139.50 Pool); books 27 sh, Pool 5139.50 (opening buy dated before the cycle spends no budget)')
+  const n = BigInt(cy.openShares)
+  const firstBuy = (BigInt(cy.bandMinCents) / n) * CENT
+  const secondBuy = (BigInt(cy.bandMinCents) / (n + BigInt(cy.buyLot))) * CENT
+  const firstSell = ((BigInt(cy.bandMaxCents) + n - 1n) / n) * CENT
+  c.ok(wholeCents && BigInt(buy[0].price) === firstBuy && BigInt(buy[1].price) === secondBuy && BigInt(sell[0].price) === firstSell,
+    `rung prices are whole cents; first buy ${buy[0].price} = floor(bandMin / n), second ${buy[1].price} = floor(bandMin / (n + lot)), first sell ${sell[0].price} = ceil(bandMax / n)`)
+  const engine = { buy: buyRungs({ minCents: cy.bandMinCents, openShares: cy.openShares, lot: cy.buyLot, budgetCents: cy.buyBudgetCents, poolCents: cy.openPoolCents }),
+    sell: sellRungs({ maxCents: cy.bandMaxCents, openShares: cy.openShares, lot: cy.sellLot }) }
+  c.ok(buy.length === engine.buy.length && sell.length === engine.sell.length && buy.every((r: any) => r.shares === 5) && sell.every((r: any) => r.shares === 3),
+    'the ladder is whole: as many rungs as the engine gives for the cycle row (buy lots of 5, sell lots of 3), though the opening buy is dated today')
+  c.ok(d3.budgetLeftCents === 2_506_975 && cy.buyBudgetCents === 2_506_975 && d3.books.shares === 277 && d3.books.poolCents === 5_013_950,
+    'budget left 25069.75 (half of the 50139.50 Pool), nothing used by the opening buy; books 277 sh, Pool 50139.50')
 
   // ---- 4. buy the first rung ----------------------------------------------
   const rung = buy[0]
@@ -108,12 +114,12 @@ export async function checkVr(c: E2eCtx, today: string, runMorning: () => Promis
   // ---- 7. pause: an active run with no shares is told every morning, a paused one is not; then close
   const idleId = await create('E2E VR idle', 'VRTI', 100_000)
   const idleBefore = msgsOf('VRTI').length
-  await runMorning()
+  c.ok((await runMorning()) === 'sent', 'morning pipeline ran with the idle VR run active')
   c.ok(msgsOf('VRTI').length === idleBefore + 1, 'an active VR run without shares gets its buy instruction in the morning')
   const pause = await patch(idleId, 'paused')
-  c.ok(pause.status === 200 && (await jsonOf(pause)).ok === true, 'PATCH /api/vr/runs/:id paused -> 200')
+  c.ok(pause.status === 200 && (await jsonOf(pause)).ok === true, 'PATCH /api/vr/runs/:id paused -> 200 ok')
   const pausedPatch = await patch(id, 'paused')
-  c.ok(pausedPatch.status === 200, 'the run with a cycle is paused too -> 200')
+  c.ok(pausedPatch.status === 200 && (await jsonOf(pausedPatch)).ok === true, 'the run with a cycle is paused too -> 200 ok')
   const quiet = msgsOf('VRTI').length + msgsOf('VRTQ').length
   c.ok((await runMorning()) === 'sent', 'morning pipeline ran with both VR runs paused')
   c.ok(msgsOf('VRTI').length + msgsOf('VRTQ').length === quiet, 'no VR message was added while both runs were paused')

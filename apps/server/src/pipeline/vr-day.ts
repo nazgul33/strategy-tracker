@@ -1,13 +1,13 @@
 import type { ISODate } from '@st/calendar'
 import {
   VR_CYCLE_DAYS, addDays, buyBudgetCents, buyInstructionShares, buyLot, cycleDue, evalCents, nextScheduledStart, nextV, sellLot, vrBand, vrBooks,
-  type VrBooks, type VrFill,
+  type VrBooks,
 } from '@st/strategies/value-rebalancing'
 import { t } from '@st/telegram/i18n'
 import { renderVrBuyInstruction, renderVrCycle } from '@st/telegram/vr'
 import { withRunLock } from '../domain/run-lock'
 import type { DayRepoSurface } from '../domain/repo-types'
-import type { NewVrCashMove, NewVrCycle, VrCycleRow, VrRunRow } from '../domain/vr/repo-types'
+import type { NewVrCashMove, NewVrCycle, VrCycleRow, VrFillRow, VrRunRow } from '../domain/vr/repo-types'
 import { ladderOf, toEngineFill } from '../domain/vr/view'
 import { fetchCheckedClose } from './close'
 import type { DayDeps } from './day'
@@ -15,7 +15,7 @@ import { notifyDay } from './notify'
 
 type Decision =
   | { kind: 'vr-buy'; targetCents: number }
-  | { kind: 'vr-cycle'; cycle: VrCycleRow; books: VrBooks; fills: VrFill[] }
+  | { kind: 'vr-cycle'; cycle: VrCycleRow; books: VrBooks; fills: VrFillRow[] }
 
 /** Walks the active VR runs in ascending id; one run never takes the others down. */
 export async function processVrRuns(deps: DayDeps, today: ISODate): Promise<{ completed: number; failed: number }> {
@@ -47,10 +47,11 @@ async function processVrRun(deps: DayDeps, run: VrRunRow, today: ISODate): Promi
 }
 
 async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, close: bigint): Promise<Decision | null> {
-  const fills = (await repos.vrFillRepo.listForRun(run.id)).map(toEngineFill)
+  const fills = await repos.vrFillRepo.listForRun(run.id)
   const moves = await repos.vrCashRepo.listForRun(run.id)
   const latest = await repos.vrCycleRepo.latest(run.id)
-  const books = vrBooks(fills, moves)
+  const books = vrBooks(fills.map(toEngineFill), moves)
+  const openFillId = fills.reduce((max, f) => Math.max(max, f.id), 0)
 
   const open = async (cycle: NewVrCycle, deposit: Omit<NewVrCashMove, 'cycleId'> | null): Promise<Decision> => {
     await repos.vrCycleRepo.open(cycle, deposit)
@@ -68,7 +69,7 @@ async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, clos
       vCents: run.initialVCents, bandMinCents: band.minCents, bandMaxCents: band.maxCents,
       openShares: books.shares, openPoolCents: books.poolCents,
       buyBudgetCents: buyBudgetCents(books.poolCents, run.spendLimitPpm), buyLot: buyLot(books.shares), sellLot: sellLot(books.shares),
-      prevClose: null, evalCents: null, poolBeforeCents: null, g: run.g, formula: run.formula, depositCents: 0, vKept: false,
+      prevClose: null, evalCents: null, poolBeforeCents: null, g: run.g, formula: run.formula, depositCents: 0, vKept: false, openFillId,
     }, null)
   }
 
@@ -87,7 +88,7 @@ async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, clos
     vCents, bandMinCents: band.minCents, bandMaxCents: band.maxCents,
     openShares: books.shares, openPoolCents: pool, buyBudgetCents: buyBudgetCents(pool, run.spendLimitPpm),
     buyLot: buyLot(books.shares), sellLot: sellLot(books.shares),
-    prevClose: close, evalCents: evalNow, poolBeforeCents: books.poolCents, g: run.g, formula: run.formula, depositCents: deposit, vKept: kept,
+    prevClose: close, evalCents: evalNow, poolBeforeCents: books.poolCents, g: run.g, formula: run.formula, depositCents: deposit, vKept: kept, openFillId,
   }, deposit === 0 ? null : { runId: run.id, kind: deposit > 0 ? 'deposit' : 'withdraw', amountCents: deposit, movedOn: today, note: null })
 }
 

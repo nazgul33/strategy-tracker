@@ -2,6 +2,7 @@ import { describe, test, expect, beforeAll } from 'bun:test'
 import { sql, type SQL } from 'drizzle-orm'
 import { getDb, applyMigrations } from '../src/db/client'
 import { getRepos } from '../src/db/repos'
+import { vrCycles } from '../src/db/schema'
 import { VrNameTakenError, type NewVrCycle, type NewVrRun } from '../src/domain/vr/repo-types'
 
 const describeIf = process.env.TEST_DATABASE_URL ? describe : describe.skip
@@ -36,7 +37,7 @@ describeIf('db integration: value rebalancing repositories', () => {
     runId, seq, scheduledStart: '2026-11-02', startDate: '2026-11-02',
     vCents: 1_000_000, bandMinCents: 850_000, bandMaxCents: 1_150_000, openShares: 100, openPoolCents: 250_000, buyBudgetCents: 125_000,
     buyLot: 5, sellLot: 5, prevClose: null, evalCents: null, poolBeforeCents: null,
-    g: 10, formula: 'skill', depositCents: 0, vKept: false, ...over,
+    g: 10, formula: 'skill', depositCents: 0, vKept: false, openFillId: 0, ...over,
   })
 
   test('create writes the run, its settings and the opening cash in one go', async () => {
@@ -113,6 +114,15 @@ describeIf('db integration: value rebalancing repositories', () => {
     expect((await repos.vrCycleRepo.listForRun(runId))[0]).toMatchObject({ id: first, prevClose: null, evalCents: null, poolBeforeCents: null, vKept: false })
     const moves = await repos.vrCashRepo.listForRun(runId)
     expect(moves.filter((m) => m.kind === 'deposit').map((m) => m.cycleId)).toEqual([second])
+  })
+
+  test('openFillId round-trips and the column defaults to 0', async () => {
+    const runId = await repos.vrRunRepo.create(newVr())
+    await repos.vrCycleRepo.open(newCycle(runId, 1, { openFillId: 4_321 }), null)
+    expect((await repos.vrCycleRepo.latest(runId))!.openFillId).toBe(4_321)
+    const { openFillId: _omit, ...withoutIt } = newCycle(runId, 2)
+    await db.insert(vrCycles).values(withoutIt as typeof vrCycles.$inferInsert)
+    expect((await repos.vrCycleRepo.latest(runId))!).toMatchObject({ seq: 2, openFillId: 0 })
   })
 
   test('a second open with the same run and seq rejects and adds no cash move', async () => {

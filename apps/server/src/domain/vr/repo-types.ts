@@ -30,7 +30,10 @@ export interface VrCycleRow {
   vCents: number; bandMinCents: number; bandMaxCents: number; openShares: number; openPoolCents: number; buyBudgetCents: number
   buyLot: number; sellLot: number
   prevClose: bigint | null; evalCents: number | null; poolBeforeCents: number | null // null on cycle 1
-  g: number; formula: VrFormula; depositCents: number; vKept: boolean; createdAt: string
+  g: number; formula: VrFormula; depositCents: number; vKept: boolean
+  /** The highest vr_fills.id of the run when the cycle opened, 0 for none: only later fills count toward the cycle's ladder and budget. */
+  openFillId: number
+  createdAt: string
 }
 export type NewVrCycle = Omit<VrCycleRow, 'id' | 'createdAt'>
 export interface VrCashMoveRow { id: number; runId: number; kind: VrCashKind; amountCents: number; movedOn: ISODate; note: string | null; cycleId: number | null; createdAt: string }

@@ -11,7 +11,7 @@ const run: VrRunRow = {
 const cycle: VrCycleRow = {
   id: 1, runId: 1, seq: 1, scheduledStart: '2026-11-03', startDate: '2026-11-03', vCents: 935_000, bandMinCents: 794_750, bandMaxCents: 1_075_250,
   openShares: 176, openPoolCents: 100_000, buyBudgetCents: 50_000, buyLot: 3, sellLot: 2, prevClose: 500_000n, evalCents: null, poolBeforeCents: null,
-  g: 10, formula: 'skill', depositCents: 0, vKept: false, createdAt: FAKE_CREATED_AT,
+  g: 10, formula: 'skill', depositCents: 0, vKept: false, openFillId: 0, createdAt: FAKE_CREATED_AT,
 }
 const open: VrCashMoveRow = { id: 1, runId: 1, kind: 'open', amountCents: 1_000_000, movedOn: '2026-10-29', note: null, cycleId: null, createdAt: FAKE_CREATED_AT }
 let nextId = 1
@@ -122,6 +122,47 @@ describe('buildVrDetail', () => {
   test('a negative Pool is reported as it is', () => {
     const d = detail([fill('buy', 30, 460_000n, 0, '2026-10-30')], { moves: [{ ...open, amountCents: 100_000 }] })
     expect(d.books.poolCents).toBe(-38_000)
+  })
+})
+
+describe('fills that were booked before the cycle opened', () => {
+  const opening = () => fill('buy', 176, 511_300n, 112, '2026-11-03')
+
+  test('an opening buy dated on the start date leaves the whole ladder and budget', () => {
+    const o = opening()
+    const d = detail([o], { cycle: { ...cycle, openFillId: o.id } })
+    expect(d.ladder.buyTotal).toBe(3)
+    expect(d.ladder.buy.length).toBe(d.ladder.buyTotal)
+    expect(d.ladder.sell.length).toBe(d.ladder.sellTotal)
+    expect(d.budgetLeftCents).toBe(cycle.buyBudgetCents)
+  })
+
+  test('a later fill dated the same day uses exactly one rung and its cost', () => {
+    const o = opening()
+    const later = fill('buy', 3, 451_500n, 9, '2026-11-03')
+    const d = detail([o, later], { cycle: { ...cycle, openFillId: o.id } })
+    expect(later.id).toBeGreaterThan(o.id)
+    const whole = detail([o], { cycle: { ...cycle, openFillId: o.id } }).ladder.buy
+    expect(d.ladder.buy).toEqual(whole.slice(1))
+    expect(d.ladder.buy.length).toBe(d.ladder.buyTotal - 1)
+    expect(d.budgetLeftCents).toBe(cycle.buyBudgetCents - 13_545)
+  })
+
+  test('a fill booked later but dated before the start uses nothing', () => {
+    const o = opening()
+    const back = fill('buy', 3, 451_500n, 9, '2026-11-02')
+    const d = detail([o, back], { cycle: { ...cycle, openFillId: o.id } })
+    expect(d.ladder.buy.length).toBe(d.ladder.buyTotal)
+    expect(d.budgetLeftCents).toBe(cycle.buyBudgetCents)
+  })
+
+  test('the sell side follows the same rule', () => {
+    const o = opening()
+    const sold = fill('sell', 2, 611_000n, 0, '2026-11-03')
+    const c = { ...cycle, openFillId: sold.id }
+    expect(detail([o, sold], { cycle: c }).ladder.sell.length).toBe(22)
+    const later = fill('sell', 2, 611_000n, 0, '2026-11-03')
+    expect(detail([o, sold, later], { cycle: c }).ladder.sell.length).toBe(21)
   })
 })
 
