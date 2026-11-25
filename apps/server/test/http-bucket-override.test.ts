@@ -133,6 +133,21 @@ describe('GET /api/pending heldBuckets', () => {
     expect(rows[0].heldBuckets).toEqual([{ index: 0, shares: 10 }, { index: 1, shares: 10 }])
   })
 
+  test('mergeableBuckets leaves out a force_sell bucket and a partly sold bucket', async () => {
+    const { f, app, auth, id, addPending } = await setup()
+    await addPending({ side: 'buy' })
+    let rows = await (await app.request('/api/pending', { headers: auth })).json()
+    expect(rows[0].mergeableBuckets).toEqual([{ index: 0, shares: 10 }, { index: 1, shares: 10 }])
+    f.states.get(id)!.buckets[1]!.state = 'force_sell'
+    rows = await (await app.request('/api/pending', { headers: auth })).json()
+    expect(rows[0].heldBuckets).toEqual([{ index: 0, shares: 10 }, { index: 1, shares: 10 }])
+    expect(rows[0].mergeableBuckets).toEqual([{ index: 0, shares: 10 }])
+    const b0 = f.states.get(id)!.buckets[0]!
+    f.states.get(id)!.closed.push({ index: 0, openedOn: b0.filledOn, closedOn: D } as any)
+    rows = await (await app.request('/api/pending', { headers: auth })).json()
+    expect(rows[0].mergeableBuckets).toEqual([])
+  })
+
   test('gives a row whose run is gone no buckets', async () => {
     const { f, app, auth } = await setup()
     await f.repos.pendingRepo.insert({ runId: 999, captureId: null, bucketIdx: null, side: 'sell', ticker: 'AAPL', shares: 5, price: 965000n, fee: null, filledOn: D, status: 'pending', ...NO_SNAPSHOT })

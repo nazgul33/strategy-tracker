@@ -103,7 +103,7 @@ export function PendingTable({
         body.feeCents = cents;
       }
     }
-    if (v.side === 'sell' && bucket !== '') body.bucketIdx = Number(bucket);
+    if ((v.side === 'sell' || v.side === 'buy') && bucket !== '') body.bucketIdx = Number(bucket);
     return Object.keys(body).length > 0 ? body : undefined;
   };
 

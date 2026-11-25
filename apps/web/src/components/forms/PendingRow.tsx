@@ -192,13 +192,14 @@ export function PendingRow({
           )}
         </Td>
         <Td>
-          {values.side === 'sell' && (
+          {(values.side === 'sell' || values.side === 'buy') && (
             <BucketSelect
               aria-label={t('fillBucket')}
               aria-describedby={bucketAsked ? bucketNeedsId : undefined}
               invalid={bucketAsked}
               value={bucket}
-              held={row.heldBuckets}
+              side={values.side}
+              held={values.side === 'buy' ? row.mergeableBuckets : row.heldBuckets}
               onChange={onBucketChange}
             />
           )}

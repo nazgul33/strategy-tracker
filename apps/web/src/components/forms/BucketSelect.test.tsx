@@ -20,9 +20,9 @@ describe('BucketSelect', () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
 
-  async function render(value: string, held = [{ index: 0, shares: 10 }]) {
+  async function render(value: string, held = [{ index: 0, shares: 10 }], side: 'buy' | 'sell' = 'sell') {
     await act(async () => {
-      root.render(d(BucketSelect, { value, held, onChange: () => {}, 'aria-label': 'Bucket' }));
+      root.render(d(BucketSelect, { value, held, side, onChange: () => {}, 'aria-label': 'Bucket' }));
     });
     return container.querySelector('select')!;
   }
@@ -47,6 +47,12 @@ describe('BucketSelect', () => {
     const select = await render('3');
     expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Automatic', 'Bucket 1 · 10 sh', 'Bucket 4']);
     expect(select.value).toBe('3');
+  });
+
+  it('labels a buy picker Add to bucket N, keeping Automatic and 0-based values', async () => {
+    const select = await render('', [{ index: 5, shares: 26 }], 'buy');
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Automatic', 'Add to bucket 6 · 26 sh']);
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['', '5']);
   });
 
   it('keeps the option values on the stored 0-based index', async () => {
