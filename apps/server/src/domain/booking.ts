@@ -47,7 +47,7 @@ export type CaptureOutcome =
   | { pending: PendingFillRow[]; conflicts: CaptureConflict[]; bookedEarlier?: true }
   | { conflicts: CaptureConflict[] }
 
-export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; detectedFilledOn: ISODate | null; status: string; needsBucket: boolean; dateAfterToday: boolean }
+export interface PendingFillRow { id: number; runId: number; captureId: number | null; side: 'buy' | 'sell'; ticker: string; shares: number; price: string; fee: string | null; filledOn: ISODate; detectedFilledOn: ISODate | null; status: string; needsBucket: boolean; dateAfterToday: boolean; mergeHint: boolean }
 
 export interface BookInput {
   runId: number
@@ -191,13 +191,16 @@ export async function ingestCapture(runId: number, image: { base64: string; mime
         price: formatUsd(parseUsd(f.price)),
         fee: feeCentsVal === null ? null : formatUsd(BigInt(feeCentsVal) * 100n),
         filledOn, detectedFilledOn: f.date ?? null, status: 'pending',
-        needsBucket: false, dateAfterToday: filledOn > deps.today,
+        needsBucket: false, dateAfterToday: filledOn > deps.today, mergeHint: false,
       })
       flagRows.push({ id: pendingId, side: f.side, shares: f.shares, price: parseUsd(f.price), filledOn, evidence: evidenceOf({ detectedOrderType, detectedOrderPrice, detectedOrderedShares }) })
     }
     if (pendingRows.length > 0) await storeCaptureImage(repos, captureId, image)
     const needingBucket = await rowsNeedingBucket(repos, runId, flagRows, deps.today)
     for (const row of pendingRows) row.needsBucket = needingBucket.has(row.id)
+    // Two or more buys in one capture may belong to one bucket: point the operator at the web view.
+    const buyCount = pendingRows.filter(r => r.side === 'buy').length
+    for (const row of pendingRows) row.mergeHint = row.side === 'buy' && buyCount >= 2
     if (fresh.length === 0) return { conflicts }
     const earlier = claim.bookedEarlier ? { bookedEarlier: true as const } : {}
     if (conflicts.length > 0) return { pending: pendingRows, conflicts, ...earlier }

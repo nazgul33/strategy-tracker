@@ -23,6 +23,7 @@ const row = (over: Partial<CapturePendingRowDto> = {}): CapturePendingRowDto => 
   status: 'pending',
   needsBucket: false,
   dateAfterToday: false,
+  mergeHint: false,
   ...over,
 });
 

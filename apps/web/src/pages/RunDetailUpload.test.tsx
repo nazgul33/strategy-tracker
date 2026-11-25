@@ -43,6 +43,7 @@ const PENDING_ROW = {
   status: 'pending',
   needsBucket: false,
   dateAfterToday: false,
+  mergeHint: false,
 };
 const OUTCOME: UploadAnswer = { json: { events: [{ type: 'outcome', runId: 1, ticker: 'QQQ', outcome: { pending: [PENDING_ROW] } }] } };
 const DUPLICATE: UploadAnswer = { json: { events: [{ type: 'outcome', runId: 1, ticker: 'QQQ', outcome: 'duplicate' }] } };
