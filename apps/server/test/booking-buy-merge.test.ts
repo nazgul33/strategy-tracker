@@ -42,13 +42,13 @@ describe('automatic buy bucket', () => {
   })
 
   test('a chosen bucketIdx on a buy adds to that held bucket', async () => {
-    const s = await setup([[2, 10, OLD]])
-    const before = await s.state()
+    const s = await setup([[2, 10, OLD]], (st) => { st.ages[2] = 3 })
+    expect((await s.state()).ages[2]).toBe(3)
     const id = await s.pend(5)
     await confirmPendingFill(id, { bucketIdx: 2 }, s.deps)
     const st = await s.state()
     expect(st.buckets[2]).toMatchObject({ state: 'held', shares: 15, filledOn: OLD })
-    expect(st.ages[2]).toBe(before.ages[2])
+    expect(st.ages[2]).toBe(3)
     expect(s.f._stores.fills[0]).toMatchObject({ bucketIdx: 2, side: 'buy', shares: 5 })
     expect(s.status(id)).toBe('confirmed')
   })
@@ -57,6 +57,14 @@ describe('automatic buy bucket', () => {
     const s = await setup([[2, 10, OLD]])
     const id = await s.pend(5)
     await expect(confirmPendingFill(id, { bucketIdx: 3 }, s.deps)).rejects.toMatchObject({ kind: 'bucket-not-held' })
+    expect(s.status(id)).toBe('pending')
+    expect(s.f._stores.fills).toEqual([])
+  })
+
+  test('a chosen bucketIdx past the last bucket on a buy is bucket-not-found and the row stays pending', async () => {
+    const s = await setup([[2, 10, OLD]])
+    const id = await s.pend(5)
+    await expect(confirmPendingFill(id, { bucketIdx: 10 }, s.deps)).rejects.toMatchObject({ kind: 'bucket-not-found' })
     expect(s.status(id)).toBe('pending')
     expect(s.f._stores.fills).toEqual([])
   })
