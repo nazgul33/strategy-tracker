@@ -78,7 +78,7 @@ function booksOf(i: VrViewInput, fills: VrFill[]): VrBooksView {
   }
 }
 
-function ladderOf(cycle: VrCycleRow | null, shares: number, fills: VrFill[]): VrLadder {
+export function ladderOf(cycle: VrCycleRow | null, shares: number, fills: VrFill[]): VrLadder {
   if (cycle === null || cycle.openShares === 0 || shares === 0) return { buy: [], sell: [], buyTotal: 0, sellTotal: 0 }
   const buyAll = buyRungs({ minCents: cycle.bandMinCents, openShares: cycle.openShares, lot: cycle.buyLot, budgetCents: cycle.buyBudgetCents, poolCents: cycle.openPoolCents })
   const sellAll = sellRungs({ maxCents: cycle.bandMaxCents, openShares: cycle.openShares, lot: cycle.sellLot })

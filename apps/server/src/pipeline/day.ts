@@ -1,13 +1,15 @@
-import { dayInfo, prevTradingDay, type ISODate } from '@st/calendar'
+import { dayInfo, type ISODate } from '@st/calendar'
 import { advanceDay, type RunState, type Run } from '@st/core'
 import { computeOrders, type MrParams } from '@st/strategies'
 import { rollStale, type BookingDeps } from '../domain/booking'
 import type { DayRepoSurface, NewOrder, RunRow } from '../domain/repo-types'
 import { withRunLock } from '../domain/run-lock'
-import { broadcastNotice, type NoticeResult, type NoticeText } from '../wire/broadcast'
 import { renderDigest, renderClosed, renderReminder } from '@st/telegram/digest'
 import { t } from '@st/telegram/i18n'
 import type { DayPlan } from '@st/core'
+import { fetchCheckedClose } from './close'
+import { notifyDay } from './notify'
+import { processVrRuns } from './vr-day'
 
 export interface DayDeps {
   today: () => ISODate
@@ -28,13 +30,6 @@ function weekday(t: ISODate): number {
   return new Date(t + 'T12:00:00Z').getUTCDay()
 }
 
-function notify(deps: DayDeps, runId: number | null, text: NoticeText, kind: string): Promise<NoticeResult> {
-  return broadcastNotice(
-    { allowedChatIds: deps.allowedChatIds, send: deps.send, notificationRepo: deps.repos.notificationRepo },
-    runId, text, { kind },
-  )
-}
-
 type RunOutcome = 'completed' | 'failed'
 
 export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> {
@@ -42,7 +37,7 @@ export async function runMorningPipeline(deps: DayDeps): Promise<MorningResult> 
     return await morningPipeline(deps)
   } catch (e) {
     console.error('morning pipeline failed:', String(e))
-    await notify(deps, null, t('warn-pipeline-error', deps.digestLang), 'pipeline-error')
+    await notifyDay(deps, null, t('warn-pipeline-error', deps.digestLang), 'pipeline-error')
     throw e
   }
 }
@@ -58,14 +53,14 @@ async function morningPipeline(deps: DayDeps): Promise<MorningResult> {
 
   const info = dayInfo(today)
   if (!info.open) {
-    await notify(deps, null, renderClosed(info, lang), 'closed')
+    await notifyDay(deps, null, renderClosed(info, lang), 'closed')
     return 'closed'
   }
 
   // crosscheck
   const cc = await deps.crossCheck(today)
   if (cc.agree === false) {
-    await notify(deps, null, t('warn-conflict', lang), 'conflict')
+    await notifyDay(deps, null, t('warn-conflict', lang), 'conflict')
     return 'conflict'
   }
 
@@ -88,6 +83,10 @@ async function morningPipeline(deps: DayDeps): Promise<MorningResult> {
     else numFailed++
   }
 
+  const vr = await processVrRuns(deps, today)
+  numCompleted += vr.completed
+  numFailed += vr.failed
+
   return numFailed > 0 && numCompleted === 0 ? 'data-error' : 'sent'
 }
 
@@ -97,7 +96,7 @@ async function processRun(deps: DayDeps, run: RunRow, today: ISODate): Promise<R
     return await planRun(deps, run, today)
   } catch (e) {
     console.error('morning run failed:', { runId: run.id, ticker: run.ticker }, String(e))
-    await notify(deps, run.id, t('warn-run-error', deps.digestLang, { id: run.id, ticker: run.ticker }), 'run-error')
+    await notifyDay(deps, run.id, t('warn-run-error', deps.digestLang, { id: run.id, ticker: run.ticker }), 'run-error')
     return 'failed'
   }
 }
@@ -106,46 +105,21 @@ async function processRun(deps: DayDeps, run: RunRow, today: ISODate): Promise<R
 // orders, so it counts as completed.
 async function skipPlanned(deps: DayDeps, run: RunRow): Promise<RunOutcome> {
   console.log('morning run skipped, already planned today:', { runId: run.id, ticker: run.ticker })
-  await notify(deps, run.id, t('run-already-planned', deps.digestLang, { id: run.id, ticker: run.ticker }), 'already-planned')
+  await notifyDay(deps, run.id, t('run-already-planned', deps.digestLang, { id: run.id, ticker: run.ticker }), 'already-planned')
   return 'completed'
 }
 
 async function planRun(deps: DayDeps, run: RunRow, today: ISODate): Promise<RunOutcome> {
   const lang = deps.digestLang
   const hasOrdersToday = async () => (await deps.repos.orderRepo.listForRun(run.id, today)).length > 0
-  const warnDataError = () => notify(deps, run.id, t('warn-data-error', lang, { id: run.id, ticker: run.ticker }), 'data-error')
 
   // A run with no order today has nothing to age: computeOrders emits an order for every
   // held / force_sell bucket and advanceDay ages only those, so re-planning cannot age twice.
   if (await hasOrdersToday()) return skipPlanned(deps, run)
 
-  // fetch + sanity close
-  let close: bigint
-  let closeDate: ISODate
-  try {
-    const res = await deps.fetchLastClose(run.ticker)
-    close = res.close
-    closeDate = res.date
-  } catch (e) {
-    console.error('last close fetch failed:', run.ticker, String(e))
-    await warnDataError()
-    return 'failed'
-  }
-  if (closeDate !== prevTradingDay(today)) {
-    await warnDataError()
-    return 'failed'
-  }
-
-  // collect history once the close passed the sanity check above; a failed
-  // backfill must not break the digest (fire-and-warn). Independent of run
-  // state, so it stays outside the run lock.
-  if (deps.persistClose) {
-    try {
-      await deps.persistClose(run.ticker, closeDate, close)
-    } catch (e) {
-      console.error('price history persist failed:', run.ticker, String(e))
-    }
-  }
+  const fetched = await fetchCheckedClose(deps, run, today)
+  if (!fetched) return 'failed'
+  const { close, closeDate } = fetched
 
   // The check → load → advance → write span must not interleave with a booking,
   // a recalc or a second pipeline on this run, or its write would be overwritten
@@ -182,7 +156,7 @@ async function planRun(deps: DayDeps, run: RunRow, today: ISODate): Promise<RunO
 
   const ctx = { tradeDate: today, lastClose: close, lastCloseDate: closeDate }
   const chunks = renderDigest(run as Run, planned.plan, ctx, lang, planned.state.ages)
-  const { recorded } = await notify(deps, run.id, { record: chunks.join('\n\n'), send: chunks }, 'digest')
+  const { recorded } = await notifyDay(deps, run.id, { record: chunks.join('\n\n'), send: chunks }, 'digest')
   // Mark only once a copy of the digest exists; otherwise the orders are named again next morning.
   if (recorded > 0 && planned.unconfirmedIds.length > 0) {
     try {
@@ -198,11 +172,11 @@ export async function runReminder(deps: DayDeps): Promise<{ failed: number }> {
   const today = deps.today()
   const info = dayInfo(today)
   if (!info.open) return { failed: 0 }
-  const { failed } = await notify(deps, null, renderReminder(deps.digestLang), 'reminder')
+  const { failed } = await notifyDay(deps, null, renderReminder(deps.digestLang), 'reminder')
   return { failed }
 }
 
 export async function runDecemberNudge(deps: DayDeps): Promise<{ failed: number }> {
-  const { failed } = await notify(deps, null, t('december-nudge', deps.digestLang), 'december-nudge')
+  const { failed } = await notifyDay(deps, null, t('december-nudge', deps.digestLang), 'december-nudge')
   return { failed }
 }

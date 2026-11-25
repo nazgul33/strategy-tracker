@@ -11,6 +11,7 @@
   "exports": {
     ".": "./src/bot.ts",
     "./digest": "./src/digest.ts",
-    "./i18n": "./src/i18n.ts"
+    "./i18n": "./src/i18n.ts",
+    "./vr": "./src/vr.ts"
   }
 }
