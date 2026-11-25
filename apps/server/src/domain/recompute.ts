@@ -23,7 +23,7 @@ export function rebuildState(fills: readonly FillRow[], poolCents: number, today
     } else if ((state.buckets[f.bucketIdx]?.state ?? 'empty') !== 'empty') {
       // A buy into a held bucket merges at the weighted average and keeps the
       // bucket's age (the first buy's filledOn).
-      state = addBuyFill(state, f.bucketIdx, f.shares, f.price, f.fee)
+      state = addBuyFill(state, f.bucketIdx, f.shares, f.price, f.fee, { checkMergeable: false })
     } else {
       state = applyBuyFill(state, f.bucketIdx, f.shares, f.price, f.fee, f.filledOn)
       state.ages[f.bucketIdx] = ageBuckets(state.ages, today, { [f.bucketIdx]: f.filledOn })[f.bucketIdx]!

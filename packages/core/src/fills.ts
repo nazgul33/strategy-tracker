@@ -116,11 +116,13 @@ export function addBuyFill(
   shares: number,
   price: bigint,
   feeCents: number,
+  opts: { checkMergeable?: boolean } = {},
 ): RunState {
   const bucket = state.buckets[bucketIndex]
   if (!bucket) throw new DomainError('bucket-not-found')
   if (bucket.state === 'empty') throw new DomainError('bucket-not-held')
-  if (!isMergeableBucket(state, bucketIndex)) throw new DomainError('bucket-not-mergeable')
+  // History replay passes checkMergeable: false so existing data always rebuilds.
+  if ((opts.checkMergeable ?? true) && !isMergeableBucket(state, bucketIndex)) throw new DomainError('bucket-not-mergeable')
   if (!Number.isInteger(shares) || shares <= 0) throw new DomainError('invalid-shares')
   const next = clone(state)
   const nb = next.buckets[bucketIndex]!

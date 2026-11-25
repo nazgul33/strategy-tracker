@@ -3,7 +3,7 @@ import { roundDiv } from '@st/core'
 import type { FillRow } from '../src/domain/booking'
 import { deleteFill, rebuildState, recalcRunState } from '../src/domain/recompute'
 import { fakeRepos } from './booking-fakes'
-import { TODAY, adjustRows, createRun, deps, getState } from './rebooking-fixture'
+import { TODAY, adjustRows, ageOf, createRun, deps, getState } from './rebooking-fixture'
 
 const D = '2026-11-24'
 const rungs = [
@@ -48,5 +48,19 @@ describe('rebuildState with merged buys', () => {
     const res = await recalcRunState(runId, deps(f))
     expect(res.deltaCents).toBe(0)
     expect(adjustRows(f)).toHaveLength(0)
+  })
+
+  test('history of buy, partial sell, buy into the same bucket rebuilds without refusing', async () => {
+    const f = fakeRepos()
+    const runId = await createRun(f, 5_000_000, 10)
+    const base = { runId, bucketIdx: 5, ticker: 'SPY', source: 'seed' }
+    await f.repos.fillRepo.insert({ ...base, side: 'buy', filledOn: '2026-01-05', shares: 26, price: 378500n, fee: 69 })
+    await f.repos.fillRepo.insert({ ...base, side: 'sell', filledOn: '2026-01-06', shares: 10, price: 390000n, fee: 20 })
+    await f.repos.fillRepo.insert({ ...base, side: 'buy', filledOn: '2026-01-07', shares: 26, price: 371000n, fee: 68 })
+    await recalcRunState(runId, deps(f))
+    const st = await getState(f, runId)
+    expect(st.buckets[5]).toMatchObject({ shares: 42, state: 'held', filledOn: '2026-01-05' })
+    expect(st.ages[5]).toBe(ageOf('2026-01-05'))
+    expect(ageOf('2026-01-05')).toBeGreaterThan(0)
   })
 })

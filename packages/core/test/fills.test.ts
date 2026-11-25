@@ -320,6 +320,16 @@ describe('addBuyFill', () => {
     expect(() => addBuyFill(s, 5, 2, 100n, 0)).toThrow(new DomainError('bucket-not-mergeable'))
   })
 
+  test('checkMergeable: false merges into a partly sold bucket but still refuses empty and unknown ones', () => {
+    const s = applyBuyFill(emptyState(2), 0, 10, 1000000n, 0, D)
+    const p = applySellFill(s, 0, 4, 1100000n, 0, D)
+    const out = addBuyFill(p, 0, 6, 800000n, 0, { checkMergeable: false })
+    expect(out.buckets[0]).toMatchObject({ shares: 12, state: 'held' })
+    expect(() => addBuyFill(p, 1, 6, 800000n, 0, { checkMergeable: false })).toThrow(new DomainError('bucket-not-held'))
+    expect(() => addBuyFill(p, 9, 6, 800000n, 0, { checkMergeable: false })).toThrow(new DomainError('bucket-not-found'))
+    expect(() => addBuyFill(p, 0, 0, 800000n, 0, { checkMergeable: false })).toThrow(new DomainError('invalid-shares'))
+  })
+
   test('refuses a partly sold bucket with bucket-not-mergeable', () => {
     const s = applyBuyFill(emptyState(2), 0, 10, 1000000n, 0, D)
     const p = applySellFill(s, 0, 4, 1100000n, 0, D)
