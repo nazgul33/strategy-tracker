@@ -7,6 +7,8 @@ import type { NotificationDto } from './api.types';
  */
 export interface NoticeEntryDto extends Omit<NotificationDto, 'chatId'> {
   ticker: string | null;
+  /** The run's strategy ('mean-reversion' | 'value-rebalancing'); null exactly when `ticker` is. */
+  strategyKey: string | null;
   chatIds: string[];
 }
 
