@@ -171,6 +171,24 @@ describe('PendingTable bucket selector', () => {
     expect(calls[0]!.body).toEqual({ overrides: { bucketIdx: 5 } });
   });
 
+  it('a bucket chosen on a sell row is dropped when the side is switched to buy', async () => {
+    const calls = await renderRows([{ ...SELL_NINE, mergeableBuckets: [{ index: 3, shares: 4 }] }]);
+    await choose(bucketSelect(9), '3');
+    await choose(sideSelect(9), 'buy');
+    await confirmRow(9);
+    await pressButton('Keep for review');
+    expect((calls[0]!.body as { overrides: unknown }).overrides).toEqual({ side: 'buy' });
+  });
+
+  it('a bucket chosen on a buy row is dropped when the side is switched to sell', async () => {
+    const calls = await renderRows([BUY_NINE]);
+    await choose(bucketSelect(9), '5');
+    await choose(sideSelect(9), 'sell');
+    await confirmRow(9);
+    await pressButton('Keep for review');
+    expect((calls[0]!.body as { overrides: unknown }).overrides).toEqual({ side: 'sell' });
+  });
+
   it('a chosen bucket survives the default-fee popup and the keep prompt', async () => {
     const calls = await renderRows([SELL_NINE]);
     await choose(bucketSelect(9), '3');

@@ -192,6 +192,7 @@ export function PendingRow({
           )}
         </Td>
         <Td>
+          {/* Excludes an unset side (''), which has no bucket selector. */}
           {(values.side === 'sell' || values.side === 'buy') && (
             <BucketSelect
               aria-label={t('fillBucket')}
