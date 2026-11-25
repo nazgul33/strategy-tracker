@@ -64,6 +64,7 @@ export const CATALOG: Record<string, MsgEntry> = {
   'confirm-err-invalid-fee': { en: 'Invalid fee — use a whole number of cents, 0 or more.', ko: '유효하지 않은 수수료입니다 — 0 이상의 정수(센트)를 사용하세요.' },
   'confirm-err-bucket-not-held': { en: 'The matched bucket is not currently held — check the side and the share count.', ko: '매칭된 버킷이 현재 보유 중이 아닙니다 — 매매 구분과 수량을 확인하세요.' },
   'confirm-err-bucket-not-found': { en: 'That bucket no longer exists on this run; book it from the web Pending view.', ko: '이 런에 해당 버킷이 더 이상 없습니다. 웹의 대기 목록에서 처리하세요.' },
+  'confirm-err-bucket-not-mergeable': { en: 'That bucket cannot take another buy: it is partly sold or set to force-sell.', ko: '이 버킷에는 매수를 추가할 수 없습니다: 일부 매도되었거나 강제 매도 상태입니다.' },
   'confirm-err-fill-date-in-future': { en: 'The trade date is after today — fix the date in the web app\'s Pending view.', ko: '체결 날짜가 미래 날짜입니다 — 웹 앱의 \'확인 대기\'에서 날짜를 수정하세요.' },
   'confirm-err-choose-bucket': { en: 'The tracker cannot tell which bucket sold this — choose the bucket in the web app\'s Pending view.', ko: '이 매도가 어느 버킷의 것인지 알 수 없습니다 — 웹 앱의 \'확인 대기\'에서 버킷을 선택하세요.' },
   'confirm-err-unknown': { en: 'Could not confirm this fill ({code}).', ko: '이 체결을 확정할 수 없습니다 ({code}).' },

@@ -102,7 +102,7 @@ describe('confirm: the keep is written before the row flips', () => {
 
   test('a malformed bucketIdx (invalid-bucket) leaves the row pending and the requested keep in place', async () => {
     const { f, deps, ids, captureId } = await setup(1)
-    await expect(confirmPendingFill(ids[0]!, { bucketIdx: 0 }, deps, { keepImage: true })).rejects.toThrow('invalid-bucket')
+    await expect(confirmPendingFill(ids[0]!, { bucketIdx: -1 }, deps, { keepImage: true })).rejects.toThrow('invalid-bucket')
     expect(rowOf(f, ids[0]!).status).toBe('pending')
     expect(f._stores.captureImages[0]).toMatchObject({ captureId, keep: true })
   })

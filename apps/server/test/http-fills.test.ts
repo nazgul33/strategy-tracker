@@ -209,7 +209,7 @@ describe('fill edit + delete endpoints', () => {
     const auth = await loginAs(app)
     const id = await createRun(app, auth, { name: 'r1', ticker: 'AAPL', costPpm: 0, poolCents: 100000 })
     await postFill(app, auth, id, { side: 'buy', shares: 1, price: '10.0000', filledOn: '2026-11-10' })
-    await postFill(app, auth, id, { side: 'buy', shares: 1, price: '11.0000', filledOn: '2026-11-10' })
+    await postFill(app, auth, id, { side: 'buy', shares: 1, price: '11.0000', filledOn: '2026-11-09' })
     const res = await app.request(`/api/runs/${id}/fills/1`, { method: 'DELETE', headers: auth })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ ok: true, deletedFillId: 1, deltaCents: 1000 })

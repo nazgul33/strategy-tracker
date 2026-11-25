@@ -1,4 +1,4 @@
-import { applyBuyFill, applySellFill, DomainError, nextBuyBucketIndex, parseUsd, type ISODate, type RunState } from '@st/core'
+import { addBuyFill, applyBuyFill, applySellFill, DomainError, nextBuyBucketIndex, sameDayBuyBucketIndex, parseUsd, type ISODate, type RunState } from '@st/core'
 import { feeCents, centsFromUsd, formatUsd } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { ExtractResult, RawFill } from '@st/ingest'
@@ -58,7 +58,7 @@ export interface BookInput {
   filledOn: ISODate
   pendingId?: number | null
   source: FillSource
-  bucketIdx?: number | null  // sell only: the operator's bucket; null/undefined = automatic
+  bucketIdx?: number | null  // the operator's bucket (a buy adds to that held bucket); null/undefined = automatic
   order?: OrderEvidence  // sell only: what the screenshot said about the order; absent = no evidence
   feeOverride?: FeeOverrideKind  // the KIND of fee override, stored on the pending row; read only with pendingId, absent = 'none'
 }
@@ -84,10 +84,7 @@ export function finalFeeCents(run: { costPpm: number }, price: bigint, shares: n
 }
 
 export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise<BookedOutcome> {
-  if (input.bucketIdx != null) {
-    const usable = input.side === 'sell' && Number.isInteger(input.bucketIdx) && input.bucketIdx >= 0
-    if (!usable) throw new Error('invalid-bucket')
-  }
+  if (input.bucketIdx != null && !(Number.isInteger(input.bucketIdx) && input.bucketIdx >= 0)) throw new Error('invalid-bucket')
   if (input.filledOn > deps.today) throw new DomainError('fill-date-in-future')
   const repos = deps.repos
   const run = await requireRun(repos, input.runId)
@@ -102,11 +99,18 @@ export async function bookUnlocked(input: BookInput, deps: BookingDeps): Promise
   let attribution: SellAttribution | null = null
 
   if (input.side === 'buy') {
-    const picked = nextBuyBucketIndex(state)
-    if (picked === null) throw new Error('no-empty-bucket')
-    bucketIdx = picked
-    next = applyBuyFill(state, bucketIdx, input.shares, priceBigInt, finalFee, input.filledOn)
-    next.ages[bucketIdx] = ageBuckets(next.ages, deps.today, { [bucketIdx]: input.filledOn })[bucketIdx]!
+    // A chosen bucket, or else the same-day bucket, takes the buy as a merge (addBuyFill keeps its fill date and age).
+    const merge = input.bucketIdx ?? sameDayBuyBucketIndex(state, input.filledOn)
+    if (merge !== null) {
+      bucketIdx = merge
+      next = addBuyFill(state, bucketIdx, input.shares, priceBigInt, finalFee)
+    } else {
+      const picked = nextBuyBucketIndex(state, input.filledOn)
+      if (picked === null) throw new Error('no-empty-bucket')
+      bucketIdx = picked
+      next = applyBuyFill(state, bucketIdx, input.shares, priceBigInt, finalFee, input.filledOn)
+      next.ages[bucketIdx] = ageBuckets(next.ages, deps.today, { [bucketIdx]: input.filledOn })[bucketIdx]!
+    }
     // matching buy_loc order (lookup only; flip after ledger)
     const orders = await repos.orderRepo.listForDate(input.filledOn)
     const match = orders.find((o) => o.runId === input.runId && o.kind === 'buy_loc' && (o.status === 'open' || o.status === 'stale'))

@@ -6,6 +6,7 @@ import { D, Y, sellAt, orderOf, heldRun, lastFillId, type Ord } from './sell-fix
 import { expectKind } from './rebooking-fixture'
 
 const BUY = { shares: 10, price: '100.00', filledOn: '2026-11-01' } as const
+const BUY_2 = { shares: 10, price: '100.00', filledOn: '2026-11-02' } as const // a different day, so it takes its own bucket
 const LEGS: Ord[] = [{ idx: 0, kind: 'sell_loc', price: '103.00' }, { idx: 0, kind: 'stop_sell', price: '97.00' }]
 const STALE_104: Ord = { idx: 0, kind: 'sell_loc', price: '104.00', status: 'stale' }
 
@@ -23,10 +24,10 @@ const LEGS_1: Ord[] = [{ idx: 1, kind: 'sell_loc', price: '103.00' }, { idx: 1, 
 // Buckets 0 and 1 held through real buys; bucket 1 is sold out (its newest fill is a sell), then the stored state is
 // drifted so bucket 1 is held again with no fill behind it, and bucket 1 gets open legs. A partial sell books on bucket 0.
 async function driftedRun(bucket0Legs: Ord[]) {
-  const run = await heldRun([BUY, BUY], bucket0Legs)
+  const run = await heldRun([BUY, BUY_2], bucket0Legs)
   const { f, deps, runId } = run
   await manualFill(runId, { side: 'sell', shares: 10, price: '103.00', filledOn: D, bucketIdx: 1 }, deps)
-  const drifted = applyBuyFill(await f.repos.bucketRepo.loadState(runId), 1, 10, parseUsd('100.00'), 0, BUY.filledOn)
+  const drifted = applyBuyFill(await f.repos.bucketRepo.loadState(runId), 1, 10, parseUsd('100.00'), 0, BUY_2.filledOn)
   await f.repos.bucketRepo.saveState(runId, drifted)
   await f.repos.orderRepo.insertMany(LEGS_1.map((o) => ({
     runId, tradeDate: D, kind: o.kind, bucketIdx: o.idx, limitPrice: parseUsd(o.price!), shares: 10, status: 'open' as const,
