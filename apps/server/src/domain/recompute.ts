@@ -1,4 +1,4 @@
-import { applyBuyFill, applySellFill, emptyState, DomainError, parseUsd, type ISODate, type RunState } from '@st/core'
+import { addBuyFill, applyBuyFill, applySellFill, emptyState, DomainError, parseUsd, type ISODate, type RunState } from '@st/core'
 import { feeCents } from '@st/core/money'
 import { ageBuckets } from '@st/strategies'
 import type { BookingDeps, FillBookingDeps, FillRow } from './booking'
@@ -18,10 +18,14 @@ export function rebuildState(fills: readonly FillRow[], poolCents: number, today
   let state = emptyState(bucketCount)
   state.cashCents = poolCents
   for (const f of byIdAsc(fills)) {
-    state = f.side === 'buy'
-      ? applyBuyFill(state, f.bucketIdx, f.shares, f.price, f.fee, f.filledOn)
-      : applySellFill(state, f.bucketIdx, f.shares, f.price, f.fee, f.filledOn)
-    if (f.side === 'buy') {
+    if (f.side === 'sell') {
+      state = applySellFill(state, f.bucketIdx, f.shares, f.price, f.fee, f.filledOn)
+    } else if ((state.buckets[f.bucketIdx]?.state ?? 'empty') !== 'empty') {
+      // A buy into a held bucket merges at the weighted average and keeps the
+      // bucket's age (the first buy's filledOn).
+      state = addBuyFill(state, f.bucketIdx, f.shares, f.price, f.fee)
+    } else {
+      state = applyBuyFill(state, f.bucketIdx, f.shares, f.price, f.fee, f.filledOn)
       state.ages[f.bucketIdx] = ageBuckets(state.ages, today, { [f.bucketIdx]: f.filledOn })[f.bucketIdx]!
     }
   }
