@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { jsonBig, type HttpDeps } from '../app'
-import { DomainError, type RunState } from '@st/core'
+import { DomainError, isMergeableBucket, type RunState } from '@st/core'
 import { confirmPendingFill, rejectPendingFill } from '../../domain/booking'
 import { evidenceOf } from '../../domain/order-type'
 import { rowsNeedingBucket } from '../../domain/pending-flags'
@@ -19,6 +19,11 @@ function heldBucketsOf(state: RunState): Array<{ index: number; shares: number }
   return state.buckets.filter((b) => b.state !== 'empty').map((b) => ({ index: b.index, shares: b.shares })).sort((a, b) => a.index - b.index)
 }
 
+// The held buckets a buy can be added to: held, not force-sell, not partly sold.
+function mergeableBucketsOf(state: RunState): Array<{ index: number; shares: number }> {
+  return heldBucketsOf(state).filter((b) => isMergeableBucket(state, b.index))
+}
+
 export function pendingRouter(deps: HttpDeps): Hono {
   const r = new Hono()
   r.get('/pending', async (c) => {
@@ -33,19 +38,20 @@ export function pendingRouter(deps: HttpDeps): Hono {
         const needingBucket = state
           ? await rowsNeedingBucket(deps.repos, runId, flagRows, today, state)
           : new Set<number>()
-        return [runId, { costPpm: run?.costPpm ?? deps.defaultSettings.defaultCostPpm, heldBuckets: state ? heldBucketsOf(state) : [], needingBucket }] as const
+        return [runId, { costPpm: run?.costPpm ?? deps.defaultSettings.defaultCostPpm, heldBuckets: state ? heldBucketsOf(state) : [], mergeableBuckets: state ? mergeableBucketsOf(state) : [], needingBucket }] as const
       }),
     ))
     return c.json(jsonBig(rows.map((p) => {
       // feeOverride is server-internal (boot-repair bookkeeping), so it is dropped with the detected* fields.
       const { detectedSide, detectedShares, detectedPrice, detectedFilledOn, detectedFee, detectedOrderType, detectedOrderPrice, detectedOrderedShares, detectedAt, feeOverride, ...row } = p
-      const { costPpm, heldBuckets, needingBucket } = perRun.get(p.runId)!
+      const { costPpm, heldBuckets, mergeableBuckets, needingBucket } = perRun.get(p.runId)!
       return {
         ...row,
         hasImage: p.captureId != null && withImage.has(p.captureId),
         detected: detectedDto(p),
         costPpm,
         heldBuckets,
+        mergeableBuckets,
         needsBucket: needingBucket.has(p.id),
         today,
       }

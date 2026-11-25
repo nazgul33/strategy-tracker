@@ -36,7 +36,7 @@ describe('deleteFill retires the legs of a bucket whose buy it removes', () => {
 
   test('deleting a second lot\'s buy does not read the earlier lot\'s sell', async () => {
     // every bucket held, so the rebuy after bucket 0's sell has nowhere else to land
-    const allHeld = Array.from({ length: 10 }, () => ({ shares: 10, price: '100.00', filledOn: '2026-11-01' }) as const)
+    const allHeld = Array.from({ length: 10 }, (_, i) => ({ shares: 10, price: '100.00', filledOn: `2026-10-${String(i + 1).padStart(2, '0')}` }) as const)
     const { f, deps, rec, runId } = await heldRun(allHeld, [])
     await manualFill(runId, { side: 'sell', shares: 10, price: '103.00', filledOn: '2026-11-05', bucketIdx: 0 }, deps)
     await manualFill(runId, { side: 'buy', shares: 8, price: '100.00', filledOn: '2026-11-10' }, deps)

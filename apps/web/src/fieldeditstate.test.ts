@@ -20,6 +20,7 @@ function pendingRow(over: Partial<PendingFillDto> = {}): PendingFillDto {
     hasImage: true,
     costPpm: 40,
     heldBuckets: [],
+    mergeableBuckets: [],
     detected: null,
     ...over,
   };

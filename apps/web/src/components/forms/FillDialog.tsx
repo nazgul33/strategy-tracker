@@ -220,6 +220,7 @@ export function FillDialog({
               data-testid="manualBucketSelect"
               aria-label={t('fillBucket')}
               value={bucket}
+              side="sell"
               held={heldBuckets}
               onChange={setBucket}
             />

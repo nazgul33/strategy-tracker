@@ -17,6 +17,7 @@ export const PENDING_ROW: PendingFillDto = {
   hasImage: true,
   costPpm: 40,
   heldBuckets: [],
+  mergeableBuckets: [],
   detected: { side: 'buy', shares: 10, price: '123450000', filledOn: '2026-11-10', fee: 100 },
 };
 

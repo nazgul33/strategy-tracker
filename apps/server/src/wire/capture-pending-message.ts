@@ -12,5 +12,6 @@ export function pendingMessage(row: PendingFillRow, lang: Lang): { text: string;
   if (row.detectedFilledOn === null) lines.push(t('capture-date-substituted', lang, { date: row.filledOn }));
   if (row.dateAfterToday) lines.push(t('capture-date-after-today', lang, { date: row.filledOn }));
   if (row.needsBucket) lines.push(t('capture-needs-bucket', lang));
+  if (row.mergeHint) lines.push(t('capture-buys-several', lang));
   return { text: lines.join('\n'), buttons: lines.length === 1 };
 }

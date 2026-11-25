@@ -103,7 +103,8 @@ export function PendingTable({
         body.feeCents = cents;
       }
     }
-    if (v.side === 'sell' && bucket !== '') body.bucketIdx = Number(bucket);
+    // Excludes an unset side (''), which has no bucket selector.
+    if ((v.side === 'sell' || v.side === 'buy') && bucket !== '') body.bucketIdx = Number(bucket);
     return Object.keys(body).length > 0 ? body : undefined;
   };
 
@@ -222,7 +223,11 @@ export function PendingTable({
                 key={r.id}
                 row={r}
                 values={valuesFor(r)}
-                onChange={(patch) => patchValues(r, patch)}
+                onChange={(patch) => {
+                  // A bucket belongs to one side (held vs mergeable lists differ): a side switch resets it to Automatic.
+                  if (patch.side !== undefined && patch.side !== valuesFor(r).side) setBuckets((prev) => ({ ...prev, [r.id]: '' }));
+                  patchValues(r, patch);
+                }}
                 bucket={buckets[r.id] ?? ''}
                 onBucketChange={(value) => {
                   setBuckets((prev) => ({ ...prev, [r.id]: value }));

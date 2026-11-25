@@ -61,7 +61,7 @@ describe('booking', () => {
     const deps: FillBookingDeps = { repos: f.repos, today: '2026-11-06', notify: silentNotifier }
     const runId = await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'AAPL', name: 'cc', poolCents: 1_000_000, costPpm: 100, initialRunState: emptyState(2) })
     const pid1 = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 5, price: parseUsd('10.00'), fee: null, filledOn: '2026-11-06', status: 'pending', ...NO_SNAPSHOT })
-    const pid2 = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 5, price: parseUsd('10.00'), fee: null, filledOn: '2026-11-06', status: 'pending', ...NO_SNAPSHOT })
+    const pid2 = await f.repos.pendingRepo.insert({ runId, captureId: null, bucketIdx: null, side: 'buy', ticker: 'AAPL', shares: 5, price: parseUsd('10.00'), fee: null, filledOn: '2026-11-05', status: 'pending', ...NO_SNAPSHOT })
     let inflight = 0, maxInflight = 0
     const origLoad = f.repos.bucketRepo.loadState
     f.repos.bucketRepo.loadState = async (rid: number) => {

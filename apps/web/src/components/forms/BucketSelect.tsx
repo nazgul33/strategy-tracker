@@ -2,7 +2,7 @@ import type { HeldBucketDto } from '../../api';
 import { useT } from '../../i18n';
 import { Select } from '../ui';
 
-// Which bucket a sell is booked to. value '' = Automatic, otherwise the bucket's
+// Which bucket a fill is booked to (a sell closes it, a buy is added to it). value '' = Automatic, otherwise the bucket's
 // stored 0-based index as text (what gets posted as bucketIdx). The label shows
 // index + 1, the number the bucket board and the fill/order tables show. A choice
 // that is no longer held stays listed (and is sent), so the server's
@@ -10,6 +10,7 @@ import { Select } from '../ui';
 export function BucketSelect({
   value,
   held,
+  side,
   onChange,
   invalid,
   'aria-label': ariaLabel,
@@ -18,6 +19,7 @@ export function BucketSelect({
 }: {
   value: string;
   held: HeldBucketDto[];
+  side: 'buy' | 'sell';
   onChange: (value: string) => void;
   invalid?: boolean;
   'aria-label': string;
@@ -38,7 +40,9 @@ export function BucketSelect({
       <option value="">{t('fillBucketAuto')}</option>
       {held.map((b) => (
         <option key={b.index} value={String(b.index)}>
-          {`${t('bucketLabel', { n: b.index + 1 })} · ${t('bucketShares', { shares: b.shares })}`}
+          {side === 'buy'
+            ? t('bucketAddTo', { n: b.index + 1, shares: b.shares })
+            : `${t('bucketLabel', { n: b.index + 1 })} · ${t('bucketShares', { shares: b.shares })}`}
         </option>
       ))}
       {stale && <option value={value}>{t('bucketLabel', { n: Number(value) + 1 })}</option>}
