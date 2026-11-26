@@ -91,13 +91,26 @@ describe('VrRunsPage', () => {
     expect(container.querySelector('a[href="#/vr/6"]')).toBeTruthy();
     const rows = [...container.querySelectorAll('tbody tr')];
     expect(rows).toHaveLength(2);
-    expect(cells(rows[0]!)).toEqual(['TQQQ lump sumTQQQ', 'Active', '179', '$864.46', '$9,350.00', '$9,098.46']);
+    expect(cells(rows[0]!)).toEqual(['TQQQ lump sumTQQQ', 'Active', '179', '$864.46', '$9,350.00', '$9,098.46', '']);
   });
 
   it('shows a dash for a V and a value that are not known yet', async () => {
     await render();
     const fresh = [...container.querySelectorAll('tbody tr')][1]!;
-    expect(cells(fresh)).toEqual(['SOXL freshSOXL', 'Paused', '0', '$5,000.00', '—', '—']);
+    expect(cells(fresh)).toEqual(['SOXL freshSOXL', 'Paused', '0', '$5,000.00', '—', '—', '']);
+  });
+
+  it('shows the number waiting per run, linked to its Pending tab, and nothing when 0', async () => {
+    list.body = [{ ...VR_SUMMARY, pendingCount: 3 }, VR_SUMMARY_FRESH];
+    await render();
+    const [first, second] = [...container.querySelectorAll('tbody tr')];
+    expect(cells(first!).at(-1)).toBe('3');
+    const link = container.querySelector('[data-testid="vrRunWaiting-5"]') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('#/vr/5?tab=pending');
+    expect(cells(second!).at(-1)).toBe('');
+    expect(second!.querySelector('a[href*="tab=pending"]')).toBeNull();
+    const heads = [...container.querySelectorAll('thead th')];
+    expect(heads.at(-1)!.textContent).toBe('Waiting');
   });
 
   it('shows the empty note', async () => {

@@ -76,6 +76,14 @@ export function VrFillsPanel({ runId, costPpm, today, onChanged }: VrPanelProps)
                     <Badge tone={f.side === 'buy' ? 'info' : 'primary'}>
                       {t(f.side === 'buy' ? 'orderSideBuy' : 'orderSideSell')}
                     </Badge>
+                    {f.source === 'capture' && (
+                      <>
+                        {' '}
+                        <span data-testid={`vrFillSource-${f.id}`}>
+                          <Badge tone="success">{t('fillSourceCapture')}</Badge>
+                        </span>
+                      </>
+                    )}
                   </Td>
                   <Td className={NUM}>{f.shares}</Td>
                   <Td className={NUM}>{priceUsd(f.price)}</Td>

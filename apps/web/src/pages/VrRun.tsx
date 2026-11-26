@@ -5,6 +5,8 @@ import type { ReactNode } from 'react';
 import type { RunStatus } from '../api';
 import { vrApi } from '../api.vr';
 import { useAsync } from '../components/hooks';
+import { UploadDialog } from '../components/forms/UploadDialog';
+import type { UploadCloseOutcome } from '../components/forms/UploadDialog';
 import { NotificationsPanel } from '../components/RunPanels';
 import { Badge, Button, Card, ErrorNote, Modal, Spinner } from '../components/ui';
 import { VrCashPanel } from '../components/vr/VrCashPanel';
@@ -38,6 +40,7 @@ export function VrRunPage({ id, initialTab }: { id: number; initialTab?: 'pendin
   const [actionError, setActionError] = useState<string | null>(null);
   const [showClose, setShowClose] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const selectTab = (next: Tab) => {
     setTab(next);
@@ -112,6 +115,9 @@ export function VrRunPage({ id, initialTab }: { id: number; initialTab?: 'pendin
               </Button>
             ),
           )}
+          <Button data-testid="uploadScreenshot" variant="secondary" onClick={() => setUploadOpen(true)}>
+            {t('upload.title')}
+          </Button>
           {run.status !== 'closed' && <Button onClick={() => setShowSettings(true)}>{t('vr.settings')}</Button>}
         </div>
       </div>
@@ -169,6 +175,16 @@ export function VrRunPage({ id, initialTab }: { id: number; initialTab?: 'pendin
             </Button>
           </div>
         </Modal>
+      )}
+
+      {uploadOpen && (
+        <UploadDialog
+          runId={id}
+          onClose={({ uploaded, goToPending }: UploadCloseOutcome) => {
+            setUploadOpen(false);
+            if (uploaded) selectTab(goToPending ? 'pending' : tab);
+          }}
+        />
       )}
 
       {showSettings && (
