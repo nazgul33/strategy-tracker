@@ -1,7 +1,7 @@
 # Screenshot intake for Value Rebalancing — Design
 
 Date: 2026-11-26
-Status: draft, awaiting owner approval
+Status: approved (2026-11-26)
 
 ## Intent and why
 
