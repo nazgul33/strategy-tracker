@@ -6,10 +6,13 @@ import type {
   VrCashDto,
   VrCashEdit,
   VrCashInput,
+  VrConfirmAllResult,
   VrCreateInput,
   VrCycleDto,
   VrFillDto,
   VrFillInput,
+  VrPendingDto,
+  VrPendingInput,
   VrRunDetailDto,
   VrRunSummaryDto,
   VrSettingsDto,
@@ -32,6 +35,11 @@ export interface VrApi {
   addCash(id: number, c: VrCashInput): Promise<{ id: number }>;
   updateCash(id: number, cashId: number, c: VrCashEdit): Promise<void>;
   deleteCash(id: number, cashId: number): Promise<void>;
+  listPending(id: number): Promise<VrPendingDto[]>;
+  updatePending(id: number, pendingId: number, input: VrPendingInput): Promise<void>;
+  confirmPending(id: number, pendingId: number): Promise<{ fillId: number }>;
+  rejectPending(id: number, pendingId: number): Promise<void>;
+  confirmAllPending(id: number): Promise<VrConfirmAllResult>;
 }
 
 const CREATE_KEYS = ['initialStockCents', 'g', 'formula', 'bandPpm', 'spendLimitPpm', 'cycleDepositCents', 'costPpm'] as const;
@@ -99,6 +107,12 @@ export function createVrApi(http: Http, opts: { getToken: () => string | null } 
     addCash: (id, c) => send<{ id: number }>('POST', `${base(id)}/cash`, cashBody(c)),
     updateCash: (id, cashId, c) => send<unknown>('PUT', `${base(id)}/cash/${cashId}`, cashBody(c)).then(() => undefined),
     deleteCash: (id, cashId) => send<unknown>('DELETE', `${base(id)}/cash/${cashId}`).then(() => undefined),
+    listPending: (id) => get<VrPendingDto[]>(`${base(id)}/pending`),
+    updatePending: (id, pendingId, input) =>
+      send<unknown>('PUT', `${base(id)}/pending/${pendingId}`, fillBody(input)).then(() => undefined),
+    confirmPending: (id, pendingId) => send<{ fillId: number }>('POST', `${base(id)}/pending/${pendingId}/confirm`),
+    rejectPending: (id, pendingId) => send<unknown>('POST', `${base(id)}/pending/${pendingId}/reject`).then(() => undefined),
+    confirmAllPending: (id) => send<VrConfirmAllResult>('POST', `${base(id)}/pending/confirm-all`),
   };
 }
 

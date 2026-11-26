@@ -6,6 +6,7 @@ import { getSimRepo } from './repos-sim'
 import { getBarRepos } from './repos-bars'
 import { getVisionRepos } from './repos-vision'
 import { getVrRepos } from './repos-vr'
+import { getCaptureChoiceRepos } from './repos-capture-choice'
 import type { CorrectionRepo, CorrectionRow } from '../domain/correction-types'
 import type {
   CaptureRepo, CaptureStatus, FillPatch, FillRepo, LedgerRepo, NewCapture, NewFill, NewLedgerEntry, NewNotification,
@@ -169,5 +170,5 @@ export function getRepos(db: Db) {
   }
   const simRepo = getSimRepo(db)
   const { priceHistoryRepo, barCoverageRepo } = getBarRepos(db)
-  return { runRepo, orderRepo, fillRepo, priceHistoryRepo, barCoverageRepo, pendingRepo, correctionRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo, settingsRepo, poolEditRepo, simRepo, ...getVisionRepos(db), ...getVrRepos(db) }
+  return { runRepo, orderRepo, fillRepo, priceHistoryRepo, barCoverageRepo, pendingRepo, correctionRepo, captureRepo, ledgerRepo, notificationRepo, bucketRepo, settingsRepo, poolEditRepo, simRepo, ...getVisionRepos(db), ...getVrRepos(db), ...getCaptureChoiceRepos(db) }
 }

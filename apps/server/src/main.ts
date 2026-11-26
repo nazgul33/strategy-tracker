@@ -57,6 +57,7 @@ async function main(): Promise<void> {
       lang: digestLang,
       onPhoto: handlers.onPhoto,
       onConfirm: handlers.onConfirm,
+      onChoice: handlers.onChoice,
       onStatus: handlers.onStatus,
       onOrders: handlers.onOrders,
     })

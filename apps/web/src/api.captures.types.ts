@@ -10,6 +10,9 @@ export type CaptureConflictDto =
 
 export type CaptureOutcomeDto = 'duplicate' | 'rejected' | { pending?: CapturePendingRowDto[]; conflicts?: CaptureConflictDto[]; bookedEarlier?: true };
 
+/** VR take-in (apps/server/src/domain/vr/capture.ts): 'duplicate' = this screenshot was already taken in for the run. */
+export type VrCaptureOutcomeDto = 'duplicate' | { waiting: number; dropped: number; possibleDuplicates: number };
+
 export type VisionSourceDto = 'settings' | 'env';
 export interface VisionInUseDto { model: string; modelSource: VisionSourceDto; baseUrl: string; baseUrlSource: VisionSourceDto; keySource: VisionSourceDto | 'none' }
 
@@ -20,4 +23,5 @@ export type CaptureEventDto =
   | { type: 'pin-skipped'; runId: number; tickers: string[] }
   | { type: 'no-run'; ticker: string }
   | { type: 'ambiguous'; ticker: string }
-  | { type: 'outcome'; runId: number; ticker: string; outcome: CaptureOutcomeDto };
+  | { type: 'outcome'; runId: number; ticker: string; outcome: CaptureOutcomeDto }
+  | { type: 'vr-outcome'; runId: number; ticker: string; outcome: VrCaptureOutcomeDto };

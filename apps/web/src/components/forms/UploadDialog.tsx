@@ -90,7 +90,7 @@ export function UploadDialog({ runId, onClose }: { runId?: number; onClose: (out
   }
 
   function more() {
-    if (wantsPending(items)) setEarlierWantedPending(true);
+    if (wantsPending(items, runId)) setEarlierWantedPending(true);
     setItems([]);
     setRefused([]);
     setPhase('picking');
@@ -119,7 +119,7 @@ export function UploadDialog({ runId, onClose }: { runId?: number; onClose: (out
               <Button data-testid="uploadMore" onClick={more}>
                 {t('upload.more')}
               </Button>
-              {earlierWantedPending || wantsPending(items) ? (
+              {earlierWantedPending || wantsPending(items, runId) ? (
                 <Button data-testid="uploadGoToPending" data-autofocus variant="primary" onClick={() => close(true)}>
                   {t('upload.goToPending')}
                 </Button>

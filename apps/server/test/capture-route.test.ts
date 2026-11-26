@@ -1,4 +1,5 @@
 import { describe, test, expect } from 'bun:test'
+import { DEFAULT_VR_SETTINGS } from '@st/strategies/value-rebalancing'
 import type { NewPending } from '../src/domain/repo-types'
 import { makeCaptureRouting, type CaptureEvent, type VisionApiKey, type VisionInUse } from '../src/wire/capture-route'
 import { activeRun, keyEchoFetch, keyParts, LEAK_KEY, makeCaptureFakes, multiVisionFetch, PNG_B64, visionFetch, type FakeOpts } from './wire-capture-fakes'
@@ -124,6 +125,19 @@ describe('capture routing core', () => {
     await three.run(null)
     expect(three.events.map((e) => e.type)).toEqual(['outcome', 'ambiguous'])
     expect(three.events[1]).toEqual({ type: 'ambiguous', ticker: 'AAPL' })
+  })
+
+  test('a ticker only MR trades behaves exactly as before when VR runs exist for other tickers', async () => {
+    const plain = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: multiVisionFetch })
+    await plain.run(null)
+
+    const withVr = routing({ runs: [activeRun(1, 'NVDA')], fetchImpl: multiVisionFetch })
+    await withVr.repos.vrRunRepo.create({ ...DEFAULT_VR_SETTINGS, ticker: 'SOXL', name: 'V', costPpm: 0, initialVCents: 500_000, openingCashCents: 1_000_000, openedOn: '2026-11-01' })
+    await withVr.run(null)
+
+    expect(withVr.events.map((e) => e.type)).toEqual(['outcome', 'no-run'])
+    expect(withVr.events).toEqual(plain.events)
+    expect(withVr.vr.pending).toEqual([])
   })
 
   test('auto-route considers active runs only', async () => {

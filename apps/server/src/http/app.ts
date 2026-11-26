@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import type { RepoSurface } from '../domain/booking'
+import type { CaptureChoiceRepo } from '../domain/capture-choice'
 import type { OHLCBar } from '@st/market-data'
 import type { FillRepo, NotificationRepo, OrderRepo, PendingRepo, RunRepo } from '../domain/repo-types'
 import type { SharedRunRepo, VrRepos } from '../domain/vr/repo-types'
@@ -24,6 +25,7 @@ export interface HttpRepoSurface extends RepoSurface, VrRepos {
   pendingRepo: PendingRepo
   captureImageRepo: RepoSurface['captureImageRepo'] & { existingIds(captureIds: number[]): Promise<Set<number>> }
   simRepo: SimRepoSurface
+  captureChoiceRepo: CaptureChoiceRepo
 }
 
 export interface HttpDeps {

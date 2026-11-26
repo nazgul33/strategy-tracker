@@ -151,4 +151,39 @@ describeIf('vision janitor (db)', () => {
     expect(await repos.captureImageRepo.getBytes(b.captureId)).not.toBeNull()
     expect(await repos.visionReviewRepo.listForCaptures([b.captureId])).toHaveLength(1)
   })
+
+  async function newVrCapture(): Promise<{ runId: number; captureId: number }> {
+    const stamp = Date.now() + '-' + Math.random().toString(36).slice(2)
+    const runId = await repos.vrRunRepo.create({ ticker: 'V' + stamp.slice(-8), name: 'janitor-vr-' + stamp, costPpm: 10, g: 10, formula: 'basic',
+      bandPpm: 150_000, spendLimitPpm: 500_000, cycleDepositCents: 0, initialVCents: 100_000, openingCashCents: 100_000, openedOn: '2026-02-10' })
+    const ins = await repos.captureRepo.insert({ runId, chatId: 'c', imageHash: 'h' + stamp, status: 'parsed' })
+    return { runId, captureId: ins.id! }
+  }
+  const vrPending = async (runId: number, captureId: number) => (await repos.vrPendingRepo.insertMany([
+    { runId, captureId, side: 'buy', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', dateRead: true, dupPrice: null, orderPrice: null },
+  ]))[0]!
+
+  test('sweepOrphans keeps an unkept image while a VR pending row is waiting', async () => {
+    const { runId, captureId } = await newVrCapture()
+    await image(captureId)
+    await vrPending(runId, captureId)
+    const swept: number[] = await repos.captureImageRepo.sweepOrphans()
+    expect(swept).not.toContain(captureId)
+    expect(await repos.captureImageRepo.getBytes(captureId)).not.toBeNull()
+  })
+
+  test('sweepOrphans deletes it once that row is confirmed or rejected', async () => {
+    const a = await newVrCapture()
+    await image(a.captureId)
+    const pid = await vrPending(a.runId, a.captureId)
+    await repos.vrPendingRepo.confirm(a.runId, pid, { runId: a.runId, side: 'buy', shares: 1, price: 100n, fee: 0, filledOn: '2026-02-10', source: 'capture' })
+    const b = await newVrCapture()
+    await image(b.captureId)
+    await repos.vrPendingRepo.reject(b.runId, await vrPending(b.runId, b.captureId))
+    const swept: number[] = await repos.captureImageRepo.sweepOrphans()
+    expect(swept).toContain(a.captureId)
+    expect(swept).toContain(b.captureId)
+    expect(await repos.captureImageRepo.getBytes(a.captureId)).toBeNull()
+    expect(await repos.captureImageRepo.getBytes(b.captureId)).toBeNull()
+  })
 })

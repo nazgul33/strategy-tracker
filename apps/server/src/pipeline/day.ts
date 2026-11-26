@@ -22,6 +22,8 @@ export interface DayDeps {
   digestLang: 'en' | 'ko'
   /** optional: store the sanity-checked close for the price history chart */
   persistClose?: (ticker: string, tradeDate: ISODate, close: bigint) => Promise<void>
+  /** optional: the clock the VR hold ages Telegram questions with; the real time by default */
+  now?: () => Date
 }
 
 export type MorningResult = 'weekend' | 'closed' | 'conflict' | 'data-error' | 'sent'

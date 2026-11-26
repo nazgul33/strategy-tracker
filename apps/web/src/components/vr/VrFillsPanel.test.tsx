@@ -89,6 +89,21 @@ describe('VrFillsPanel', () => {
     expect(container.querySelectorAll('tbody tr')[0]!.querySelector('span[title]')).toBeNull();
   });
 
+  it('marks a fill that came from a screenshot and leaves manual fills as they were', async () => {
+    list.json = [{ ...VR_FILLS[0]!, source: 'capture' }, VR_FILLS[1]!];
+    await act(async () => root.render(null));
+    await act(async () =>
+      root.render(d(VrFillsPanel, { runId: 5, costPpm: 700, today: '2026-12-09', onChanged: () => {} })),
+    );
+    await h.flush();
+    const r = rows();
+    expect(r[0]![0]).toBe('2026-12-08');
+    expect(r[0]![1]).toBe('Buy Capture');
+    expect(document.querySelector('[data-testid="vrFillSource-12"]')).not.toBeNull();
+    expect(r[1]![1]).toBe('Buy');
+    expect(document.querySelector('[data-testid="vrFillSource-11"]')).toBeNull();
+  });
+
   it('puts Edit and Delete on every row', () => {
     for (const f of VR_FILLS) {
       expect(document.querySelector(`[data-testid="vrFillEdit-${f.id}"]`)).not.toBeNull();

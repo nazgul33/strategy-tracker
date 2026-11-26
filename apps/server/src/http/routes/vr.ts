@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { jsonBig, type HttpDeps } from '../app'
 import { RUN_STATUSES_SERVER, RUN_TRANSITIONS } from './runs'
 import { vrEntriesRouter, vrRunParam } from './vr-entries'
+import { vrPendingRouter } from './vr-pending'
 import { VrNameTakenError } from '../../domain/vr/repo-types'
 import { createVrRun, loadVrDetail, loadVrSummaries, parseVrCreate, parseVrSettings, setVrStatus, updateVrSettings, VrBadInput } from '../../domain/vr/runs'
 import { cycleView } from '../../domain/vr/view'
@@ -57,5 +58,6 @@ export function vrRouter(deps: HttpDeps): Hono {
     return c.json(jsonBig((await deps.repos.vrCycleRepo.listForRun(run.id)).reverse().map(cycleView)))
   })
   r.route('/', vrEntriesRouter(deps))
+  r.route('/', vrPendingRouter(deps))
   return r
 }

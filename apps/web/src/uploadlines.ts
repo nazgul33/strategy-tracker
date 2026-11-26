@@ -81,12 +81,29 @@ function outcomeLines(runId: number, ticker: string, o: Outcome, t: Translate): 
   return lines;
 }
 
+// The VR take-in reports counts only; its rows are on the run's Pending tab.
+function vrOutcomeLines(e: Extract<CaptureEventDto, { type: 'vr-outcome' }>, t: Translate): UploadLine[] {
+  const params = { ticker: e.ticker, id: e.runId };
+  const pendingTab = `#/vr/${e.runId}?tab=pending`;
+  if (e.outcome === 'duplicate') return [line('info', 0, t('upload.vrDuplicate', params), pendingTab)];
+  const { waiting, dropped, possibleDuplicates } = e.outcome;
+  const lines =
+    waiting > 0
+      ? [line('ok', 0, t('upload.vrHead', { ...params, count: waiting }), pendingTab)]
+      : [line('info', 0, t('upload.vrNothingWaiting', params))];
+  if (dropped > 0) lines.push(line('info', 1, t('upload.vrDropped', { count: dropped })));
+  if (possibleDuplicates > 0) lines.push(line('warn', 1, t('upload.vrPossibleDuplicates', { count: possibleDuplicates })));
+  return lines;
+}
+
 export function captureEventLines(event: CaptureEventDto, t: Translate): UploadLine[] {
   switch (event.type) {
     case 'outcome':
       if (event.outcome === 'duplicate') return [line('info', 0, t('upload.duplicate'))];
       if (event.outcome === 'rejected') return [line('error', 0, t('upload.badExtractEmpty'))];
       return outcomeLines(event.runId, event.ticker, event.outcome, t);
+    case 'vr-outcome':
+      return vrOutcomeLines(event, t);
     case 'bad-extract':
       return badExtractLines(event, t);
     case 'no-run':
@@ -111,10 +128,17 @@ export function uploadItemLines(item: Pick<UploadItem, 'events' | 'error'>, t: T
   return (item.events ?? []).flatMap((e) => captureEventLines(e, t));
 }
 
-/** "Go to pending" is the primary action when Pending now holds something this upload put there. */
-export function wantsPending(items: Pick<UploadItem, 'events'>[]): boolean {
+/**
+ * "Go to pending" is the primary action when Pending now holds something this upload put there.
+ * Fills waiting on a VR run count only for the dialog pinned to that run (`runId`): the mean-reversion
+ * Pending page does not list them.
+ */
+export function wantsPending(items: Pick<UploadItem, 'events'>[], runId?: number): boolean {
   return items.some((item) =>
     (item.events ?? []).some((e) => {
+      if (e.type === 'vr-outcome') {
+        return runId !== undefined && e.runId === runId && typeof e.outcome !== 'string' && e.outcome.waiting > 0;
+      }
       if (e.type !== 'outcome' || typeof e.outcome === 'string') return false;
       if ((e.outcome.pending ?? []).length > 0) return true;
       return (e.outcome.conflicts ?? []).some((c) => c.matchedKind === 'booked' && c.correction?.status === 'open');

@@ -2,6 +2,9 @@ import { ApiError, NetworkError } from './api';
 
 export type Translate = (key: string, params?: Record<string, string | number>) => string;
 
+/** A refusal (422) leaves the server's data as it was; any other failure leaves it in doubt. */
+export const isRefusal = (err: unknown): boolean => err instanceof ApiError && err.status === 422;
+
 /** Words a caught request failure. `keyPrefix` names the screen's own codes, e.g. 'fillErr' for `fillErr.not-last`. */
 export function errorText(err: unknown, t: Translate, keyPrefix?: string): string {
   if (err instanceof NetworkError) return t('errNetwork');

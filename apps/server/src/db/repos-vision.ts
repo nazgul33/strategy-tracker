@@ -48,6 +48,7 @@ export function getVisionRepos(db: Db) {
       })
     },
     // Boot-time janitor for bytes and frozen rows stranded by a swallowed archive failure.
+    // An image with a waiting MR or VR row is kept.
     // Run it only while nothing else is writing. A requested keep is written before the confirm
     // or reject flips its row, so that image is safe; but a pass between the flip and the freeze
     // of a resolution that asked for no keep would delete an image it is still about to freeze.
@@ -55,8 +56,10 @@ export function getVisionRepos(db: Db) {
       return db.transaction(async (tx) => {
         const liveFor = (captureId: AnyMySqlColumn) => tx.select({ one: sql`1` }).from(s.mrPendingFills)
           .where(and(eq(s.mrPendingFills.captureId, captureId), eq(s.mrPendingFills.status, 'pending')))
+        const vrLiveFor = (captureId: AnyMySqlColumn) => tx.select({ one: sql`1` }).from(s.vrPendingFills)
+          .where(and(eq(s.vrPendingFills.captureId, captureId), eq(s.vrPendingFills.status, 'pending')))
         const unkept = await tx.select({ captureId: s.captureImages.captureId }).from(s.captureImages)
-          .where(and(eq(s.captureImages.keep, false), notExists(liveFor(s.captureImages.captureId))))
+          .where(and(eq(s.captureImages.keep, false), notExists(liveFor(s.captureImages.captureId)), notExists(vrLiveFor(s.captureImages.captureId))))
           .for('update')
         const imageIds: number[] = unkept.map((r) => r.captureId)
         if (imageIds.length) {

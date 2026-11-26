@@ -52,6 +52,7 @@ export function VrRunsPage() {
                 <Th className="text-right">{t('vr.colPool')}</Th>
                 <Th className="text-right">{t('vr.colV')}</Th>
                 <Th className="text-right">{t('vr.colValue')}</Th>
+                <Th className="text-right">{t('vr.colWaiting')}</Th>
               </tr>
             </thead>
             <tbody>
@@ -70,6 +71,17 @@ export function VrRunsPage() {
                   <Td className="text-right tabular-nums">{centsUsd(r.poolCents)}</Td>
                   <Td className="text-right tabular-nums">{centsUsd(r.vCents)}</Td>
                   <Td className="text-right tabular-nums">{centsUsd(r.valueCents)}</Td>
+                  <Td className="text-right tabular-nums">
+                    {r.pendingCount > 0 && (
+                      <a
+                        href={`#/vr/${r.id}?tab=pending`}
+                        data-testid={`vrRunWaiting-${r.id}`}
+                        className="font-medium text-warning hover:underline"
+                      >
+                        {r.pendingCount}
+                      </a>
+                    )}
+                  </Td>
                 </tr>
               ))}
             </tbody>

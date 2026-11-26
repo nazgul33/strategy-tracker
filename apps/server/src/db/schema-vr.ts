@@ -46,6 +46,7 @@ export const vrFills = mysqlTable('vr_fills', {
   fee: int('fee').notNull(),
   filledOn: date('filled_on', { mode: 'string' }).notNull(),
   source: mysqlEnum('source', ['manual', 'capture']).notNull(),
+  orderPrice: bigint('order_price', { mode: 'bigint' }),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 }, (t) => ({
   runIdx: index('vr_fills_run_idx').on(t.runId),
@@ -62,4 +63,23 @@ export const vrCashMoves = mysqlTable('vr_cash_moves', {
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 }, (t) => ({
   runIdx: index('vr_cash_moves_run_idx').on(t.runId),
+}))
+
+export const vrPendingFills = mysqlTable('vr_pending_fills', {
+  id: int('id').primaryKey().autoincrement(),
+  runId: int('run_id').notNull(),
+  captureId: int('capture_id').notNull(),
+  side: varchar('side', { length: 8 }).$type<'buy' | 'sell'>().notNull(),
+  shares: int('shares').notNull(),
+  price: bigint('price', { mode: 'bigint' }).notNull(),
+  fee: int('fee'),
+  filledOn: date('filled_on', { mode: 'string' }).notNull(),
+  dateRead: boolean('date_read').notNull(),
+  dupPrice: bigint('dup_price', { mode: 'bigint' }),
+  orderPrice: bigint('order_price', { mode: 'bigint' }),
+  status: mysqlEnum('status', ['pending', 'confirmed', 'rejected']).notNull().default('pending'),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
+}, (t) => ({
+  runStatusIdx: index('vr_pending_fills_run_status_idx').on(t.runId, t.status),
+  captureIdx: index('vr_pending_fills_capture_idx').on(t.captureId),
 }))

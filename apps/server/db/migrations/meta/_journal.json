@@ -120,6 +120,20 @@
       "when": 1795607775315,
       "tag": "0016_vr_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1795656259957,
+      "tag": "0017_vr_capture",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1795682377689,
+      "tag": "0018_vr_order_price",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 // Pure VR text helpers shared by the create form, the settings dialog and the run page.
 import type { VrFormula, VrSettingsDto } from '../../api.vr.types';
+import { priceUsd } from '../../format';
 import { isPercentText, percentTextToPpm, ppmToPercentText } from '../../gaps';
 import { usdToCents } from '../../usd';
 
@@ -8,6 +9,20 @@ export const VR_MAX_NAME = 128;
 
 export function formulaLabelKey(f: VrFormula): string {
   return f === 'basic' ? 'vr.formulaBasic' : 'vr.formulaSkill';
+}
+
+/**
+ * A price read from a screenshot (myriadth string) as `$44.39`, or with up to four decimals when the third or fourth
+ * is not zero (`$44.3912`, `$44.391`), so a reading is never shown rounded. Bigint math only; `—` for a non-integer.
+ */
+export function readPriceUsd(myriadths: string): string {
+  const whole = myriadths.trim();
+  if (!/^\d+$/.test(whole)) return '—';
+  const value = BigInt(whole);
+  const fraction = (value % 10_000n).toString().padStart(4, '0');
+  if (fraction.endsWith('00')) return priceUsd(whole);
+  const dollars = priceUsd((value - (value % 10_000n)).toString()).slice(0, -3);
+  return `${dollars}.${fraction.replace(/0+$/, '')}`;
 }
 
 /** Display text for a ppm percent: 150_000 → `15%`, 125_000 → `12.5%`, 0 → `0%`. Integer math only. */

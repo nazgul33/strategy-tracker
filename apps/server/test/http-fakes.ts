@@ -8,6 +8,7 @@ import { fakeCorrectionRepo } from './fake-corrections'
 import { fakeSimRepo } from './fake-sim'
 import { fakeRunRow, FAKE_CREATED_AT } from './booking-fakes'
 import { makeVrFakes } from './vr-fakes'
+import { makeChoiceFakes } from './capture-choice-fakes'
 import { normTicker } from '../src/db/repos-bars'
 
 export function makeFakes() {
@@ -217,12 +218,13 @@ export function makeFakes() {
     },
   } satisfies HttpRepoSurface['barCoverageRepo']
   const vrFakes = makeVrFakes({ otherRuns: () => runs })
+  const choiceFakes = makeChoiceFakes()
   const repos = {
-    ...vrFakes.repos, runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, captureImageRepo, visionReviewRepo, ledgerRepo, notificationRepo,
+    ...vrFakes.repos, captureChoiceRepo: choiceFakes.captureChoiceRepo, runRepo, bucketRepo, orderRepo, fillRepo, pendingRepo, correctionRepo: correctionFake.repo, captureRepo, captureImageRepo, visionReviewRepo, ledgerRepo, notificationRepo,
     settingsRepo, poolEditRepo, simRepo, priceHistoryRepo, barCoverageRepo,
   } satisfies HttpRepoSurface
-  const vr = { runs: vrFakes.runs, cycles: vrFakes.cycles, fills: vrFakes.fills, cash: vrFakes.cash }
-  return { repos, vr, corrections: correctionFake.store, runs, poolEdits, fills, ledger, orders, pending, captureImages, visionReviews, notifications, sent, settings, states, simRuns, simDays, priceHistory, coverage }
+  const vr = { runs: vrFakes.runs, cycles: vrFakes.cycles, fills: vrFakes.fills, cash: vrFakes.cash, pending: vrFakes.pending }
+  return { repos, vr, choices: choiceFakes.choices, corrections: correctionFake.store, runs, poolEdits, fills, ledger, orders, pending, captureImages, visionReviews, notifications, sent, settings, states, simRuns, simDays, priceHistory, coverage }
 }
 
 export const PASSWORD = 'secret'

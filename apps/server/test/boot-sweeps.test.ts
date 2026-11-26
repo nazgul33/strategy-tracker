@@ -16,8 +16,9 @@ function unfrozen(id: number) {
   }
 }
 
-function makeRepos(over: { sweepDrafts?: (d: Date) => Promise<number>; sweepOrphans?: () => Promise<number[]>; listUnfrozenKept?: () => Promise<any[]> } = {}) {
+function makeRepos(over: { sweepDrafts?: (d: Date) => Promise<number>; sweepOrphans?: () => Promise<number[]>; listUnfrozenKept?: () => Promise<any[]>; deleteOlderThan?: (d: Date) => Promise<number> } = {}) {
   const draftArgs: Date[] = []
+  const choiceCutoffs: Date[] = []
   const inserted: number[] = []
   const calls: string[] = []
   let orphanCalls = 0
@@ -43,8 +44,14 @@ function makeRepos(over: { sweepDrafts?: (d: Date) => Promise<number>; sweepOrph
         return over.sweepOrphans ? over.sweepOrphans() : []
       },
     },
+    captureChoiceRepo: {
+      deleteOlderThan: async (d: Date) => {
+        choiceCutoffs.push(d)
+        return over.deleteOlderThan ? over.deleteOlderThan(d) : 0
+      },
+    },
   }
-  return { repos, draftArgs, inserted, calls, orphanCalls: () => orphanCalls }
+  return { repos, draftArgs, choiceCutoffs, inserted, calls, orphanCalls: () => orphanCalls }
 }
 
 const DAY_MS = 86_400_000
@@ -64,7 +71,7 @@ async function sweepDraftsAged(at: Date, agesMs: number[]) {
   }
   const log = spyOn(console, 'log').mockImplementation(() => {})
   try {
-    await runBootSweeps({ simRepo: f.repos.simRepo, captureImageRepo: { sweepOrphans: async () => [] }, visionReviewRepo: noReviews }, at)
+    await runBootSweeps({ simRepo: f.repos.simRepo, captureImageRepo: { sweepOrphans: async () => [] }, visionReviewRepo: noReviews, captureChoiceRepo: { deleteOlderThan: async () => 0 } }, at)
   } finally {
     log.mockRestore()
   }
@@ -195,6 +202,43 @@ describe('runBootSweeps', () => {
       expect(err).toHaveBeenCalledTimes(1)
       expect(String(err.mock.calls[0]![0])).toContain('review record rebuild failed (continuing):')
       expect(orphanCalls()).toBe(1)
+    } finally {
+      err.mockRestore()
+      log.mockRestore()
+    }
+  })
+  test('screenshot questions older than 24 hours are deleted and the count is logged', async () => {
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const { repos, choiceCutoffs } = makeRepos({ deleteOlderThan: async () => 3 })
+      await runBootSweeps(repos, now)
+      expect(choiceCutoffs).toEqual([new Date(now.getTime() - 86_400_000)])
+      expect(log).toHaveBeenCalledWith('[main] deleted 3 expired screenshot question(s)')
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  test('nothing is logged about questions when none expired', async () => {
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const { repos } = makeRepos()
+      await runBootSweeps(repos, now)
+      expect(log.mock.calls.map((c) => String(c[0])).some((l) => l.includes('question'))).toBe(false)
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  test('a failing question sweep is logged, not thrown, and the other steps still ran', async () => {
+    const err = spyOn(console, 'error').mockImplementation(() => {})
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const { repos, calls } = makeRepos({ deleteOlderThan: async () => { throw new Error('db down') } })
+      await expect(runBootSweeps(repos, now)).resolves.toBeUndefined()
+      expect(err).toHaveBeenCalledTimes(1)
+      expect(String(err.mock.calls[0]![0])).toContain('expired question sweep failed (continuing):')
+      expect(calls).toEqual(['sweepDrafts', 'sweepOrphans', 'listUnfrozenKept'])
     } finally {
       err.mockRestore()
       log.mockRestore()

@@ -7,6 +7,7 @@ import { makeCaptureHandlers } from '../src/wire/capture'
 import { t } from '@st/telegram/i18n'
 import { makeFakes, makeDeps, loginAs, createRun } from './http-fakes'
 import { makeVrFakes } from './vr-fakes'
+import { makeChoiceFakes } from './capture-choice-fakes'
 import { TODAY, setup } from './vision-review-fixture'
 
 describe('rejectPendingFill', () => {
@@ -45,7 +46,7 @@ describe('Telegram reject', () => {
   async function telegram() {
     const s = await setup(2)
     const sent: string[] = []
-    const repos = { ...s.f.repos, ...makeVrFakes({ otherRuns: () => [...s.f._stores.runs.values()] }).repos, pendingRepo: { ...s.f.repos.pendingRepo, get: async (id: number) => s.f._stores.pending.find((p: any) => p.id === id) ?? null } }
+    const repos = { ...s.f.repos, captureChoiceRepo: makeChoiceFakes().captureChoiceRepo, ...makeVrFakes({ otherRuns: () => [...s.f._stores.runs.values()] }).repos, pendingRepo: { ...s.f.repos.pendingRepo, get: async (id: number) => s.f._stores.pending.find((p: any) => p.id === id) ?? null } }
     const handlers = makeCaptureHandlers({
       repos, vision: { baseUrl: 'http://x', baseUrlSource: 'env', model: 'm', modelSource: 'env' }, getVisionApiKey: async () => ({ key: 'k', source: 'env' as const }),
       today: () => TODAY, allowedChatIds: [], send: async (_chat, text) => { sent.push(text) },

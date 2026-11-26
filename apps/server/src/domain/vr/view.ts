@@ -8,7 +8,7 @@ import type { VrCashMoveRow, VrCycleRow, VrFillRow, VrRunRow } from './repo-type
 
 export interface VrSettingsDto { g: number; formula: VrFormula; bandPpm: number; spendLimitPpm: number; cycleDepositCents: number }
 export interface VrRunView { id: number; name: string; ticker: string; status: RunStatus; costPpm: number; createdAt: string; initialVCents: number; settings: VrSettingsDto }
-export interface VrRunSummary extends VrRunView { shares: number; poolCents: number; vCents: number | null; valueCents: number | null }
+export interface VrRunSummary extends VrRunView { shares: number; poolCents: number; vCents: number | null; valueCents: number | null; pendingCount: number }
 export interface VrCycleView {
   id: number; seq: number; scheduledStart: ISODate; startDate: ISODate; endDate: ISODate; nextStart: ISODate
   vCents: number; bandMinCents: number; bandMaxCents: number; openShares: number; openPoolCents: number; buyBudgetCents: number; buyLot: number; sellLot: number
@@ -25,11 +25,12 @@ export interface VrRunDetail {
   cycle: VrCycleView | null; budgetLeftCents: number | null
   buyInstruction: { shares: number; targetCents: number } | null
   ladder: VrLadder
+  pendingCount: number
 }
 export interface VrFillView { id: number; side: 'buy' | 'sell'; shares: number; price: bigint; fee: number; filledOn: ISODate; source: 'manual' | 'capture'; createdAt: string; beforeCycle: boolean }
 export interface VrCashView { id: number; kind: VrCashMoveRow['kind']; amountCents: number; movedOn: ISODate; note: string | null; cycleId: number | null; createdAt: string; beforeCycle: boolean }
 
-export interface VrViewInput { run: VrRunRow; fills: VrFillRow[]; moves: VrCashMoveRow[]; cycle: VrCycleRow | null; lastClose: VrLastClose | null }
+export interface VrViewInput { run: VrRunRow; fills: VrFillRow[]; moves: VrCashMoveRow[]; cycle: VrCycleRow | null; lastClose: VrLastClose | null; pendingCount: number }
 
 export function toEngineFill(f: VrFillRow): VrFill {
   return { side: f.side, shares: f.shares, price: f.price, feeCents: f.fee, filledOn: f.filledOn }
@@ -109,10 +110,11 @@ export function buildVrDetail(i: VrViewInput & { today: ISODate }): VrRunDetail 
     budgetLeftCents: i.cycle === null ? null : Math.max(0, i.cycle.buyBudgetCents - spentInCycleCents(cycleFills(i.cycle, i.fills), i.cycle.startDate)),
     buyInstruction: books.shares === 0 && i.lastClose !== null ? { shares: buyInstructionShares(target, i.lastClose.close), targetCents: target } : null,
     ladder: ladderOf(i.cycle, books.shares, i.fills),
+    pendingCount: i.pendingCount,
   }
 }
 
 export function buildVrSummary(i: VrViewInput): VrRunSummary {
   const books = booksOf(i, i.fills.map(toEngineFill))
-  return { ...runView(i.run), shares: books.shares, poolCents: books.poolCents, vCents: i.cycle?.vCents ?? null, valueCents: books.valueCents }
+  return { ...runView(i.run), shares: books.shares, poolCents: books.poolCents, vCents: i.cycle?.vCents ?? null, valueCents: books.valueCents, pendingCount: i.pendingCount }
 }

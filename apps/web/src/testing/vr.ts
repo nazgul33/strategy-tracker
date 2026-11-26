@@ -3,6 +3,7 @@ import type {
   VrCashDto,
   VrCycleDto,
   VrFillDto,
+  VrPendingDto,
   VrRunDetailDto,
   VrRunDto,
   VrRunSummaryDto,
@@ -37,6 +38,7 @@ export const VR_SUMMARY: VrRunSummaryDto = {
   poolCents: 86_446,
   vCents: 935_000,
   valueCents: 909_846,
+  pendingCount: 0,
 };
 
 export const VR_SUMMARY_FRESH: VrRunSummaryDto = {
@@ -50,6 +52,7 @@ export const VR_SUMMARY_FRESH: VrRunSummaryDto = {
   poolCents: 500_000,
   vCents: null,
   valueCents: null,
+  pendingCount: 0,
 };
 
 export const VR_CYCLE: VrCycleDto = {
@@ -106,6 +109,7 @@ export const VR_DETAIL: VrRunDetailDto = {
     buyTotal: 3,
     sellTotal: 22,
   },
+  pendingCount: 0,
 };
 
 /** The run detail with another id and name (the same books and ladder). */
@@ -120,6 +124,19 @@ export const VR_FILLS: VrFillDto[] = [
   { id: 11, side: 'buy', shares: 176, price: '511300', fee: 112, filledOn: '2026-11-06', source: 'manual', createdAt: '2026-11-06 16:10:00', beforeCycle: true },
 ];
 
+/** Waiting rows, ascending date as the server sends them. 33 had no date in the screenshot; 34 is dated after today. */
+export const VR_PENDING: VrPendingDto[] = [
+  { id: 31, captureId: 9, side: 'buy', shares: 3, price: '443900', fee: null, filledOn: '2026-12-08', dateRead: true, dateAfterToday: false, dupPrice: null, orderPrice: '443900', hasImage: true, createdAt: '2026-12-09 08:00:00' },
+  { id: 32, captureId: 9, side: 'buy', shares: 3, price: '444000', fee: 9, filledOn: '2026-12-08', dateRead: true, dateAfterToday: false, dupPrice: '443900', orderPrice: null, hasImage: true, createdAt: '2026-12-09 08:00:00' },
+  { id: 33, captureId: 9, side: 'sell', shares: 2, price: '611000', fee: null, filledOn: '2026-12-09', dateRead: false, dateAfterToday: false, dupPrice: null, orderPrice: null, hasImage: false, createdAt: '2026-12-09 08:00:00' },
+  { id: 34, captureId: 10, side: 'buy', shares: 3, price: '436600', fee: null, filledOn: '2026-12-10', dateRead: true, dateAfterToday: true, dupPrice: null, orderPrice: '436600', hasImage: true, createdAt: '2026-12-09 08:05:00' },
+];
+
+/** A reading with a price finer than a cent and a fee of exactly $0.00 (not "auto"). */
+export const VR_PENDING_FINE: VrPendingDto = {
+  id: 35, captureId: 11, side: 'buy', shares: 3, price: '443912', fee: 0, filledOn: '2026-12-08', dateRead: true, dateAfterToday: false, dupPrice: null, orderPrice: '443912', hasImage: true, createdAt: '2026-12-09 08:10:00',
+};
+
 export const VR_CASH: VrCashDto[] = [
   { id: 21, kind: 'open', amountCents: 1_000_000, movedOn: '2026-11-05', note: null, cycleId: null, createdAt: '2026-11-05 14:00:00', beforeCycle: true },
 ];
@@ -131,6 +148,7 @@ export const SETTINGS_ROUTE: Route = {
 
 // Sub-resources first, run details next, the bare list last: the stub matches by substring.
 export const VR_APP_ROUTES: Route[] = [
+  { url: '/pending', json: [] },
   { url: '/cycles', json: [] },
   { url: '/fills', json: [] },
   { url: '/cash', json: [] },

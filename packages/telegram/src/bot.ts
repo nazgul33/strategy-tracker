@@ -9,6 +9,7 @@ export interface BotDeps {
   lang?: Lang
   onPhoto(chatId: string, image: { base64: string; mime: string }, caption?: string): Promise<void> | void
   onConfirm(chatId: string, cbData: string, approved: boolean): Promise<void> | void
+  onChoice(chatId: string, cbData: string): Promise<void> | void
   onStatus(chatId: string): Promise<void> | void
   onOrders(chatId: string): Promise<void> | void
 }
@@ -68,7 +69,8 @@ export function createBot(deps: BotDeps): Bot {
     } catch (e) {
       console.error('[bot] answerCallbackQuery failed:', String(e))
     }
-    await deps.onConfirm(chatId, data, data.startsWith('yes:'))
+    if (data.startsWith('cs:')) await deps.onChoice(chatId, data)
+    else await deps.onConfirm(chatId, data, data.startsWith('yes:'))
   })
 
   // grammY's default rethrows a handler error out of long polling and ends it for good
@@ -80,5 +82,15 @@ export function createBot(deps: BotDeps): Bot {
 export function buildPendingKeyboard(id: string) {
   return {
     inline_keyboard: [[{ text: 'Yes', callback_data: `yes:${id}` }, { text: 'No', callback_data: `no:${id}` }]],
+  }
+}
+
+export function buildChoiceKeyboard(id: string, labels: { mr: string; vr: string; both: string }) {
+  return {
+    inline_keyboard: [[
+      { text: labels.mr, callback_data: `cs:${id}:m` },
+      { text: labels.vr, callback_data: `cs:${id}:v` },
+      { text: labels.both, callback_data: `cs:${id}:b` },
+    ]],
   }
 }

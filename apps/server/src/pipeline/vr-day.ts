@@ -5,6 +5,7 @@ import {
 } from '@st/strategies/value-rebalancing'
 import { t } from '@st/telegram/i18n'
 import { renderVrBuyInstruction, renderVrCycle } from '@st/telegram/vr'
+import { CHOICE_TTL_MS } from '../domain/capture-choice'
 import { withRunLock } from '../domain/run-lock'
 import type { DayRepoSurface } from '../domain/repo-types'
 import type { NewVrCashMove, NewVrCycle, VrCycleRow, VrFillRow, VrRunRow } from '../domain/vr/repo-types'
@@ -18,7 +19,10 @@ type Decision =
   | { kind: 'vr-cycle'; cycle: VrCycleRow; books: VrBooks; fills: VrFillRow[] }
 // Something is due this morning but there is no usable close to act on.
 const NEEDS_CLOSE = 'needs-close'
-type Outcome = Decision | typeof NEEDS_CLOSE | null
+// Something is due, but screenshot fills wait for a decision, so the books are not final.
+// `waiting` counts the fills; zero means only an unanswered Telegram question holds the run.
+type Held = { kind: 'vr-held'; waiting: number }
+type Outcome = Decision | Held | typeof NEEDS_CLOSE | null
 
 /** Walks the active VR runs in ascending id; one run never takes the others down, and neither does a failing list. */
 export async function processVrRuns(deps: DayDeps, today: ISODate): Promise<{ completed: number; failed: number }> {
@@ -47,10 +51,17 @@ async function processVrRun(deps: DayDeps, listed: VrRunRow, today: ISODate): Pr
     const step = await withRunLock(listed.id, async () => {
       const run = await deps.repos.vrRunRepo.get(listed.id)
       if (!run || run.status !== 'active') return null
-      return { run, outcome: await decide(deps.repos, run, today, fetched) }
+      return { run, outcome: await decide(deps.repos, run, today, fetched, (deps.now ?? (() => new Date()))()) }
     })
     if (!step) return 'completed'
     const { run, outcome } = step
+    if (outcome !== null && typeof outcome === 'object' && outcome.kind === 'vr-held') {
+      const text = outcome.waiting > 0
+        ? t('vr-cycle-held', deps.digestLang, { name: run.name, ticker: run.ticker, n: outcome.waiting })
+        : t('vr-cycle-held-question', deps.digestLang, { name: run.name, ticker: run.ticker })
+      await notifyDay(deps, run.id, text, 'vr-held')
+      return 'completed'
+    }
     if (outcome === NEEDS_CLOSE) {
       await notifyDay(deps, run.id, t('vr-warn-data-error', deps.digestLang, { id: run.id, ticker: run.ticker }), 'data-error')
       return 'failed'
@@ -66,12 +77,16 @@ async function processVrRun(deps: DayDeps, listed: VrRunRow, today: ISODate): Pr
   }
 }
 
-async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, fetched: CheckedClose | null): Promise<Outcome> {
+async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, fetched: CheckedClose | null, now: Date): Promise<Outcome> {
   const fills = await repos.vrFillRepo.listForRun(run.id)
   const moves = await repos.vrCashRepo.listForRun(run.id)
   const latest = await repos.vrCycleRepo.latest(run.id)
   const books = vrBooks(fills.map(toEngineFill), moves)
   const openFillId = fills.reduce((max, f) => Math.max(max, f.id), 0)
+  const waiting = await repos.vrPendingRepo.countPending(run.id)
+  // A Telegram question left open may still turn into fills dated before this cycle's start, so it holds the run too.
+  const asked = await repos.captureChoiceRepo.countOpenForVrRun(run.id, new Date(now.getTime() - CHOICE_TTL_MS))
+  const held: Held | null = waiting > 0 || asked > 0 ? { kind: 'vr-held', waiting } : null
 
   const open = async (cycle: NewVrCycle, deposit: Omit<NewVrCashMove, 'cycleId'> | null): Promise<Decision> => {
     await repos.vrCycleRepo.open(cycle, deposit)
@@ -80,7 +95,9 @@ async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, fetc
     return { kind: 'vr-cycle', cycle: row, books, fills }
   }
 
+  // Waiting fills hold every step that acts on the books, before the close is looked at.
   if (!latest) {
+    if (held) return held
     if (!fetched) return NEEDS_CLOSE
     if (books.shares <= 0) return { kind: 'vr-buy', targetCents: run.initialVCents }
     const band = vrBand(run.initialVCents, run.bandPpm)
@@ -97,6 +114,7 @@ async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, fetc
   if (latest.startDate >= today) return null
   const due = cycleDue(latest.scheduledStart, today)
   if (!due && books.shares > 0) return null
+  if (held) return held
   if (!fetched) return NEEDS_CLOSE
   if (!due) return { kind: 'vr-buy', targetCents: latest.vCents }
 

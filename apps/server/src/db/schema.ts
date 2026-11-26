@@ -1,4 +1,4 @@
-import { mysqlTable, bigint, boolean, int, varchar, text, date, timestamp, json, mysqlEnum, primaryKey, index, customType } from 'drizzle-orm/mysql-core'
+import { mysqlTable, bigint, boolean, int, varchar, text, longtext, date, timestamp, json, mysqlEnum, primaryKey, index, customType } from 'drizzle-orm/mysql-core'
 
 // drizzle-orm/mysql-core has no blob helper; LONGBLOB needs a custom type.
 const longblob = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'longblob' })
@@ -241,6 +241,22 @@ export const barCoverage = mysqlTable('bar_coverage', {
 }, (t) => ({
   tickerIdx: index('bar_coverage_ticker_idx').on(t.ticker),
 }))
+
+// One parked Telegram question: the fills read for one ticker and the screenshot, as base64 text.
+export const captureChoices = mysqlTable('capture_choices', {
+  id: int('id').primaryKey().autoincrement(),
+  chatId: varchar('chat_id', { length: 64 }).notNull(),
+  ticker: varchar('ticker', { length: 16 }).notNull(),
+  mrRunId: int('mr_run_id').notNull(),
+  vrRunId: int('vr_run_id').notNull(),
+  fillsJson: text('fills_json').notNull(),
+  imageBase64: longtext('image_base64').notNull(),
+  imageMime: varchar('image_mime', { length: 32 }).notNull(),
+  readOn: date('read_on', { mode: 'string' }).notNull(),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
+  answer: mysqlEnum('answer', ['mr', 'vr', 'both']),
+  answeredAt: timestamp('answered_at', { mode: 'string' }),
+})
 
 export * from './schema-vr'
 

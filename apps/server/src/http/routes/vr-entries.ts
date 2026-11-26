@@ -15,13 +15,11 @@ export async function vrRunParam(deps: HttpDeps, raw: string): Promise<VrRunRow 
 
 export function vrFail(c: Context, e: unknown) {
   if (e instanceof VrNotFoundError) return c.json(NOT_FOUND, 404)
-  if (e instanceof DomainError) return c.json({ error: e.kind }, 422)
+  if (e instanceof DomainError) return c.json({ error: e.kind }, e.kind === 'vr-not-pending' ? 409 : 422)
   throw e
 }
 
-export function vrEntriesRouter(deps: HttpDeps): Hono {
-  const r = new Hono()
-  const bookingDeps = (): VrBookingDeps => ({ repos: deps.repos, today: deps.today() })
+export function vrRouteHelpers(deps: HttpDeps) {
   const readBody = (c: Context) => c.req.json().catch(() => ({}))
 
   // Runs `fn` for a VR run and an entry id; 404 for an MR run, a malformed id or a missing entry.
@@ -44,6 +42,13 @@ export function vrEntriesRouter(deps: HttpDeps): Hono {
       return vrFail(c, e)
     }
   }
+  return { readBody, runRoute, entryRoute }
+}
+
+export function vrEntriesRouter(deps: HttpDeps): Hono {
+  const r = new Hono()
+  const bookingDeps = (): VrBookingDeps => ({ repos: deps.repos, today: deps.today() })
+  const { readBody, runRoute, entryRoute } = vrRouteHelpers(deps)
 
   r.get('/runs/:id/fills', runRoute(async (c, run) => {
     const [rows, cycle] = await Promise.all([deps.repos.vrFillRepo.listForRun(run.id), deps.repos.vrCycleRepo.latest(run.id)])

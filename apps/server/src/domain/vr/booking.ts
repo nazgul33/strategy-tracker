@@ -71,13 +71,18 @@ function checkFillDate(patch: VrFillPatch, deps: VrBookingDeps): void {
   if (patch.filledOn > deps.today) throw new DomainError('fill-date-in-future')
 }
 
+/** The date, share and books checks a new fill gets. Call inside the run lock. */
+export async function checkNewVrFill(runId: number, patch: VrFillPatch, deps: VrBookingDeps): Promise<void> {
+  checkFillDate(patch, deps)
+  const rows = [...(await deps.repos.vrFillRepo.listForRun(runId)), patch]
+  checkTotal(rows)
+  checkBooks(rows, await deps.repos.vrCashRepo.listForRun(runId))
+}
+
 export async function addVrFill(run: VrRunRow, body: unknown, deps: VrBookingDeps): Promise<number> {
   const patch = parseVrFillBody(body, run.costPpm)
-  checkFillDate(patch, deps)
   return withRunLock(run.id, async () => {
-    const rows = [...(await deps.repos.vrFillRepo.listForRun(run.id)), patch]
-    checkTotal(rows)
-    checkBooks(rows, await deps.repos.vrCashRepo.listForRun(run.id))
+    await checkNewVrFill(run.id, patch, deps)
     return deps.repos.vrFillRepo.insert({ runId: run.id, ...patch, source: 'manual' })
   })
 }

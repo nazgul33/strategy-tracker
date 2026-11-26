@@ -1,5 +1,6 @@
 import type { ISODate, RunState } from '@st/core'
 import type { CaptureImageInsert, CaptureImageListing } from '../db/repos-vision'
+import type { CaptureChoiceRepo } from './capture-choice'
 import type { CorrectionRepo } from './correction-types'
 import type { OrderRow } from './sell-match'
 import type { VrRepos } from './vr/repo-types'
@@ -150,6 +151,8 @@ export interface RepoSurface {
 
 /** What the morning pipeline needs beyond RepoSurface. */
 export interface DayRepoSurface extends RepoSurface, VrRepos {
+  /** A VR run's cycle is held while a Telegram question that names it is open. */
+  captureChoiceRepo: Pick<CaptureChoiceRepo, 'countOpenForVrRun'>
   bucketRepo: RepoSurface['bucketRepo'] & {
     /** One transaction, orders first: both are written or neither is. */
     saveStateWithOrders(runId: number, state: RunState, orders: NewOrder[]): Promise<void>

@@ -10,6 +10,9 @@ import type { makeFakes } from './http-fakes'
 import type { getVrRepos } from '../src/db/repos-vr'
 import type { NewVrCycle, SharedRunRepo, VrRepos } from '../src/domain/vr/repo-types'
 import type { makeVrFakes } from './vr-fakes'
+import type { CaptureChoiceRepo } from '../src/domain/capture-choice'
+import type { getCaptureChoiceRepos } from '../src/db/repos-capture-choice'
+import type { makeChoiceFakes } from './capture-choice-fakes'
 
 export function _dbPins(g: typeof getRepos) {
   // @ts-expect-error the real repositories need a Drizzle database
@@ -77,6 +80,18 @@ export async function _vrPins(r: HttpRepoSurface) {
   // @ts-expect-error cash amounts are integer cents
   await r.vrCashRepo.update(1, 2, { amountCents: '5', movedOn: '2026-01-01', note: null })
 }
+
+export async function _capturePins(r: HttpRepoSurface) {
+  // @ts-expect-error a pending fill price is bigint myriadths
+  await r.vrPendingRepo.update(1, 2, { side: 'buy', shares: 1, price: 1, fee: null, filledOn: '2026-01-01' })
+  // @ts-expect-error 'hold' is not a choice answer
+  await r.captureChoiceRepo.answer(1, 'hold')
+}
+
+export const _hasNew = (r: ReturnType<typeof getRepos>): Pick<HttpRepoSurface, 'vrPendingRepo' | 'captureChoiceRepo'> => r
+export const _fakeHasNew = (r: ReturnType<typeof makeVrFakes>['repos']): Pick<VrRepos, 'vrPendingRepo'> => r
+export type _realChoice = Expect<IsNever<ArityMismatches<ReturnType<typeof getCaptureChoiceRepos>, { captureChoiceRepo: CaptureChoiceRepo }>>>
+export type _choiceFake = Expect<IsNever<ArityMismatches<{ captureChoiceRepo: ReturnType<typeof makeChoiceFakes>['captureChoiceRepo'] }, { captureChoiceRepo: CaptureChoiceRepo }>>>
 
 export type _real = Expect<IsNever<ArityMismatches<ReturnType<typeof getRepos>, HttpRepoSurface>>>
 export type _realCapture = Expect<IsNever<ArityMismatches<ReturnType<typeof getRepos>, CaptureRepos>>>
