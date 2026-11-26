@@ -102,14 +102,15 @@ describe('POST /api/vr/runs/:id/pending/confirm-all', () => {
     await s.seed()
     const future = await s.seed({ filledOn: '2026-11-11', captureId: 8 }, false)
     await s.seed({ dupPrice: 443_900n, captureId: 9 }, false)
+    await s.seed({ dateRead: false, captureId: 10 }, false)
     expect(await s.req('POST', `${s.base}/confirm-all`)).toEqual({
-      status: 200, body: { confirmed: 1, refused: [{ id: future, error: 'fill-date-in-future' }], skippedDuplicates: 1 },
+      status: 200, body: { confirmed: 1, refused: [{ id: future, error: 'fill-date-in-future' }], skippedDuplicates: 1, skippedUndated: 1 },
     })
   })
 
   test('nothing waiting gives zeros', async () => {
     const s = await withRun()
-    expect(await s.req('POST', `${s.base}/confirm-all`)).toEqual({ status: 200, body: { confirmed: 0, refused: [], skippedDuplicates: 0 } })
+    expect(await s.req('POST', `${s.base}/confirm-all`)).toEqual({ status: 200, body: { confirmed: 0, refused: [], skippedDuplicates: 0, skippedUndated: 0 } })
   })
 })
 

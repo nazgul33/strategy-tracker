@@ -106,6 +106,57 @@ describe('confirmVrPending', () => {
   })
 })
 
+describe('confirmVrPending: the format checks of a typed fill', () => {
+  test('a row with price 0 is refused with invalid-price and stays waiting with its image', async () => {
+    const t = await setup()
+    const pid = await t.seed({ price: 0n })
+    expect(await code(confirmVrPending(t.run, pid, t.deps))).toBe('invalid-price')
+    expect(await t.status(pid)).toBe('pending')
+    expect(t.s.f.captureImages).toHaveLength(1)
+    expect(t.s.f.vr.fills).toHaveLength(0)
+  })
+
+  test('a row with 0 shares is refused with invalid-shares', async () => {
+    const t = await setup()
+    const pid = await t.seed({ shares: 0 })
+    expect(await code(confirmVrPending(t.run, pid, t.deps))).toBe('invalid-shares')
+    expect(await t.status(pid)).toBe('pending')
+  })
+
+  test('the format codes come before the date and books codes', async () => {
+    const t = await setup()
+    const pid = await t.seed({ price: 0n, filledOn: '2026-11-11' })
+    expect(await code(confirmVrPending(t.run, pid, t.deps))).toBe('invalid-price')
+  })
+})
+
+describe('confirmVrPending: a failure after the commit', () => {
+  test('a failing image step still answers with the fill id and leaves the row confirmed', async () => {
+    const t = await setup()
+    const pid = await t.seed()
+    t.s.f.repos.vrPendingRepo.hasPendingForCapture = async () => { throw new Error('db down') }
+    const log = console.error
+    console.error = () => {}
+    try {
+      const fillId = await confirmVrPending(t.run, pid, t.deps)
+      expect(t.s.f.vr.fills).toMatchObject([{ id: fillId }])
+      expect(await t.status(pid)).toBe('confirmed')
+    } finally { console.error = log }
+  })
+
+  test('the same for reject', async () => {
+    const t = await setup()
+    const pid = await t.seed()
+    t.s.f.repos.vrPendingRepo.hasPendingForCapture = async () => { throw new Error('db down') }
+    const log = console.error
+    console.error = () => {}
+    try {
+      await rejectVrPending(t.run, pid, t.deps)
+      expect(await t.status(pid)).toBe('rejected')
+    } finally { console.error = log }
+  })
+})
+
 describe('editVrPending', () => {
   const GOOD = { side: 'sell', shares: 4, price: '61.10', fee: '0.50', filledOn: '2026-11-08' }
 
@@ -200,7 +251,7 @@ describe('confirmAllVrPending', () => {
     const t = await setup()
     const sell = await t.seed({ side: 'sell', shares: 5, filledOn: '2026-11-09' })
     const buy = await t.seed({ side: 'buy', shares: 5, filledOn: '2026-11-09' }, false)
-    expect(await confirmAllVrPending(t.run, t.deps)).toEqual({ confirmed: 2, refused: [], skippedDuplicates: 0 })
+    expect(await confirmAllVrPending(t.run, t.deps)).toEqual({ confirmed: 2, refused: [], skippedDuplicates: 0, skippedUndated: 0 })
     const fills = t.s.f.vr.fills
     expect(fills).toHaveLength(2)
     expect(fills.find((f) => f.side === 'buy')!.id).toBeLessThan(fills.find((f) => f.side === 'sell')!.id)
@@ -220,7 +271,7 @@ describe('confirmAllVrPending', () => {
     const t = await setup()
     const future = await t.seed({ filledOn: '2026-11-11' })
     const ok = await t.seed({ price: 443_900n }, false)
-    expect(await confirmAllVrPending(t.run, t.deps)).toEqual({ confirmed: 1, refused: [{ id: future, error: 'fill-date-in-future' }], skippedDuplicates: 0 })
+    expect(await confirmAllVrPending(t.run, t.deps)).toEqual({ confirmed: 1, refused: [{ id: future, error: 'fill-date-in-future' }], skippedDuplicates: 0, skippedUndated: 0 })
     expect(await t.status(future)).toBe('pending')
     expect(await t.status(ok)).toBe('confirmed')
   })
@@ -229,12 +280,28 @@ describe('confirmAllVrPending', () => {
     const t = await setup()
     const dup = await t.seed({ dupPrice: 443_900n })
     await t.seed({ price: 443_900n, shares: 3 }, false)
-    expect(await confirmAllVrPending(t.run, t.deps)).toEqual({ confirmed: 1, refused: [], skippedDuplicates: 1 })
+    expect(await confirmAllVrPending(t.run, t.deps)).toEqual({ confirmed: 1, refused: [], skippedDuplicates: 1, skippedUndated: 0 })
     expect(await t.status(dup)).toBe('pending')
+  })
+
+  test('a row with a guessed date stays waiting and is counted as undated; it confirms by itself', async () => {
+    const t = await setup()
+    const undated = await t.seed({ dateRead: false })
+    await t.seed({ price: 443_900n }, false)
+    expect(await confirmAllVrPending(t.run, t.deps)).toEqual({ confirmed: 1, refused: [], skippedDuplicates: 0, skippedUndated: 1 })
+    expect(await t.status(undated)).toBe('pending')
+    await confirmVrPending(t.run, undated, t.deps)
+    expect(await t.status(undated)).toBe('confirmed')
+  })
+
+  test('a row that is both a possible duplicate and undated is counted once, as a duplicate', async () => {
+    const t = await setup()
+    await t.seed({ dateRead: false, dupPrice: 443_900n })
+    expect(await confirmAllVrPending(t.run, t.deps)).toEqual({ confirmed: 0, refused: [], skippedDuplicates: 1, skippedUndated: 0 })
   })
 
   test('nothing waiting gives zeros', async () => {
     const t = await setup()
-    expect(await confirmAllVrPending(t.run, t.deps)).toEqual({ confirmed: 0, refused: [], skippedDuplicates: 0 })
+    expect(await confirmAllVrPending(t.run, t.deps)).toEqual({ confirmed: 0, refused: [], skippedDuplicates: 0, skippedUndated: 0 })
   })
 })

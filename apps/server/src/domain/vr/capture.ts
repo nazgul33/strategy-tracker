@@ -44,8 +44,9 @@ export async function ingestVrCapture(
     const claim = await claimCapture({
       captureRepo: repos.captureRepo,
       pendingRepo: {
-        hasLiveForCapture: (id) => repos.vrPendingRepo.hasPendingForCapture(id),
-        hasConfirmedForCapture: (id) => repos.vrPendingRepo.hasConfirmedForCapture(id),
+        // A screenshot that already produced rows for this run is never taken in again, whatever became of them.
+        hasLiveForCapture: (id) => repos.vrPendingRepo.hasAnyForCapture(id),
+        hasConfirmedForCapture: async () => false,
       },
       correctionRepo: { hasOpenForCapture: async () => false },
     }, run.id, hash, 'parsed')

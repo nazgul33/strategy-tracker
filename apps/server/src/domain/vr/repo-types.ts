@@ -92,6 +92,8 @@ export interface VrPendingRepo {
   countPending(runId: number): Promise<number>
   hasPendingForCapture(captureId: number): Promise<boolean>
   hasConfirmedForCapture(captureId: number): Promise<boolean>
+  /** A row of the capture in any status. */
+  hasAnyForCapture(captureId: number): Promise<boolean>
 }
 
 export interface VrRepos { vrRunRepo: VrRunRepo; vrCycleRepo: VrCycleRepo; vrFillRepo: VrFillRepo; vrCashRepo: VrCashRepo; vrPendingRepo: VrPendingRepo }

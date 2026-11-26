@@ -127,9 +127,9 @@ export function getVrRepos(db: Db) {
   // Every guarded write is one UPDATE ... WHERE status = 'pending', checked by affectedRows.
   const pendingWhere = (runId: number, id: number) =>
     and(eq(s.vrPendingFills.id, id), eq(s.vrPendingFills.runId, runId), eq(s.vrPendingFills.status, 'pending'))
-  async function hasPendingWithStatus(captureId: number, status: VrPendingStatus) {
+  async function hasPendingWithStatus(captureId: number, status?: VrPendingStatus) {
     const rows = await db.select({ id: s.vrPendingFills.id }).from(s.vrPendingFills)
-      .where(and(eq(s.vrPendingFills.captureId, captureId), eq(s.vrPendingFills.status, status))).limit(1)
+      .where(status === undefined ? eq(s.vrPendingFills.captureId, captureId) : and(eq(s.vrPendingFills.captureId, captureId), eq(s.vrPendingFills.status, status))).limit(1)
     return rows.length > 0
   }
 
@@ -183,6 +183,7 @@ export function getVrRepos(db: Db) {
     },
     async hasPendingForCapture(captureId) { return hasPendingWithStatus(captureId, 'pending') },
     async hasConfirmedForCapture(captureId) { return hasPendingWithStatus(captureId, 'confirmed') },
+    async hasAnyForCapture(captureId) { return hasPendingWithStatus(captureId) },
   } satisfies VrPendingRepo
 
   return { sharedRunRepo, vrRunRepo, vrCycleRepo, vrFillRepo, vrCashRepo, vrPendingRepo }

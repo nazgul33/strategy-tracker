@@ -40,6 +40,16 @@ describe('fake vrPendingRepo.confirm behaves like the real one', () => {
   })
 })
 
+describe('fake hasAnyForCapture', () => {
+  test('true for a row in any status, false for a capture without one', async () => {
+    const f = makeVrFakes()
+    const [, b, c] = await f.repos.vrPendingRepo.insertMany([pendingRow(7, { captureId: 1 }), pendingRow(7, { captureId: 2 }), pendingRow(7, { captureId: 3 })])
+    await f.repos.vrPendingRepo.reject(7, b!)
+    await f.repos.vrPendingRepo.confirm(7, c!, fillFor(7))
+    expect(await Promise.all([1, 2, 3, 4].map((id) => f.repos.vrPendingRepo.hasAnyForCapture(id)))).toEqual([true, true, true, false])
+  })
+})
+
 describe('fake captureChoiceRepo ids', () => {
   test('a deleted question\'s id is not handed out again', async () => {
     const t = { now: new Date('2026-11-01T00:00:00Z') }

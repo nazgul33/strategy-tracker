@@ -3,7 +3,7 @@ import { DEFAULT_VR_SETTINGS } from '@st/strategies/value-rebalancing'
 import type { RawFill } from '@st/ingest'
 import { dropExactMatches } from '../src/domain/capture-dedup'
 import { ingestVrCapture } from '../src/domain/vr/capture'
-import { confirmVrPending, rejectVrPending } from '../src/domain/vr/pending'
+import { confirmVrPending, editVrPending, rejectVrPending } from '../src/domain/vr/pending'
 import { fakeRepos } from './booking-fakes'
 import { makeFakes } from './http-fakes'
 
@@ -70,20 +70,51 @@ describe('ingestVrCapture: the same screenshot again', () => {
     expect(s.h.captureImages).toHaveLength(1)
   })
 
-  test('after two rows were confirmed and one rejected, every fill is dropped and nothing is stored', async () => {
-    const s = await setup()
-    await s.take(img(1), [fill({ price: '45.15' }), fill({ price: '44.39' }), fill({ side: 'sell', shares: 2, price: '61.10', date: undefined })])
+  const THREE = () => [fill({ price: '45.15' }), fill({ price: '44.39' }), fill({ side: 'sell', shares: 2, price: '61.10', date: undefined })]
+  async function decideThree(s: Awaited<ReturnType<typeof setup>>) {
+    await s.take(img(1), THREE())
     const [a, b, c] = await s.rows('pending')
     await confirmVrPending(s.run, a!.id, s.deps)
     await confirmVrPending(s.run, b!.id, s.deps)
     await rejectVrPending(s.run, c!.id, s.deps)
     expect(s.h.captureImages).toHaveLength(0)
-    expect(await s.take(img(1), [fill({ price: '45.15' }), fill({ price: '44.39' }), fill({ side: 'sell', shares: 2, price: '61.10', date: undefined })]))
-      .toEqual({ waiting: 0, dropped: 3, possibleDuplicates: 0 })
+  }
+
+  test('after two rows were confirmed and one rejected, the same screenshot is a duplicate: nothing new', async () => {
+    const s = await setup()
+    await decideThree(s)
+    expect(await s.take(img(1), THREE())).toBe('duplicate')
     expect(await s.rows()).toHaveLength(3)
     expect(await s.rows('pending')).toHaveLength(0)
     expect(s.h.captureImages).toHaveLength(0)
     expect(s.b._stores.captures).toHaveLength(1)
+  })
+
+  test('a different screenshot of the same fills after those decisions drops all three and stores nothing', async () => {
+    const s = await setup()
+    await decideThree(s)
+    expect(await s.take(img(2), THREE())).toEqual({ waiting: 0, dropped: 3, possibleDuplicates: 0 })
+    expect(await s.rows()).toHaveLength(3)
+    expect(s.h.captureImages).toHaveLength(0)
+  })
+
+  test('a screenshot that produced no row is read again and gives the same outcome', async () => {
+    const s = await setup()
+    await s.book('buy', 3, 443_900n, '2026-11-09')
+    expect(await s.take(img(1), [fill()])).toEqual({ waiting: 0, dropped: 1, possibleDuplicates: 0 })
+    expect(await s.take(img(1), [fill()])).toEqual({ waiting: 0, dropped: 1, possibleDuplicates: 0 })
+    expect(s.b._stores.captures).toHaveLength(1)
+  })
+
+  test('a row edited before it was confirmed does not come back when the screenshot is sent again', async () => {
+    const s = await setup()
+    await s.take(img(1), [fill({ shares: 3 })])
+    const [row] = await s.rows('pending')
+    await editVrPending(s.run, row!.id, { side: 'buy', shares: 30, price: '44.39', filledOn: '2026-11-09' }, s.deps)
+    await confirmVrPending(s.run, row!.id, s.deps)
+    expect(await s.take(img(1), [fill({ shares: 3 })])).toBe('duplicate')
+    expect(await s.rows()).toHaveLength(1)
+    expect(s.h.vr.fills).toHaveLength(1)
   })
 
   test('a fill equal to a rejected row from another screenshot is dropped', async () => {

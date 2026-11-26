@@ -130,6 +130,19 @@ describeIf('db integration: VR pending fills and capture choices', () => {
     expect(await repos.vrFillRepo.listForRun(other)).toEqual([])
   })
 
+  test('hasAnyForCapture is true for a row in any status and false without one', async () => {
+    const run = await newRun()
+    const [none, pend, conf, rej] = [await newCapture(run), await newCapture(run), await newCapture(run), await newCapture(run)]
+    const [, c, r] = await repos.vrPendingRepo.insertMany([row(run, pend), row(run, conf), row(run, rej)]) as [number, number, number]
+    expect(await repos.vrPendingRepo.hasAnyForCapture(none)).toBe(false)
+    expect(await repos.vrPendingRepo.hasAnyForCapture(pend)).toBe(true)
+    await repos.vrPendingRepo.confirm(run, c, fill(run))
+    await repos.vrPendingRepo.reject(run, r)
+    expect(await repos.vrPendingRepo.hasAnyForCapture(conf)).toBe(true)
+    expect(await repos.vrPendingRepo.hasAnyForCapture(rej)).toBe(true)
+    expect(await repos.vrPendingRepo.hasAnyForCapture(pend)).toBe(true)
+  })
+
   test('reject only moves a pending row; the capture checks follow', async () => {
     const run = await newRun()
     const cap = await newCapture(run)

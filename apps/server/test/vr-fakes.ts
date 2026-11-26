@@ -128,6 +128,7 @@ export function makeVrFakes(opts: { otherRuns?: () => SharedRunRow[] } = {}) {
     async countPending(runId: number) { return pending.filter((p) => p.runId === runId && p.status === 'pending').length },
     async hasPendingForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'pending') },
     async hasConfirmedForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'confirmed') },
+    async hasAnyForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId) },
   } satisfies VrPendingRepo
 
   return { repos: { sharedRunRepo, vrRunRepo, vrCycleRepo, vrFillRepo, vrCashRepo, vrPendingRepo }, runs, cycles, fills, cash, pending }

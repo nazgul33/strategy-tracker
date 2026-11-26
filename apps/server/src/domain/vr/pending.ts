@@ -1,9 +1,8 @@
 import { DomainError, type ISODate } from '@st/core'
-import { feeCents } from '@st/core/money'
+import { formatUsd } from '@st/core/money'
 import { withRunLock } from '../run-lock'
 import { checkNewVrFill, parseVrFillBody, VrNotFoundError } from './booking'
-import { isInt32 } from './runs'
-import type { VrFillPatch, VrPendingRow, VrRepos, VrRunRow } from './repo-types'
+import type { VrPendingRow, VrRepos, VrRunRow } from './repo-types'
 
 export interface VrPendingDeps {
   repos: Pick<VrRepos, 'vrPendingRepo' | 'vrFillRepo' | 'vrCashRepo'> & {
@@ -14,7 +13,7 @@ export interface VrPendingDeps {
 
 export interface VrPendingView extends Omit<VrPendingRow, 'runId' | 'status'> { dateAfterToday: boolean; hasImage: boolean }
 
-export interface VrConfirmAllResult { confirmed: number; refused: { id: number; error: string }[]; skippedDuplicates: number }
+export interface VrConfirmAllResult { confirmed: number; refused: { id: number; error: string }[]; skippedDuplicates: number; skippedUndated: number }
 
 async function loadPending(run: VrRunRow, id: number, deps: VrPendingDeps): Promise<VrPendingRow> {
   const row = await deps.repos.vrPendingRepo.get(run.id, id)
@@ -23,10 +22,10 @@ async function loadPending(run: VrRunRow, id: number, deps: VrPendingDeps): Prom
   return row
 }
 
-// The decision is committed already, so a failed delete is only logged: the screenshot sweep removes an orphan at the next start.
+// The decision is committed already, so any failure here is only logged: the screenshot sweep removes an orphan at the next start.
 async function dropImageIfDone(captureId: number, deps: VrPendingDeps): Promise<void> {
-  if (await deps.repos.vrPendingRepo.hasPendingForCapture(captureId)) return
   try {
+    if (await deps.repos.vrPendingRepo.hasPendingForCapture(captureId)) return
     await deps.repos.captureImageRepo.deleteFor(captureId)
   } catch (e) {
     console.error('capture image delete failed:', captureId, String(e))
@@ -55,9 +54,10 @@ export function editVrPending(run: VrRunRow, id: number, body: any, deps: VrPend
 export function confirmVrPending(run: VrRunRow, id: number, deps: VrPendingDeps): Promise<number> {
   return withRunLock(run.id, async () => {
     const row = await loadPending(run, id, deps)
-    const fee = row.fee ?? feeCents(row.price, row.shares, run.costPpm)
-    if (!isInt32(fee)) throw new DomainError('invalid-fee')
-    const patch: VrFillPatch = { side: row.side, shares: row.shares, price: row.price, fee, filledOn: row.filledOn }
+    // The row passes the format checks of a typed fill: the read may be a price of 0 or a fee beyond the INT range.
+    const patch = parseVrFillBody({
+      side: row.side, shares: row.shares, price: formatUsd(row.price), fee: row.fee === null ? undefined : formatUsd(BigInt(row.fee) * 100n), filledOn: row.filledOn,
+    }, run.costPpm)
     await checkNewVrFill(run.id, patch, deps)
     const fillId = await deps.repos.vrPendingRepo.confirm(run.id, id, { runId: run.id, ...patch, source: 'capture' })
     if (fillId === null) throw new DomainError('vr-not-pending')
@@ -74,12 +74,13 @@ export function rejectVrPending(run: VrRunRow, id: number, deps: VrPendingDeps):
   })
 }
 
-/** Rows that may duplicate an entry stay waiting; the rest go in buys first, so a same-day buy and sell both book. The lock is taken per row. */
+/** Rows that may duplicate an entry, and rows whose date was only guessed, stay waiting; the rest go in buys first, so a same-day buy and sell both book. The lock is taken per row. */
 export async function confirmAllVrPending(run: VrRunRow, deps: VrPendingDeps): Promise<VrConfirmAllResult> {
   const rows = await deps.repos.vrPendingRepo.listForRun(run.id, 'pending')
-  const result: VrConfirmAllResult = { confirmed: 0, refused: [], skippedDuplicates: rows.filter((r) => r.dupPrice !== null).length }
+  const notDuplicate = rows.filter((r) => r.dupPrice === null)
+  const result: VrConfirmAllResult = { confirmed: 0, refused: [], skippedDuplicates: rows.length - notDuplicate.length, skippedUndated: notDuplicate.filter((r) => !r.dateRead).length }
   const side = (r: VrPendingRow) => (r.side === 'buy' ? 0 : 1)
-  const order = rows.filter((r) => r.dupPrice === null)
+  const order = notDuplicate.filter((r) => r.dateRead)
     .sort((a, b) => side(a) - side(b) || (a.filledOn < b.filledOn ? -1 : a.filledOn > b.filledOn ? 1 : 0) || a.id - b.id)
   for (const r of order) {
     try {
