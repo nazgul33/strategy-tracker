@@ -80,6 +80,7 @@ async function main(): Promise<void> {
     persistClose: async (ticker, tradeDate, close) => {
       await repos.priceHistoryRepo.upsertMany([{ ticker, tradeDate, close }])
     },
+    latestStoredCloseDate: async (ticker) => (await repos.priceHistoryRepo.listForTicker(ticker)).at(-1)?.tradeDate ?? null,
   }
   const jobs = startJobs(dayDeps, (m) => console.log(`[jobs] ${m}`))
 

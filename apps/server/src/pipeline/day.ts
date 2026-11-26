@@ -8,6 +8,7 @@ import { renderDigest, renderClosed, renderReminder } from '@st/telegram/digest'
 import { t } from '@st/telegram/i18n'
 import type { DayPlan } from '@st/core'
 import { fetchCheckedClose } from './close'
+import { catchUpCloses } from './close-catchup'
 import { notifyDay } from './notify'
 import { processVrRuns } from './vr-day'
 
@@ -22,6 +23,8 @@ export interface DayDeps {
   digestLang: 'en' | 'ko'
   /** optional: store the sanity-checked close for the price history chart */
   persistClose?: (ticker: string, tradeDate: ISODate, close: bigint) => Promise<void>
+  /** optional: the trade date of the newest stored close of a ticker, or null; enables the close catch-up */
+  latestStoredCloseDate?: (ticker: string) => Promise<ISODate | null>
   /** optional: the clock the VR hold ages Telegram questions with; the real time by default */
   now?: () => Date
 }
@@ -88,6 +91,8 @@ async function morningPipeline(deps: DayDeps): Promise<MorningResult> {
   const vr = await processVrRuns(deps, today)
   numCompleted += vr.completed
   numFailed += vr.failed
+
+  await catchUpCloses(deps, today)
 
   return numFailed > 0 && numCompleted === 0 ? 'data-error' : 'sent'
 }
