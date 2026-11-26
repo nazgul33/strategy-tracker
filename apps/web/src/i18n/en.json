@@ -615,7 +615,7 @@
   "vr.pendingFeeHint": "Leave empty to compute the fee from the run's trade cost when it is confirmed.",
   "vr.pendingFillLine": "{side} {shares} @ {price} on {date}",
   "vr.pendingNoDate": "date not in the screenshot",
-  "vr.pendingPossibleDuplicate": "possible duplicate of {price}",
+  "vr.pendingPossibleDuplicate": "possible duplicate of a fill at {price} (booked, waiting or rejected)",
   "vr.poolNegative": "The Pool is below zero. Check the cash movements against the broker.",
   "vr.profit": "Profit",
   "vr.rungsLeft": "{left} of {total} rungs left",

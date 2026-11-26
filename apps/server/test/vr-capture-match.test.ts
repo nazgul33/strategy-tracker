@@ -80,8 +80,8 @@ describe('the reviewer sequences', () => {
   })
 
   test('(d) with an unknown order price a rejected entry never marks', () => {
-    expect(run([ex('rejected', 3, '44.39')], [inc(3, '44.40', '44.39'), inc(8, '44.39', '44.39')]).rows)
-      .toEqual([[3, '44.40', '44.39', null], [8, '44.39', '44.39', null]])
+    expect(run([ex('rejected', 3, '44.39')], [inc(3, '44.40', '44.39')]).rows).toEqual([[3, '44.40', '44.39', null]])
+    expect(run([ex('rejected', 3, '44.39')], [inc(8, '44.39', '44.39')]).rows).toEqual([[8, '44.39', '44.39', null]])
     expect(run([ex('rejected', 3, '44.39', '44.39')], [inc(3, '44.40')]).rows).toEqual([[3, '44.40', null, null]])
   })
 
@@ -224,8 +224,8 @@ describe('a typed fill has no order price', () => {
 describe('a partial fill', () => {
   const part = (shares: number) => inc(shares, '42.95', '42.95')
   const entry = (shares: number, kind: VrExisting['kind'] = 'waiting') => ex(kind, shares, '42.95', '42.95')
-  test('both parts in one screenshot on an empty run are plain', () => {
-    expect(run([], [part(4), part(6)])).toEqual({ dropped: 0, rows: [[4, '42.95', '42.95', null], [6, '42.95', '42.95', null]] })
+  test('both parts in one screenshot on an empty run: the second is marked as a twin of the first', () => {
+    expect(run([], [part(4), part(6)])).toEqual({ dropped: 0, rows: [[4, '42.95', '42.95', null], [6, '42.95', '42.95', '42.95']] })
   })
   test('both parts again are dropped; only the second part is dropped alone', () => {
     expect(run([entry(4), entry(6)], [part(4), part(6)])).toEqual({ dropped: 2, rows: [] })
@@ -260,6 +260,66 @@ describe('what is not the matcher to decide', () => {
   })
 })
 
+describe('twins inside one screenshot', () => {
+  const marked = (rows: (string | number | null)[][]) => rows.filter((r) => r[3] !== null)
+
+  test('the same row twice on an empty run: two rows, exactly one marked, citing its price', () => {
+    const got = run([], [inc(3, '44.39', '44.39'), inc(3, '44.39', '44.39')])
+    expect(got.dropped).toBe(0)
+    expect(got.rows).toHaveLength(2)
+    expect(marked(got.rows)).toEqual([[3, '44.39', '44.39', '44.39']])
+  })
+
+  test('two parts of one price and one order price: exactly one is marked', () => {
+    const got = run([], [inc(4, '42.95', '42.95'), inc(6, '42.95', '42.95')])
+    expect(got.rows).toHaveLength(2)
+    expect(marked(got.rows)).toHaveLength(1)
+  })
+
+  test('three rows with one known order price: exactly one stays unmarked', () => {
+    const got = run([], [inc(3, '44.39', '44.39'), inc(3, '44.39', '44.39'), inc(3, '44.39', '44.39')])
+    expect(got.rows).toHaveLength(3)
+    expect(marked(got.rows)).toHaveLength(2)
+  })
+
+  test('the twin cites the price of the row that stays, which can differ from its own', () => {
+    const got = run([], [inc(3, '42.00', '44.39'), inc(3, '42.30', '44.39')])
+    expect(got.rows.map((r) => r[3])).toEqual([null, '42.00'])
+  })
+
+  test('two equal rows without an order price are both plain', () => {
+    expect(run([], [inc(3, '44.39'), inc(3, '44.39')])).toEqual({ dropped: 0, rows: [[3, '44.39', null, null], [3, '44.39', null, null]] })
+  })
+
+  test('five rungs filled at 42.00 with five different order prices are all plain', () => {
+    const got = run([], ['44.39', '43.66', '42.95', '42.26', '41.59'].map((o) => inc(3, '42.00', o)))
+    expect(got.rows.map((r) => r[3])).toEqual([null, null, null, null, null])
+  })
+
+  test('another side or another date is not a twin', () => {
+    expect(marked(run([], [inc(3, '44.39', '44.39'), inc(3, '44.39', '44.39', { side: 'sell' }), inc(3, '44.39', '44.39', { date: '2026-11-08' })]).rows)).toEqual([])
+  })
+
+  test('a group whose rows were all marked against an entry keeps those marks and their citation', () => {
+    expect(run([ex('booked', 3, '42.00', '44.39')], [inc(3, '42.80', '44.39'), inc(8, '42.00', '44.39')]).rows)
+      .toEqual([[3, '42.80', '44.39', '42.00'], [8, '42.00', '44.39', '42.00']])
+  })
+})
+
+describe('known limits (one order price unknown)', () => {
+  test('known limit, not a guarantee: two rows without order prices that are really two other rungs are both dropped', () => {
+    expect(run([ex('waiting', 3, '42.00', '44.39'), ex('waiting', 3, '42.00', '43.66')], [inc(3, '42.00'), inc(3, '42.00')])).toEqual({ dropped: 2, rows: [] })
+  })
+
+  test('known limit, not a guarantee: a typed fill without an order price drops another rung read at the same price', () => {
+    expect(run([ex('booked', 3, '42.00')], [inc(3, '42.00', '43.66')])).toEqual({ dropped: 1, rows: [] })
+  })
+
+  test('known limit, not a guarantee: a price and an order price misread alike come back plain', () => {
+    expect(run([ex('booked', 3, '44.39', '44.39')], [inc(3, '43.60', '43.60')])).toEqual({ dropped: 0, rows: [[3, '43.60', '43.60', null]] })
+  })
+})
+
 describe('the result does not depend on the order of the incoming fills', () => {
   const key = (rows: { fill: RawFill; dupPrice: bigint | null }[]) =>
     rows.map((r) => JSON.stringify([r.fill.shares, r.fill.price, r.fill.orderPrice ?? null, r.fill.fee ?? null, r.fill.date ?? null, r.dupPrice?.toString() ?? null])).sort()
@@ -270,6 +330,7 @@ describe('the result does not depend on the order of the incoming fills', () => 
       [inc(3, '42.95'), inc(3, '42.26'), inc(3, '41.59')]],
     ['a misread order price next to a real rung', [ex('booked', 3, '42.00', '44.39')], [inc(3, '42.00', '46.00'), inc(3, '42.00', '45.15')]],
     ['fills that differ only in the fee', [ex('booked', 3, '42.00')], [inc(3, '42.00', undefined, { fee: '0.10' }), inc(3, '42.00')]],
+    ['a twin pair in one screenshot', [ex('booked', 3, '44.00')], [inc(3, '44.39', '44.39'), inc(3, '44.39', '44.39'), inc(4, '44.39', '44.39', { fee: '0.10' }), inc(3, '43.00', '43.00')]],
     ['mixed known and unknown order prices', [ex('waiting', 3, '42.00'), ex('waiting', 3, '42.00', '44.39')], [inc(3, '42.00'), inc(3, '42.00', '43.66')]],
   ]
   test.each(inputs)('%s', (_name, existing, incoming) => {

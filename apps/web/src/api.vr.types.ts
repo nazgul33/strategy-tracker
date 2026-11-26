@@ -150,7 +150,7 @@ export interface VrPendingDto {
   /** false = the screenshot showed no date and the reading day was used. */
   dateRead: boolean;
   dateAfterToday: boolean;
-  /** Price of the booked or waiting entry this may duplicate. */
+  /** Price of the booked, waiting or rejected entry, or another row of the same screenshot, this may duplicate. */
   dupPrice: string | null;
   hasImage: boolean;
   createdAt: string;

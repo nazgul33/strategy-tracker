@@ -221,4 +221,13 @@ describe('ingestVrCapture: the order price', () => {
     await s.book('buy', 3, 443_900n, '2026-11-09')
     expect(await s.take(img(1), [rung('44.39')])).toEqual({ waiting: 0, dropped: 1, possibleDuplicates: 0 })
   })
+
+  test('a reading that repeats one row: both wait, one is marked, and Confirm all books one fill and leaves the twin waiting', async () => {
+    const s = await setup()
+    expect(await s.take(img(1), [rung('44.39'), rung('44.39')])).toEqual({ waiting: 2, dropped: 0, possibleDuplicates: 1 })
+    expect(await confirmAllVrPending(s.run, s.deps)).toEqual({ confirmed: 1, refused: [], skippedDuplicates: 1, skippedUndated: 0 })
+    expect(s.h.vr.fills).toHaveLength(1)
+    expect(await s.rows('pending')).toHaveLength(1)
+    expect((await s.rows('pending'))[0]).toMatchObject({ dupPrice: 443_900n })
+  })
 })

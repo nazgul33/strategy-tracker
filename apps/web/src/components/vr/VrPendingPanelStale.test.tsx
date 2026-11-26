@@ -224,7 +224,7 @@ describe('VrPendingPanel after a request that was not simply refused', () => {
 
     it('shows a possible duplicate\'s price in full', async () => {
       await mountFine({ ...VR_PENDING_FINE, dupPrice: '443912' });
-      expect(byId('vrPendingDup-35')!.textContent).toBe('possible duplicate of $44.3912');
+      expect(byId('vrPendingDup-35')!.textContent).toBe('possible duplicate of a fill at $44.3912 (booked, waiting or rejected)');
     });
 
     it('pre-fills the dialog in full, and saving it unchanged sends the same price and fee', async () => {

@@ -77,7 +77,7 @@ export interface VrPendingRow {
   id: number; runId: number; captureId: number; side: 'buy' | 'sell'; shares: number; price: bigint
   fee: number | null            // null = compute from the run's trade cost at confirm
   filledOn: ISODate; dateRead: boolean   // false = the screenshot had no date and the reading day was used
-  dupPrice: bigint | null       // price of the booked or waiting entry this may duplicate
+  dupPrice: bigint | null       // price of the booked, waiting or rejected entry, or another row of the same screenshot, this may duplicate
   orderPrice: bigint | null     // read from the screenshot; null when the view has none or showed 0
   status: VrPendingStatus; createdAt: string
 }

@@ -96,7 +96,7 @@ describe('VrPendingPanel', () => {
     expect(r).toHaveLength(4);
     const cut = (row: string[]) => [...row.slice(0, 6), row[7]];
     expect(cut(r[0]!)).toEqual(['2026-12-08', 'Buy', '3', '$44.39', '$44.39', 'auto', '']);
-    expect(cut(r[1]!)).toEqual(['2026-12-08', 'Buy', '3', '$44.40', '', '$0.09', 'possible duplicate of $44.39']);
+    expect(cut(r[1]!)).toEqual(['2026-12-08', 'Buy', '3', '$44.40', '', '$0.09', 'possible duplicate of a fill at $44.39 (booked, waiting or rejected)']);
     expect(cut(r[2]!)).toEqual(['2026-12-09', 'Sell', '2', '$61.10', '', 'auto', 'date not in the screenshot']);
     expect(cut(r[3]!)).toEqual(['2026-12-10', 'Buy', '3', '$43.66', '$43.66', 'auto', 'dated after today']);
   });
@@ -115,7 +115,7 @@ describe('VrPendingPanel', () => {
   it('puts each mark in its own test id', () => {
     expect(byId('vrPendingNoDate-33')!.textContent).toBe('date not in the screenshot');
     expect(byId('vrPendingFuture-34')!.textContent).toBe('dated after today');
-    expect(byId('vrPendingDup-32')!.textContent).toBe('possible duplicate of $44.39');
+    expect(byId('vrPendingDup-32')!.textContent).toBe('possible duplicate of a fill at $44.39 (booked, waiting or rejected)');
     expect(byId('vrPendingNoDate-31')).toBeNull();
     expect(byId('vrPendingFuture-31')).toBeNull();
     expect(byId('vrPendingDup-31')).toBeNull();

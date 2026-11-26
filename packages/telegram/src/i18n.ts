@@ -89,8 +89,8 @@ export const CATALOG: Record<string, MsgEntry> = {
     ko: '이미 기록되었거나 확인 대기 중이거나 거부된 체결 {n}건은 제외했습니다.',
   },
   'vr-capture-possible-dup': {
-    en: 'Marked as possible duplicates: {n}. Check the price before confirming.',
-    ko: '{n}건은 중복일 수 있어 표시해 두었습니다 — 가격을 확인한 뒤 확정하세요.',
+    en: 'Marked as possible duplicates: {n}. Check them before confirming.',
+    ko: '{n}건은 중복일 수 있어 표시해 두었습니다 — 확정하기 전에 확인하세요.',
   },
   'vr-capture-none': {
     en: 'VR run #{id} {ticker}: nothing new to confirm. Fills in this screenshot already booked, waiting or rejected: {n}.',

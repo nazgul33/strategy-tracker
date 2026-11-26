@@ -615,7 +615,7 @@
   "vr.pendingFeeHint": "비워 두면 확인할 때 런의 거래 비용으로 수수료를 계산합니다.",
   "vr.pendingFillLine": "{date} {side} {shares}주 @ {price}",
   "vr.pendingNoDate": "스크린샷에 날짜 없음",
-  "vr.pendingPossibleDuplicate": "{price} 항목과 중복 가능",
+  "vr.pendingPossibleDuplicate": "{price}에 체결된 항목(기록됨, 대기 중 또는 거부됨)과 중복 가능",
   "vr.poolNegative": "Pool이 0보다 적습니다. 현금 내역을 증권사 기록과 대조해 보세요.",
   "vr.profit": "손익",
   "vr.rungsLeft": "{total}단계 중 {left}단계 남음",

@@ -11,6 +11,8 @@ import type { RawFill } from '@st/ingest'
 //    the order of the rows (the kept rows still come back in screenshot order).
 //  - A rejected entry marks only where both order prices are known, so a rejected fill read again with a misread cannot
 //    return as a plain row, while an unknown order price never marks against it.
+//  - Last, twins: kept fills of one screenshot with the same side, date and known order price are most likely one row read
+//    twice, so all but the first (in canonical order) are marked, citing the first. Nothing is dropped or used up by this.
 
 export interface VrExisting {
   kind: 'booked' | 'waiting' | 'rejected'
@@ -70,6 +72,16 @@ export function matchVrFills(existing: readonly VrExisting[], incoming: readonly
     if (x.out !== undefined) continue
     const cite = entries.find((e) => markA(x, e)) ?? entries.find((e) => markB(x, e)) ?? entries.find((e) => markC(x, e))
     x.out = cite ? cite.price : null
+  }
+
+  // Twins: the first of each group (canonical order) stays as it is; the others, if still unmarked, cite it.
+  const leaders = new Map<string, Incoming>()
+  for (const x of canonical) {
+    if (x.out === 'drop' || x.op === null) continue
+    const group = JSON.stringify([x.side, x.date, x.op.toString()])
+    const leader = leaders.get(group)
+    if (leader === undefined) leaders.set(group, x)
+    else if (x.out === null) x.out = leader.price
   }
 
   return {

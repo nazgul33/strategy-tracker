@@ -8,7 +8,7 @@ const msg = (outcome: VrCaptureOutcome, lang: Lang = 'en') => vrCaptureMessage({
 
 const HEAD = "VR run #100001 TQQQ: fills waiting: 3. Confirm on the run's Pending tab in the web app.";
 const DROPPED = 'Dropped as already booked, waiting or rejected: 2.';
-const POSSIBLE = 'Marked as possible duplicates: 1. Check the price before confirming.';
+const POSSIBLE = 'Marked as possible duplicates: 1. Check them before confirming.';
 
 describe('vrCaptureMessage in English', () => {
   test('fills waiting', () => {
