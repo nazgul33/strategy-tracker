@@ -52,6 +52,7 @@ import { simRouter } from './routes/sim'
 import { visionReviewRouter } from './routes/vision-review'
 import { capturesRouter } from './routes/captures'
 import { vrRouter } from './routes/vr'
+import { dashboardRouter } from './routes/dashboard'
 
 export function jsonBig(x: unknown): unknown {
   return JSON.parse(JSON.stringify(x, (_k, v) => typeof v === 'bigint' ? v.toString() : v))
@@ -79,6 +80,7 @@ export function createApp(deps: HttpDeps): Hono {
   app.route('/api', settingsRouter(deps))
   app.route('/api', notificationsRouter(deps))
   app.route('/api', capturesRouter(deps))
+  app.route('/api', dashboardRouter(deps))
   app.route('/api/sim', simRouter(deps))
   app.route('/api/vr', vrRouter(deps))
   app.post('/api/trigger/morning', async (c) => {
