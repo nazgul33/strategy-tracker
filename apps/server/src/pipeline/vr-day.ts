@@ -18,7 +18,9 @@ type Decision =
   | { kind: 'vr-cycle'; cycle: VrCycleRow; books: VrBooks; fills: VrFillRow[] }
 // Something is due this morning but there is no usable close to act on.
 const NEEDS_CLOSE = 'needs-close'
-type Outcome = Decision | typeof NEEDS_CLOSE | null
+// Something is due, but screenshot fills wait for a decision, so the books are not final.
+type Held = { kind: 'vr-held'; waiting: number }
+type Outcome = Decision | Held | typeof NEEDS_CLOSE | null
 
 /** Walks the active VR runs in ascending id; one run never takes the others down, and neither does a failing list. */
 export async function processVrRuns(deps: DayDeps, today: ISODate): Promise<{ completed: number; failed: number }> {
@@ -51,6 +53,11 @@ async function processVrRun(deps: DayDeps, listed: VrRunRow, today: ISODate): Pr
     })
     if (!step) return 'completed'
     const { run, outcome } = step
+    if (outcome !== null && typeof outcome === 'object' && outcome.kind === 'vr-held') {
+      const text = t('vr-cycle-held', deps.digestLang, { name: run.name, ticker: run.ticker, n: outcome.waiting })
+      await notifyDay(deps, run.id, text, 'vr-held')
+      return 'completed'
+    }
     if (outcome === NEEDS_CLOSE) {
       await notifyDay(deps, run.id, t('vr-warn-data-error', deps.digestLang, { id: run.id, ticker: run.ticker }), 'data-error')
       return 'failed'
@@ -72,6 +79,8 @@ async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, fetc
   const latest = await repos.vrCycleRepo.latest(run.id)
   const books = vrBooks(fills.map(toEngineFill), moves)
   const openFillId = fills.reduce((max, f) => Math.max(max, f.id), 0)
+  const waiting = await repos.vrPendingRepo.countPending(run.id)
+  const held: Held | null = waiting > 0 ? { kind: 'vr-held', waiting } : null
 
   const open = async (cycle: NewVrCycle, deposit: Omit<NewVrCashMove, 'cycleId'> | null): Promise<Decision> => {
     await repos.vrCycleRepo.open(cycle, deposit)
@@ -80,7 +89,9 @@ async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, fetc
     return { kind: 'vr-cycle', cycle: row, books, fills }
   }
 
+  // Waiting fills hold every step that acts on the books, before the close is looked at.
   if (!latest) {
+    if (held) return held
     if (!fetched) return NEEDS_CLOSE
     if (books.shares <= 0) return { kind: 'vr-buy', targetCents: run.initialVCents }
     const band = vrBand(run.initialVCents, run.bandPpm)
@@ -97,6 +108,7 @@ async function decide(repos: DayRepoSurface, run: VrRunRow, today: ISODate, fetc
   if (latest.startDate >= today) return null
   const due = cycleDue(latest.scheduledStart, today)
   if (!due && books.shares > 0) return null
+  if (held) return held
   if (!fetched) return NEEDS_CLOSE
   if (!due) return { kind: 'vr-buy', targetCents: latest.vCents }
 

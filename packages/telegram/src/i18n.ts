@@ -199,6 +199,10 @@ export const CATALOG: Record<string, MsgEntry> = {
     en: 'VR run error — the Value Rebalancing runs could not be loaded this morning; mean-reversion runs were processed as usual.',
     ko: 'VR 런 오류 — 오늘 아침 Value Rebalancing 런 목록을 불러오지 못했습니다. 평균 회귀 런은 평소대로 처리했습니다.',
   },
+  'vr-cycle-held': {
+    en: '{name}  {ticker} — VR: {n} screenshot fill(s) are waiting to be confirmed, so this morning\'s cycle step is held. Confirm or reject them on the run\'s Pending tab; the next morning run continues once none are waiting.',
+    ko: '{name}  {ticker} — VR: 스크린샷 체결 {n}건이 확인을 기다리고 있어 오늘 아침 사이클 진행을 보류했습니다. 런 페이지의 \'확인 대기\' 탭에서 확정하거나 거부하세요. 대기 중인 체결이 없으면 다음 아침 실행에서 이어서 진행합니다.',
+  },
 }
 
 export function t(code: string, lang: Lang, params?: Record<string, string | number>): string {
