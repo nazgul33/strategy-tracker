@@ -149,3 +149,19 @@ describe('vr capture migration', () => {
     for (const m of text.matchAll(/(?:CREATE TABLE|ON) `(\w+)`/g)) expect(['vr_pending_fills', 'capture_choices']).toContain(m[1]!)
   })
 })
+
+describe('vr order price migration', () => {
+  const migrationsDir = fileURLToPath(new URL('../db/migrations/', import.meta.url))
+
+  test('0018 adds a nullable order_price to vr_fills and vr_pending_fills and nothing else', async () => {
+    const files = [...new Bun.Glob('0018_*.sql').scanSync({ cwd: migrationsDir })]
+    expect(files).toEqual(['0018_vr_order_price.sql'])
+    const text = await Bun.file(migrationsDir + files[0]).text()
+    const stmts = text.split('--> statement-breakpoint').map((s) => s.trim()).filter((s) => s !== '').sort()
+    expect(stmts).toEqual(['ALTER TABLE `vr_fills` ADD `order_price` bigint;', 'ALTER TABLE `vr_pending_fills` ADD `order_price` bigint;'])
+    expect(text).not.toMatch(/DROP|RENAME|MODIFY|CREATE/i)
+    const journal = (await Bun.file(`${migrationsDir}meta/_journal.json`).json()) as { entries: { when: number; tag: string }[] }
+    expect(journal.entries[18]?.tag).toBe('0018_vr_order_price')
+    expect(journal.entries[18]!.when).toBeGreaterThan(journal.entries[17]!.when)
+  })
+})

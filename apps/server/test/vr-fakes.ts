@@ -72,7 +72,7 @@ export function makeVrFakes(opts: { otherRuns?: () => SharedRunRow[] } = {}) {
   const vrFillRepo = {
     async listForRun(runId: number) { return fills.filter((f) => f.runId === runId).sort(byDateThenId((f) => f.filledOn)).map((f) => ({ ...f })) },
     async get(runId: number, id: number) { const f = fills.find((x) => x.id === id && x.runId === runId); return f ? { ...f } : null },
-    async insert(f: NewVrFill) { const id = nextId(fills); fills.push({ ...f, id, createdAt: FAKE_CREATED_AT }); return id },
+    async insert(f: NewVrFill) { const id = nextId(fills); fills.push({ ...f, orderPrice: f.orderPrice ?? null, id, createdAt: FAKE_CREATED_AT }); return id },
     async update(runId: number, id: number, p: VrFillPatch) {
       const f = fills.find((x) => x.id === id && x.runId === runId)
       if (f) Object.assign(f, { side: p.side, shares: p.shares, price: p.price, fee: p.fee, filledOn: p.filledOn })

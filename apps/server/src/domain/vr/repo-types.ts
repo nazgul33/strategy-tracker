@@ -46,8 +46,12 @@ export interface VrCycleRepo {
   open(cycle: NewVrCycle, deposit: Omit<NewVrCashMove, 'cycleId'> | null): Promise<number>
 }
 
-export interface VrFillRow { id: number; runId: number; side: 'buy' | 'sell'; shares: number; price: bigint; fee: number; filledOn: ISODate; source: 'manual' | 'capture'; createdAt: string }
-export type NewVrFill = Omit<VrFillRow, 'id' | 'createdAt'>
+export interface VrFillRow {
+  id: number; runId: number; side: 'buy' | 'sell'; shares: number; price: bigint; fee: number; filledOn: ISODate; source: 'manual' | 'capture'
+  orderPrice: bigint | null    // read from the screenshot; null for a typed fill or a view without one
+  createdAt: string
+}
+export type NewVrFill = Omit<VrFillRow, 'id' | 'createdAt' | 'orderPrice'> & { orderPrice?: bigint | null }
 export type VrFillPatch = Pick<VrFillRow, 'side' | 'shares' | 'price' | 'fee' | 'filledOn'>
 export interface VrFillRepo {
   /** Ascending filledOn, then id. */
@@ -74,6 +78,7 @@ export interface VrPendingRow {
   fee: number | null            // null = compute from the run's trade cost at confirm
   filledOn: ISODate; dateRead: boolean   // false = the screenshot had no date and the reading day was used
   dupPrice: bigint | null       // price of the booked or waiting entry this may duplicate
+  orderPrice: bigint | null     // read from the screenshot; null when the view has none or showed 0
   status: VrPendingStatus; createdAt: string
 }
 export type NewVrPending = Omit<VrPendingRow, 'id' | 'status' | 'createdAt'>

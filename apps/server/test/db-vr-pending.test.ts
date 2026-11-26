@@ -36,7 +36,7 @@ describeIf('db integration: VR pending fills and capture choices', () => {
   const newRun = () => repos.vrRunRepo.create(newVr())
   const newCapture = async (runId: number) => (await repos.captureRepo.insert({ runId, chatId: 'c', imageHash: 'h' + uniq(), status: 'parsed' })).id!
   const row = (runId: number, captureId: number, over: Partial<NewVrPending> = {}): NewVrPending =>
-    ({ runId, captureId, side: 'buy', shares: 3, price: 451_500n, fee: null, filledOn: '2026-11-03', dateRead: true, dupPrice: null, ...over })
+    ({ runId, captureId, side: 'buy', shares: 3, price: 451_500n, fee: null, filledOn: '2026-11-03', dateRead: true, dupPrice: null, orderPrice: null, ...over })
   const fill = (runId: number, over: Partial<NewVrFill> = {}): NewVrFill =>
     ({ runId, side: 'buy', shares: 3, price: 451_500n, fee: 3, filledOn: '2026-11-03', source: 'capture', ...over })
 
@@ -47,7 +47,7 @@ describeIf('db integration: VR pending fills and capture choices', () => {
     expect(await repos.vrPendingRepo.insertMany([])).toEqual([])
     const [late, early1, early2] = await repos.vrPendingRepo.insertMany([
       row(run, cap, { filledOn: '2026-11-09' }),
-      row(run, cap, { fee: 7, dupPrice: 444_000n }),
+      row(run, cap, { fee: 7, dupPrice: 444_000n, orderPrice: 443_900n }),
       row(run, cap, { dateRead: false }),
     ]) as [number, number, number]
     expect(late).toBeLessThan(early1)
@@ -57,13 +57,14 @@ describeIf('db integration: VR pending fills and capture choices', () => {
     const got = (await repos.vrPendingRepo.get(run, early1))!
     expect(got).toMatchObject({
       id: early1, runId: run, captureId: cap, side: 'buy', shares: 3, price: 451_500n, fee: 7,
-      filledOn: '2026-11-03', dateRead: true, dupPrice: 444_000n, status: 'pending',
+      filledOn: '2026-11-03', dateRead: true, dupPrice: 444_000n, orderPrice: 443_900n, status: 'pending',
     })
     expect(typeof got.price).toBe('bigint')
+    expect(typeof got.orderPrice).toBe('bigint')
     expect(typeof got.dupPrice).toBe('bigint')
-    expect(Object.keys(got).sort()).toEqual(['captureId', 'createdAt', 'dateRead', 'dupPrice', 'fee', 'filledOn', 'id', 'price', 'runId', 'shares', 'side', 'status'])
+    expect(Object.keys(got).sort()).toEqual(['captureId', 'createdAt', 'dateRead', 'dupPrice', 'fee', 'filledOn', 'id', 'orderPrice', 'price', 'runId', 'shares', 'side', 'status'])
     expect(got.createdAt).toMatch(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/)
-    expect(await repos.vrPendingRepo.get(run, early2)).toMatchObject({ fee: null, dupPrice: null, dateRead: false })
+    expect(await repos.vrPendingRepo.get(run, early2)).toMatchObject({ fee: null, dupPrice: null, dateRead: false, orderPrice: null })
 
     expect(await repos.vrPendingRepo.reject(run, late)).toBe(true)
     expect((await repos.vrPendingRepo.listForRun(run, 'pending')).map((r) => r.id)).toEqual([early1, early2])
@@ -79,11 +80,11 @@ describeIf('db integration: VR pending fills and capture choices', () => {
   test('update changes a pending row and refuses a decided one', async () => {
     const run = await newRun()
     const other = await newRun()
-    const [id] = await repos.vrPendingRepo.insertMany([row(run, await newCapture(run), { dateRead: false, dupPrice: 400_000n })]) as [number]
+    const [id] = await repos.vrPendingRepo.insertMany([row(run, await newCapture(run), { dateRead: false, dupPrice: 400_000n, orderPrice: 400_000n })]) as [number]
     const patch = { side: 'sell' as const, shares: 5, price: 462_500n, fee: 9, filledOn: '2026-11-04' }
     expect(await repos.vrPendingRepo.update(run, id, patch)).toBe(true)
     const after = (await repos.vrPendingRepo.get(run, id))!
-    expect(after).toMatchObject({ ...patch, dateRead: false, dupPrice: 400_000n, status: 'pending' })
+    expect(after).toMatchObject({ ...patch, dateRead: false, dupPrice: 400_000n, orderPrice: 400_000n, status: 'pending' })
     expect(await repos.vrPendingRepo.update(run, id, patch)).toBe(true)
 
     expect(await repos.vrPendingRepo.update(other, id, { ...patch, shares: 99 })).toBe(false)
@@ -101,9 +102,11 @@ describeIf('db integration: VR pending fills and capture choices', () => {
     const cap = await newCapture(run)
     const [id, id2, id3] = await repos.vrPendingRepo.insertMany([row(run, cap), row(run, cap), row(run, cap)]) as [number, number, number]
 
-    const fid = await repos.vrPendingRepo.confirm(run, id, fill(run))
+    const fid = await repos.vrPendingRepo.confirm(run, id, fill(run, { orderPrice: 443_900n }))
     expect(typeof fid).toBe('number')
-    expect(await repos.vrFillRepo.get(run, fid!)).toMatchObject({ source: 'capture', shares: 3, price: 451_500n, fee: 3 })
+    expect(await repos.vrFillRepo.get(run, fid!)).toMatchObject({ source: 'capture', shares: 3, price: 451_500n, fee: 3, orderPrice: 443_900n })
+    await repos.vrFillRepo.update(run, fid!, { side: 'buy', shares: 4, price: 451_500n, fee: 3, filledOn: '2026-11-03' })
+    expect(await repos.vrFillRepo.get(run, fid!)).toMatchObject({ shares: 4, orderPrice: 443_900n })
     expect((await repos.vrPendingRepo.get(run, id))!.status).toBe('confirmed')
 
     const fillsBefore = await repos.vrFillRepo.listForRun(run)
@@ -118,6 +121,7 @@ describeIf('db integration: VR pending fills and capture choices', () => {
     await expect(repos.vrPendingRepo.confirm(run, id3, fill(run, { shares: 2 ** 31 }))).rejects.toThrow()
     expect((await repos.vrPendingRepo.get(run, id3))!.status).toBe('pending')
     expect(await repos.vrFillRepo.listForRun(run)).toEqual(fillsBefore)
+    expect((await repos.vrFillRepo.get(run, await repos.vrFillRepo.insert({ ...fill(run), source: 'manual' })))!.orderPrice).toBeNull()
   })
 
   test('confirm refuses a fill for another run and writes nothing', async () => {

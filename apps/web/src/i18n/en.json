@@ -555,6 +555,7 @@
   "vr.colName": "Run",
   "vr.colOpenPool": "Opening Pool",
   "vr.colOpenShares": "Opening shares",
+  "vr.colOrderPrice": "Order price",
   "vr.colPool": "Pool",
   "vr.colShares": "Shares",
   "vr.colStatus": "Status",

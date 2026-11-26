@@ -46,6 +46,7 @@ export const vrFills = mysqlTable('vr_fills', {
   fee: int('fee').notNull(),
   filledOn: date('filled_on', { mode: 'string' }).notNull(),
   source: mysqlEnum('source', ['manual', 'capture']).notNull(),
+  orderPrice: bigint('order_price', { mode: 'bigint' }),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 }, (t) => ({
   runIdx: index('vr_fills_run_idx').on(t.runId),
@@ -75,6 +76,7 @@ export const vrPendingFills = mysqlTable('vr_pending_fills', {
   filledOn: date('filled_on', { mode: 'string' }).notNull(),
   dateRead: boolean('date_read').notNull(),
   dupPrice: bigint('dup_price', { mode: 'bigint' }),
+  orderPrice: bigint('order_price', { mode: 'bigint' }),
   status: mysqlEnum('status', ['pending', 'confirmed', 'rejected']).notNull().default('pending'),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
 }, (t) => ({

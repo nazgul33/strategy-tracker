@@ -2,7 +2,8 @@
  * VR screenshot intake step of the operator e2e, through the real HTTP app and the shared capture core, on runs of their own:
  *   VRCA  a pinned upload leaves three fills waiting (books untouched) -> the same screenshot is a duplicate -> confirm one,
  *         reject one, edit and confirm one (the screenshot goes with the last decision) -> the same screenshot is still a
- *         duplicate, a different one whose fills are all known drops them
+ *         duplicate, a different one whose fills are all known drops them -> a second screenshot of the day: the next rung's fill
+ *         waits unmarked and Confirm all books it; a fill with a booked fill's order price is marked (matched by order price)
  *   VRCB  a waiting fill holds the morning cycle step on a run with an opening buy and no cycle; confirm all leaves the
  *         undated row waiting; rejecting it lets the next morning run open cycle 1
  *   VRCM  one active mean-reversion run and one active VR run on a ticker: an un-pinned upload is "several active runs"
@@ -61,7 +62,7 @@ export async function checkVrCapture(c: E2eCtx, today: string, runMorning: () =>
   const rungPrice = BigInt(rung.price)
 
   // ---- 1. a pinned upload: three fills wait, nothing is booked ---------------
-  const f1: VisionFill = { side: 'buy', ticker: 'VRCA', shares: rung.shares, price: formatUsd(rungPrice), fee: '0.10', date: today } // the first rung
+  const f1: VisionFill = { side: 'buy', ticker: 'VRCA', shares: rung.shares, price: formatUsd(rungPrice), fee: '0.10', date: today, orderPrice: formatUsd(rungPrice) } // the first rung, with the order price of its ladder order
   const f2: VisionFill = { side: 'buy', ticker: 'VRCA', shares: 2, price: '170.00', fee: '0.05', date: prev } // an unrelated extra buy
   const f3: VisionFill = { side: 'buy', ticker: 'VRCA', shares: 4, price: '175.00' } // no date, no fee
   const readA = [f1, f2, f3]
@@ -74,6 +75,7 @@ export async function checkVrCapture(c: E2eCtx, today: string, runMorning: () =>
   c.ok(rows.length === 3 && rows.every((r) => r.captureId === capA && r.side === 'buy' && r.dupPrice === null && r.hasImage === true), `GET /api/vr/runs/:id/pending lists 3 waiting buys of one screenshot: ${JSON.stringify(rows.map((r) => [r.id, r.shares]))}`)
   c.ok(row(rung.shares)?.price === rung.price && row(rung.shares)?.fee === 10 && row(rung.shares)?.dateRead === true && row(rung.shares)?.filledOn === today,
     `the rung fill keeps price ${rung.price} (${formatUsd(rungPrice)}), fee 10c, date ${today} read`)
+  c.ok(row(rung.shares)?.orderPrice === rung.price && row(2)?.orderPrice === null, `the order price is kept on the rung fill (${rung.price}) and is null where the view had none`)
   c.ok(row(2)?.filledOn === prev && row(2)?.fee === 5 && row(2)?.dateRead === true, `the extra buy keeps its date ${prev}, fee 5c, dateRead true`)
   c.ok(row(4)?.dateRead === false && row(4)?.filledOn === today && row(4)?.fee === null && row(4)?.price === '1750000',
     `the undated fill: dateRead false, capture date ${today} used, no fee read, price 1750000`)
@@ -134,6 +136,22 @@ export async function checkVrCapture(c: E2eCtx, today: string, runMorning: () =>
     `a different screenshot of the booked fill and the rejected one -> waiting 0, dropped 2: ${JSON.stringify(known)}`)
   const d5 = await detail(a)
   c.ok(d5.pendingCount === 0 && d5.books.shares === 288 && d5.books.poolCents === 4_832_156, 'nothing waits and the books are unchanged: 288 sh, Pool 4832156c')
+
+  // ---- 5b. a second screenshot of the day is matched by order price ----------
+  const rung2 = d0.ladder.buy[1] // the same lot, the next rung
+  c.ok(rung2.shares === rung.shares, `the second buy rung has the same lot: ${rung2.shares}`)
+  const next = await upload([{ side: 'buy', ticker: 'VRCA', shares: rung2.shares, price: formatUsd(BigInt(rung2.price)), date: today, orderPrice: formatUsd(BigInt(rung2.price)) }],
+    pngOf('e2e-vr-capture-a3', 'vr-a3.png'), a)
+  c.ok(JSON.stringify(next) === outcomeOf(a, 'VRCA', { waiting: 1, dropped: 0, possibleDuplicates: 0 }), `a second screenshot of the day with the next rung's fill -> waiting 1, not marked: ${JSON.stringify(next)}`)
+  const allA = await call('POST', `/vr/runs/${a}/pending/confirm-all`, {})
+  c.ok(allA.status === 200 && JSON.stringify(await jsonOf(allA)) === JSON.stringify({ confirmed: 1, refused: [], skippedDuplicates: 0, skippedUndated: 0 }), 'confirm all books it: confirmed 1')
+  c.ok((await detail(a)).books.shares === 288 + rung2.shares, `VRCA holds ${288 + rung2.shares} sh`)
+  const misread = await upload([{ side: 'buy', ticker: 'VRCA', shares: rung.shares, price: formatUsd(rungPrice - 100n), date: today, orderPrice: formatUsd(rungPrice) }],
+    pngOf('e2e-vr-capture-a4', 'vr-a4.png'), a)
+  c.ok(JSON.stringify(misread) === outcomeOf(a, 'VRCA', { waiting: 1, dropped: 0, possibleDuplicates: 1 }), `a fill with the booked rung fill's order price and another price -> marked: ${JSON.stringify(misread)}`)
+  const [marked] = await pendingOf(a)
+  c.ok(marked?.dupPrice === rung.price && marked.orderPrice === rung.price, `it cites ${rung.price} and carries order price ${rung.price}`)
+  c.ok((await call('POST', `/vr/runs/${a}/pending/${marked.id}/reject`, {})).status === 204, 'reject it: nothing waits on VRCA again')
 
   // ---- 6. the hold: waiting fills stop the morning cycle step ----------------
   const b = await createVr('E2E VR held', 'VRCB', 1_000_000)

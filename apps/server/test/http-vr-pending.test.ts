@@ -13,7 +13,7 @@ async function withRun() {
   const id = await newVrRun(s)
   const base = `/api/vr/runs/${id}/pending`
   const seed = async (over: Partial<NewVrPending> = {}, image = true) => {
-    const row: NewVrPending = { runId: id, captureId: 7, side: 'buy', shares: 10, price: 451_500n, fee: null, filledOn: '2026-11-09', dateRead: true, dupPrice: null, ...over }
+    const row: NewVrPending = { runId: id, captureId: 7, side: 'buy', shares: 10, price: 451_500n, fee: null, filledOn: '2026-11-09', dateRead: true, dupPrice: null, orderPrice: null, ...over }
     const [pid] = await s.f.repos.vrPendingRepo.insertMany([row])
     if (image) await s.f.repos.captureImageRepo.insertIgnore({ captureId: row.captureId, mime: 'image/png', bytes: Buffer.from('x'), byteLen: 1 })
     return pid!
@@ -24,19 +24,19 @@ async function withRun() {
 describe('GET /api/vr/runs/:id/pending', () => {
   test('waiting rows only, ascending date then id, in the exact wire shape', async () => {
     const s = await withRun()
-    const late = await s.seed({ filledOn: '2026-11-11', dupPrice: 443_900n })
+    const late = await s.seed({ filledOn: '2026-11-11', dupPrice: 443_900n, orderPrice: 443_900n })
     const early = await s.seed({ filledOn: '2026-11-02', captureId: 8, fee: 32 }, false)
     const rejected = await s.seed({ filledOn: '2026-11-01' }, false)
     await s.req('POST', `${s.base}/${rejected}/reject`)
     const res = await s.req('GET', s.base)
     expect(res.status).toBe(200)
     expect(res.body.map((r: { id: number }) => r.id)).toEqual([early, late])
-    expect(Object.keys(res.body[0]).sort()).toEqual(['captureId', 'createdAt', 'dateAfterToday', 'dateRead', 'dupPrice', 'fee', 'filledOn', 'hasImage', 'id', 'price', 'shares', 'side'])
+    expect(Object.keys(res.body[0]).sort()).toEqual(['captureId', 'createdAt', 'dateAfterToday', 'dateRead', 'dupPrice', 'fee', 'filledOn', 'hasImage', 'id', 'orderPrice', 'price', 'shares', 'side'])
     expect(res.body[0]).toEqual({
       id: early, captureId: 8, side: 'buy', shares: 10, price: '451500', fee: 32, filledOn: '2026-11-02', dateRead: true, dateAfterToday: false,
-      dupPrice: null, hasImage: false, createdAt: expect.any(String),
+      dupPrice: null, orderPrice: null, hasImage: false, createdAt: expect.any(String),
     })
-    expect(res.body[1]).toMatchObject({ id: late, dateAfterToday: true, hasImage: true, dupPrice: '443900', fee: null })
+    expect(res.body[1]).toMatchObject({ id: late, dateAfterToday: true, hasImage: true, dupPrice: '443900', orderPrice: '443900', fee: null })
   })
 
   test('an empty run answers an empty list', async () => {
@@ -131,7 +131,7 @@ describe('run and row scoping, authentication', () => {
   test("another run's pending id answers 404 on PUT, confirm and reject", async () => {
     const s = await withRun()
     const other = await newVrRun(s, { name: 'other' })
-    const [foreign] = await s.f.repos.vrPendingRepo.insertMany([{ runId: other, captureId: 9, side: 'buy', shares: 1, price: 10_000n, fee: 0, filledOn: '2026-11-09', dateRead: true, dupPrice: null }])
+    const [foreign] = await s.f.repos.vrPendingRepo.insertMany([{ runId: other, captureId: 9, side: 'buy', shares: 1, price: 10_000n, fee: 0, filledOn: '2026-11-09', dateRead: true, dupPrice: null, orderPrice: null }])
     expect(await s.req('PUT', `${s.base}/${foreign}`, GOOD)).toEqual(NOT_FOUND)
     expect(await s.req('POST', `${s.base}/${foreign}/confirm`)).toEqual(NOT_FOUND)
     expect(await s.req('POST', `${s.base}/${foreign}/reject`)).toEqual(NOT_FOUND)

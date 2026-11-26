@@ -142,6 +142,8 @@ export interface VrPendingDto {
   side: VrSide;
   shares: number;
   price: string;
+  /** The order price read from the screenshot (ten-thousandths); null when the view has none or showed 0. */
+  orderPrice: string | null;
   /** null = computed from the run's cost when it is confirmed. */
   fee: number | null;
   filledOn: string;

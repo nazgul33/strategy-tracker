@@ -4,7 +4,7 @@ import { makeChoiceFakes } from './capture-choice-fakes'
 import { makeVrFakes } from './vr-fakes'
 
 const pendingRow = (runId: number, over: Partial<NewVrPending> = {}): NewVrPending =>
-  ({ runId, captureId: 1, side: 'buy', shares: 3, price: 451_500n, fee: null, filledOn: '2026-11-03', dateRead: true, dupPrice: null, ...over })
+  ({ runId, captureId: 1, side: 'buy', shares: 3, price: 451_500n, fee: null, filledOn: '2026-11-03', dateRead: true, dupPrice: null, orderPrice: null, ...over })
 const fillFor = (runId: number, over: Partial<NewVrFill> = {}): NewVrFill =>
   ({ runId, side: 'buy', shares: 3, price: 451_500n, fee: 3, filledOn: '2026-11-03', source: 'capture', ...over })
 

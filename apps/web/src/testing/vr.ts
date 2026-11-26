@@ -126,15 +126,15 @@ export const VR_FILLS: VrFillDto[] = [
 
 /** Waiting rows, ascending date as the server sends them. 33 had no date in the screenshot; 34 is dated after today. */
 export const VR_PENDING: VrPendingDto[] = [
-  { id: 31, captureId: 9, side: 'buy', shares: 3, price: '443900', fee: null, filledOn: '2026-12-08', dateRead: true, dateAfterToday: false, dupPrice: null, hasImage: true, createdAt: '2026-12-09 08:00:00' },
-  { id: 32, captureId: 9, side: 'buy', shares: 3, price: '444000', fee: 9, filledOn: '2026-12-08', dateRead: true, dateAfterToday: false, dupPrice: '443900', hasImage: true, createdAt: '2026-12-09 08:00:00' },
-  { id: 33, captureId: 9, side: 'sell', shares: 2, price: '611000', fee: null, filledOn: '2026-12-09', dateRead: false, dateAfterToday: false, dupPrice: null, hasImage: false, createdAt: '2026-12-09 08:00:00' },
-  { id: 34, captureId: 10, side: 'buy', shares: 3, price: '436600', fee: null, filledOn: '2026-12-10', dateRead: true, dateAfterToday: true, dupPrice: null, hasImage: true, createdAt: '2026-12-09 08:05:00' },
+  { id: 31, captureId: 9, side: 'buy', shares: 3, price: '443900', fee: null, filledOn: '2026-12-08', dateRead: true, dateAfterToday: false, dupPrice: null, orderPrice: '443900', hasImage: true, createdAt: '2026-12-09 08:00:00' },
+  { id: 32, captureId: 9, side: 'buy', shares: 3, price: '444000', fee: 9, filledOn: '2026-12-08', dateRead: true, dateAfterToday: false, dupPrice: '443900', orderPrice: null, hasImage: true, createdAt: '2026-12-09 08:00:00' },
+  { id: 33, captureId: 9, side: 'sell', shares: 2, price: '611000', fee: null, filledOn: '2026-12-09', dateRead: false, dateAfterToday: false, dupPrice: null, orderPrice: null, hasImage: false, createdAt: '2026-12-09 08:00:00' },
+  { id: 34, captureId: 10, side: 'buy', shares: 3, price: '436600', fee: null, filledOn: '2026-12-10', dateRead: true, dateAfterToday: true, dupPrice: null, orderPrice: '436600', hasImage: true, createdAt: '2026-12-09 08:05:00' },
 ];
 
 /** A reading with a price finer than a cent and a fee of exactly $0.00 (not "auto"). */
 export const VR_PENDING_FINE: VrPendingDto = {
-  id: 35, captureId: 11, side: 'buy', shares: 3, price: '443912', fee: 0, filledOn: '2026-12-08', dateRead: true, dateAfterToday: false, dupPrice: null, hasImage: true, createdAt: '2026-12-09 08:10:00',
+  id: 35, captureId: 11, side: 'buy', shares: 3, price: '443912', fee: 0, filledOn: '2026-12-08', dateRead: true, dateAfterToday: false, dupPrice: null, orderPrice: '443912', hasImage: true, createdAt: '2026-12-09 08:10:00',
 };
 
 export const VR_CASH: VrCashDto[] = [

@@ -16,7 +16,7 @@ const cycle: VrCycleRow = {
 const open: VrCashMoveRow = { id: 1, runId: 1, kind: 'open', amountCents: 1_000_000, movedOn: '2026-10-29', note: null, cycleId: null, createdAt: FAKE_CREATED_AT }
 let nextId = 1
 const fill = (side: 'buy' | 'sell', shares: number, price: bigint, fee: number, filledOn: string): VrFillRow =>
-  ({ id: nextId++, runId: 1, side, shares, price, fee, filledOn, source: 'manual', createdAt: FAKE_CREATED_AT })
+  ({ id: nextId++, runId: 1, side, shares, price, fee, filledOn, source: 'manual', orderPrice: null, createdAt: FAKE_CREATED_AT })
 const earlier = () => fill('buy', 176, 511_300n, 112, '2026-10-30')
 const inCycleBuy = (shares = 3, fee = 9) => fill('buy', shares, 451_500n, fee, '2026-11-04')
 const lastClose = { date: '2026-11-09', close: 460_000n }

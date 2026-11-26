@@ -150,7 +150,7 @@ export function getVrRepos(db: Db) {
         for (const r of rows) {
           const [res] = await tx.insert(s.vrPendingFills).values({
             runId: r.runId, captureId: r.captureId, side: r.side, shares: r.shares, price: r.price, fee: r.fee,
-            filledOn: r.filledOn, dateRead: r.dateRead, dupPrice: r.dupPrice,
+            filledOn: r.filledOn, dateRead: r.dateRead, dupPrice: r.dupPrice, orderPrice: r.orderPrice,
           })
           ids.push(res.insertId)
         }

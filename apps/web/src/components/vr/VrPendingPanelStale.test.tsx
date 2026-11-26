@@ -214,11 +214,12 @@ describe('VrPendingPanel after a request that was not simply refused', () => {
       await mount();
     };
 
-    it('shows the price in full and a fee of $0.00 instead of auto', async () => {
+    it('shows the price and the order price in full and a fee of $0.00 instead of auto', async () => {
       await mountFine();
       const cells = rows()[0]!;
       expect(cells[3]).toBe('$44.3912');
-      expect(cells[4]).toBe('$0.00');
+      expect(cells[4]).toBe('$44.3912');
+      expect(cells[5]).toBe('$0.00');
     });
 
     it('shows a possible duplicate\'s price in full', async () => {

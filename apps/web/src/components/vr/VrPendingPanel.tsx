@@ -128,6 +128,7 @@ export function VrPendingPanel({ runId, costPpm, onChanged }: VrPanelProps) {
                 <Th>{t('fillColSide')}</Th>
                 <Th className="text-right">{t('vr.colShares')}</Th>
                 <Th className="text-right">{t('fillColPrice')}</Th>
+                <Th className="text-right">{t('vr.colOrderPrice')}</Th>
                 <Th className="text-right">{t('fillColFee')}</Th>
                 <Th>{t('pendingColScreenshot')}</Th>
                 <Th>{t('fillColNote')}</Th>
@@ -145,6 +146,7 @@ export function VrPendingPanel({ runId, costPpm, onChanged }: VrPanelProps) {
                   </Td>
                   <Td className={NUM}>{r.shares}</Td>
                   <Td className={NUM}>{readPriceUsd(r.price)}</Td>
+                  <Td className={NUM}>{r.orderPrice === null ? '' : readPriceUsd(r.orderPrice)}</Td>
                   <Td className={NUM}>{r.fee === null ? t('pendingFeeAuto') : centsUsd(r.fee)}</Td>
                   <Td>
                     {r.hasImage ? (

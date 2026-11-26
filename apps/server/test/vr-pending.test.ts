@@ -15,7 +15,7 @@ async function setup() {
   const run = (await s.f.repos.vrRunRepo.get(id))!
   const deps = { repos: s.f.repos, today: TODAY }
   const seed = async (over: Partial<NewVrPending> = {}, withImage = true) => {
-    const row: NewVrPending = { runId: id, captureId: 7, side: 'buy', shares: 10, price: 451_500n, fee: null, filledOn: '2026-11-09', dateRead: true, dupPrice: null, ...over }
+    const row: NewVrPending = { runId: id, captureId: 7, side: 'buy', shares: 10, price: 451_500n, fee: null, filledOn: '2026-11-09', dateRead: true, dupPrice: null, orderPrice: null, ...over }
     const [pid] = await s.f.repos.vrPendingRepo.insertMany([row])
     if (withImage) await s.f.repos.captureImageRepo.insertIgnore({ captureId: row.captureId, ...IMAGE })
     return pid!
@@ -32,17 +32,17 @@ const code = async (p: Promise<unknown>) => {
 describe('confirmVrPending', () => {
   test('books a capture fill with the computed fee, confirms the row and returns the fill id', async () => {
     const t = await setup()
-    const pid = await t.seed()
+    const pid = await t.seed({ orderPrice: 443_900n })
     const fillId = await confirmVrPending(t.run, pid, t.deps)
     expect(t.s.f.vr.fills).toHaveLength(1)
-    expect(t.s.f.vr.fills[0]).toMatchObject({ id: fillId, runId: t.id, side: 'buy', shares: 10, price: 451_500n, filledOn: '2026-11-09', source: 'capture', fee: feeCents(451_500n, 10, 700) })
+    expect(t.s.f.vr.fills[0]).toMatchObject({ id: fillId, runId: t.id, side: 'buy', shares: 10, price: 451_500n, filledOn: '2026-11-09', source: 'capture', fee: feeCents(451_500n, 10, 700), orderPrice: 443_900n })
     expect(await t.status(pid)).toBe('confirmed')
   })
 
   test('a fee that was read is used as it is', async () => {
     const t = await setup()
     await confirmVrPending(t.run, await t.seed({ fee: 32 }), t.deps)
-    expect(t.s.f.vr.fills[0]!.fee).toBe(32)
+    expect(t.s.f.vr.fills.map((f) => [f.fee, f.orderPrice])).toEqual([[32, null]])
     await confirmVrPending(t.run, await t.seed({ fee: 0, captureId: 8 }), t.deps)
     expect(t.s.f.vr.fills[1]!.fee).toBe(0)
   })
@@ -61,7 +61,7 @@ describe('confirmVrPending', () => {
     const t = await setup()
     expect(await code(confirmVrPending(t.run, 999, t.deps))).toBeInstanceOf(VrNotFoundError)
     const other = await newVrRun(t.s, { name: 'other' })
-    const foreign = (await t.s.f.repos.vrPendingRepo.insertMany([{ runId: other, captureId: 9, side: 'buy', shares: 1, price: 1n, fee: 0, filledOn: TODAY, dateRead: true, dupPrice: null }]))[0]!
+    const foreign = (await t.s.f.repos.vrPendingRepo.insertMany([{ runId: other, captureId: 9, side: 'buy', shares: 1, price: 1n, fee: 0, filledOn: TODAY, dateRead: true, dupPrice: null, orderPrice: null }]))[0]!
     expect(await code(confirmVrPending(t.run, foreign, t.deps))).toBeInstanceOf(VrNotFoundError)
     const pid = await t.seed()
     await confirmVrPending(t.run, pid, t.deps)
@@ -160,11 +160,11 @@ describe('confirmVrPending: a failure after the commit', () => {
 describe('editVrPending', () => {
   const GOOD = { side: 'sell', shares: 4, price: '61.10', fee: '0.50', filledOn: '2026-11-08' }
 
-  test('stores the typed values (USD strings), keeps dupPrice and dateRead', async () => {
+  test('stores the typed values (USD strings), keeps dupPrice, dateRead and the order price', async () => {
     const t = await setup()
-    const pid = await t.seed({ dupPrice: 443_900n, dateRead: false })
+    const pid = await t.seed({ dupPrice: 443_900n, dateRead: false, orderPrice: 443_900n })
     await editVrPending(t.run, pid, GOOD, t.deps)
-    expect(await t.s.f.repos.vrPendingRepo.get(t.id, pid)).toMatchObject({ side: 'sell', shares: 4, price: 611_000n, fee: 50, filledOn: '2026-11-08', dupPrice: 443_900n, dateRead: false, status: 'pending' })
+    expect(await t.s.f.repos.vrPendingRepo.get(t.id, pid)).toMatchObject({ side: 'sell', shares: 4, price: 611_000n, fee: 50, filledOn: '2026-11-08', dupPrice: 443_900n, dateRead: false, orderPrice: 443_900n, status: 'pending' })
   })
 
   test('an empty, null or absent fee is stored as null', async () => {
@@ -242,7 +242,7 @@ describe('listVrPending', () => {
     const rows = await listVrPending(t.run, t.deps)
     expect(rows.map((r) => r.id)).toEqual([early, late])
     expect(rows.map((r) => [r.dateAfterToday, r.hasImage])).toEqual([[false, false], [true, true]])
-    expect(rows[0]).toEqual({ id: early, captureId: 8, side: 'buy', shares: 10, price: 451_500n, fee: null, filledOn: '2026-11-02', dateRead: true, dupPrice: null, dateAfterToday: false, hasImage: false, createdAt: expect.any(String) })
+    expect(rows[0]).toEqual({ id: early, captureId: 8, side: 'buy', shares: 10, price: 451_500n, fee: null, filledOn: '2026-11-02', dateRead: true, dupPrice: null, orderPrice: null, dateAfterToday: false, hasImage: false, createdAt: expect.any(String) })
   })
 })
 

@@ -94,17 +94,22 @@ describe('VrPendingPanel', () => {
     expect(byId('vrPendingPanel')!.getAttribute('data-run-id')).toBe('5');
     const r = rows();
     expect(r).toHaveLength(4);
-    const cut = (row: string[]) => [...row.slice(0, 5), row[6]];
-    expect(cut(r[0]!)).toEqual(['2026-12-08', 'Buy', '3', '$44.39', 'auto', '']);
-    expect(cut(r[1]!)).toEqual(['2026-12-08', 'Buy', '3', '$44.40', '$0.09', 'possible duplicate of $44.39']);
-    expect(cut(r[2]!)).toEqual(['2026-12-09', 'Sell', '2', '$61.10', 'auto', 'date not in the screenshot']);
-    expect(cut(r[3]!)).toEqual(['2026-12-10', 'Buy', '3', '$43.66', 'auto', 'dated after today']);
+    const cut = (row: string[]) => [...row.slice(0, 6), row[7]];
+    expect(cut(r[0]!)).toEqual(['2026-12-08', 'Buy', '3', '$44.39', '$44.39', 'auto', '']);
+    expect(cut(r[1]!)).toEqual(['2026-12-08', 'Buy', '3', '$44.40', '', '$0.09', 'possible duplicate of $44.39']);
+    expect(cut(r[2]!)).toEqual(['2026-12-09', 'Sell', '2', '$61.10', '', 'auto', 'date not in the screenshot']);
+    expect(cut(r[3]!)).toEqual(['2026-12-10', 'Buy', '3', '$43.66', '$43.66', 'auto', 'dated after today']);
+  });
+
+  it('has the order price column right after the price', () => {
+    const heads = [...container.querySelectorAll('thead th')].map((th) => th.textContent);
+    expect(heads.slice(3, 6)).toEqual(['Price', 'Order price', 'Fee']);
   });
 
   it('shows the screenshot of a row that still has one, and a dash otherwise', () => {
     expect(rowEl(0).querySelector('img')!.getAttribute('src')).toBe('/api/captures/9/image');
     expect(rowEl(2).querySelector('img')).toBeNull();
-    expect(rows()[2]![5]).toBe('—');
+    expect(rows()[2]![6]).toBe('—');
   });
 
   it('puts each mark in its own test id', () => {

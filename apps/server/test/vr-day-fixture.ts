@@ -48,7 +48,7 @@ export const sell = (f: Fakes, runId: number, shares: number, price: bigint, on:
 /** Screenshot fills waiting for a decision; returns their ids. */
 export const waitingFill = (f: Fakes, runId: number, n: number) =>
   f.repos.vrPendingRepo.insertMany(Array.from({ length: n }, () => ({
-    runId, captureId: 1, side: 'buy' as const, shares: 1, price: 500_000n, fee: null, filledOn: '2026-12-04', dateRead: true, dupPrice: null,
+    runId, captureId: 1, side: 'buy' as const, shares: 1, price: 500_000n, fee: null, filledOn: '2026-12-04', dateRead: true, dupPrice: null, orderPrice: null,
   })))
 
 export function cycle1(runId: number, over: Partial<NewVrCycle> = {}): NewVrCycle {

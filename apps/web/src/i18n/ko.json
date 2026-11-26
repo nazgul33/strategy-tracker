@@ -555,6 +555,7 @@
   "vr.colName": "런",
   "vr.colOpenPool": "시작 Pool",
   "vr.colOpenShares": "시작 보유 수량",
+  "vr.colOrderPrice": "주문단가",
   "vr.colPool": "Pool",
   "vr.colShares": "보유 수량",
   "vr.colStatus": "상태",

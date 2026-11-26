@@ -37,7 +37,7 @@ export async function listVrPending(run: VrRunRow, deps: VrPendingDeps): Promise
   const withImage = await deps.repos.captureImageRepo.existingIds([...new Set(rows.map((r) => r.captureId))])
   return rows.map((r) => ({
     id: r.id, captureId: r.captureId, side: r.side, shares: r.shares, price: r.price, fee: r.fee, filledOn: r.filledOn, dateRead: r.dateRead,
-    dateAfterToday: r.filledOn > deps.today, dupPrice: r.dupPrice, hasImage: withImage.has(r.captureId), createdAt: r.createdAt,
+    dateAfterToday: r.filledOn > deps.today, dupPrice: r.dupPrice, orderPrice: r.orderPrice, hasImage: withImage.has(r.captureId), createdAt: r.createdAt,
   }))
 }
 
@@ -59,7 +59,7 @@ export function confirmVrPending(run: VrRunRow, id: number, deps: VrPendingDeps)
       side: row.side, shares: row.shares, price: formatUsd(row.price), fee: row.fee === null ? undefined : formatUsd(BigInt(row.fee) * 100n), filledOn: row.filledOn,
     }, run.costPpm)
     await checkNewVrFill(run.id, patch, deps)
-    const fillId = await deps.repos.vrPendingRepo.confirm(run.id, id, { runId: run.id, ...patch, source: 'capture' })
+    const fillId = await deps.repos.vrPendingRepo.confirm(run.id, id, { runId: run.id, ...patch, source: 'capture', orderPrice: row.orderPrice })
     if (fillId === null) throw new DomainError('vr-not-pending')
     await dropImageIfDone(row.captureId, deps)
     return fillId

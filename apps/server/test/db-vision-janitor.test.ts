@@ -160,7 +160,7 @@ describeIf('vision janitor (db)', () => {
     return { runId, captureId: ins.id! }
   }
   const vrPending = async (runId: number, captureId: number) => (await repos.vrPendingRepo.insertMany([
-    { runId, captureId, side: 'buy', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', dateRead: true, dupPrice: null },
+    { runId, captureId, side: 'buy', shares: 1, price: 100n, fee: null, filledOn: '2026-02-10', dateRead: true, dupPrice: null, orderPrice: null },
   ]))[0]!
 
   test('sweepOrphans keeps an unkept image while a VR pending row is waiting', async () => {

@@ -1,9 +1,8 @@
 import { describe, test, expect } from 'bun:test'
 import { DEFAULT_VR_SETTINGS } from '@st/strategies/value-rebalancing'
 import type { RawFill } from '@st/ingest'
-import { dropExactMatches } from '../src/domain/capture-dedup'
 import { ingestVrCapture } from '../src/domain/vr/capture'
-import { confirmVrPending, editVrPending, rejectVrPending } from '../src/domain/vr/pending'
+import { confirmAllVrPending, confirmVrPending, editVrPending, rejectVrPending } from '../src/domain/vr/pending'
 import { fakeRepos } from './booking-fakes'
 import { makeFakes } from './http-fakes'
 
@@ -29,17 +28,17 @@ describe('ingestVrCapture: first take-in', () => {
   test('three fills become three waiting rows with fee, date and dateRead, and the image is stored', async () => {
     const s = await setup()
     const out = await s.take(img(1), [
-      fill({ price: '45.15', fee: '0.32', date: '2026-11-09' }),
-      fill({ price: '44.39' }),
+      fill({ price: '45.15', fee: '0.32', date: '2026-11-09', orderPrice: '45.15' }),
+      fill({ price: '44.39', orderPrice: '0.0000' }),
       fill({ side: 'sell', shares: 2, price: '61.10', date: undefined }),
     ])
     expect(out).toEqual({ waiting: 3, dropped: 0, possibleDuplicates: 0 })
     const rows = await s.rows('pending')
     expect(rows).toHaveLength(3)
-    expect(rows.map((r) => ({ side: r.side, shares: r.shares, price: r.price, fee: r.fee, filledOn: r.filledOn, dateRead: r.dateRead, dupPrice: r.dupPrice, runId: r.runId }))).toEqual([
-      { side: 'buy', shares: 3, price: 451_500n, fee: 32, filledOn: '2026-11-09', dateRead: true, dupPrice: null, runId: s.runId },
-      { side: 'buy', shares: 3, price: 443_900n, fee: null, filledOn: '2026-11-09', dateRead: true, dupPrice: null, runId: s.runId },
-      { side: 'sell', shares: 2, price: 611_000n, fee: null, filledOn: TODAY, dateRead: false, dupPrice: null, runId: s.runId },
+    expect(rows.map((r) => ({ side: r.side, shares: r.shares, price: r.price, fee: r.fee, filledOn: r.filledOn, dateRead: r.dateRead, dupPrice: r.dupPrice, orderPrice: r.orderPrice, runId: r.runId }))).toEqual([
+      { side: 'buy', shares: 3, price: 451_500n, fee: 32, filledOn: '2026-11-09', dateRead: true, dupPrice: null, orderPrice: 451_500n, runId: s.runId },
+      { side: 'buy', shares: 3, price: 443_900n, fee: null, filledOn: '2026-11-09', dateRead: true, dupPrice: null, orderPrice: null, runId: s.runId },
+      { side: 'sell', shares: 2, price: 611_000n, fee: null, filledOn: TODAY, dateRead: false, dupPrice: null, orderPrice: null, runId: s.runId },
     ])
     expect(new Set(rows.map((r) => r.captureId)).size).toBe(1)
     expect(s.h.captureImages).toHaveLength(1)
@@ -182,34 +181,44 @@ describe('ingestVrCapture: duplicates against the books and waiting rows', () =>
   })
 })
 
-describe('dropExactMatches', () => {
-  const ex = (over: Record<string, unknown> = {}) => ({ side: 'buy' as const, ticker: 'TQQQ', shares: 3, price: 443_900n, filledOn: '2026-11-09', ...over })
+describe('ingestVrCapture: the order price', () => {
+  const rung = (p: string) => fill({ price: p, orderPrice: p })
+  const plain = (p: string) => fill({ price: p })
 
-  test('each existing entry cancels one fill: two entries against three equal fills drop two and keep one', () => {
-    const fills = [fill(), fill(), fill()]
-    const r = dropExactMatches([ex(), ex()], fills, TODAY)
-    expect(r.dropped).toBe(2)
-    expect(r.kept).toEqual([fills[2]!])
-    expect(r.kept[0]).toBe(fills[2]!)
+  test('a second screenshot of the same ladder day: the new rung fills wait unmarked and Confirm all books them', async () => {
+    const s = await setup()
+    expect(await s.take(img(1), [rung('44.39'), rung('43.66'), rung('42.95')])).toEqual({ waiting: 3, dropped: 0, possibleDuplicates: 0 })
+    expect(await s.take(img(2), [rung('42.95'), rung('42.26'), rung('41.59')])).toEqual({ waiting: 2, dropped: 1, possibleDuplicates: 0 })
+    expect(await confirmAllVrPending(s.run, s.deps)).toEqual({ confirmed: 5, refused: [], skippedDuplicates: 0, skippedUndated: 0 })
+    expect(s.h.vr.fills.map((f) => f.orderPrice)).toEqual([443_900n, 436_600n, 429_500n, 422_600n, 415_900n])
   })
 
-  test('a missing date counts as today', () => {
-    expect(dropExactMatches([ex({ filledOn: TODAY })], [fill({ date: undefined })], TODAY)).toEqual({ kept: [], dropped: 1 })
-    expect(dropExactMatches([ex({ filledOn: '2026-11-09' })], [fill({ date: undefined })], TODAY).dropped).toBe(0)
+  test('the same fills without order prices are marked, as before', async () => {
+    const s = await setup()
+    expect(await s.take(img(1), [plain('44.39'), plain('43.66'), plain('42.95')])).toEqual({ waiting: 3, dropped: 0, possibleDuplicates: 0 })
+    expect(await s.take(img(2), [plain('42.95'), plain('42.26'), plain('41.59')])).toEqual({ waiting: 2, dropped: 1, possibleDuplicates: 2 })
   })
 
-  test('a bigint price matches the extracted text in either spelling', () => {
-    expect(dropExactMatches([ex()], [fill({ price: '44.39' })], TODAY).dropped).toBe(1)
-    expect(dropExactMatches([ex()], [fill({ price: '44.3900' })], TODAY).dropped).toBe(1)
+  test('a corrected row matches what is read later: the right read is dropped, a repeated misread is marked', async () => {
+    const s = await setup()
+    await s.take(img(1), [fill({ price: '44.30', orderPrice: '44.39' })])
+    const [row] = await s.rows('pending')
+    await editVrPending(s.run, row!.id, { side: 'buy', shares: 3, price: '44.39', filledOn: '2026-11-09' }, s.deps)
+    await confirmVrPending(s.run, row!.id, s.deps)
+    expect(await s.take(img(2), [fill({ price: '44.39', orderPrice: '44.39' })])).toEqual({ waiting: 0, dropped: 1, possibleDuplicates: 0 })
+    expect(await s.take(img(3), [fill({ price: '44.30', orderPrice: '44.39' })])).toEqual({ waiting: 1, dropped: 0, possibleDuplicates: 1 })
   })
 
-  test('another ticker, side, shares, price or date is kept', () => {
-    const fills = [fill({ ticker: 'SOXL' }), fill({ side: 'sell' }), fill({ shares: 4 }), fill({ price: '44.40' }), fill({ date: '2026-11-08' })]
-    expect(dropExactMatches([ex()], fills, TODAY)).toEqual({ kept: fills, dropped: 0 })
+  test('a rejected fill read again with another order price is marked, not a plain row', async () => {
+    const s = await setup()
+    await s.take(img(1), [fill({ orderPrice: '44.39' })])
+    await rejectVrPending(s.run, (await s.rows('pending'))[0]!.id, s.deps)
+    expect(await s.take(img(2), [fill({ orderPrice: '44.30' })])).toEqual({ waiting: 1, dropped: 0, possibleDuplicates: 1 })
   })
 
-  test('nothing existing drops nothing', () => {
-    const fills = [fill()]
-    expect(dropExactMatches([], fills, TODAY)).toEqual({ kept: fills, dropped: 0 })
+  test('a typed fill has no order price: the same fill from a screenshot is dropped', async () => {
+    const s = await setup()
+    await s.book('buy', 3, 443_900n, '2026-11-09')
+    expect(await s.take(img(1), [rung('44.39')])).toEqual({ waiting: 0, dropped: 1, possibleDuplicates: 0 })
   })
 })
