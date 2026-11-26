@@ -40,6 +40,7 @@ export type ApiErrorCode =
   | 'vr-negative-shares'
   | 'vr-too-large'
   | 'vr-open-required'
+  | 'vr-not-pending'
   | 'invalid-side'
   | 'invalid-price'
   | 'invalid-fee'

@@ -1,4 +1,4 @@
-// Tiny hash router: #/runs, #/runs/:id, #/vr, #/vr/:id, #/pending, #/vision-review, #/sim, #/sim/:id,
+// Tiny hash router: #/runs, #/runs/:id, #/vr, #/vr/:id[?tab=pending], #/pending, #/vision-review, #/sim, #/sim/:id,
 // #/settings, #/login. Auth = a token in sessionStorage; without one every
 // page (except login) redirects to #/login.
 import { useEffect } from 'react';
@@ -37,7 +37,10 @@ function pageFor(route: Route) {
     case 'vrRuns':
       return { node: <VrRunsPage />, nav: 'vr' as const };
     case 'vrRun':
-      return { node: <VrRunPage key={route.id} id={route.id} />, nav: 'vr' as const };
+      return {
+        node: <VrRunPage key={`${route.id}:${route.tab ?? ''}`} id={route.id} initialTab={route.tab} />,
+        nav: 'vr' as const,
+      };
     case 'pending':
       return { node: <PendingPage />, nav: 'pending' as const };
     case 'visionReview':

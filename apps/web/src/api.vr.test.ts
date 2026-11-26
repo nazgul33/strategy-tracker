@@ -46,6 +46,11 @@ const ROWS: Row[] = [
   ['addCash', (a) => a.addCash(5, CASH), 'POST', '/api/vr/runs/5/cash', { kind: 'deposit', amountCents: 5000, movedOn: '2026-12-01', note: 'top up' }],
   ['updateCash', (a) => a.updateCash(5, 21, { amountCents: 6000, movedOn: '2026-12-02' }), 'PUT', '/api/vr/runs/5/cash/21', { amountCents: 6000, movedOn: '2026-12-02' }],
   ['deleteCash', (a) => a.deleteCash(5, 21), 'DELETE', '/api/vr/runs/5/cash/21', {}],
+  ['listPending', (a) => a.listPending(5), undefined, '/api/vr/runs/5/pending'],
+  ['updatePending', (a) => a.updatePending(5, 31, FILL), 'PUT', '/api/vr/runs/5/pending/31', { side: 'buy', shares: 3, price: '45.15', fee: '0.09', filledOn: '2026-12-08' }],
+  ['confirmPending', (a) => a.confirmPending(5, 31), 'POST', '/api/vr/runs/5/pending/31/confirm', {}],
+  ['rejectPending', (a) => a.rejectPending(5, 31), 'POST', '/api/vr/runs/5/pending/31/reject', {}],
+  ['confirmAllPending', (a) => a.confirmAllPending(5), 'POST', '/api/vr/runs/5/pending/confirm-all', {}],
 ];
 
 describe('VrApi verbs, URLs and bodies', () => {
@@ -81,6 +86,8 @@ describe('VrApi void methods', () => {
     ['deleteFill', (a: VrApi) => a.deleteFill(5, 12)],
     ['updateCash', (a: VrApi) => a.updateCash(5, 21, { amountCents: 1, movedOn: '2026-12-02' })],
     ['deleteCash', (a: VrApi) => a.deleteCash(5, 21)],
+    ['updatePending', (a: VrApi) => a.updatePending(5, 31, FILL)],
+    ['rejectPending', (a: VrApi) => a.rejectPending(5, 31)],
   ])('%s resolves to undefined on a 204', async (_label, call) => {
     const { api } = recorder(204);
     await expect(call(api)).resolves.toBeUndefined();
@@ -135,6 +142,13 @@ describe('VrApi optional body keys', () => {
     expect('fee' in JSON.parse(String(calls[0]!.init?.body))).toBe(false);
   });
 
+  test('updatePending follows the same fee rule', async () => {
+    const { calls, api } = recorder(204);
+    await api.updatePending(5, 31, { ...FILL, fee: '' });
+    await api.updatePending(5, 31, { ...FILL, fee: undefined });
+    for (const c of calls) expect('fee' in JSON.parse(String(c.init?.body))).toBe(false);
+  });
+
   test('cash bodies omit the note unless given', async () => {
     const { calls, api } = recorder();
     await api.addCash(5, { kind: 'withdraw', amountCents: -100, movedOn: '2026-12-01' });
@@ -147,7 +161,30 @@ describe('VrApi optional body keys', () => {
   });
 });
 
+describe('VrApi pending results', () => {
+  test('confirmPending resolves to { fillId }', async () => {
+    const { api } = recorder(201, { fillId: 44 });
+    await expect(api.confirmPending(5, 31)).resolves.toEqual({ fillId: 44 });
+  });
+
+  test('confirmAllPending resolves to the result', async () => {
+    const result = { confirmed: 2, refused: [{ id: 34, error: 'fill-date-in-future' }], skippedDuplicates: 1, skippedUndated: 0 };
+    const { api } = recorder(200, result);
+    await expect(api.confirmAllPending(5)).resolves.toEqual(result);
+  });
+
+  test('listPending resolves to the rows', async () => {
+    const { api } = recorder(200, [{ id: 31 }]);
+    await expect(api.listPending(5)).resolves.toEqual([{ id: 31 }] as never);
+  });
+});
+
 describe('VrApi failures', () => {
+  test('a 409 vr-not-pending on confirmPending becomes an ApiError with its code', async () => {
+    const { api } = recorder(409, { error: 'vr-not-pending' });
+    await expect(api.confirmPending(5, 31)).rejects.toMatchObject({ status: 409, code: 'vr-not-pending' });
+  });
+
   test('a 409 vr-name-taken becomes an ApiError with its code', async () => {
     const { api } = recorder(409, { error: 'vr-name-taken' });
     await expect(api.createRun({ name: 'R', ticker: 'T', cashCents: 1000 })).rejects.toMatchObject({

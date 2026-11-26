@@ -87,6 +87,26 @@ describe('App VR routes', () => {
     expect(second.getAttribute('data-run-id')).toBe('2');
   });
 
+  it('#/vr/1?tab=pending opens the run on the Pending tab', async () => {
+    await open('#/vr/1?tab=pending');
+    expect(document.querySelector('[data-testid="vrPendingPanel"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="vrFillsPanel"]')).toBeNull();
+  });
+
+  it('going from #/vr/1 to #/vr/1?tab=pending remounts on the Pending tab', async () => {
+    await open('#/vr/1');
+    const first = document.querySelector('[data-testid="vr-run-page"]')!;
+    expect(document.querySelector('[data-testid="vrFillsPanel"]')).not.toBeNull();
+    await act(async () => {
+      window.location.hash = '#/vr/1?tab=pending';
+      window.dispatchEvent(new window.Event('hashchange'));
+    });
+    await flush();
+    expect(first.isConnected).toBe(false);
+    expect(document.querySelector('[data-testid="vrPendingPanel"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="vrFillsPanel"]')).toBeNull();
+  });
+
   it('a malformed VR route falls back to the not-found page', async () => {
     await open('#/vr/abc');
     expect(document.querySelector('[data-testid="vr-run-page"]')).toBeNull();

@@ -29,6 +29,7 @@ export type VrRunSummaryDto = VrRunDto & {
   poolCents: number;
   vCents: number | null;
   valueCents: number | null;
+  pendingCount: number;
 };
 
 export interface VrCycleDto {
@@ -86,6 +87,7 @@ export interface VrRunDetailDto {
   budgetLeftCents: number | null;
   buyInstruction: { shares: number; targetCents: number } | null;
   ladder: VrLadderDto;
+  pendingCount: number;
 }
 
 export interface VrFillDto {
@@ -131,6 +133,41 @@ export interface VrFillInput {
   price: string;
   fee?: string;
   filledOn: string;
+}
+
+/** A fill read from a screenshot, waiting on the run's Pending tab. Prices are myriadth strings, fee is cents. */
+export interface VrPendingDto {
+  id: number;
+  captureId: number;
+  side: VrSide;
+  shares: number;
+  price: string;
+  /** null = computed from the run's cost when it is confirmed. */
+  fee: number | null;
+  filledOn: string;
+  /** false = the screenshot showed no date and the reading day was used. */
+  dateRead: boolean;
+  dateAfterToday: boolean;
+  /** Price of the booked or waiting entry this may duplicate. */
+  dupPrice: string | null;
+  hasImage: boolean;
+  createdAt: string;
+}
+
+/** USD strings, as VrFillInput; a blank or missing fee leaves it to the server at confirm. */
+export interface VrPendingInput {
+  side: VrSide;
+  shares: number;
+  price: string;
+  fee?: string;
+  filledOn: string;
+}
+
+export interface VrConfirmAllResult {
+  confirmed: number;
+  refused: { id: number; error: string }[];
+  skippedDuplicates: number;
+  skippedUndated: number;
 }
 
 export interface VrCashInput {
