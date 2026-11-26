@@ -41,7 +41,9 @@ prices. The totals are per strategy." And: "Closed MR runs are out of scope here
   without saying so.
 - A figure that disagrees with what the run's own page shows for the same books and close.
 - Any float in the money arithmetic.
-- Any change in what the MR or VR screens show, or in the morning messages.
+- Any change in what the MR or VR screens show, or in the morning messages, other than the two
+  additions the owner decided on after the final review: stored closes one session newer in the
+  evening, and a mean-reversion run's cash following "Add funds" at once.
 
 ## Approaches considered
 
@@ -99,14 +101,14 @@ A strategy's **total** is the sum of its runs' values.
   its strategy's total is marked as resting on an older close. There is no time-of-day logic (the owner reads the page in Korea, where the
   New York date and the morning job's hour would otherwise raise false alarms every afternoon).
 - A run with no shares needs no close and is never marked.
-- Added after the final review: when every row is equally old nothing above marks it, so the
-  page also says when its closes are **behind**. Dates only, no time of day: the closes are
-  behind when the newest close used is older than the trading day before the previous trading
-  day, by the server's New York date (after Monday's session that is the Thursday before; a
-  normal day never trips it, before or after the morning job; a missed morning job does). The
-  page also says in one line that a session's close is stored by the next trading morning's
-  job, because for most of the owner's day in Korea the newest stored close is one session
-  behind the last one traded.
+- Added after the final review, and changed again on the owner's decision to store the close
+  in the evening (see "The evening close job"): when every row is equally old nothing above
+  marks it, so the page also says when its closes are **behind**. The closes are behind when
+  the newest close used is older than the close the page should have by now: today's, when
+  today is a trading day and it is 17:30 or later in New York (the evening job runs at 17:00);
+  otherwise the previous trading day's. A normal day never trips it; a missed evening job
+  trips it from 17:30 New York (07:30 in Korea in winter) until the next morning job stores
+  that close. The page also says in one line when closes are stored.
 
 ### Keeping closes current for paused runs
 
@@ -120,6 +122,48 @@ trading day, and fetches and stores the last close for it through the existing c
 A ticker already stored that morning is therefore not fetched again, and a ticker whose run
 skipped or failed earlier is caught up. The step sends no message, takes no run lock, changes
 no run state, and a failure is only logged. Nothing else about the morning job changes.
+
+### The evening close job (added on the owner's decision after the final review)
+
+The final review found that the newest stored close was one session behind the last one traded
+for most of the owner's day: a session's close was only stored by the next trading morning's
+job (07:30 New York, 21:30 in Korea). The owner chose to close that gap.
+
+- Every trading day at **17:00 New York**, an hour after the normal close (early-close days
+  close earlier), a job stores **that day's** close for every ticker of an active or paused run
+  of either strategy. It uses the same price source and the same check as the morning fetch,
+  with the expected date being today: an answer dated any other day is not stored and is
+  logged.
+- It stores nothing on a day the market is closed, and nothing when it is called before 16:30
+  New York, so a half-formed bar of a session still open can never be stored.
+- It sends no message, takes no run lock and changes no run, order or books. A failure is
+  logged; the next morning's job stores the same close anyway (and overwrites the evening's
+  value with its own for the same date, so a late correction by the source is picked up).
+- The morning job and its catch-up stay as they are. On a normal morning the catch-up finds
+  every ticker already stored and fetches nothing.
+- `price_history` may therefore hold a row dated today, written only by this job after the
+  session. The bar cache (`market/bars.ts`) still never stores or marks as covered anything
+  after the last finished trading day; when that day is later backfilled, the bar overwrites
+  the close-only row.
+- Readers of stored closes see the newer close the same evening: the dashboard, the VR page's
+  last close and value, the mean-reversion price chart and the cut-loss hint. No morning
+  decision reads a stored close.
+
+### Adding funds to a mean-reversion run (added on the owner's decision after the final review)
+
+The final review found that "Add funds" on a mean-reversion run changed the run's pool but not
+its stored cash, which the run page shows and the dashboard sums; the cash only caught up at
+the next Update or fill edit, as one large adjustment. The owner chose to fix it.
+
+- Setting a run's pool now moves the run's stored cash by the same difference (new pool minus
+  old pool), in the same request, under the run lock, and books one ledger row for it. The
+  run page's cash and the dashboard include the added funds at once.
+- A later Update on such a run reports no difference from this edit (the stored cash already
+  equals the pool minus the fill history, as far as this edit is concerned). A seeded run keeps
+  whatever difference its seed already had: this change adds the pool difference and does not
+  re-derive the cash.
+- Order sizing is unaffected: it uses the pool, as before.
+- This is the one intended change to mean-reversion behaviour in this piece.
 
 ## The page
 

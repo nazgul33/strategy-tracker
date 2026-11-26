@@ -16,7 +16,7 @@
 - **Database for this branch:** every DB-gated command uses `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test_dash` (Task 1 creates it). Never run anything against `st_test`.
 - **Never touch these containers:** `mariadb_st_prod`, `stratagy_tracker_prod`, `mariadb_st_staging`, `strategy_tracker_staging`.
 - No new table, no migration, no schema change. `bun run --cwd apps/server db:generate < /dev/null` must keep printing "No schema changes, nothing to migrate".
-- The existing run lists, run pages and their server responses do not change: `GET /api/runs`, `GET /api/runs/:id`, `GET /api/vr/runs`, `GET /api/vr/runs/:id` answer exactly as on `main`. The morning messages do not change.
+- The existing run lists, run pages and their server responses do not change: `GET /api/runs`, `GET /api/runs/:id`, `GET /api/vr/runs`, `GET /api/vr/runs/:id` answer exactly as on `main`. The morning messages do not change. (Tasks 5 and 6, added on the owner's decision, are the two stated exceptions: stored closes become one session newer in the evening, and `POST /api/runs/:id/pool` also moves the run's stored cash.)
 - Money is integer only: cents are `number`, prices `bigint` ten-thousandths of a dollar; prices leave the API as strings (`jsonBig`). No floats.
 - Counted runs: status `active` or `paused`. Closed runs are neither listed nor counted.
 - `DayDeps` and `HttpDeps` gain no new required top-level field.
@@ -275,3 +275,98 @@ docker exec st-mariadb-test mariadb -uroot -ptest -e "SHOW DATABASES LIKE 'st\_e
 ```
 
 Expected: typecheck clean; 0 fail in both runs; "No schema changes"; a clean tree; the migrations diff prints nothing; no non-test source file this branch touched is over ~300 lines; no scratch database left. Report the results of Steps 2 and 5. Leave `st_test_dash` in place and do not push or deploy.
+
+---
+
+### Task 5: The evening close job, and a "behind" rule that knows the time
+
+Added after the final review, on the owner's decision. The spec's "The evening close job" and the amended last bullet of "Missing and older closes" are the requirement; read them first.
+
+**Files:**
+- Create: `apps/server/src/pipeline/evening-closes.ts`, `apps/server/test/evening-closes.test.ts`
+- Modify: `apps/server/src/pipeline/close.ts` (`fetchClose` takes the expected date), `apps/server/src/pipeline/close-catchup.ts` (share the ticker collection), `apps/server/src/pipeline/wire.ts` (the cron), `apps/server/src/pipeline/day.ts` only if `DayDeps` needs the optional clock, `apps/server/src/domain/dashboard.ts`, `apps/server/src/http/routes/dashboard.ts`, `apps/server/src/http/app.ts` only for an optional clock on `HttpDeps`, `apps/server/src/market/bars.ts` (comment only), `apps/server/test/dashboard.test.ts`, `apps/server/test/http-dashboard.test.ts`, the test that pins the cron jobs of `wire.ts` if there is one, `apps/web/src/i18n/en.json`, `ko.json`, `apps/web/src/pages/Dashboard.test.tsx` (the two strings), `scripts/e2e-dashboard.ts`, `AGENTS.md`
+
+**Interfaces:**
+- `fetchClose(deps, ticker, today, expected?: ISODate)` — `expected` defaults to `prevTradingDay(today)`; every existing caller is unchanged. A fetched close dated other than `expected` is not stored and returns null.
+- `export async function runEveningCloses(deps: DayDeps): Promise<{ stored: number; behind: number } | 'closed' | 'too-early'>` in `evening-closes.ts`:
+  - `'closed'` when `dayInfo(today).open` is false; `'too-early'` when the New York wall time is before `16:30` (the clock is `deps.now?.() ?? new Date()`; `now` is optional on `DayDeps`, added only if it is not there yet);
+  - otherwise, for each distinct ticker of an active or paused run of either strategy whose newest stored close is older than today (read through `deps.latestStoredCloseDate`), `fetchClose(deps, ticker, today, today)`; `stored` counts the tickers stored, `behind` those that could not be;
+  - does nothing (returns `{ stored: 0, behind: 0 }`) when `latestStoredCloseDate` or `persistClose` is not wired; sends no message, takes no lock, never throws; a ticker that could not be stored is logged once, naming the ticker.
+- `startJobs` adds one cron: `'0 17 * * 1-5'` in `America/New_York`, logging its result through the same `log` callback as the other jobs.
+- `buildDashboard` takes `expectedClose: ISODate` next to `today`; `closesBehind = closeDate !== null && closeDate < expectedClose`. A new exported `expectedCloseDate(today: ISODate, etTime: string): ISODate` (`etTime` is `'HH:MM'` in New York) returns `today` when `dayInfo(today).open` and `etTime >= '17:30'`, else `prevTradingDay(today)`. The route computes `etTime` from `deps.now?.() ?? new Date()` (`now` optional on `HttpDeps`); a small helper for the New York `'HH:MM'` lives next to `todayEt` in `wire/deps.ts`.
+- Web: no DTO change. The texts of `dash.closesBehind` and `dash.closesHint` change: en "These closes are behind: the last session's close has not been stored yet." and "Closes are stored at 17:00 New York time on trading days, and again by the next morning's job."; ko with the same meaning, natural, no Hanzi.
+
+- [ ] **Step 1: Write the failing tests**
+
+`evening-closes.test.ts` (the fixtures of `day-close-catchup.test.ts`; today `2026-11-24`, a Tuesday; the fake source answers `{ date: '2026-11-24', close }` unless said otherwise; clock `2026-11-24T22:00:00Z` = 17:00 New York):
+- an active MR run, a paused MR run, an active VR run and a paused VR run on four tickers → four stores dated `2026-11-24`; result `{ stored: 4, behind: 0 }`; no message sent; no order, state or cycle written.
+- two runs on one ticker → fetched once; a closed run's ticker never.
+- a ticker already stored for `2026-11-24` → not fetched.
+- the source answers `2026-11-23` for one ticker (not updated yet) → nothing stored for it, one error line naming it, `behind: 1`, the others stored.
+- the source throws for one ticker → logged, the others stored, nothing thrown.
+- a closed day (`2026-11-26`) → `'closed'`, no fetch; a Saturday → `'closed'`.
+- the half day `2026-11-27` at 17:00 New York → stores closes dated `2026-11-27`.
+- clock `2026-11-24T20:00:00Z` (15:00 New York) → `'too-early'`, no fetch, nothing stored; `2026-11-24T21:29:00Z` → `'too-early'`; `2026-11-24T21:30:00Z` → runs.
+- without `latestStoredCloseDate`, or without `persistClose` → `{ stored: 0, behind: 0 }`, no fetch.
+- the next morning (`2026-11-25`, the morning pipeline with the same store): the catch-up fetches nothing for the paused tickers (already stored for the previous trading day), and the pipeline's result and messages equal those of the same morning without the evening job having run.
+- `fetchClose` with an explicit `expected`: a close dated `expected` is stored and returned; one dated otherwise is not stored and returns null; without the argument it behaves as before (one existing-behaviour case).
+
+`dashboard.test.ts`: `expectedCloseDate('2026-11-24', '17:29')` → `'2026-11-23'`; `('2026-11-24', '17:30')` → `'2026-11-24'`; `('2026-11-24', '00:10')` → `'2026-11-23'`; a Saturday `('2026-11-28', '18:00')` → `'2026-11-27'`; the holiday `('2026-11-26', '18:00')` → `'2026-11-25'`; the half day `('2026-11-27', '17:30')` → `'2026-11-27'`. `buildDashboard` with `expectedClose`: a close dated the expected date → `closesBehind false`; one day earlier → `true`; `closeDate` null → `false`. Replace the date-only `closesBehind` cases of the previous rule with these.
+
+`http-dashboard.test.ts`: with an injected clock at 17:00 New York on `2026-11-24` and a stored close dated `2026-11-23` → `closesBehind false`; at 17:30 → `true`; with a stored close dated `2026-11-24` at 17:30 → `false`.
+
+The cron: a test that `startJobs` registers a job with pattern `0 17 * * 1-5` in `America/New_York` next to the existing ones (in the style of the existing test of `wire.ts`, if any; otherwise a new small test).
+
+`Dashboard.test.tsx`: the two changed strings.
+
+- [ ] **Step 2: Run to see them fail** — `bun test apps/server/test/evening-closes.test.ts apps/server/test/dashboard.test.ts apps/server/test/http-dashboard.test.ts` → FAIL.
+- [ ] **Step 3: Implement.** Update the comment at the top of `makeCachedBarReader` in `market/bars.ts` to say that a row dated today can exist, written only by the evening job after the session, and that the reader still never stores or marks as covered anything after the last finished trading day.
+- [ ] **Step 4: Smoke.** In `scripts/e2e-dashboard.ts`, after the existing checks: call `runEveningCloses` with deps whose source answers today's date and whose clock is 17:00 New York on the script's day → a close dated today is stored for every ticker of a live run; the dashboard's `closeDate` is today and `closesBehind` is `false` with the clock at 17:30; with the clock at 17:30 and before the evening job, `closesBehind` is `true`. `scripts/e2e.ts` stays at or under 300 lines.
+- [ ] **Step 5: Docs.** `AGENTS.md`: the new files in the repo map; Conventions: "An evening job (`pipeline/evening-closes.ts`, 17:00 New York on trading days) stores the day's close for every active or paused run's ticker; `price_history` may hold a row dated today only from that job; the bar cache never stores past the last finished trading day."
+- [ ] **Step 6: Run** — `bun run typecheck`; `bun test`; `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test_dash bun test`; `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test_dash bun scripts/e2e.ts`; `(cd apps/server && bun run db:generate < /dev/null)` → clean, 0 fail, "No schema changes". Every existing `day*.test.ts`, `vr-day*.test.ts`, `bars*.test.ts` and `main-boot-order.test.ts` passes with its assertions unedited.
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A apps packages scripts AGENTS.md
+git commit -m "feat: an evening job stores the day's close; the dashboard knows which close it should have by now"
+```
+
+---
+
+### Task 6: Adding funds to a mean-reversion run moves its cash
+
+Added after the final review, on the owner's decision. The spec's "Adding funds to a mean-reversion run" is the requirement.
+
+**Files:**
+- Create: `apps/server/src/domain/pool-edit.ts`, `apps/server/test/pool-edit.test.ts`
+- Modify: `apps/server/src/http/routes/runs.ts` (`POST /runs/:id/pool` calls the new function), `apps/server/src/domain/recompute.ts` (the comment that names pool-edited runs as drifting), `docs/superpowers/specs/2026-11-14-partial-sell-history-design.md` ("Recalc and drift": pool edits no longer drift), the existing HTTP test of the pool route (add cases; existing assertions unedited)
+
+**Interfaces:**
+- `export function setRunPool(runId: number, poolCents: number, deps: BookingDeps & { repos: … poolEditRepo }): Promise<{ deltaCents: number } | null>` in `domain/pool-edit.ts`, run under `withRunLock(runId)`:
+  1. read the run (null when it does not exist) and its stored state;
+  2. `deltaCents = poolCents - run.poolCents`;
+  3. `runRepo.updatePool`, then `poolEditRepo.insert` (both as today, also when the delta is 0);
+  4. when `deltaCents !== 0`: save the state with `cashCents + deltaCents`, and insert one ledger row `{ kind: 'adjust', amountCents: deltaCents, ref: JSON.stringify({ bookedOn: deps.today, reason: 'pool-edit', poolCents }) }`.
+- The route keeps its validation and answers (`400 invalid amountCents`, `404 not found`, `200 { ok: true }`).
+
+- [ ] **Step 1: Write the failing tests** in `pool-edit.test.ts` (the booking fakes):
+- a run with pool `1000000` and a held bucket (cash `850000` after a buy of `150000`): pool set to `1500000` → stored cash `1350000`, the buckets unchanged, one `adjust` ledger row of `500000` with `reason 'pool-edit'`, one pool-edit row, the run's pool `1500000`; result `{ deltaCents: 500000 }`.
+- then `recalcRunState` on that run → `deltaCents 0` and no further ledger row (the stored cash already equals the pool minus history).
+- pool lowered to `900000` → cash `750000`, an `adjust` row of `-100000`.
+- the same pool again → `{ deltaCents: 0 }`, the state not saved, no ledger row, the pool-edit row still recorded (as today).
+- a seeded run whose stored cash differs from the derived cash by `X`: after a pool increase of `500000`, the stored cash rose by exactly `500000` and a recalc still reports the same `X` as before the edit.
+- an unknown run → null, nothing written.
+- two calls started together (`Promise.all`) with pools `1500000` and `1200000` from `1000000` → the final stored cash equals `850000 + (final pool - 1000000)` whichever finishes last (the run lock makes them sequential), and the two ledger rows sum to that difference.
+- order sizing: the next morning's buy size for the run uses the new pool exactly as it did before this change (compare `computeOrders` or the day test helper for a pool of `1500000` with and without the stored cash moved).
+
+HTTP test of the pool route (add): after `POST /api/runs/:id/pool`, `GET /api/runs/:id` reports `progressView.cashCents` raised by the difference; `GET /api/dashboard` reports that run's `cashCents` and `valueCents` raised by the same difference.
+
+- [ ] **Step 2: Run to see them fail** — `bun test apps/server/test/pool-edit.test.ts` → FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run** — `bun run typecheck`; `bun test`; `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test_dash bun test`; `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test_dash bun scripts/e2e.ts` → clean, 0 fail. If an existing test pins that a pool edit leaves the stored cash unchanged, STOP and report it (that expectation is the behaviour being changed; the controller rules on the edit).
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A apps packages scripts docs/superpowers/specs/2026-11-14-partial-sell-history-design.md
+git commit -m "feat: setting a mean-reversion run's pool moves its stored cash by the difference"
+```
