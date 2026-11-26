@@ -1,4 +1,4 @@
-// Password-only sign-in: POST /api/login → token in sessionStorage → #/runs.
+// Password-only sign-in: POST /api/login → token in sessionStorage → #/dashboard.
 import { useState } from 'react';
 
 import { ApiError, api, setToken } from '../api';
@@ -18,7 +18,7 @@ export function LoginPage() {
     try {
       const token = await api.login(password);
       setToken(token);
-      window.location.hash = '#/runs';
+      window.location.hash = '#/dashboard';
     } catch (err) {
       setFailed(err instanceof ApiError && err.status === 401 ? t('errorUnauthorized') : t('loginFailed'));
     } finally {

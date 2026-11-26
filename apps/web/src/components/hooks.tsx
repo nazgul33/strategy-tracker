@@ -99,6 +99,7 @@ export function useDefaultCostText(): [text: string, setText: (v: string) => voi
 }
 
 export type Route =
+  | { page: 'dashboard' }
   | { page: 'runs' }
   | { page: 'run'; id: number; tab?: 'notifications'; notice?: number }
   | { page: 'pending' }
@@ -117,8 +118,10 @@ export function parseHash(hash: string): Route {
   const path = cut < 0 ? raw : raw.slice(0, cut);
   const query = new URLSearchParams(cut < 0 ? '' : raw.slice(cut + 1));
   const parts = path.split('/').filter((p) => p.length > 0);
-  if (parts.length === 0) return { page: 'runs' };
+  if (parts.length === 0) return { page: 'dashboard' };
   switch (parts[0]) {
+    case 'dashboard':
+      return parts.length === 1 ? { page: 'dashboard' } : { page: 'notFound', hash };
     case 'runs':
       if (parts.length === 1) return { page: 'runs' };
       if (parts.length === 2) {

@@ -5,6 +5,7 @@ import { useT } from '../i18n';
 import { ThemeLangToggle } from './ThemeLangToggle';
 
 const NAV = [
+  { href: '#/dashboard', key: 'navDashboard', page: 'dashboard' },
   { href: '#/runs', key: 'navRuns', page: 'runs' },
   { href: '#/vr', key: 'navVr', page: 'vr' },
   { href: '#/pending', key: 'navPending', page: 'pending' },
@@ -19,7 +20,7 @@ export function Layout({ active, children }: { active: string; children: ReactNo
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-          <a href="#/runs" className="text-base font-bold tracking-tight">
+          <a href="#/dashboard" className="text-base font-bold tracking-tight">
             {t('appName')}
           </a>
           <nav aria-label={t('appName')} className="flex flex-wrap items-center gap-1 text-sm">
