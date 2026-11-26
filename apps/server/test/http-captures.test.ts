@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
+import { DEFAULT_VR_SETTINGS } from '@st/strategies/value-rebalancing'
 import { createApp, type HttpDeps } from '../src/http/app'
 import { declaredTooLarge, MAX_UPLOAD_BODY_BYTES } from '../src/http/routes/captures'
 import { MAX_IMAGE_BYTES } from '../src/domain/capture-image'
@@ -178,6 +179,69 @@ describe('POST /api/captures', () => {
     } finally {
       errors.mockRestore()
     }
+  })
+
+  test('the mapping alone: a choose becomes ambiguous and the order is kept', async () => {
+    const choose: CaptureEvent = { type: 'choose', ticker: 'TQQQ', mrRunId: 1, vrRunId: 100001, fills: [{ side: 'buy', ticker: 'TQQQ', shares: 3, price: '45.15' }] }
+    const outcome: CaptureEvent = { type: 'outcome', runId: 7, ticker: 'NVDA', outcome: 'duplicate' }
+    const { app } = setup({ events: [choose, outcome] })
+    const res = await post(app, await loginAs(app), form([['image', png()]]))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ events: [{ type: 'ambiguous', ticker: 'TQQQ' }, outcome] })
+  })
+
+  describe('with the real routing and both strategies', () => {
+    const TQ = (extra: Record<string, unknown> = {}) => ({ side: 'buy', ticker: 'TQQQ', shares: 3, price: '45.15', date: '2026-11-10', ...extra })
+    const visionOf = (fills: Array<Record<string, unknown>>) =>
+      (async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ fills }) } }] }) })) as unknown as typeof fetch
+
+    async function shared() {
+      const f = makeFakes()
+      await f.repos.runRepo.create({ strategyKey: 'mean-reversion', ticker: 'TQQQ', name: 'M', poolCents: 1_000_000, costPpm: 30 })
+      const vrId = await f.repos.vrRunRepo.create({ ...DEFAULT_VR_SETTINGS, ticker: 'TQQQ', name: 'V', costPpm: 0, initialVCents: 500_000, openingCashCents: 1_000_000, openedOn: '2026-11-01' })
+      const app = createApp({
+        ...makeDeps(f),
+        routeCapture: makeCaptureRouting({
+          repos: f.repos,
+          vision: { baseUrl: 'http://x', baseUrlSource: 'env', model: 'm', modelSource: 'env' },
+          getVisionApiKey: async () => ({ key: 'k', source: 'env' }),
+          today: () => '2026-11-10',
+          fetchImpl: visionOf([TQ(), TQ({ shares: 5 })]),
+        }),
+      })
+      return { f, app, vrId }
+    }
+
+    test('an un-pinned upload for a shared ticker is ambiguous: no choose, no fills, no image data, nothing parked', async () => {
+      const { f, app } = await shared()
+      const bytes = new Uint8Array(48).map((_, i) => (i * 7) % 256)
+      const b64 = Buffer.from(bytes).toString('base64')
+      const file = new File([bytes], 'f.png', { type: 'image/png' })
+      const res = await post(app, await loginAs(app), form([['image', file]]))
+      expect(res.status).toBe(200)
+      const text = await res.text()
+      expect(JSON.parse(text)).toEqual({ events: [{ type: 'ambiguous', ticker: 'TQQQ' }] })
+      expect(text).not.toContain('choose')
+      expect(text).not.toContain('"fills"')
+      expect(text).not.toContain(b64)
+      expect(f.choices).toEqual([])
+      expect(f.pending).toEqual([])
+      expect(f.vr.pending).toEqual([])
+    })
+
+    test('a pinned VR upload answers with a vr-outcome', async () => {
+      const { app, vrId } = await shared()
+      const res = await post(app, await loginAs(app), form([['image', png()], ['runId', String(vrId)]]))
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ events: [{ type: 'vr-outcome', runId: vrId, ticker: 'TQQQ', outcome: { waiting: 2, dropped: 0, possibleDuplicates: 0 } }] })
+    })
+
+    test('an unknown pinned id is still 404 no-run', async () => {
+      const { app } = await shared()
+      const res = await post(app, await loginAs(app), form([['image', png()], ['runId', '9']]))
+      expect(res.status).toBe(404)
+      expect(await res.json()).toEqual({ error: 'no-run' })
+    })
   })
 
   test('an unexpected throw is 500 capture-failed and logged', async () => {

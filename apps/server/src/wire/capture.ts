@@ -84,6 +84,12 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       case 'outcome':
         await sendOutcome(chatId, event.outcome);
         return;
+      // Interim until the Telegram question and the VR message exist.
+      case 'choose':
+        await deps.send(chatId, t('capture-ambiguous', lang, { ticker: event.ticker }));
+        return;
+      case 'vr-outcome':
+        return;
       default: {
         const unhandled: never = event;
         return unhandled;

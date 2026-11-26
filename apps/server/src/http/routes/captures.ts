@@ -58,7 +58,9 @@ export function capturesRouter(deps: HttpDeps): Hono {
       return c.json({ error: 'capture-failed' }, 500)
     }
     if (events[0]?.type === 'unknown-run') return c.json({ error: 'no-run' }, 404)
-    return c.json(jsonBig({ events }))
+    // The browser cannot answer a choice, and a choice carries the fills: it gets the plain "several runs" event.
+    const answer = events.map((e) => (e.type === 'choose' ? { type: 'ambiguous' as const, ticker: e.ticker } : e))
+    return c.json(jsonBig({ events: answer }))
   })
   return r
 }
