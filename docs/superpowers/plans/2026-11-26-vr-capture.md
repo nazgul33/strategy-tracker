@@ -31,7 +31,7 @@
 ## Review Focus
 
 1. **A button pressed twice, or two presses racing.** Expected: the answer is carried out once; the second press gets "already answered". Pinned in Task 4.
-2. **The same screenshot sent again after everything from it was decided.** Expected: it is read again, every fill already booked or rejected is dropped, nothing new waits, and nothing is booked twice. Pinned in Task 2.
+2. **The same screenshot sent again after everything from it was decided, and a new screenshot of the same fills.** Expected: the same image is refused as a duplicate; a different image with the same fills has every one dropped; nothing new waits and nothing is booked twice. Pinned in Task 2.
 3. **Confirming a waiting row that cannot be booked** (date after today, would make shares negative, edited to nonsense). Expected: refused with the same code a typed fill gets, the row stays waiting, its screenshot stays. Pinned in Task 2.
 4. **A server restart while VR fills wait.** Expected: their screenshot survives the start-up sweep; one whose rows are all decided is gone. Pinned in Task 1.
 5. **An un-pinned web upload for a ticker both strategies trade.** Expected: "several active runs", nothing parked, no screenshot or fill data in the response. Pinned in Task 3.
@@ -204,7 +204,7 @@ export interface VrCaptureDeps { repos: VrCaptureRepos; today: ISODate }   // Vr
 export function ingestVrCapture(run: VrRunRow, image: { base64: string; mime: string }, fills: readonly RawFill[], deps: VrCaptureDeps): Promise<VrCaptureOutcome>
 
 // domain/vr/pending.ts
-export interface VrConfirmAllResult { confirmed: number; refused: { id: number; error: string }[]; skippedDuplicates: number }
+export interface VrConfirmAllResult { confirmed: number; refused: { id: number; error: string }[]; skippedDuplicates: number; skippedUndated: number }
 export function listVrPending(run: VrRunRow, deps): Promise<VrPendingView[]>           // waiting rows only
 export function editVrPending(run: VrRunRow, id: number, body: unknown, deps): Promise<void>
 export function confirmVrPending(run: VrRunRow, id: number, deps): Promise<number>      // the new fill id
@@ -217,7 +217,7 @@ export function confirmAllVrPending(run: VrRunRow, deps): Promise<VrConfirmAllRe
 
 Rules for `ingestVrCapture`, all inside `withRunLock(run.id)`:
 
-1. Hash the base64 text as MR does. `claimCapture` with VR readers: `hasLiveForCapture` → `vrPendingRepo.hasPendingForCapture`, `hasConfirmedForCapture` → `vrPendingRepo.hasConfirmedForCapture`, corrections always false. A refused claim returns `'duplicate'`.
+1. Hash the base64 text as MR does. `claimCapture` with VR readers: `hasLiveForCapture` → `vrPendingRepo.hasAnyForCapture` (true when the capture has a row in any status, so a screenshot that already produced rows for this run is never taken in again), `hasConfirmedForCapture` → always false, corrections always false. A refused claim returns `'duplicate'`. `VrPendingRepo` gains `hasAnyForCapture(captureId: number): Promise<boolean>` (real and fake).
 2. Give every VR entry the run's ticker. `dropExactMatches` against the run's **rejected** pending rows; count what it drops.
 3. `matchCapturedFills` with readers returning the run's booked fills and its **pending** rows (ticker and `runId` added): fills that vanish are added to the dropped count; each `conflict` becomes a pending row with `dupPrice` = the cited entry's price; each `fresh` fill becomes a pending row with `dupPrice` null.
 4. Row fields: `fee` in cents when the screenshot showed one, else null; `filledOn = date ?? today`; `dateRead = date !== undefined`.
@@ -227,9 +227,9 @@ Rules for `ingestVrCapture`, all inside `withRunLock(run.id)`:
 Rules for pending operations (each write inside `withRunLock(run.id)`; unknown id → `VrNotFoundError`; a row that is not pending → `DomainError('vr-not-pending')`):
 
 - `editVrPending`: the body is `{ side, shares, price, fee?, filledOn }` with price and fee as USD strings, checked like a typed fill's format (codes `invalid-side`, `invalid-shares`, `invalid-price`, `invalid-fee`, `invalid-date`), except that an absent or empty fee is stored as null. A date after today is accepted here. `dupPrice` and `dateRead` are kept.
-- `confirmVrPending`: build the fill from the row (`fee ?? feeCents(price, shares, run.costPpm)`, `source: 'capture'`); refuse with exactly the codes a typed fill gets (`fill-date-in-future`, `vr-negative-shares`, `vr-too-large`), leaving the row pending; then `vrPendingRepo.confirm`; a `null` result is `vr-not-pending`. Afterwards, if the capture has no pending row left, delete its image (`captureImageRepo.deleteFor`).
+- `confirmVrPending`: build the fill from the row (`fee ?? feeCents(price, shares, run.costPpm)`, `source: 'capture'`); refuse with exactly the codes a typed fill gets, format checks included (`invalid-side`, `invalid-shares`, `invalid-price`, `invalid-fee`, `invalid-date`, then `fill-date-in-future`, `vr-negative-shares`, `vr-too-large`), leaving the row pending; then `vrPendingRepo.confirm`; a `null` result is `vr-not-pending`. Afterwards, if the capture has no pending row left, delete its image (`captureImageRepo.deleteFor`).
 - `rejectVrPending`: mark rejected, then the same image rule.
-- `confirmAllVrPending`: take the waiting rows, set aside those with a `dupPrice` (counted in `skippedDuplicates`), order the rest buys before sells, then by `filledOn`, then id; confirm each through `confirmVrPending`; a refusal is recorded as `{ id, error: <code> }` and the loop continues.
+- `confirmAllVrPending`: take the waiting rows, set aside those with a `dupPrice` (counted in `skippedDuplicates`) and, of the rest, those with `dateRead` false (counted in `skippedUndated`), order what is left buys before sells, then by `filledOn`, then id; confirm each through `confirmVrPending`; a refusal is recorded as `{ id, error: <code> }` and the loop continues.
 
 Routes (under `/api/vr`, unknown or MR run → `404 { error: 'not found' }`, as the other VR routes):
 
@@ -247,7 +247,7 @@ Routes (under `/api/vr`, unknown or MR run → `404 { error: 'not found' }`, as 
 - first take-in of three fills → three waiting rows with the right fee (cents or null), date and `dateRead`; image stored; outcome `{ waiting: 3, dropped: 0, possibleDuplicates: 0 }`.
 - a fill with no date gets `today` and `dateRead false`; a fill dated after today is kept as read.
 - same screenshot again while a row waits → `'duplicate'`, nothing added.
-- Review Focus 2: after confirming two rows and rejecting the third, the same screenshot again → `{ waiting: 0, dropped: 3, possibleDuplicates: 0 }`, no new row, no image stored.
+- Review Focus 2: after confirming two rows and rejecting the third, the same screenshot again → `'duplicate'`, no new row; a **different** image with the same three fills → `{ waiting: 0, dropped: 3, possibleDuplicates: 0 }`, no new row, no image stored. A screenshot whose first take-in produced no row is read again.
 - two identical fills in one screenshot with one already booked → one dropped, one waiting.
 - same side, shares and date but another price than a booked fill → one waiting row with `dupPrice` = the booked price; the same against a waiting row cites that row's price; against a rejected row with another price → a plain waiting row (`dupPrice` null).
 - a screenshot whose every fill is dropped stores no image.
@@ -258,7 +258,8 @@ Routes (under `/api/vr`, unknown or MR run → `404 { error: 'not found' }`, as 
 - Review Focus 3: a row dated after today → `fill-date-in-future`, row still pending, image still there; a sell beyond the holding → `vr-negative-shares`; an entry that would overflow the books → `vr-too-large`; after editing the date to today the same row confirms.
 - edit: each format code; an empty fee stored as null; `dupPrice` kept; a decided row → `vr-not-pending`.
 - reject, and the image rule.
-- confirm all: buys are confirmed before sells so a same-day buy-then-sell pair both book even when listed sell first; a refused row is reported and the rest continue; rows with `dupPrice` are skipped and counted; an empty list gives zeros.
+- confirm all: buys are confirmed before sells so a same-day buy-then-sell pair both book even when listed sell first; a refused row is reported and the rest continue; rows with `dupPrice` are skipped and counted; rows with `dateRead` false are skipped and counted separately; an empty list gives zeros.
+- a waiting row with price 0 (extraction can produce it) is refused at confirm with `invalid-price` and stays waiting.
 
 `http-vr-pending.test.ts`: every route's success shape and status codes above, `dateAfterToday` and `hasImage` in the DTO, an MR run id → `404`, another run's pending id → `404`, no token → `401`; `GET /api/vr/runs/:id` and `GET /api/vr/runs` carry `pendingCount`.
 
@@ -342,7 +343,7 @@ Behaviour:
   - `m` or `b`: `ingestCapture(choice.mrRunId, choice.image, { ok: true, fills: choice.fills }, { repos, today: choice.readOn })`, then the existing `sendOutcome` (same messages and Yes/No buttons as an un-asked MR screenshot);
   - `v` or `b`: load the VR run by id whatever its status, `ingestVrCapture`, then `vrCaptureMessage`;
   - for `b`, MR first, then VR; a throw in one is reported with the existing unknown-error wording and does not stop the other.
-- **VR message:** one message, no buttons: the run and ticker with the number waiting and where to confirm them; a line for dropped fills when > 0; a line for possible duplicates when > 0; a different text when nothing is waiting; a different text for `'duplicate'` (this screenshot's fills are still waiting).
+- **VR message:** one message, no buttons: the run and ticker with the number waiting and where to confirm them; a line for dropped fills when > 0; a line for possible duplicates when > 0; a different text when nothing is waiting; a different text for `'duplicate'` (this screenshot was already taken in for this run).
 - Catalog keys (en and ko, identical placeholders): the question, the three button labels, expired, already answered, and the VR message lines. Existing keys and the Yes/No buttons are untouched.
 
 - [ ] **Step 1: Write the failing tests**
@@ -426,7 +427,7 @@ git commit -m "feat: waiting screenshot fills hold a VR cycle until they are dec
   - `ApiErrorCode` gains `vr-not-pending`; catalog key `vrErr.vr-not-pending`.
   - `VrPendingPanel(props: VrPanelProps)` and `VrPendingDialog({ runId; costPpm; row: VrPendingDto; onClose; onSaved })`.
 
-The page: the tab row becomes `Fills | Pending | Cash | Cycles | Alerts`; the Pending label shows the count when it is above 0 (`Pending 3`), from `detail.pendingCount`. The panel lists waiting rows (date, side, shares, price, fee or "auto" when empty, a screenshot link through the existing `ScreenshotLink` when `hasImage`, and marks: "date not in the screenshot" when `dateRead` is false, "dated after today" when `dateAfterToday`, "possible duplicate of <price>" when `dupPrice` is set), with Edit, Confirm and Reject per row and a **Confirm all** button above. After each action it reloads its list and calls `onChanged` (which reloads the run, so the count, books and ladder follow). Confirm all shows a summary: how many were booked, each refused row with its worded reason, how many possible duplicates were left. Errors are worded with `errorText(err, t, 'vrErr')`; a refused confirm leaves the row in place with the message beside it. Confirm on a row dated after today is disabled with a hint to edit the date.
+The page: the tab row becomes `Fills | Pending | Cash | Cycles | Alerts`; the Pending label shows the count when it is above 0 (`Pending 3`), from `detail.pendingCount`. The panel lists waiting rows (date, side, shares, price, fee or "auto" when empty, a screenshot link through the existing `ScreenshotLink` when `hasImage`, and marks: "date not in the screenshot" when `dateRead` is false, "dated after today" when `dateAfterToday`, "possible duplicate of <price>" when `dupPrice` is set), with Edit, Confirm and Reject per row and a **Confirm all** button above. After each action it reloads its list and calls `onChanged` (which reloads the run, so the count, books and ladder follow). Confirm all shows a summary: how many were booked, each refused row with its worded reason, how many possible duplicates and how many rows without a read date were left. Errors are worded with `errorText(err, t, 'vrErr')`; a refused confirm leaves the row in place with the message beside it. Confirm on a row dated after today is disabled with a hint to edit the date.
 
 `VrPendingDialog` edits side, shares, price, fee (empty = auto) and date with the same client checks as `VrFillDialog`, sends `PUT`, and follows the dialog conventions (`closeOnEscape={false}`, first field focused).
 
@@ -486,7 +487,7 @@ The step, against the real HTTP app and the scratch database:
 2. The same screenshot again → `'duplicate'`.
 3. Confirm the first row → a fill with `source` capture exists, shares and Pool moved by it, the first buy rung is used up, `pendingCount` 2.
 4. Reject the second; edit the third's shares and confirm it → `pendingCount` 0; the screenshot is gone (`GET /api/captures/<id>/image` answers 404).
-5. The same screenshot again → `vr-outcome` with `waiting 0` and `dropped 2` or more (the edited row's original fill may come back as waiting: assert whichever the rules give and say which in a comment).
+5. The same screenshot again → `'duplicate'`. A different image whose fake reading has the two unedited fills → `vr-outcome` with `waiting 0` and `dropped 2`.
 6. On a second new VR run whose opening buy was typed in but which has no cycle yet, upload a screenshot that leaves one fill waiting, then run the morning job: the held message is sent and no cycle opens; reject the fill and run it again: cycle 1 opens. (The script's date is fixed, so the hold is exercised on cycle 1, not on a roll.)
 7. Create an MR run and a VR run on one ticker that no other step uses; an un-pinned upload of a screenshot for that ticker → an `ambiguous` event and nothing waiting on either.
 

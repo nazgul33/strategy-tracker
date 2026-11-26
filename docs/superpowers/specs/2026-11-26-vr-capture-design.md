@@ -114,8 +114,11 @@ id works exactly as an MR one does.
 For a VR run and the fills routed to it, inside the run lock:
 
 1. **Same screenshot again.** If this exact screenshot was already taken in for this run and
-   any of its VR pending fills is still waiting, it is refused as a duplicate. Otherwise it is
-   read again and goes through the matching below.
+   produced at least one pending fill then (waiting, confirmed or rejected), it is refused as a
+   duplicate. (Amended during the build: the draft let a decided screenshot be read again. A
+   fill whose row had been corrected before confirming, or an undated fill sent again on a
+   later day, would then come back as a new row and could be booked twice.) A screenshot that
+   produced no row is read again.
 2. **Matching against what the run already has**, using the existing matcher with VR's booked
    fills, waiting fills and **rejected** fills (each existing entry can cancel one incoming
    fill):
@@ -165,10 +168,12 @@ A new **Pending** tab, with the number waiting shown on the tab.
   follows (not after today, shares never negative, books in range). A fee left empty is computed
   from the run's trade cost, as for typed fills.
 - **Reject** discards it.
-- **Confirm all** confirms every waiting row that is **not** marked as a possible duplicate,
-  buys before sells and oldest first, and reports how many were booked, which were refused and
-  why, and how many marked rows were left for a one-by-one decision. Refused and marked rows
-  stay waiting.
+- **Confirm all** confirms every waiting row that needs no second look: not marked as a
+  possible duplicate, and with a date that was read from the screenshot (amended during the
+  build: a guessed date is exactly what makes the same fill look new in a later screenshot).
+  It works buys before sells and oldest first, and reports how many were booked, which were
+  refused and why, and how many rows of each kind were left for a one-by-one decision. Refused
+  and left rows stay waiting.
 - The run header gets an **Upload screenshot** button, which opens the existing upload dialog
   pinned to this run. Its result lines and its "go to pending" button lead to this page's
   Pending tab, which therefore gets its own link (`#/vr/<id>?tab=pending`).
