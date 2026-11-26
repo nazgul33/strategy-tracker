@@ -99,6 +99,14 @@ A strategy's **total** is the sum of its runs' values.
   its strategy's total is marked as resting on an older close. There is no time-of-day logic (the owner reads the page in Korea, where the
   New York date and the morning job's hour would otherwise raise false alarms every afternoon).
 - A run with no shares needs no close and is never marked.
+- Added after the final review: when every row is equally old nothing above marks it, so the
+  page also says when its closes are **behind**. Dates only, no time of day: the closes are
+  behind when the newest close used is older than the trading day before the previous trading
+  day, by the server's New York date (after Monday's session that is the Thursday before; a
+  normal day never trips it, before or after the morning job; a missed morning job does). The
+  page also says in one line that a session's close is stored by the next trading morning's
+  job, because for most of the owner's day in Korea the newest stored close is one session
+  behind the last one traded.
 
 ### Keeping closes current for paused runs
 
