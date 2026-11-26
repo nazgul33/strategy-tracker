@@ -46,7 +46,7 @@ describe('makeSend', () => {
   });
 
   test("grammy's bot API satisfies MessageApi", () => {
-    const api: MessageApi = createBot({ token: '1:x', allowedChatIds: [], onPhoto() {}, onConfirm() {}, onStatus() {}, onOrders() {} }).api;
+    const api: MessageApi = createBot({ token: '1:x', allowedChatIds: [], onPhoto() {}, onConfirm() {}, onChoice() {}, onStatus() {}, onOrders() {} }).api;
     expect(typeof api.sendMessage).toBe('function');
   });
 });

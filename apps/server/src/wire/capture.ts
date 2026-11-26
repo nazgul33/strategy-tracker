@@ -12,10 +12,12 @@ import { parseId } from '../http/params';
 import { makeBookingNotifier } from './booking-notifier';
 import { broadcastNotice } from './broadcast';
 import { badExtractMessage } from './capture-bad-extract-message';
+import { makeChoiceHandlers } from './capture-choice';
 import { pendingMessage } from './capture-pending-message';
 import { makeCaptureRouting } from './capture-route';
 import type { BadExtractEvent, CaptureEvent, CaptureRouteDeps } from './capture-route';
 import { sendBlocks } from './send-blocks';
+import { vrCaptureMessage } from './vr-capture-message';
 import { vrOrdersBlocks, vrStatusBlocks } from './vr-status';
 
 const CONFIRM_ERROR_KEYS: Record<string, string> = {
@@ -43,6 +45,8 @@ export interface CaptureRepos extends RepoSurface, VrRepos {
 export interface CaptureDeps extends CaptureRouteDeps {
   repos: CaptureRepos;
   lang?: Lang;
+  // the clock the strategy question's 24 hours run on
+  now?: () => Date;
   // chats told about booking notices; empty: recorded for the web only
   allowedChatIds: string[];
   send(chatId: string, text: string, extra?: Record<string, unknown>): Promise<void>;
@@ -51,6 +55,7 @@ export interface CaptureDeps extends CaptureRouteDeps {
 export function makeCaptureHandlers(deps: CaptureDeps) {
   const lang: Lang = deps.lang ?? 'en';
   const routeCapture = makeCaptureRouting(deps);
+  const choice = makeChoiceHandlers({ repos: deps.repos, lang, today: deps.today, now: deps.now ?? (() => new Date()), send: deps.send, sendOutcome });
 
   // A failed read, worded by kind: recorded for System notices (no run) and then sent, to the asking chat only.
   // broadcastNotice logs a failing insert or send and never throws, so the photo handler resolves.
@@ -61,7 +66,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     );
   }
 
-  async function reply(chatId: string, event: CaptureEvent): Promise<void> {
+  async function reply(chatId: string, event: CaptureEvent, image: { base64: string; mime: string }): Promise<void> {
     switch (event.type) {
       case 'unknown-run':
         await deps.send(chatId, t('unknown-run', lang, { id: event.id }));
@@ -84,11 +89,11 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
       case 'outcome':
         await sendOutcome(chatId, event.outcome);
         return;
-      // Interim until the Telegram question and the VR message exist.
       case 'choose':
-        await deps.send(chatId, t('capture-ambiguous', lang, { ticker: event.ticker }));
+        await choice.ask(chatId, image, event);
         return;
       case 'vr-outcome':
+        await deps.send(chatId, vrCaptureMessage(event, lang));
         return;
       default: {
         const unhandled: never = event;
@@ -102,7 +107,7 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     // anything else (e.g. a "NVDA 12/25" note) falls through to ticker auto-route.
     const m = /^(?:\/capture\s+)?#?(\d+)(?:\s|$)/.exec(caption?.trim() ?? '');
     const pinnedRunId = m ? Number(m[1]) : null;
-    await routeCapture({ image, pinnedRunId }, (event) => reply(chatId, event));
+    await routeCapture({ image, pinnedRunId }, (event) => reply(chatId, event, image));
   }
 
   async function sendOutcome(chatId: string, outcome: CaptureOutcome): Promise<void> {
@@ -255,5 +260,5 @@ export function makeCaptureHandlers(deps: CaptureDeps) {
     await sendBlocks(deps.send, chatId, blocks);
   }
 
-  return { onPhoto, onConfirm, onStatus, onOrders };
+  return { onPhoto, onConfirm, onChoice: choice.onChoice, onStatus, onOrders };
 }

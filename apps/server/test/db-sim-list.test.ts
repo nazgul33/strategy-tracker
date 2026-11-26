@@ -95,7 +95,7 @@ describeIf('simRepo.listRuns / sweepDrafts', () => {
     const keepFinalized = await mk(8 * DAY_S, true)
     const log = spyOn(console, 'log').mockImplementation(() => {})
     try {
-      await runBootSweeps({ simRepo: repos.simRepo, captureImageRepo: { sweepOrphans: async () => [] }, visionReviewRepo: { listUnfrozenKept: async () => [], insertIgnore: async () => {} } }, new Date())
+      await runBootSweeps({ simRepo: repos.simRepo, captureImageRepo: { sweepOrphans: async () => [] }, visionReviewRepo: { listUnfrozenKept: async () => [], insertIgnore: async () => {} }, captureChoiceRepo: repos.captureChoiceRepo }, new Date())
     } finally { log.mockRestore() }
     for (const id of [keep6d, keepJustInside, keepFinalized]) expect(await repos.simRepo.getRun(id)).not.toBeNull()
     for (const id of [dropJustOutside, drop8d]) expect(await repos.simRepo.getRun(id)).toBeNull()

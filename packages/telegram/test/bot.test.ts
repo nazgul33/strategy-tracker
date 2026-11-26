@@ -1,5 +1,5 @@
 import { describe, test, expect, spyOn } from 'bun:test'
-import { createBot } from '../src/bot'
+import { buildChoiceKeyboard, createBot } from '../src/bot'
 
 const BOT_INFO = {
   id: 1,
@@ -17,7 +17,11 @@ const BOT_INFO = {
   supports_join_request_queries: false,
 } as const
 
-function harness(onConfirm: (chatId: string, cbData: string, approved: boolean) => Promise<void> | void, failApi = false) {
+function harness(
+  onConfirm: (chatId: string, cbData: string, approved: boolean) => Promise<void> | void,
+  failApi = false,
+  onChoice: (chatId: string, cbData: string) => Promise<void> | void = () => {},
+) {
   const order: string[] = []
   const calls: { method: string; payload: unknown }[] = []
   const bot = createBot({
@@ -27,6 +31,10 @@ function harness(onConfirm: (chatId: string, cbData: string, approved: boolean) 
     onConfirm: (chatId, cbData, approved) => {
       order.push('onConfirm')
       return onConfirm(chatId, cbData, approved)
+    },
+    onChoice: (chatId, cbData) => {
+      order.push('onChoice')
+      return onChoice(chatId, cbData)
     },
     onStatus() {},
     onOrders() {},
@@ -102,6 +110,7 @@ describe('bot callback_query handler', () => {
         seen.push(cbData)
         if (cbData === 'yes:1') throw new Error('boom')
       },
+      onChoice() {},
       onStatus() {},
       onOrders() {},
     })
@@ -140,5 +149,87 @@ describe('bot callback_query handler', () => {
     await h.press('yes:9', 222)
     expect(seen).toEqual([])
     expect(h.calls).toEqual([])
+  })
+})
+
+describe('bot strategy question buttons', () => {
+  test('a cs: press reaches onChoice and not onConfirm, after the callback was answered', async () => {
+    const confirmed: string[] = []
+    const chosen: [string, string][] = []
+    const h = harness((_c, cbData) => void confirmed.push(cbData), false, (chatId, cbData) => void chosen.push([chatId, cbData]))
+    await h.press('cs:5:v')
+    expect(chosen).toEqual([['111', 'cs:5:v']])
+    expect(confirmed).toEqual([])
+    expect(h.order).toEqual(['answerCallbackQuery', 'onChoice'])
+  })
+
+  test('yes: and no: presses still reach onConfirm with the same arguments and never onChoice', async () => {
+    const confirmed: [string, string, boolean][] = []
+    const chosen: string[] = []
+    const h = harness((chatId, cbData, approved) => void confirmed.push([chatId, cbData, approved]), false, (_c, cbData) => void chosen.push(cbData))
+    await h.press('yes:9')
+    await h.press('no:9')
+    expect(confirmed).toEqual([
+      ['111', 'yes:9', true],
+      ['111', 'no:9', false],
+    ])
+    expect(chosen).toEqual([])
+  })
+
+  test('data that only resembles the prefix still goes to onConfirm', async () => {
+    const confirmed: string[] = []
+    const chosen: string[] = []
+    const h = harness((_c, cbData) => void confirmed.push(cbData), false, (_c, cbData) => void chosen.push(cbData))
+    await h.press('cs5')
+    await h.press('csv:1')
+    expect(confirmed).toEqual(['cs5', 'csv:1'])
+    expect(chosen).toEqual([])
+  })
+
+  test('the callback is answered even when onChoice throws', async () => {
+    const h = harness(() => {}, false, () => {
+      throw new Error('boom')
+    })
+    await expect(h.press('cs:5:v')).rejects.toThrow()
+    expect(h.calls.map((c) => c.method)).toEqual(['answerCallbackQuery'])
+  })
+
+  test('a failed answerCallbackQuery is logged and onChoice still runs', async () => {
+    const chosen: string[] = []
+    const h = harness(() => {}, true, (_c, cbData) => void chosen.push(cbData))
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await h.press('cs:5:b')
+      expect(chosen).toEqual(['cs:5:b'])
+      expect(errors).toHaveBeenCalled()
+    } finally {
+      errors.mockRestore()
+    }
+  })
+
+  test('a cs: press in a chat that is not allowed reaches nothing', async () => {
+    const chosen: string[] = []
+    const h = harness(() => {}, false, (_c, cbData) => void chosen.push(cbData))
+    await h.press('cs:5:v', 222)
+    expect(chosen).toEqual([])
+    expect(h.calls).toEqual([])
+  })
+
+  test('buildChoiceKeyboard makes one row of three buttons', () => {
+    expect(buildChoiceKeyboard('42', { mr: 'A', vr: 'B', both: 'C' })).toEqual({
+      inline_keyboard: [[
+        { text: 'A', callback_data: 'cs:42:m' },
+        { text: 'B', callback_data: 'cs:42:v' },
+        { text: 'C', callback_data: 'cs:42:b' },
+      ]],
+    })
+  })
+
+  test('every callback_data stays within 64 bytes for a ten-digit id', () => {
+    for (const id of ['2147483647', '9999999999']) {
+      for (const b of buildChoiceKeyboard(id, { mr: 'A', vr: 'B', both: 'C' }).inline_keyboard[0]!) {
+        expect(Buffer.byteLength(b.callback_data, 'utf8')).toBeLessThanOrEqual(64)
+      }
+    }
   })
 })

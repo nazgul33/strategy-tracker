@@ -55,6 +55,40 @@ export const CATALOG: Record<string, MsgEntry> = {
   'capture-ambiguous': { en: 'Multiple active runs for {ticker} — use /capture <runId>.', ko: '{ticker}에 여러 활성 런이 있습니다 — /capture <runId>를 사용하세요.' },
   'capture-pin-skipped': { en: 'Ignored {tickers} — not the ticker of run #{id}.', ko: '{tickers}은(는) 런 #{id}의 종목이 아니므로 무시했습니다.' },
   'capture-pin-nomatch': { en: 'No {ticker} fills in this image — run #{id} unchanged.', ko: '이 이미지에서 {ticker} 체결을 찾지 못했습니다 — 런 #{id}는 그대로입니다.' },
+  'capture-choice-question': { en: '{ticker}, {n} fill(s): which strategy?', ko: '{ticker} 체결 {n}건: 어느 전략의 체결인가요?' },
+  'capture-choice-mr': { en: 'Mean reversion', ko: '평균 회귀' },
+  'capture-choice-vr': { en: 'VR', ko: 'VR' },
+  'capture-choice-both': { en: 'Both', ko: '둘 다' },
+  'capture-choice-expired': {
+    en: 'This question has expired (questions are kept for 24 hours). Send the screenshot again.',
+    ko: '이 질문은 만료되었습니다 (질문은 24시간 동안 보관됩니다). 스크린샷을 다시 보내세요.',
+  },
+  'capture-choice-answered': { en: 'This question was already answered — nothing more was taken in.', ko: '이미 답한 질문입니다 — 추가로 받아들인 것은 없습니다.' },
+  'capture-choice-park-failed': {
+    en: 'Could not save the question for this {ticker} screenshot. Send the screenshot from the run\'s page in the web app instead.',
+    ko: '이 {ticker} 스크린샷에 대한 질문을 저장하지 못했습니다. 대신 웹 앱의 런 페이지에서 스크린샷을 보내세요.',
+  },
+  'capture-choice-failed': {
+    en: 'Could not take in this {ticker} screenshot for {strategy}. Send the screenshot again.',
+    ko: '이 {ticker} 스크린샷을 {strategy}에 받아들이지 못했습니다. 스크린샷을 다시 보내세요.',
+  },
+  'vr-capture-waiting': {
+    en: 'VR run #{id} {ticker}: {n} fill(s) waiting. Confirm them on the run\'s Pending tab in the web app.',
+    ko: 'VR 런 #{id} {ticker}: 체결 {n}건이 확인을 기다립니다. 웹 앱의 런 페이지 \'확인 대기\' 탭에서 확정하세요.',
+  },
+  'vr-capture-dropped': { en: '{n} fill(s) dropped: already booked or rejected.', ko: '이미 기록되었거나 거부된 체결 {n}건은 제외했습니다.' },
+  'vr-capture-possible-dup': {
+    en: '{n} marked as possible duplicate(s): check the price before confirming.',
+    ko: '{n}건은 중복일 수 있어 표시해 두었습니다 — 가격을 확인한 뒤 확정하세요.',
+  },
+  'vr-capture-none': {
+    en: 'VR run #{id} {ticker}: nothing new to confirm. {n} fill(s) in this screenshot are already booked or rejected.',
+    ko: 'VR 런 #{id} {ticker}: 새로 확인할 체결이 없습니다. 이 스크린샷의 체결 {n}건은 이미 기록되었거나 거부되었습니다.',
+  },
+  'vr-capture-duplicate': {
+    en: 'VR run #{id} {ticker}: this screenshot was already taken in for this run. Nothing was added.',
+    ko: 'VR 런 #{id} {ticker}: 이 스크린샷은 이 런에 이미 받아 두었습니다. 추가된 체결은 없습니다.',
+  },
   'confirm-err-ticker-mismatch': { en: 'Ticker does not match the run — tap No to reject this fill, then re-capture.', ko: '티커가 런과 일치하지 않습니다 — \'No\'를 눌러 이 체결을 거부하고 다시 캡처하세요.' },
   'confirm-err-already-handled': { en: 'Already handled — this fill was already confirmed or rejected.', ko: '이미 처리되었습니다 — 이 체결은 이미 확정되었거나 거부되었습니다.' },
   'confirm-err-no-empty-bucket': { en: 'No empty bucket left in this run — free one up before confirming.', ko: '이 런에 빈 버킷이 없습니다 — 확정하기 전에 버킷을 비우세요.' },
