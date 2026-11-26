@@ -164,6 +164,7 @@ export function getVrRepos(db: Db) {
       return res.affectedRows > 0
     },
     async confirm(runId, id, fill) {
+      if (fill.runId !== runId) throw new Error(`confirm: fill.runId ${fill.runId} differs from runId ${runId}`)
       return db.transaction(async (tx) => {
         const [res] = await tx.update(s.vrPendingFills).set({ status: 'confirmed' }).where(pendingWhere(runId, id))
         if (res.affectedRows === 0) return null

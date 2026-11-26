@@ -4,13 +4,15 @@ import type { Expect, IsNever, ArityMismatches } from './type-assert'
 /** In-memory parked questions. `createdAt` comes from `now()`, so a test that moves the clock ages them. */
 export function makeChoiceFakes(now: () => Date = () => new Date()) {
   const choices: CaptureChoiceRow[] = []
+  let lastId = 0 // only goes up, like AUTO_INCREMENT: a deleted question's id is never handed out again
   const stamp = () => now().toISOString().slice(0, 19).replace('T', ' ') // 'YYYY-MM-DD HH:MM:SS', UTC
   const ms = (createdAt: string) => Date.parse(createdAt.replace(' ', 'T') + 'Z')
   const copy = (c: CaptureChoiceRow): CaptureChoiceRow => ({ ...c, fills: c.fills.map((f) => ({ ...f })), image: { ...c.image } })
 
   const captureChoiceRepo = {
     async park(c: NewCaptureChoice) {
-      const id = Math.max(0, ...choices.map((x) => x.id)) + 1
+      const id = Math.max(lastId, ...choices.map((x) => x.id)) + 1 // a test may push rows by hand
+      lastId = id
       choices.push(copy({ ...c, id, createdAt: stamp(), answer: null }))
       return id
     },

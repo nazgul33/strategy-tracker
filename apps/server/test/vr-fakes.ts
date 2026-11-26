@@ -113,11 +113,16 @@ export function makeVrFakes(opts: { otherRuns?: () => SharedRunRow[] } = {}) {
       return true
     },
     async confirm(runId: number, id: number, fill: NewVrFill) {
+      if (fill.runId !== runId) throw new Error(`confirm: fill.runId ${fill.runId} differs from runId ${runId}`)
       const r = findPending(runId, id)
       if (!r) return null
-      const fillId = await vrFillRepo.insert(fill) // through the object: a test that makes insert throw leaves the row pending
-      r.status = 'confirmed'
-      return fillId
+      r.status = 'confirmed' // before the first await, so a second confirm started now finds the row decided
+      try {
+        return await vrFillRepo.insert(fill) // through the object: a test that makes insert throw leaves the row pending
+      } catch (e) {
+        r.status = 'pending'
+        throw e
+      }
     },
     async reject(runId: number, id: number) { const r = findPending(runId, id); if (!r) return false; r.status = 'rejected'; return true },
     async countPending(runId: number) { return pending.filter((p) => p.runId === runId && p.status === 'pending').length },
