@@ -160,3 +160,27 @@ export async function matchCapturedFills(
   }
   return { fresh, conflicts }
 }
+
+/** Each existing entry cancels at most one extracted fill with the same side, ticker, shares, price and date (a missing date is `today`). */
+export function dropExactMatches<T extends { side: 'buy' | 'sell'; ticker: string; shares: number; price: bigint; filledOn: ISODate }>(
+  existing: readonly T[],
+  extracted: readonly RawFill[],
+  today: ISODate,
+): { kept: RawFill[]; dropped: number } {
+  const remaining = new Map<string, number>()
+  for (const e of existing) {
+    const k = dedupKey(e.side, e.ticker, e.shares, e.price, e.filledOn)
+    remaining.set(k, (remaining.get(k) ?? 0) + 1)
+  }
+  const kept: RawFill[] = []
+  let dropped = 0
+  for (const f of extracted) {
+    const k = dedupKey(f.side, f.ticker, f.shares, f.price, f.date ?? today)
+    const n = remaining.get(k) ?? 0
+    if (n > 0) {
+      remaining.set(k, n - 1)
+      dropped++
+    } else kept.push(f)
+  }
+  return { kept, dropped }
+}

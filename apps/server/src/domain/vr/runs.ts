@@ -80,7 +80,7 @@ export function updateVrSettings(repo: Pick<VrRunRepo, 'get' | 'updateSettings'>
 }
 
 export interface VrReadDeps {
-  repos: Pick<VrRepos, 'vrRunRepo' | 'vrCycleRepo' | 'vrFillRepo' | 'vrCashRepo'> & {
+  repos: Pick<VrRepos, 'vrRunRepo' | 'vrCycleRepo' | 'vrFillRepo' | 'vrCashRepo' | 'vrPendingRepo'> & {
     priceHistoryRepo: { listForTicker(ticker: string): Promise<{ tradeDate: string; close: bigint }[]> }
   }
   today: ISODate
@@ -88,10 +88,11 @@ export interface VrReadDeps {
 
 async function loadParts(run: VrRunRow, deps: VrReadDeps) {
   const r = deps.repos
-  const [fills, moves, cycle, closes] = await Promise.all([
+  const [fills, moves, cycle, closes, pendingCount] = await Promise.all([
     r.vrFillRepo.listForRun(run.id), r.vrCashRepo.listForRun(run.id), r.vrCycleRepo.latest(run.id), r.priceHistoryRepo.listForTicker(run.ticker),
+    r.vrPendingRepo.countPending(run.id),
   ])
-  return { run, fills, moves, cycle, lastClose: lastCloseOf(closes) }
+  return { run, fills, moves, cycle, lastClose: lastCloseOf(closes), pendingCount }
 }
 
 export async function loadVrDetail(run: VrRunRow, deps: VrReadDeps): Promise<VrRunDetail> {

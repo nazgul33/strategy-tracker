@@ -22,7 +22,7 @@ const inCycleBuy = (shares = 3, fee = 9) => fill('buy', shares, 451_500n, fee, '
 const lastClose = { date: '2026-11-09', close: 460_000n }
 const today = '2026-11-10'
 const detail = (fills: VrFillRow[], over: Partial<Parameters<typeof buildVrDetail>[0]> = {}) =>
-  buildVrDetail({ run, fills, moves: [open], cycle, lastClose, today, ...over })
+  buildVrDetail({ run, fills, moves: [open], cycle, lastClose, today, pendingCount: 0, ...over })
 
 describe('buildVrDetail', () => {
   test('the page sketch: books, budget, ladder and value', () => {
@@ -193,13 +193,18 @@ describe('lastCloseOf and buildVrSummary', () => {
   })
 
   test('a summary carries shares, Pool, V and value', () => {
-    const s = buildVrSummary({ run, fills: [earlier(), inCycleBuy()], moves: [open], cycle, lastClose })
+    const s = buildVrSummary({ run, fills: [earlier(), inCycleBuy()], moves: [open], cycle, lastClose, pendingCount: 0 })
     expect(s).toMatchObject({ id: 1, ticker: 'TQQQ', shares: 179, poolCents: 86_446, vCents: 935_000, valueCents: 909_846 })
     expect(Object.keys(s)).not.toContain('strategyKey')
   })
 
+  test('the number of waiting fills passes through to the detail and the summary', () => {
+    expect(detail([], { pendingCount: 3 }).pendingCount).toBe(3)
+    expect(buildVrSummary({ run, fills: [], moves: [open], cycle, lastClose, pendingCount: 2 }).pendingCount).toBe(2)
+  })
+
   test('before cycle 1 the summary has no V; without a close it has no value', () => {
-    const s = buildVrSummary({ run, fills: [], moves: [open], cycle: null, lastClose: null })
+    const s = buildVrSummary({ run, fills: [], moves: [open], cycle: null, lastClose: null, pendingCount: 0 })
     expect(s).toMatchObject({ shares: 0, poolCents: 1_000_000, vCents: null, valueCents: null })
   })
 })
