@@ -29,8 +29,6 @@ afterAll(() => {
   delete globalThis.IS_REACT_ACT_ENVIRONMENT;
 });
 
-const NOT_PENDING = 'This fill is no longer waiting: it was already confirmed or rejected.';
-
 const confirmAll = { method: 'POST' as const, url: '/pending/confirm-all', status: 200, json: {} as unknown };
 const confirm = { method: 'POST' as const, url: '/confirm', status: 201, json: { fillId: 50 } as unknown };
 const reject = { method: 'POST' as const, url: '/reject', status: 204, json: undefined as unknown };
@@ -197,22 +195,6 @@ describe('VrPendingPanel', () => {
     );
     expect(rows()).toHaveLength(4);
     expect(changed).toBe(0);
-  });
-
-  it('words vr-not-pending on a reject', async () => {
-    reject.status = 409;
-    reject.json = { error: 'vr-not-pending' };
-    await h.clickId('vrPendingReject-32');
-    expect(byId('vrPendingError-32')!.textContent).toBe(NOT_PENDING);
-    expect(rows()).toHaveLength(4);
-    expect(changed).toBe(0);
-  });
-
-  it('words vr-not-pending on a confirm', async () => {
-    confirm.status = 409;
-    confirm.json = { error: 'vr-not-pending' };
-    await h.clickId('vrPendingConfirm-32');
-    expect(byId('vrPendingError-32')!.textContent).toBe(NOT_PENDING);
   });
 
   it('a later successful action clears the earlier row error', async () => {

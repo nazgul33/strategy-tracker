@@ -558,6 +558,7 @@
   "vr.confirmAllBooked": "Booked: {n}.",
   "vr.confirmAllLeftDuplicates": "Possible duplicates left to decide one by one: {n}.",
   "vr.confirmAllLeftUndated": "Rows without a date from the screenshot, left to decide one by one: {n}.",
+  "vr.confirmAllMaybeBooked": "Some rows may have been booked before this failed. Check the list below.",
   "vr.confirmAllRefusedHead": "Not booked: {n}.",
   "vr.confirmAllRefusedRow": "{fill} — {reason}",
   "vr.created": "VR run #{id} created",

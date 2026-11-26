@@ -1,17 +1,15 @@
 // Edit dialog of one fill read from a screenshot and still waiting. An empty fee stays empty: the server computes it
 // from the run's cost when the row is confirmed.
 import { useState, type FormEvent } from 'react';
+import { ApiError } from '../../api';
 import { vrApi } from '../../api.vr';
 import type { VrPendingDto, VrPendingInput, VrSide } from '../../api.vr.types';
 import { autoFeeUsd } from '../../autofee';
 import { errorText } from '../../errortext';
 import { centsToUsdText, isoDate, priceInputValue } from '../../format';
 import { useT } from '../../i18n';
-import { ungroupUsd, usdFeeOrNull, usdOrNull } from '../../usd';
 import { Button, Field, Input, Modal, Select } from '../ui';
-
-const MAX_SHARES = 2_147_483_647;
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+import { vrFillChecks } from './vrFillChecks';
 
 export interface VrPendingDialogProps {
   runId: number;
@@ -19,9 +17,11 @@ export interface VrPendingDialogProps {
   row: VrPendingDto;
   onClose: () => void;
   onSaved: () => void;
+  /** The row was already decided elsewhere: called when the dialog is closed, so the list can drop it. */
+  onStale: () => void;
 }
 
-export function VrPendingDialog({ runId, costPpm, row, onClose, onSaved }: VrPendingDialogProps) {
+export function VrPendingDialog({ runId, costPpm, row, onClose, onSaved, onStale }: VrPendingDialogProps) {
   const t = useT();
   const [side, setSide] = useState<VrSide>(row.side);
   const [shares, setShares] = useState(String(row.shares));
@@ -30,18 +30,17 @@ export function VrPendingDialog({ runId, costPpm, row, onClose, onSaved }: VrPen
   const [filledOn, setFilledOn] = useState(isoDate(row.filledOn));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
+
+  const close = () => {
+    if (stale) onStale();
+    onClose();
+  };
 
   // The request body, or the message of the first failed client check.
   const input = (): VrPendingInput | string => {
-    const priceText = usdOrNull(ungroupUsd(price));
-    if (priceText === null) return t('manualInvalidPrice');
-    const count = Number(shares.trim());
-    if (!/^\d+$/.test(shares.trim()) || count <= 0) return t('manualInvalidQty');
-    if (count > MAX_SHARES) return t('vr.invalidSharesLarge');
-    const feeText = fee.trim() === '' ? undefined : usdFeeOrNull(fee);
-    if (fee.trim() !== '' && feeText === null) return t('manualInvalidFee');
-    if (!ISO_DATE.test(filledOn)) return t('manualInvalidDate');
-    return { side, shares: count, price: priceText, filledOn, fee: feeText ?? undefined };
+    const checked = vrFillChecks(t, { side, shares, price, fee, filledOn });
+    return 'error' in checked ? checked.error : checked.value;
   };
 
   const submit = async (e: FormEvent) => {
@@ -59,6 +58,7 @@ export function VrPendingDialog({ runId, costPpm, row, onClose, onSaved }: VrPen
       onSaved();
       onClose();
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'vr-not-pending') setStale(true);
       setError(errorText(err, t, 'vrErr'));
     } finally {
       setBusy(false);
@@ -68,7 +68,7 @@ export function VrPendingDialog({ runId, costPpm, row, onClose, onSaved }: VrPen
   const auto = autoFeeUsd(shares, price, costPpm);
 
   return (
-    <Modal title={t('vr.pendingEditTitle')} onClose={onClose} closeOnEscape={false}>
+    <Modal title={t('vr.pendingEditTitle')} onClose={close} closeOnEscape={false}>
       <form onSubmit={(e) => void submit(e)} className="space-y-3">
         <Field label={t('manualSide')}>
           <Select
@@ -124,7 +124,7 @@ export function VrPendingDialog({ runId, costPpm, row, onClose, onSaved }: VrPen
           </p>
         )}
         <div className="flex items-center gap-3">
-          <Button onClick={onClose}>{t('cancel')}</Button>
+          <Button onClick={close}>{t('cancel')}</Button>
           <Button type="submit" variant="primary" busy={busy}>
             {t('dialog.save')}
           </Button>

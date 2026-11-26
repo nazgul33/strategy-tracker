@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
 import type { FetchCalls } from '../../testing/fetchStub';
 import { vrDialogHelpers } from '../../testing/vrDialog';
-import { VR_PENDING } from '../../testing/vr';
+import { VR_PENDING, VR_PENDING_FINE } from '../../testing/vr';
 
 GlobalRegistrator.register();
 
@@ -144,17 +144,29 @@ describe('VrPendingPanel confirm all', () => {
     expect(summary.compareDocumentPosition(empty) & 4).toBe(4);
   });
 
-  it('shows the server text when the request fails, with no summary and no reload', async () => {
+  it('quotes a refused price in full', async () => {
+    list.json = [VR_PENDING_FINE];
+    await act(async () => root.render(null));
+    await act(async () =>
+      root.render(d(VrPendingPanel, { runId: 5, costPpm: 700, today: '2026-12-09', onChanged: () => (changed += 1) })),
+    );
+    await h.flush();
+    confirmAll.json = { confirmed: 0, refused: [{ id: 35, error: 'fill-date-in-future' }], skippedDuplicates: 0, skippedUndated: 0 };
+    await h.clickId('vrPendingConfirmAll');
+    expect(refusedItems()).toEqual([`Buy 3 @ $44.3912 on 2026-12-08 — ${FUTURE}`]);
+  });
+
+  it('shows the server text when the request fails, with no summary; the list is re-read and the change reported', async () => {
     confirmAll.status = 500;
     confirmAll.json = { error: 'boom' };
     const before = gets;
     await h.clickId('vrPendingConfirmAll');
     expect(byId('vrConfirmAllSummary')).toBeNull();
-    expect(document.querySelector('[role="alert"]')!.textContent).toBe(
-      'The server had a problem (boom). Try again; if it keeps failing, check the server log.',
+    expect(text('vrPendingPanelError')).toBe(
+      'The server had a problem (boom). Try again; if it keeps failing, check the server log. Some rows may have been booked before this failed. Check the list below.',
     );
-    expect(gets).toBe(before);
-    expect(changed).toBe(0);
+    expect(gets).toBe(before + 1);
+    expect(changed).toBe(1);
     expect(container.querySelectorAll('tbody tr')).toHaveLength(4);
   });
 

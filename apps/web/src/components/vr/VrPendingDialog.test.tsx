@@ -46,6 +46,7 @@ describe('VrPendingDialog', () => {
           row,
           onClose: () => saved.push('close'),
           onSaved: () => saved.push('saved'),
+          onStale: () => saved.push('stale'),
         }),
       ),
     );
@@ -173,6 +174,33 @@ describe('VrPendingDialog', () => {
     await h.submit();
     expect(h.errorText()).toBe('This fill is no longer waiting: it was already confirmed or rejected.');
     expect(h.dialogOpen()).toBe(true);
+    expect(saved).toEqual([]);
+    await h.click('Cancel');
+    expect(saved).toEqual(['stale', 'close']);
+  });
+
+  it('closing after another kind of error does not report a stale row', async () => {
+    put.status = 422;
+    put.json = { error: 'invalid-price' };
+    await mount();
+    await h.submit();
+    await h.click('Cancel');
+    expect(saved).toEqual(['close']);
+  });
+
+  it('shows a price finer than a cent in full and saves it unchanged', async () => {
+    await mount({ ...VR_PENDING[1]!, price: '443912', fee: 0 });
+    expect(h.value('vrPendingPriceInput')).toBe('44.3912');
+    expect(h.value('vrPendingFeeInput')).toBe('0.00');
+    await h.submit();
+    expect(calls[0]!.body).toEqual({ side: 'buy', shares: 3, price: '44.3912', fee: '0.00', filledOn: '2026-12-08' });
+  });
+
+  it('saves a row with no fee unchanged without a fee key', async () => {
+    await mount(VR_PENDING[0]);
+    await h.submit();
+    expect(calls[0]!.body).toEqual({ side: 'buy', shares: 3, price: '44.3900', filledOn: '2026-12-08' });
+    expect('fee' in (calls[0]!.body as object)).toBe(false);
   });
 
   it('can retry after an error', async () => {

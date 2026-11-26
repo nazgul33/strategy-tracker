@@ -1,22 +1,28 @@
 // Pending tab of a VR run: fills read from screenshots that wait for the owner's decision.
 // Edit, Confirm and Reject per row, and Confirm all above the table.
 import { useState } from 'react';
-import { ApiError, type ApiErrorCode } from '../../api';
+import { ApiError } from '../../api';
 import { vrApi } from '../../api.vr';
 import type { VrConfirmAllResult, VrPendingDto } from '../../api.vr.types';
 import { errorText } from '../../errortext';
-import { centsUsd, isoDate, priceUsd } from '../../format';
+import { centsUsd, isoDate } from '../../format';
 import { useT } from '../../i18n';
 import { ScreenshotLink } from '../ScreenshotLink';
 import { useAsync } from '../hooks';
 import { Badge, Button, EmptyNote, ErrorNote, Spinner, TableWrap, Td, Th } from '../ui';
+import { VrConfirmAllSummary } from './VrConfirmAllSummary';
 import type { VrPanelProps } from './VrFillsPanel';
 import { VrPendingDialog } from './VrPendingDialog';
 import { VrPanelState } from './VrPanelState';
+import { readPriceUsd } from './vrText';
 
 const NUM = 'text-right tabular-nums';
 
-type Busy = number | 'all' | null;
+// One action at a time; 'list' is the re-read that follows an edit.
+type Busy = number | 'all' | 'list' | null;
+
+/** A refusal (422) leaves the row as it was; any other failure leaves the list in doubt. */
+const isRefusal = (err: unknown): boolean => err instanceof ApiError && err.status === 422;
 
 export function VrPendingPanel({ runId, costPpm, onChanged }: VrPanelProps) {
   const t = useT();
@@ -24,13 +30,18 @@ export function VrPendingPanel({ runId, costPpm, onChanged }: VrPanelProps) {
   const [editing, setEditing] = useState<VrPendingDto | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({});
-  // `rows` is the list as it was before Confirm all: the server names a refused row by id only.
   const [summary, setSummary] = useState<{ result: VrConfirmAllResult; rows: VrPendingDto[] } | null>(null);
-  const [allError, setAllError] = useState<string | null>(null);
+  const [panelError, setPanelError] = useState<string | null>(null);
 
   const clearNotes = () => {
     setSummary(null);
-    setAllError(null);
+    setPanelError(null);
+  };
+
+  // Re-reads the list, then lets the run page re-read its books.
+  const refresh = async () => {
+    await reload();
+    onChanged();
   };
 
   const decide = async (row: VrPendingDto, action: 'confirm' | 'reject') => {
@@ -40,10 +51,15 @@ export function VrPendingPanel({ runId, costPpm, onChanged }: VrPanelProps) {
     try {
       if (action === 'confirm') await vrApi.confirmPending(runId, row.id);
       else await vrApi.rejectPending(runId, row.id);
-      await reload();
-      onChanged();
+      await refresh();
     } catch (err) {
-      setRowErrors((prev) => ({ ...prev, [row.id]: errorText(err, t, 'vrErr') }));
+      if (isRefusal(err)) {
+        setRowErrors((prev) => ({ ...prev, [row.id]: errorText(err, t, 'vrErr') }));
+      } else {
+        // The row may be gone (decided elsewhere) or the answer may have been lost: say it here, then look again.
+        setPanelError(errorText(err, t, 'vrErr'));
+        await refresh();
+      }
     } finally {
       setBusy(null);
     }
@@ -57,10 +73,22 @@ export function VrPendingPanel({ runId, costPpm, onChanged }: VrPanelProps) {
     try {
       const result = await vrApi.confirmAllPending(runId);
       setSummary({ result, rows: snapshot });
-      await reload();
-      onChanged();
+      await refresh();
     } catch (err) {
-      setAllError(errorText(err, t, 'vrErr'));
+      // The server books row by row, so some may have been booked before it failed.
+      setPanelError(`${errorText(err, t, 'vrErr')} ${t('vr.confirmAllMaybeBooked')}`);
+      await refresh();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // After an edit is saved, or after the dialog found its row already decided: stay busy until the list is back.
+  const settle = async () => {
+    setBusy('list');
+    clearNotes();
+    try {
+      await refresh();
     } finally {
       setBusy(null);
     }
@@ -68,45 +96,8 @@ export function VrPendingPanel({ runId, costPpm, onChanged }: VrPanelProps) {
 
   const saved = () => {
     if (editing) setRowErrors((prev) => ({ ...prev, [editing.id]: '' }));
-    void reload();
-    onChanged();
+    void settle();
   };
-
-  const codeText = (code: string): string =>
-    errorText(new ApiError(code === 'vr-not-pending' ? 409 : 422, code as ApiErrorCode), t, 'vrErr');
-
-  const fillText = (id: number, rows: VrPendingDto[]): string => {
-    const row = rows.find((r) => r.id === id);
-    if (!row) return `#${id}`;
-    return t('vr.pendingFillLine', {
-      side: t(row.side === 'buy' ? 'orderSideBuy' : 'orderSideSell'),
-      shares: row.shares,
-      price: priceUsd(row.price),
-      date: isoDate(row.filledOn),
-    });
-  };
-
-  const summaryBox = summary && (
-    <div role="status" data-testid="vrConfirmAllSummary" className="mb-3 rounded-md bg-muted px-2 py-1.5 text-sm">
-      <p data-testid="vrConfirmAllBooked">{t('vr.confirmAllBooked', { n: summary.result.confirmed })}</p>
-      {summary.result.refused.length > 0 && (
-        <>
-          <p>{t('vr.confirmAllRefusedHead', { n: summary.result.refused.length })}</p>
-          <ul data-testid="vrConfirmAllRefused">
-            {summary.result.refused.map((r) => (
-              <li key={r.id}>
-                {t('vr.confirmAllRefusedRow', { fill: fillText(r.id, summary.rows), reason: codeText(r.error) })}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      <p data-testid="vrConfirmAllLeftDuplicates">
-        {t('vr.confirmAllLeftDuplicates', { n: summary.result.skippedDuplicates })}
-      </p>
-      <p data-testid="vrConfirmAllLeftUndated">{t('vr.confirmAllLeftUndated', { n: summary.result.skippedUndated })}</p>
-    </div>
-  );
 
   const body = () => {
     if (loading) return <Spinner />;
@@ -125,12 +116,12 @@ export function VrPendingPanel({ runId, costPpm, onChanged }: VrPanelProps) {
             {t('vr.pendingConfirmAll')}
           </Button>
         </div>
-        {allError !== null && (
-          <div className="mb-3">
-            <ErrorNote message={allError} />
+        {panelError !== null && (
+          <div data-testid="vrPendingPanelError" className="mb-3">
+            <ErrorNote message={panelError} />
           </div>
         )}
-        {summaryBox}
+        {summary && <VrConfirmAllSummary result={summary.result} rows={summary.rows} />}
         {rows.length === 0 ? (
           <EmptyNote>{t('vr.pendingEmpty')}</EmptyNote>
         ) : (
@@ -157,7 +148,7 @@ export function VrPendingPanel({ runId, costPpm, onChanged }: VrPanelProps) {
                     </Badge>
                   </Td>
                   <Td className={NUM}>{r.shares}</Td>
-                  <Td className={NUM}>{priceUsd(r.price)}</Td>
+                  <Td className={NUM}>{readPriceUsd(r.price)}</Td>
                   <Td className={NUM}>{r.fee === null ? t('pendingFeeAuto') : centsUsd(r.fee)}</Td>
                   <Td>
                     {r.hasImage ? (
@@ -180,7 +171,7 @@ export function VrPendingPanel({ runId, costPpm, onChanged }: VrPanelProps) {
                       )}
                       {r.dupPrice !== null && (
                         <span data-testid={`vrPendingDup-${r.id}`}>
-                          <Badge tone="warning">{t('vr.pendingPossibleDuplicate', { price: priceUsd(r.dupPrice) })}</Badge>
+                          <Badge tone="warning">{t('vr.pendingPossibleDuplicate', { price: readPriceUsd(r.dupPrice) })}</Badge>
                         </span>
                       )}
                     </div>
@@ -209,7 +200,7 @@ export function VrPendingPanel({ runId, costPpm, onChanged }: VrPanelProps) {
                       </p>
                     )}
                     {rowErrors[r.id] && (
-                      <p data-testid={`vrPendingError-${r.id}`} className="text-xs text-destructive">
+                      <p role="alert" data-testid={`vrPendingError-${r.id}`} className="text-xs text-destructive">
                         {rowErrors[r.id]}
                       </p>
                     )}
@@ -227,7 +218,14 @@ export function VrPendingPanel({ runId, costPpm, onChanged }: VrPanelProps) {
     <div data-testid="vrPendingPanel" data-run-id={runId}>
       {body()}
       {editing && (
-        <VrPendingDialog runId={runId} costPpm={costPpm} row={editing} onClose={() => setEditing(null)} onSaved={saved} />
+        <VrPendingDialog
+          runId={runId}
+          costPpm={costPpm}
+          row={editing}
+          onClose={() => setEditing(null)}
+          onSaved={saved}
+          onStale={() => void settle()}
+        />
       )}
     </div>
   );

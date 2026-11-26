@@ -132,6 +132,11 @@ export const VR_PENDING: VrPendingDto[] = [
   { id: 34, captureId: 10, side: 'buy', shares: 3, price: '436600', fee: null, filledOn: '2026-12-10', dateRead: true, dateAfterToday: true, dupPrice: null, hasImage: true, createdAt: '2026-12-09 08:05:00' },
 ];
 
+/** A reading with a price finer than a cent and a fee of exactly $0.00 (not "auto"). */
+export const VR_PENDING_FINE: VrPendingDto = {
+  id: 35, captureId: 11, side: 'buy', shares: 3, price: '443912', fee: 0, filledOn: '2026-12-08', dateRead: true, dateAfterToday: false, dupPrice: null, hasImage: true, createdAt: '2026-12-09 08:10:00',
+};
+
 export const VR_CASH: VrCashDto[] = [
   { id: 21, kind: 'open', amountCents: 1_000_000, movedOn: '2026-11-05', note: null, cycleId: null, createdAt: '2026-11-05 14:00:00', beforeCycle: true },
 ];

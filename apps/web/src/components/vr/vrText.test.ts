@@ -7,10 +7,29 @@ import {
   parseVrSettingsText,
   ppmInputText,
   ppmPercent,
+  readPriceUsd,
   signedUsdTextToCents,
 } from './vrText';
 
 describe('vrText', () => {
+  it('shows a read price with two decimals, or up to four when the third or fourth is not zero', () => {
+    expect(readPriceUsd('443900')).toBe('$44.39');
+    expect(readPriceUsd('443912')).toBe('$44.3912');
+    expect(readPriceUsd('443910')).toBe('$44.391');
+    expect(readPriceUsd('443901')).toBe('$44.3901');
+    expect(readPriceUsd('443990')).toBe('$44.399');
+    expect(readPriceUsd('440000')).toBe('$44.00');
+    expect(readPriceUsd('1234567800')).toBe('$123,456.78');
+    expect(readPriceUsd('1234567891')).toBe('$123,456.7891');
+    expect(readPriceUsd('1')).toBe('$0.0001');
+    expect(readPriceUsd('0')).toBe('$0.00');
+  });
+
+  it('shows a dash for a price that is not an integer string', () => {
+    expect(readPriceUsd('')).toBe('—');
+    expect(readPriceUsd('abc')).toBe('—');
+  });
+
   it('formats a ppm percent without trailing zeros', () => {
     expect(ppmPercent(150_000)).toBe('15%');
     expect(ppmPercent(125_000)).toBe('12.5%');

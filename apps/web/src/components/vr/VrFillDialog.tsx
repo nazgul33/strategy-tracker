@@ -7,12 +7,9 @@ import { autoFeeUsd } from '../../autofee';
 import { errorText } from '../../errortext';
 import { centsToUsdText, isoDate, priceInputValue } from '../../format';
 import { useT } from '../../i18n';
-import { ungroupUsd, usdFeeOrNull, usdOrNull } from '../../usd';
 import { Button, Field, Input, Modal, Select } from '../ui';
 import { VrDeleteStep } from './VrDeleteStep';
-
-const MAX_SHARES = 2_147_483_647;
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+import { vrFillChecks } from './vrFillChecks';
 
 export interface VrFillDialogProps {
   runId: number;
@@ -52,17 +49,12 @@ export function VrFillDialog({ runId, costPpm, today, fill, startOnDelete = fals
 
   // The request body, or the message of the first failed client check.
   const input = (): VrFillInput | string => {
-    const priceText = usdOrNull(ungroupUsd(price));
-    if (priceText === null) return t('manualInvalidPrice');
-    const count = Number(shares.trim());
-    if (!/^\d+$/.test(shares.trim()) || count <= 0) return t('manualInvalidQty');
-    if (count > MAX_SHARES) return t('vr.invalidSharesLarge');
-    if (fee.trim() !== '' && usdFeeOrNull(fee) === null) return t('manualInvalidFee');
-    if (!ISO_DATE.test(filledOn)) return t('manualInvalidDate');
+    const checked = vrFillChecks(t, { side, shares, price, fee, filledOn });
+    if ('error' in checked) return checked.error;
     // An add on the auto fee sends none (the server computes it); an edit always sends the shown one, or the server
     // would recompute it and overwrite a fee the operator set earlier.
     const sendFee = fill !== undefined || feeTouched;
-    return { side, shares: count, price: priceText, filledOn, fee: sendFee ? (usdFeeOrNull(fee) ?? undefined) : undefined };
+    return { ...checked.value, fee: sendFee ? checked.value.fee : undefined };
   };
 
   const submit = async (e: FormEvent) => {
