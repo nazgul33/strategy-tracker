@@ -19,7 +19,7 @@
 - The one intended change to existing behaviour: a ticker with exactly one active MR run and one active VR run no longer routes to the MR run by itself.
 - **No VR code reads or writes an `mr_*` table**, and VR never calls MR booking functions. The two places MR and VR meet are the question's answer (which calls MR's existing `ingestCapture` unchanged) and the shared screenshot sweep.
 - Money is integer only: cents are `number`, prices `bigint` ten-thousandths of a dollar. No floats.
-- New tables come from `drizzle-kit generate` (no hand-written SQL); the journal `when` values stay strictly increasing.
+- New tables come from `drizzle-kit generate` (no hand-written SQL); the journal `when` values stay strictly increasing. Task 9 adds one more generated migration (`0018`) that adds a nullable column to `vr_pending_fills` and to `vr_fills`; `0017` is not regenerated.
 - `DayDeps` and `HttpDeps` gain no new required top-level field. New repositories go on the existing type surfaces and their fakes.
 - No source file over ~300 lines. `wire/capture.ts` (251), `scripts/e2e.ts` (300) and `FillDialog.tsx` are at or near the limit: put new code in new modules.
 - All user-facing copy goes through the catalogs: `packages/telegram/src/i18n.ts` (en and ko, same placeholders) and `apps/web/src/i18n/{en,ko}.json` (same keys, `localeCompare`-sorted, same placeholders, no Hanzi in ko; VR strings write "Pool").
@@ -517,3 +517,61 @@ git commit -m "test: VR screenshot end-to-end step; docs: repo map and conventio
 ```
 
 Report the results of Steps 2 and 4. Leave `st_test_vrcap` in place and do not push or deploy.
+
+---
+
+### Task 9: Duplicate rules that know the order price
+
+Added after the final review, on the owner's decision. The spec's "VR intake" rule 2 (amended) is the requirement; read it first.
+
+**Files:**
+- Create: `apps/server/src/domain/vr/capture-match.ts`, `apps/server/test/vr-capture-match.test.ts`, migration `apps/server/db/migrations/0018_vr_order_price.sql` (+ `meta/`)
+- Modify: `apps/server/src/db/schema-vr.ts`, `apps/server/src/db/repos-vr.ts`, `apps/server/src/domain/vr/repo-types.ts`, `apps/server/src/domain/vr/capture.ts`, `apps/server/src/domain/vr/pending.ts`, `apps/server/src/domain/capture-dedup.ts` (remove `dropExactMatches`: the file goes back to its content on `main`), `apps/server/test/vr-fakes.ts`, `apps/server/test/vr-capture.test.ts`, `apps/server/test/vr-pending.test.ts`, `apps/server/test/db-vr-pending.test.ts`, `apps/server/test/migration-sql.test.ts`, `apps/server/test/http-vr-pending.test.ts`, `apps/web/src/api.vr.types.ts`, `apps/web/src/components/vr/VrPendingPanel.tsx` and its tests, `apps/web/src/testing/vr.ts`, `apps/web/src/i18n/en.json`, `ko.json`, `scripts/e2e-vr-capture.ts`, `AGENTS.md`
+
+**Interfaces:**
+- `vr_pending_fills.order_price` and `vr_fills.order_price`: `bigint` ten-thousandths, nullable. `VrPendingRow.orderPrice: bigint | null`, `NewVrPending.orderPrice: bigint | null`; `VrFillRow.orderPrice: bigint | null`, and `NewVrFill` takes it as optional (absent = null) so typed-fill call sites do not change.
+- `capture-match.ts` (pure, no repositories):
+
+```ts
+export interface VrExisting { kind: 'booked' | 'waiting' | 'rejected'; side: 'buy' | 'sell'; shares: number; price: bigint; filledOn: ISODate; orderPrice: bigint | null }
+export interface VrMatch { rows: { fill: RawFill; dupPrice: bigint | null }[]; dropped: number }
+export function matchVrFills(existing: readonly VrExisting[], incoming: readonly RawFill[], today: ISODate): VrMatch
+```
+
+- `VrPendingDto` gains `orderPrice: string | null` (ten-thousandths string, as `price`).
+
+Rules (`matchVrFills`), with `known(x)` = an order price that is present and not zero, and a missing date read as `today`:
+
+1. An entry is consumed by at most one incoming fill. Booked entries are tried before waiting ones, waiting before rejected.
+2. **Drops first, for every incoming fill:** an unconsumed entry of any kind with the same side, shares, price and date whose order price is known and equal to the fill's, else one where either order price is unknown → the fill is dropped and the entry consumed. (Two passes: equal known order prices for all fills, then unknown.)
+3. **Marks, for the fills that are left**, against unconsumed **booked or waiting** entries with the same side and date, first match wins in this order:
+   - same shares and price, order prices both known and different → marked, `dupPrice` = the entry's price;
+   - same shares, other price, and not (order prices both known and different) → marked, `dupPrice` = the entry's price;
+   - other shares, order prices both known and equal → marked, `dupPrice` = the entry's price;
+   The matched entry is consumed.
+4. Everything else is a plain row (`dupPrice` null).
+
+`ingestVrCapture` builds the existing entries (booked from `vrFillRepo.listForRun`, waiting and rejected from `vrPendingRepo.listForRun`), calls `matchVrFills` on the run's own-ticker fills and writes one row per result with `dateRead: fill.date != null` and `orderPrice` = the fill's order price when known, else null. `matchCapturedFills`, `dropExactMatches` and the `unreadDates` helper are no longer used by VR; the outcome counts keep their meaning (`possibleDuplicates` = rows with a `dupPrice`). The same-screenshot refusal (`hasAnyForCapture`) is unchanged.
+
+`confirmVrPending` passes the row's `orderPrice` to the fill it books. Editing a waiting row or a booked fill never changes the order price. Typed fills have none.
+
+Web: the Pending table shows the order price in its own column (blank when none), formatted like the read price. Nothing else on the web changes.
+
+- [ ] **Step 1: Schema and migration.** Add the two columns; `(cd apps/server && bunx drizzle-kit generate --name vr_order_price < /dev/null)`; the generated SQL must be exactly two `ALTER TABLE ... ADD` statements (one per table) and nothing else; any interactive question is a stop-and-report. `0017_vr_capture.sql` and its snapshot stay byte-identical. Add a `migration-sql.test.ts` case for `0018` (two ADD statements, no DROP / RENAME / MODIFY, journal `when` larger than 0017's). Migrate the branch database by running the DB suite.
+- [ ] **Step 2: Write the failing tests.**
+  - `vr-capture-match.test.ts`: every cell of the spec's table in both directions; the reviewer's two sequences with their numbers — (a) existing waiting buys of 3 at 44.39, 43.66 and 42.95 with those order prices, incoming 3 at 42.95 (order 42.95), 42.26 (order 42.26), 41.59 (order 41.59) → 1 dropped, 2 plain rows, no marks; the same incoming with NO order prices → 1 dropped, 2 marked (the old behaviour, pinned); (b) a gap open: existing waiting buys of 3 at 42.00 with order prices 44.39 and 43.66, incoming 3 at 42.00 with order price 42.95 → kept and marked, not dropped; incoming with order price 43.66 → dropped; (c) a booked 3 at 44.39 with order price 44.39, incoming 8 at 44.39 with order price 44.39 → marked; with order price unknown → plain; (d) a rejected entry drops an equal fill and never marks; (e) multiset: two equal existing entries cancel two equal incoming fills and a third is kept; (f) the result does not depend on the order of the incoming fills (permute); (g) an order price of `0.0000` counts as unknown; (h) a fill with no date uses `today`.
+  - `vr-capture.test.ts`: rows carry `orderPrice`; the existing cases keep their expected outcomes (their fixtures have no order prices, so the old rules apply) — any existing expectation that changes is a finding to report, not to edit silently; add the two-screenshot ladder day end to end (second screenshot → `possibleDuplicates: 0`).
+  - `vr-pending.test.ts`: confirm copies the order price to the fill; an edit keeps it; Confirm all confirms the second screenshot's unmarked rung fills.
+  - `db-vr-pending.test.ts`: the column round-trips on both tables (a value, null); `confirm` writes it to `vr_fills`.
+  - `http-vr-pending.test.ts`: `orderPrice` in the list as a string or null.
+  - web: the Pending table's order-price column (a value with four decimals, blank for null).
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Smoke.** In `scripts/e2e-vr-capture.ts` add, on the first run of the step: a second screenshot of the same day (different image) with one fill of the same lot at another rung's price and order price → `waiting 1`, `possibleDuplicates 0`, and Confirm all books it (`confirmed 1`); and one fill with the same order price as an already booked fill but another fill price → `possibleDuplicates 1`. Keep `scripts/e2e.ts` at or under 300 lines.
+- [ ] **Step 5: Docs.** `AGENTS.md`: migrations end at `0018_vr_order_price.sql` (plain `drizzle-kit generate` output), the new files in the repo map, and in Conventions: "VR screenshot fills are matched against the run's booked, waiting and rejected fills by side, shares, price, date and the order price read from the screenshot (`domain/vr/capture-match.ts`); mean reversion's matcher (`domain/capture-dedup.ts`) is not used by VR."
+- [ ] **Step 6: Run** — `bun run typecheck`; `bun test`; `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test_vrcap bun test`; `TEST_DATABASE_URL=mysql://root:test@127.0.0.1:3307/st_test_vrcap bun scripts/e2e.ts`; `(cd apps/server && bun run db:generate < /dev/null)` → "No schema changes, nothing to migrate"; `git diff main -- apps/server/src/domain/capture-dedup.ts` prints nothing; `git diff 968aa8f -- apps/server/db/migrations/0017_vr_capture.sql apps/server/db/migrations/meta/0017_snapshot.json` prints nothing.
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A apps packages scripts AGENTS.md
+git commit -m "feat: VR screenshot matching knows the order price; rung fills are no longer marked as duplicates"
+```
