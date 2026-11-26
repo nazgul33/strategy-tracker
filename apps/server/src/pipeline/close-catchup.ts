@@ -29,7 +29,7 @@ export async function catchUpCloses(deps: DayDeps, today: ISODate): Promise<void
       try {
         const stored = await latest(ticker)
         if (stored !== null && stored >= prev) continue
-        await fetchClose(deps, ticker, today)
+        if ((await fetchClose(deps, ticker, today)) === null) console.error('close catch-up stored nothing:', ticker)
       } catch (e) {
         console.error('close catch-up failed:', ticker, String(e))
       }

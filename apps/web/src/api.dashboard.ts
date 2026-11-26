@@ -1,6 +1,6 @@
 // Typed client for GET /api/dashboard (apps/server/src/http/routes/dashboard.ts). Same wire rules as api.ts.
 import { getToken } from './api';
-import { call, type Http } from './api.call';
+import { ApiError, call, type Http } from './api.call';
 
 export type DashboardStrategy = 'mean-reversion' | 'value-rebalancing';
 
@@ -32,6 +32,8 @@ export interface DashboardGroupDto {
 export interface DashboardDto {
   today: string;
   closeDate: string | null;
+  /** the newest stored close is more than one session behind today */
+  closesBehind: boolean;
   groups: [DashboardGroupDto, DashboardGroupDto];
 }
 
@@ -39,13 +41,26 @@ export interface DashboardApi {
   get(): Promise<DashboardDto>;
 }
 
+/** A 200 that is not the dashboard (an empty or HTML body from a proxy) is a failed request, so the page shows its error card. */
+function isDashboard(body: unknown): body is DashboardDto {
+  if (typeof body !== 'object' || body === null) return false;
+  const groups = (body as { groups?: unknown }).groups;
+  return (
+    Array.isArray(groups) &&
+    groups.length === 2 &&
+    groups.every((g) => typeof g === 'object' && g !== null && Array.isArray((g as { runs?: unknown }).runs))
+  );
+}
+
 export function createDashboardApi(http: Http, opts: { getToken: () => string | null } = { getToken }): DashboardApi {
   return {
-    get: () => {
+    get: async () => {
       const headers: Record<string, string> = {};
       const token = opts.getToken();
       if (token) headers.Authorization = `Bearer ${token}`;
-      return call<DashboardDto>(http, '/api/dashboard', { headers });
+      const body = await call<unknown>(http, '/api/dashboard', { headers });
+      if (!isDashboard(body)) throw new ApiError(200, 'http-200');
+      return body;
     },
   };
 }

@@ -69,6 +69,8 @@ export async function checkDashboard(c: E2eCtx, today: string, dayDeps: DayDeps,
         `dashboard ${when}, ${name}: total ${total}c, incomplete ${g.incomplete}, olderClose ${g.olderClose} as recomputed (got ${g.totalCents}c)`)
     })
     c.ok(d.closeDate === newest, `dashboard ${when}: closeDate ${newest} is the newest stored close of any row (got ${d.closeDate})`)
+    const behind = newest !== null && newest < prevTradingDay(prevTradingDay(today))
+    c.ok(d.closesBehind === behind, `dashboard ${when}: closesBehind ${behind} by the date rule (got ${d.closesBehind})`)
     const idsOf = (n: number) => new Set<number>(d.groups[n].runs.map((r: any) => r.id))
     c.ok([...closedMr].every((id) => !idsOf(0).has(id)) && [...closedVr].every((id) => !idsOf(1).has(id)),
       `dashboard ${when}: no closed run of either strategy is listed in its own group`)
@@ -100,6 +102,7 @@ export async function checkDashboard(c: E2eCtx, today: string, dayDeps: DayDeps,
   c.ok(vrdb?.tradeDate === prev && vrdb.close === 1_800_000n, `VRDB now has a stored close for ${prev}: 180.00 (1800000)`)
 
   const d2 = await checkAgainstLists('after the morning')
+  c.ok(d2.closesBehind === false, `dashboard after the morning: closesBehind is false once ${prev} is stored (got ${d2.closesBehind})`)
   const row2 = d2.groups[1].runs.find((r: any) => r.id === id)
   c.ok(row2?.close === '1800000' && row2.closeDate === prev && row2.closeMark === null && row2.stockCents === evalCents(27, 1_800_000n) && row2.stockCents === 486_000
     && row2.valueCents === 999_950 && d2.groups[1].incomplete === false,

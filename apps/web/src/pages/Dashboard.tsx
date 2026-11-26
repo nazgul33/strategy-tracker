@@ -122,10 +122,15 @@ export function DashboardPage() {
     <div className="space-y-4" data-testid="dashboard-page">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">{t('dash.title')}</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {data?.closeDate && (
             <span data-testid="dashClosesOf" className="text-sm text-muted-foreground">
               {t('dash.closesOf', { date: isoDate(data.closeDate) })}
+            </span>
+          )}
+          {data?.closeDate && data.closesBehind && (
+            <span data-testid="dashClosesBehind" role="status" className="text-sm text-warning">
+              {t('dash.closesBehind')}
             </span>
           )}
           <Button data-testid="dashReload" onClick={() => void reload()}>
@@ -133,6 +138,11 @@ export function DashboardPage() {
           </Button>
         </div>
       </div>
+      {data?.closeDate && (
+        <p data-testid="dashClosesHint" className="text-xs text-muted-foreground">
+          {t('dash.closesHint')}
+        </p>
+      )}
 
       {loading ? (
         <Card>

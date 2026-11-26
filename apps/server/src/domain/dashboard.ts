@@ -1,3 +1,4 @@
+import { prevTradingDay } from '@st/calendar'
 import type { ISODate } from '@st/core'
 import { evalCents, vrBooks } from '@st/strategies/value-rebalancing'
 import type { PendingRepo, RepoSurface, RunRepo } from './repo-types'
@@ -19,7 +20,7 @@ export interface DashboardRow {
   cashCents: number; valueCents: number; waiting: number
 }
 export interface DashboardGroup { strategy: DashboardStrategy; totalCents: number; incomplete: boolean; olderClose: boolean; runs: DashboardRow[] }
-export interface Dashboard { today: ISODate; closeDate: ISODate | null; groups: [DashboardGroup, DashboardGroup] }
+export interface Dashboard { today: ISODate; closeDate: ISODate | null; closesBehind: boolean; groups: [DashboardGroup, DashboardGroup] }
 
 export interface DashboardRepos {
   runRepo: Pick<RunRepo, 'list'>
@@ -62,7 +63,9 @@ export function buildDashboard(i: { today: ISODate; mr: readonly DashboardRunInp
   const vr = rowsOf(i.vr)
   let closeDate: ISODate | null = null
   for (const r of [...mr, ...vr]) if (r.closeDate !== null && (closeDate === null || r.closeDate > closeDate)) closeDate = r.closeDate
-  return { today: i.today, closeDate, groups: [groupOf('mean-reversion', mr, closeDate), groupOf('value-rebalancing', vr, closeDate)] }
+  // The morning job stores a close on the next trading day, so one session behind is normal; two is not.
+  const closesBehind = closeDate !== null && closeDate < prevTradingDay(prevTradingDay(i.today))
+  return { today: i.today, closeDate, closesBehind, groups: [groupOf('mean-reversion', mr, closeDate), groupOf('value-rebalancing', vr, closeDate)] }
 }
 
 export async function loadDashboard(deps: { repos: DashboardRepos; today: ISODate }): Promise<Dashboard> {

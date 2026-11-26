@@ -116,10 +116,36 @@ describe('buildDashboard', () => {
     expect(buildDashboard({ today: TODAY, mr: [], vr: [] })).toEqual({
       today: TODAY,
       closeDate: null,
+      closesBehind: false,
       groups: [
         { strategy: 'mean-reversion', totalCents: 0, incomplete: false, olderClose: false, runs: [] },
         { strategy: 'value-rebalancing', totalCents: 0, incomplete: false, olderClose: false, runs: [] },
       ],
+    })
+  })
+
+  describe('closesBehind', () => {
+    const behind = (today: string, closeDate: string | null) =>
+      buildDashboard({ today, mr: [run({ shares: 1, lastClose: closeDate === null ? null : at(closeDate, 100_000n) })], vr: [] }).closesBehind
+    const cases: [string, string, boolean][] = [
+      ['2026-11-24', '2026-11-23', false],
+      ['2026-11-24', '2026-11-20', false],
+      ['2026-11-24', '2026-11-19', true],
+      ['2026-11-27', '2026-11-25', false],
+      ['2026-11-27', '2026-11-24', false],
+      ['2026-11-27', '2026-11-23', true],
+      ['2026-11-28', '2026-11-25', false],
+      ['2026-11-28', '2026-11-24', true],
+    ]
+    for (const [today, close, want] of cases) {
+      test(`today ${today}, newest close ${close}: ${want}`, () => {
+        expect(behind(today, close)).toBe(want)
+      })
+    }
+
+    test('no row uses a close: false', () => {
+      expect(behind('2026-11-24', null)).toBe(false)
+      expect(buildDashboard({ today: '2026-11-24', mr: [], vr: [] }).closesBehind).toBe(false)
     })
   })
 

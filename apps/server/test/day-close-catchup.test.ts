@@ -107,6 +107,40 @@ describe('the morning close catch-up', () => {
     }
   })
 
+  test('a paused ticker whose fetched close is two trading days old stores nothing and is logged once, changing nothing else', async () => {
+    const paused = async (s: S) => { await mrRun(s, 'SOXL', 'P1', 'paused') }
+    const base = await morning({ extra: paused })
+    const err = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const stale = await morning({
+        extra: async (s) => {
+          await paused(s)
+          const fetchOk = s.deps.fetchLastClose
+          s.deps.fetchLastClose = async (tk) => (tk === 'SOXL' ? (s.fetched.push(tk), { date: '2026-11-20', close: 520_000n }) : fetchOk(tk))
+        },
+      })
+      expect(count(stale.s, 'SOXL')).toBe(1)
+      expect(stored(stale.s, 'SOXL')).toEqual([])
+      const lines = err.mock.calls.filter((c) => c.includes('SOXL'))
+      expect(lines).toEqual([['close catch-up stored nothing:', 'SOXL']])
+      expect(err).toHaveBeenCalledTimes(1)
+      expect(stale.result).toBe(base.result)
+      expect(stale.s.sent).toEqual(base.s.sent)
+    } finally {
+      err.mockRestore()
+    }
+  })
+
+  test('a ticker the catch-up stores is not logged as stored nothing', async () => {
+    const err = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await morning({ extra: async (s) => { await mrRun(s, 'SOXL', 'P1', 'paused') } })
+      expect(err).not.toHaveBeenCalled()
+    } finally {
+      err.mockRestore()
+    }
+  })
+
   test('a failing stored-date read is logged and changes nothing else', async () => {
     const paused = async (s: S) => { await mrRun(s, 'SOXL', 'P1', 'paused') }
     const without = await morning({ latest: 'absent', extra: paused })

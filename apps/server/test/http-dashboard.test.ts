@@ -32,6 +32,7 @@ describe('GET /api/dashboard', () => {
     expect(status).toBe(200)
     expect(body.today).toBe('2026-11-10')
     expect(body.closeDate).toBe('2026-11-09')
+    expect(typeof body.closesBehind).toBe('boolean')
     expect(body.groups[0].strategy).toBe('mean-reversion')
     expect(body.groups[1].strategy).toBe('value-rebalancing')
     const mr = body.groups[0].runs[0]

@@ -57,7 +57,10 @@ const IDLE: DashboardRowDto = {
 
 const mrGroup: DashboardGroupDto = { strategy: MR, totalCents: 4821033, incomplete: false, olderClose: false, runs: [SOXL, TQQQ] };
 const vrGroup: DashboardGroupDto = { strategy: VR, totalCents: 3190275, incomplete: false, olderClose: false, runs: [TQQQ_VR] };
-const DASH: DashboardDto = { today: '2026-11-26', closeDate: '2026-11-25', groups: [mrGroup, vrGroup] };
+const DASH: DashboardDto = { today: '2026-11-26', closeDate: '2026-11-25', closesBehind: false, groups: [mrGroup, vrGroup] };
+const BEHIND = 'These closes are more than one session old. The morning job may not have run.';
+const HINT =
+  "A session's close is stored by the next trading morning's job (New York time), so the newest stored close can be one session behind the last one traded.";
 
 let gets = 0;
 const dash = {
@@ -87,8 +90,8 @@ describe('DashboardPage', () => {
   const text = (id: string) => q(id)?.textContent;
   const cells = (row: Element | null) => [...row!.querySelectorAll('td')].map((td) => td.textContent ?? '');
   const row = (strategy: string, id: number) => q(`dashRow-${strategy}-${id}`);
-  const body = (groups: [DashboardGroupDto, DashboardGroupDto], closeDate: string | null = '2026-11-25'): DashboardDto => ({
-    today: '2026-11-26', closeDate, groups,
+  const body = (groups: [DashboardGroupDto, DashboardGroupDto], closeDate: string | null = '2026-11-25', closesBehind = false): DashboardDto => ({
+    today: '2026-11-26', closeDate, closesBehind, groups,
   });
 
   beforeEach(() => {
@@ -193,6 +196,56 @@ describe('DashboardPage', () => {
     await render();
     expect(q('dashClosesOf')).toBeNull();
     expect(container.textContent).toContain('Dashboard');
+  });
+
+  it('shows a warning note next to the closes date when the closes are behind, and none otherwise', async () => {
+    dash.body = body([mrGroup, vrGroup], '2026-11-25', true);
+    await render();
+    expect(text('dashClosesBehind')).toBe(BEHIND);
+    expect(q('dashClosesBehind')!.getAttribute('role')).toBe('status');
+    expect(q('dashClosesBehind')!.className).toContain('text-warning');
+    expect(text('dashClosesOf')).toBe('closes of 2026-11-25');
+  });
+
+  it('shows no behind note when the closes are not behind', async () => {
+    await render();
+    expect(q('dashClosesBehind')).toBeNull();
+    expect(container.textContent).not.toContain(BEHIND);
+  });
+
+  it('shows the hint on when closes are stored whenever there is a closes date, not behind or behind', async () => {
+    await render();
+    expect(text('dashClosesHint')).toBe(HINT);
+    dash.body = body([mrGroup, vrGroup], '2026-11-20', true);
+    await act(async () => (q('dashReload') as HTMLButtonElement).click());
+    await flush();
+    expect(text('dashClosesHint')).toBe(HINT);
+  });
+
+  it('shows no hint and no behind note without a closes date', async () => {
+    dash.body = body([{ ...mrGroup, totalCents: 0, runs: [] }, { ...vrGroup, totalCents: 0, runs: [] }], null);
+    await render();
+    expect(q('dashClosesHint')).toBeNull();
+    expect(q('dashClosesBehind')).toBeNull();
+  });
+
+  it('a 200 that is not the dashboard shows the error card, not a blank page, and Retry loads a valid answer', async () => {
+    dash.body = {};
+    await render();
+    expect(container.textContent).toContain('Dashboard');
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('The request failed (http-200).');
+    dash.body = DASH;
+    await act(async () => buttonByText('Retry').click());
+    await flush();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).toContain('SOXL main');
+  });
+
+  it('a 200 whose groups are not both lists of runs also shows the error card', async () => {
+    dash.body = { groups: [{}, {}] };
+    await render();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('The request failed (http-200).');
+    expect(buttonByText('Retry')).toBeTruthy();
   });
 
   it('shows a server error and recovers on Retry', async () => {
