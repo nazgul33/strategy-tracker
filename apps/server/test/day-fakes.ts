@@ -49,8 +49,8 @@ export function makeRepos() {
     visionReviewRepo: { insertIgnore: async (_row) => {}, listForCaptures: async (_captureIds) => [], deleteFor: async (_captureId) => {} },
     ledgerRepo: { insert: async (_l) => {}, listForRun: async (_runId) => [] },
   } satisfies DayRepoSurface
-  const { runs: vrRuns, cycles: vrCycles, fills: vrFills, cash: vrCash } = vrFakes
-  return { repos, runs, orders, notifications, vr: { runs: vrRuns, cycles: vrCycles, fills: vrFills, cash: vrCash } }
+  const { runs: vrRuns, cycles: vrCycles, fills: vrFills, cash: vrCash, pending: vrPending } = vrFakes
+  return { repos, runs, orders, notifications, vr: { runs: vrRuns, cycles: vrCycles, fills: vrFills, cash: vrCash, pending: vrPending } }
 }
 
 type _day = Expect<IsNever<ArityMismatches<ReturnType<typeof makeRepos>['repos'], DayRepoSurface>>>

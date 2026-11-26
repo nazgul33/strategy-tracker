@@ -135,3 +135,17 @@ describe('vr tables migration', () => {
     for (const m of text.matchAll(/(?:CREATE TABLE|ON) `(\w+)`/g)) expect(m[1]!.startsWith('vr_')).toBe(true)
   })
 })
+
+describe('vr capture migration', () => {
+  const migrationsDir = fileURLToPath(new URL('../db/migrations/', import.meta.url))
+
+  test('the VR capture migration creates two tables and touches no other table', async () => {
+    const files = [...new Bun.Glob('0017_*.sql').scanSync({ cwd: migrationsDir })]
+    expect(files).toHaveLength(1)
+    const text = await Bun.file(migrationsDir + files[0]).text()
+    for (const t of ['vr_pending_fills', 'capture_choices']) expect(text).toContain(`CREATE TABLE \`${t}\``)
+    expect(text.match(/CREATE TABLE/g)).toHaveLength(2)
+    expect(text).not.toMatch(/ALTER TABLE|DROP|RENAME/i)
+    for (const m of text.matchAll(/(?:CREATE TABLE|ON) `(\w+)`/g)) expect(['vr_pending_fills', 'capture_choices']).toContain(m[1]!)
+  })
+})

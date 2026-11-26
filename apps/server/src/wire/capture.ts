@@ -5,6 +5,7 @@ import type { Lang } from '@st/telegram/i18n';
 
 import { confirmPendingFill, rejectPendingFill } from '../domain/booking';
 import type { CaptureConflict, CaptureOutcome, RepoSurface } from '../domain/booking';
+import type { CaptureChoiceRepo } from '../domain/capture-choice';
 import type { PendingRepo } from '../domain/repo-types';
 import type { VrRepos } from '../domain/vr/repo-types';
 import { parseId } from '../http/params';
@@ -36,6 +37,7 @@ const CONFIRM_ERROR_KEYS: Record<string, string> = {
 
 export interface CaptureRepos extends RepoSurface, VrRepos {
   pendingRepo: PendingRepo;
+  captureChoiceRepo: CaptureChoiceRepo;
 }
 
 export interface CaptureDeps extends CaptureRouteDeps {

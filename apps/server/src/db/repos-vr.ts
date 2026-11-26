@@ -1,10 +1,10 @@
-import { eq, and, inArray, desc, exists } from 'drizzle-orm'
+import { eq, and, inArray, desc, exists, count } from 'drizzle-orm'
 import { VALUE_REBALANCING } from '@st/strategies/value-rebalancing'
 import * as s from './schema'
 import type { Db } from './db-type'
 import {
   VrNameTakenError,
-  type SharedRunRepo, type VrCashRepo, type VrCycleRepo, type VrFillRepo, type VrRunRepo, type VrRunRow,
+  type SharedRunRepo, type VrCashRepo, type VrCycleRepo, type VrFillRepo, type VrPendingRepo, type VrPendingStatus, type VrRunRepo, type VrRunRow,
 } from '../domain/vr/repo-types'
 
 const sharedColumns = {
@@ -124,5 +124,65 @@ export function getVrRepos(db: Db) {
     },
   } satisfies VrCashRepo
 
-  return { sharedRunRepo, vrRunRepo, vrCycleRepo, vrFillRepo, vrCashRepo }
+  // Every guarded write is one UPDATE ... WHERE status = 'pending', checked by affectedRows.
+  const pendingWhere = (runId: number, id: number) =>
+    and(eq(s.vrPendingFills.id, id), eq(s.vrPendingFills.runId, runId), eq(s.vrPendingFills.status, 'pending'))
+  async function hasPendingWithStatus(captureId: number, status: VrPendingStatus) {
+    const rows = await db.select({ id: s.vrPendingFills.id }).from(s.vrPendingFills)
+      .where(and(eq(s.vrPendingFills.captureId, captureId), eq(s.vrPendingFills.status, status))).limit(1)
+    return rows.length > 0
+  }
+
+  const vrPendingRepo = {
+    async listForRun(runId, status?) {
+      return db.select().from(s.vrPendingFills)
+        .where(status === undefined ? eq(s.vrPendingFills.runId, runId) : and(eq(s.vrPendingFills.runId, runId), eq(s.vrPendingFills.status, status)))
+        .orderBy(s.vrPendingFills.filledOn, s.vrPendingFills.id)
+    },
+    async get(runId, id) {
+      const rows = await db.select().from(s.vrPendingFills).where(and(eq(s.vrPendingFills.id, id), eq(s.vrPendingFills.runId, runId)))
+      return rows[0] ?? null
+    },
+    async insertMany(rows) {
+      if (rows.length === 0) return []
+      return db.transaction(async (tx) => {
+        const ids: number[] = []
+        for (const r of rows) {
+          const [res] = await tx.insert(s.vrPendingFills).values({
+            runId: r.runId, captureId: r.captureId, side: r.side, shares: r.shares, price: r.price, fee: r.fee,
+            filledOn: r.filledOn, dateRead: r.dateRead, dupPrice: r.dupPrice,
+          })
+          ids.push(res.insertId)
+        }
+        return ids
+      })
+    },
+    async update(runId, id, p) {
+      const [res] = await db.update(s.vrPendingFills)
+        .set({ side: p.side, shares: p.shares, price: p.price, fee: p.fee, filledOn: p.filledOn })
+        .where(pendingWhere(runId, id))
+      return res.affectedRows > 0
+    },
+    async confirm(runId, id, fill) {
+      return db.transaction(async (tx) => {
+        const [res] = await tx.update(s.vrPendingFills).set({ status: 'confirmed' }).where(pendingWhere(runId, id))
+        if (res.affectedRows === 0) return null
+        const [ins] = await tx.insert(s.vrFills).values(fill)
+        return ins.insertId
+      })
+    },
+    async reject(runId, id) {
+      const [res] = await db.update(s.vrPendingFills).set({ status: 'rejected' }).where(pendingWhere(runId, id))
+      return res.affectedRows > 0
+    },
+    async countPending(runId) {
+      const [r] = await db.select({ n: count() }).from(s.vrPendingFills)
+        .where(and(eq(s.vrPendingFills.runId, runId), eq(s.vrPendingFills.status, 'pending')))
+      return r?.n ?? 0
+    },
+    async hasPendingForCapture(captureId) { return hasPendingWithStatus(captureId, 'pending') },
+    async hasConfirmedForCapture(captureId) { return hasPendingWithStatus(captureId, 'confirmed') },
+  } satisfies VrPendingRepo
+
+  return { sharedRunRepo, vrRunRepo, vrCycleRepo, vrFillRepo, vrCashRepo, vrPendingRepo }
 }

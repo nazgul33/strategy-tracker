@@ -3,7 +3,8 @@ import type { RunStatus } from '../src/domain/repo-types'
 import {
   VrNameTakenError,
   type NewVrCashMove, type NewVrCycle, type NewVrFill, type NewVrRun, type SharedRunRepo, type SharedRunRow, type VrCashMoveRow, type VrCashPatch,
-  type VrCashRepo, type VrCycleRepo, type VrCycleRow, type VrFillPatch, type VrFillRepo, type VrFillRow, type VrRepos, type VrRunRepo, type VrRunRow,
+  type VrCashRepo, type VrCycleRepo, type VrCycleRow, type VrFillPatch, type VrFillRepo, type VrFillRow, type VrPendingPatch, type VrPendingRepo, type VrPendingRow, type VrPendingStatus, type NewVrPending,
+  type VrRepos, type VrRunRepo, type VrRunRow,
 } from '../src/domain/vr/repo-types'
 import type { VrSettings } from '@st/strategies/value-rebalancing'
 import { FAKE_CREATED_AT } from './booking-fakes'
@@ -22,6 +23,7 @@ export function makeVrFakes(opts: { otherRuns?: () => SharedRunRow[] } = {}) {
   const cycles: VrCycleRow[] = []
   const fills: VrFillRow[] = []
   const cash: VrCashMoveRow[] = []
+  const pending: VrPendingRow[] = []
 
   const sharedRunRepo = {
     async getMany(ids: number[]) {
@@ -95,7 +97,35 @@ export function makeVrFakes(opts: { otherRuns?: () => SharedRunRow[] } = {}) {
     },
   } satisfies VrCashRepo
 
-  return { repos: { sharedRunRepo, vrRunRepo, vrCycleRepo, vrFillRepo, vrCashRepo }, runs, cycles, fills, cash }
+  const findPending = (runId: number, id: number) => pending.find((p) => p.id === id && p.runId === runId && p.status === 'pending')
+  const vrPendingRepo = {
+    async listForRun(runId: number, status?: VrPendingStatus) {
+      return pending.filter((p) => p.runId === runId && (status === undefined || p.status === status)).sort(byDateThenId((p) => p.filledOn)).map((p) => ({ ...p }))
+    },
+    async get(runId: number, id: number) { const p = pending.find((x) => x.id === id && x.runId === runId); return p ? { ...p } : null },
+    async insertMany(rows: NewVrPending[]) {
+      return rows.map((r) => { const id = nextId(pending); pending.push({ ...r, id, status: 'pending', createdAt: FAKE_CREATED_AT }); return id })
+    },
+    async update(runId: number, id: number, p: VrPendingPatch) {
+      const r = findPending(runId, id)
+      if (!r) return false
+      Object.assign(r, { side: p.side, shares: p.shares, price: p.price, fee: p.fee, filledOn: p.filledOn })
+      return true
+    },
+    async confirm(runId: number, id: number, fill: NewVrFill) {
+      const r = findPending(runId, id)
+      if (!r) return null
+      const fillId = await vrFillRepo.insert(fill) // through the object: a test that makes insert throw leaves the row pending
+      r.status = 'confirmed'
+      return fillId
+    },
+    async reject(runId: number, id: number) { const r = findPending(runId, id); if (!r) return false; r.status = 'rejected'; return true },
+    async countPending(runId: number) { return pending.filter((p) => p.runId === runId && p.status === 'pending').length },
+    async hasPendingForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'pending') },
+    async hasConfirmedForCapture(captureId: number) { return pending.some((p) => p.captureId === captureId && p.status === 'confirmed') },
+  } satisfies VrPendingRepo
+
+  return { repos: { sharedRunRepo, vrRunRepo, vrCycleRepo, vrFillRepo, vrCashRepo, vrPendingRepo }, runs, cycles, fills, cash, pending }
 }
 
 type _vr = Expect<IsNever<ArityMismatches<ReturnType<typeof makeVrFakes>['repos'], VrRepos & { sharedRunRepo: SharedRunRepo }>>>
