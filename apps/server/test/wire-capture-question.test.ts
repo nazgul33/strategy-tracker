@@ -1,80 +1,10 @@
 import { describe, expect, spyOn, test } from 'bun:test';
-import type { RawFill } from '@st/ingest';
-import { DEFAULT_VR_SETTINGS } from '@st/strategies/value-rebalancing';
 import { buildChoiceKeyboard } from '@st/telegram';
 import { t } from '@st/telegram/i18n';
-import type { Lang } from '@st/telegram/i18n';
 import { runBootSweeps } from '../src/wire/boot-sweeps';
-import { makeCaptureHandlers } from '../src/wire/capture';
 import { vrCaptureMessage } from '../src/wire/vr-capture-message';
-import { DATE_NOTICE_EN, PNG_B64, activeRun, makeCaptureFakes, visionFetch } from './wire-capture-fakes';
-
-const visionOf = (fills: object[]) =>
-  (async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ fills }) } }] }) })) as unknown as typeof fetch;
-
-const THREE: RawFill[] = [
-  { side: 'buy', ticker: 'TQQQ', shares: 3, price: '45.15', fee: '0.05', date: '2026-11-10', orderType: 'LOC', orderPrice: '45.20', orderedShares: 3 },
-  { side: 'buy', ticker: 'TQQQ', shares: 3, price: '44.39', date: '2026-11-10' },
-  { side: 'sell', ticker: 'TQQQ', shares: 2, price: '47.00', date: '2026-11-10' },
-];
-
-const LABELS_EN = { mr: 'Mean reversion', vr: 'VR', both: 'Both' };
-const MR_FAILED = 'Could not take in this TQQQ screenshot for Mean reversion. Send the screenshot again.';
-const VR_FAILED = 'Could not take in this TQQQ screenshot for VR. Send the screenshot again.';
-const WAIT3 = { waiting: 3, dropped: 0, possibleDuplicates: 0 };
-
-async function asker(o: { vr?: boolean; fills?: object[]; lang?: Lang; fetchImpl?: typeof fetch; vrTicker?: string } = {}) {
-  const clock = { now: new Date('2026-11-10T15:00:00Z') };
-  let today = '2026-11-10';
-  const runs = [activeRun(1, 'TQQQ')];
-  const fakes = makeCaptureFakes({ runs, now: () => clock.now });
-  if (o.vr !== false) {
-    await fakes.repos.vrRunRepo.create({
-      ...DEFAULT_VR_SETTINGS, ticker: o.vrTicker ?? 'TQQQ', name: 'Q', costPpm: 0, initialVCents: 500_000, openingCashCents: 1_000_000, openedOn: '2026-11-01',
-    });
-  }
-  const sent: { chatId: string; text: string; extra?: Record<string, unknown> }[] = [];
-  const handlers = makeCaptureHandlers({
-    repos: fakes.repos,
-    vision: { baseUrl: 'https://vision.example/v1', baseUrlSource: 'env', model: 'vision-model', modelSource: 'env' },
-    getVisionApiKey: async () => ({ key: 'k', source: 'env' as const }),
-    today: () => today,
-    now: () => clock.now,
-    lang: o.lang,
-    allowedChatIds: [],
-    fetchImpl: o.fetchImpl ?? visionOf(o.fills ?? THREE),
-    send: async (chatId, text, extra) => void sent.push({ chatId, text, extra }),
-  });
-  return {
-    ...fakes,
-    runs,
-    sent,
-    handlers,
-    photo: () => handlers.onPhoto('777', { base64: PNG_B64, mime: 'image/png' }),
-    press: (data: string) => handlers.onChoice('777', data),
-    clock,
-    setToday: (d: string) => void (today = d),
-    hours: (h: number) => void (clock.now = new Date(clock.now.getTime() + h * 3_600_000)),
-  };
-}
-
-type Asker = Awaited<ReturnType<typeof asker>>;
-
-async function asked(o: Parameters<typeof asker>[0] = {}): Promise<Asker> {
-  const a = await asker(o);
-  await a.photo();
-  a.sent.length = 0;
-  return a;
-}
-
-const silenced = async <T>(fn: () => Promise<T>): Promise<T> => {
-  const err = spyOn(console, 'error').mockImplementation(() => {});
-  try {
-    return await fn();
-  } finally {
-    err.mockRestore();
-  }
-};
+import { LABELS_EN, MR_FAILED, THREE, VR_FAILED, WAIT3, asked, asker, silenced } from './wire-capture-question-fixture';
+import { DATE_NOTICE_EN, PNG_B64, activeRun, visionFetch } from './wire-capture-fakes';
 
 describe('asking which strategy', () => {
   test('a shared ticker is parked and asked about, and nothing is taken in', async () => {
@@ -82,7 +12,7 @@ describe('asking which strategy', () => {
     await a.photo();
     expect(a.sent).toHaveLength(1);
     expect(a.sent[0]!.chatId).toBe('777');
-    expect(a.sent[0]!.text).toBe('TQQQ, 3 fill(s): which strategy?');
+    expect(a.sent[0]!.text).toBe('TQQQ, fills read: 3. Which strategy?');
     expect(a.sent[0]!.extra).toEqual({ reply_markup: buildChoiceKeyboard('1', LABELS_EN) });
     expect(a.choices).toHaveLength(1);
     expect(a.choices[0]).toMatchObject({
@@ -138,7 +68,7 @@ describe('asking which strategy', () => {
     a.repos.captureChoiceRepo.deleteOlderThan = async () => { throw new Error('db down'); };
     await silenced(() => a.photo());
     expect(a.sent).toHaveLength(1);
-    expect(a.sent[0]!.text).toBe('TQQQ, 3 fill(s): which strategy?');
+    expect(a.sent[0]!.text).toBe('TQQQ, fills read: 3. Which strategy?');
     expect(a.choices).toHaveLength(1);
   });
 });

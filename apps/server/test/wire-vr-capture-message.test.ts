@@ -6,9 +6,9 @@ import { vrCaptureMessage } from '../src/wire/vr-capture-message';
 
 const msg = (outcome: VrCaptureOutcome, lang: Lang = 'en') => vrCaptureMessage({ runId: 100001, ticker: 'TQQQ', outcome }, lang);
 
-const HEAD = "VR run #100001 TQQQ: 3 fill(s) waiting. Confirm them on the run's Pending tab in the web app.";
-const DROPPED = '2 fill(s) dropped: already booked or rejected.';
-const POSSIBLE = '1 marked as possible duplicate(s): check the price before confirming.';
+const HEAD = "VR run #100001 TQQQ: fills waiting: 3. Confirm on the run's Pending tab in the web app.";
+const DROPPED = 'Dropped as already booked, waiting or rejected: 2.';
+const POSSIBLE = 'Marked as possible duplicates: 1. Check the price before confirming.';
 
 describe('vrCaptureMessage in English', () => {
   test('fills waiting', () => {
@@ -29,7 +29,7 @@ describe('vrCaptureMessage in English', () => {
 
   test('nothing waiting', () => {
     expect(msg({ waiting: 0, dropped: 3, possibleDuplicates: 0 })).toBe(
-      'VR run #100001 TQQQ: nothing new to confirm. 3 fill(s) in this screenshot are already booked or rejected.',
+      'VR run #100001 TQQQ: nothing new to confirm. Fills in this screenshot already booked, waiting or rejected: 3.',
     );
   });
 
