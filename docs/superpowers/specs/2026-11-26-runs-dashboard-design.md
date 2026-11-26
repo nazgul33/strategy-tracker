@@ -1,6 +1,6 @@
 # All-runs dashboard — design
 
-Status: draft, awaiting the owner's approval (a builder's read-through is folded in; the points
+Status: approved by the owner on 2026-11-26 (a builder's read-through is folded in; the points
 it settled are marked "designer's call")
 Date: 2026-11-26
 Piece 3 of the roadmap in `2026-11-24-mr-table-split-design.md` (1 `mr_` split, 2a VR core,
