@@ -550,7 +550,8 @@ Rules (`matchVrFills`), with `known(x)` = an order price that is present and not
    - (A) order prices both known and equal — entry used by a drop or not; booked, waiting or rejected;
    - (B) same shares and price, order prices both known and different — entry not used by a drop; booked, waiting or rejected;
    - (C) same shares, other price, either order price unknown — entry not used by a drop; booked or waiting only.
-4. Everything else is a plain row (`dupPrice` null). Rows come back in screenshot order.
+4. **Twins inside the screenshot** (added after the scoped final check): among the kept fills with a known order price, group by side, date and order price; in a group of two or more, the first in canonical order stays as it is and every other row that is still unmarked is marked, `dupPrice` = that first row's price.
+5. Everything else is a plain row (`dupPrice` null). Rows come back in screenshot order.
 
 `ingestVrCapture` builds the existing entries (booked from `vrFillRepo.listForRun`, waiting and rejected from `vrPendingRepo.listForRun`), calls `matchVrFills` on the run's own-ticker fills and writes one row per result with `dateRead: fill.date != null` and `orderPrice` = the fill's order price when known, else null. `matchCapturedFills`, `dropExactMatches` and the `unreadDates` helper are no longer used by VR; the outcome counts keep their meaning (`possibleDuplicates` = rows with a `dupPrice`). The same-screenshot refusal (`hasAnyForCapture`) is unchanged.
 
