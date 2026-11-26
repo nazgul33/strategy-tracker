@@ -1,11 +1,10 @@
 // Edit dialog of one fill read from a screenshot and still waiting. An empty fee stays empty: the server computes it
 // from the run's cost when the row is confirmed.
 import { useState, type FormEvent } from 'react';
-import { ApiError } from '../../api';
 import { vrApi } from '../../api.vr';
 import type { VrPendingDto, VrPendingInput, VrSide } from '../../api.vr.types';
 import { autoFeeUsd } from '../../autofee';
-import { errorText } from '../../errortext';
+import { errorText, isRefusal } from '../../errortext';
 import { centsToUsdText, isoDate, priceInputValue } from '../../format';
 import { useT } from '../../i18n';
 import { Button, Field, Input, Modal, Select } from '../ui';
@@ -17,7 +16,7 @@ export interface VrPendingDialogProps {
   row: VrPendingDto;
   onClose: () => void;
   onSaved: () => void;
-  /** The row was already decided elsewhere: called when the dialog is closed, so the list can drop it. */
+  /** The save failed without a refusal (decided elsewhere, gone, or the answer lost): called when the dialog is closed, so the list is read again. */
   onStale: () => void;
 }
 
@@ -58,7 +57,8 @@ export function VrPendingDialog({ runId, costPpm, row, onClose, onSaved, onStale
       onSaved();
       onClose();
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'vr-not-pending') setStale(true);
+      // Anything but a refusal may have saved the edit or lost the row: closing re-reads the list.
+      if (!isRefusal(err)) setStale(true);
       setError(errorText(err, t, 'vrErr'));
     } finally {
       setBusy(false);

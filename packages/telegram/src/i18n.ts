@@ -63,7 +63,7 @@ export const CATALOG: Record<string, MsgEntry> = {
     en: 'This question has expired (questions are kept for 24 hours). Send the screenshot again.',
     ko: '이 질문은 만료되었습니다 (질문은 24시간 동안 보관됩니다). 스크린샷을 다시 보내세요.',
   },
-  'capture-choice-answered': { en: 'This question was already answered — nothing more was taken in.', ko: '이미 답한 질문입니다 — 추가로 받아들인 것은 없습니다.' },
+  'capture-choice-answered': { en: 'This question was already answered — nothing more was taken in. If no reply followed your first answer, send the screenshot again.', ko: '이미 답한 질문입니다 — 추가로 받아들인 것은 없습니다. 첫 답변 뒤에 회신이 오지 않았다면 스크린샷을 다시 보내 주세요.' },
   'capture-choice-park-failed': {
     en: 'Could not save the question for this {ticker} screenshot. Send the screenshot from the run\'s page in the web app instead.',
     ko: '이 {ticker} 스크린샷에 대한 질문을 저장하지 못했습니다. 대신 웹 앱의 런 페이지에서 스크린샷을 보내세요.',
@@ -200,8 +200,12 @@ export const CATALOG: Record<string, MsgEntry> = {
     ko: 'VR 런 오류 — 오늘 아침 Value Rebalancing 런 목록을 불러오지 못했습니다. 평균 회귀 런은 평소대로 처리했습니다.',
   },
   'vr-cycle-held': {
-    en: '{name}  {ticker} — VR: {n} screenshot fill(s) are waiting to be confirmed, so this morning\'s cycle step is held. Confirm or reject them on the run\'s Pending tab; the next morning run continues once none are waiting.',
-    ko: '{name}  {ticker} — VR: 스크린샷 체결 {n}건이 확인을 기다리고 있어 오늘 아침 사이클 진행을 보류했습니다. 런 페이지의 \'확인 대기\' 탭에서 확정하거나 거부하세요. 대기 중인 체결이 없으면 다음 아침 실행에서 이어서 진행합니다.',
+    en: '{name}  {ticker} — VR: screenshot fills waiting to be confirmed: {n}. This morning\'s cycle step is held; orders already placed still stand. Confirm or reject the waiting fills on the run\'s Pending tab; a later morning run continues once none are waiting.',
+    ko: '{name}  {ticker} — VR: 확인을 기다리는 스크린샷 체결: {n}건. 오늘 아침 사이클 진행을 보류했으며, 이미 낸 주문은 그대로 유효합니다. 런 페이지의 \'확인 대기\' 탭에서 대기 중인 체결을 확정하거나 거부하세요. 대기 중인 체결이 없으면 이후 아침 실행에서 이어서 진행합니다.',
+  },
+  'vr-cycle-held-question': {
+    en: '{name}  {ticker} — VR: a screenshot question for this ticker is still unanswered on Telegram, so this morning\'s cycle step is held; orders already placed still stand. Answer the question there (it expires 24 hours after it was asked); a later morning run continues once it is answered or has expired.',
+    ko: '{name}  {ticker} — VR: 이 종목의 스크린샷 질문에 아직 텔레그램에서 답하지 않아 오늘 아침 사이클 진행을 보류했으며, 이미 낸 주문은 그대로 유효합니다. 텔레그램에서 질문에 답하세요(질문은 24시간 뒤 만료됩니다). 답하거나 만료되면 이후 아침 실행에서 이어서 진행합니다.',
   },
 }
 

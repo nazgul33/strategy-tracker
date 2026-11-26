@@ -10,7 +10,8 @@ export interface CaptureClaimRepos {
     insert(c: NewCapture): Promise<{ inserted: boolean; id?: number }>
   }
   pendingRepo: {
-    // status 'pending' only: a row still awaiting the operator's decision
+    // True when this capture must be refused as a duplicate. The adapter decides what counts:
+    // MR passes "has a pending row" (still awaiting the operator's decision), VR passes "has a row in any status".
     hasLiveForCapture(captureId: number): Promise<boolean>
     // status 'confirmed' only: a row that was booked as a fill
     hasConfirmedForCapture(captureId: number): Promise<boolean>

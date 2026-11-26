@@ -5,8 +5,26 @@ import { runMorningPipeline } from '../src/pipeline/day'
 import { BUY_HEAD, WARN_EN, buy, cycle1, sell, setup, waitingFill } from './vr-day-fixture'
 
 const HELD = (n: number) =>
-  `Q  TQQQ — VR: ${n} screenshot fill(s) are waiting to be confirmed, so this morning's cycle step is held. `
-  + 'Confirm or reject them on the run\'s Pending tab; the next morning run continues once none are waiting.'
+  `Q  TQQQ — VR: screenshot fills waiting to be confirmed: ${n}. This morning's cycle step is held; orders already placed still stand. `
+  + 'Confirm or reject the waiting fills on the run\'s Pending tab; a later morning run continues once none are waiting.'
+const HELD_QUESTION =
+  'Q  TQQQ — VR: a screenshot question for this ticker is still unanswered on Telegram, so this morning\'s cycle step is held; '
+  + 'orders already placed still stand. Answer the question there (it expires 24 hours after it was asked); '
+  + 'a later morning run continues once it is answered or has expired.'
+
+const NOW = new Date('2026-12-07T13:00:00Z')
+const AT = { now: () => NOW }
+const HOUR = 3_600_000
+const stamp = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ')
+
+// A parked Telegram question naming a VR run, created `hoursAgo` before NOW.
+async function question(f: Awaited<ReturnType<typeof setup>>['f'], vrRunId: number, hoursAgo = 10) {
+  const id = await f.repos.captureChoiceRepo.park({
+    chatId: 'c1', ticker: 'TQQQ', mrRunId: 1, vrRunId, fills: [], image: { base64: 'QUJD', mime: 'image/png' }, readOn: '2026-12-04',
+  })
+  f.choices.find((c) => c.id === id)!.createdAt = stamp(NOW.getTime() - hoursAgo * HOUR)
+  return id
+}
 
 async function dueWithWaiting(n: number, over: Parameters<typeof setup>[0] = {}) {
   const s = await setup(over, { deposit: 25_000 })
@@ -15,6 +33,88 @@ async function dueWithWaiting(n: number, over: Parameters<typeof setup>[0] = {})
   const ids = await waitingFill(s.f, s.vrId, n)
   return { ...s, ids }
 }
+
+describe('VR morning job: an open Telegram question holds the cycle', () => {
+  test('a due cycle with an open question and no waiting fill is held: no cycle, no deposit, the question message', async () => {
+    const { f, deps, sent, vrId } = await dueWithWaiting(0, AT)
+    await question(f, vrId)
+    expect(await runMorningPipeline(deps)).toBe('sent')
+    expect(f.vr.cycles).toHaveLength(1)
+    expect(f.vr.cash.map((m) => m.kind)).toEqual(['open'])
+    expect(sent).toEqual([HELD_QUESTION])
+    expect(f.notifications).toEqual([expect.objectContaining({ runId: vrId, chatId: 'c1', text: HELD_QUESTION })])
+  })
+
+  test('answered, the next run opens the cycle', async () => {
+    const { f, deps, sent, vrId } = await dueWithWaiting(0, AT)
+    const id = await question(f, vrId)
+    await runMorningPipeline(deps)
+    expect(await f.repos.captureChoiceRepo.answer(id, 'vr')).toBe(true)
+    sent.length = 0
+    expect(await runMorningPipeline(deps)).toBe('sent')
+    expect(f.vr.cycles).toHaveLength(2)
+    expect(sent.at(-1)).toContain('VR cycle 2')
+  })
+
+  test('a question asked 25 hours ago no longer holds', async () => {
+    const { f, deps, vrId } = await dueWithWaiting(0, AT)
+    await question(f, vrId, 25)
+    await runMorningPipeline(deps)
+    expect(f.vr.cycles).toHaveLength(2)
+  })
+
+  test('a question asked 23 hours ago still holds', async () => {
+    const { f, deps, sent, vrId } = await dueWithWaiting(0, AT)
+    await question(f, vrId, 23)
+    await runMorningPipeline(deps)
+    expect(sent).toEqual([HELD_QUESTION])
+    expect(f.vr.cycles).toHaveLength(1)
+  })
+
+  test('a question naming another VR run does not hold this one', async () => {
+    const { f, deps, vrId } = await dueWithWaiting(0, AT)
+    await question(f, vrId + 1)
+    await runMorningPipeline(deps)
+    expect(f.vr.cycles).toHaveLength(2)
+  })
+
+  test('waiting fills and an open question: the waiting-fills message', async () => {
+    const { f, deps, sent, vrId } = await dueWithWaiting(2, AT)
+    await question(f, vrId)
+    await runMorningPipeline(deps)
+    expect(sent).toEqual([HELD(2)])
+    expect(f.vr.cycles).toHaveLength(1)
+  })
+
+  test('mid-cycle with shares and an open question: nothing is sent or changed', async () => {
+    const { f, deps, sent, vrId } = await setup({ ...AT, today: () => '2026-12-01' }, { close: { date: '2026-11-30', close: 520_000n } })
+    await f.repos.vrCycleRepo.open(cycle1(vrId), null)
+    await buy(f, vrId, 100, 500_000n, '2026-11-20')
+    await question(f, vrId)
+    expect(await runMorningPipeline(deps)).toBe('sent')
+    expect(sent).toEqual([])
+    expect(f.notifications).toEqual([])
+    expect(f.vr.cycles).toHaveLength(1)
+  })
+
+  test('shares and no cycle yet, an open question: cycle 1 is not opened', async () => {
+    const { f, deps, sent, vrId } = await setup(AT)
+    await buy(f, vrId, 100, 500_000n, '2026-12-04')
+    await question(f, vrId)
+    await runMorningPipeline(deps)
+    expect(sent).toEqual([HELD_QUESTION])
+    expect(f.vr.cycles).toEqual([])
+  })
+
+  test('the question held message in Korean', async () => {
+    const { f, deps, sent, vrId } = await dueWithWaiting(0, { ...AT, digestLang: 'ko' })
+    await question(f, vrId)
+    await runMorningPipeline(deps)
+    expect(sent[0]).toBe(t('vr-cycle-held-question', 'ko', { name: 'Q', ticker: 'TQQQ' }))
+    expect(sent[0]).toContain('TQQQ')
+    expect(sent[0]).not.toContain('{')
+  })
+})
 
 describe('VR morning job: waiting fills hold the cycle', () => {
   test('a due cycle with two waiting fills is held: no cycle, no deposit, one message', async () => {

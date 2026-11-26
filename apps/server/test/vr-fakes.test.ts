@@ -50,6 +50,51 @@ describe('fake hasAnyForCapture', () => {
   })
 })
 
+describe('fake captureChoiceRepo.countOpenForVrRun and answer', () => {
+  const q = (vrRunId: number) => ({ chatId: 'c', ticker: 'TQQQ', mrRunId: 1, vrRunId, fills: [], image: { base64: 'QUJD', mime: 'image/png' }, readOn: '2026-11-01' })
+  const clock = { now: new Date('2026-11-01T12:00:00Z') }
+  const cutoff = () => new Date(clock.now.getTime() - 24 * 3_600_000)
+
+  test('counts an open question for the run', async () => {
+    const c = makeChoiceFakes(() => clock.now)
+    await c.captureChoiceRepo.park(q(7))
+    expect(await c.captureChoiceRepo.countOpenForVrRun(7, cutoff())).toBe(1)
+  })
+
+  test('does not count an answered one', async () => {
+    const c = makeChoiceFakes(() => clock.now)
+    const id = await c.captureChoiceRepo.park(q(7))
+    await c.captureChoiceRepo.answer(id, 'mr')
+    expect(await c.captureChoiceRepo.countOpenForVrRun(7, cutoff())).toBe(0)
+  })
+
+  test('does not count one for another run', async () => {
+    const c = makeChoiceFakes(() => clock.now)
+    await c.captureChoiceRepo.park(q(8))
+    expect(await c.captureChoiceRepo.countOpenForVrRun(7, cutoff())).toBe(0)
+  })
+
+  test('does not count one older than the cutoff, and counts one created exactly at it', async () => {
+    const c = makeChoiceFakes(() => clock.now)
+    await c.captureChoiceRepo.park(q(7))
+    const at = new Date(clock.now.getTime())
+    expect(await c.captureChoiceRepo.countOpenForVrRun(7, at)).toBe(1)
+    expect(await c.captureChoiceRepo.countOpenForVrRun(7, new Date(at.getTime() + 1000))).toBe(0)
+  })
+
+  test('answer empties the image in the same step; a losing second answer changes nothing; get hands out copies', async () => {
+    const c = makeChoiceFakes(() => clock.now)
+    const id = await c.captureChoiceRepo.park(q(7))
+    const before = (await c.captureChoiceRepo.get(id))!
+    expect(await c.captureChoiceRepo.answer(id, 'vr')).toBe(true)
+    expect(before.image.base64).toBe('QUJD')
+    const after = (await c.captureChoiceRepo.get(id))!
+    expect(after).toEqual({ ...before, answer: 'vr', image: { base64: '', mime: 'image/png' } })
+    expect(await c.captureChoiceRepo.answer(id, 'mr')).toBe(false)
+    expect(await c.captureChoiceRepo.get(id)).toEqual(after)
+  })
+})
+
 describe('fake captureChoiceRepo ids', () => {
   test('a deleted question\'s id is not handed out again', async () => {
     const t = { now: new Date('2026-11-01T00:00:00Z') }

@@ -2,6 +2,7 @@ import type { RunState } from '@st/core'
 import type { DayRepoSurface, NewNotification, NewOrder, NewRun, NotificationRow, OrderRecord, OrderStatus, RunRow, RunStatus } from '../src/domain/repo-types'
 import { fakeCorrectionRepo } from './fake-corrections'
 import { fakeRunRow, rehydrate, serializeState, FAKE_CREATED_AT } from './booking-fakes'
+import { makeChoiceFakes } from './capture-choice-fakes'
 import { makeVrFakes } from './vr-fakes'
 import type { Expect, IsNever, ArityMismatches } from './type-assert'
 
@@ -40,8 +41,9 @@ export function makeRepos() {
     async insert(n: NewNotification) { notifications.push({ id: notifications.length + 1, sentAt: FAKE_CREATED_AT, ...n }) },
   }
   const vrFakes = makeVrFakes({ otherRuns: () => runs })
+  const choiceFakes = makeChoiceFakes()
   const repos = {
-    ...vrFakes.repos, runRepo, bucketRepo, orderRepo, notificationRepo, correctionRepo: fakeCorrectionRepo().repo,
+    ...vrFakes.repos, captureChoiceRepo: choiceFakes.captureChoiceRepo, runRepo, bucketRepo, orderRepo, notificationRepo, correctionRepo: fakeCorrectionRepo().repo,
     fillRepo: { insert: async (_fill) => {}, async listForRun(_runId) { return [] } },
     pendingRepo: { insert: async (_p) => 1, listPending: async () => [], hasLiveForCapture: async (_captureId) => false, hasConfirmedForCapture: async (_captureId) => false, decide: async (_id, _status, _edited) => false },
     captureRepo: { findByHash: async (_runId, _hash) => null, setStatus: async (_id, _status) => {}, insert: async (_c) => ({ inserted: true, id: 1 }) },

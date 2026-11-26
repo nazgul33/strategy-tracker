@@ -200,6 +200,36 @@ describeIf('db integration: VR pending fills and capture choices', () => {
       expect((await repos.captureChoiceRepo.get(id))!.answer).toBe(results[0] ? 'mr' : 'vr')
     })
 
+    test('answer empties the stored screenshot and nothing else; a losing second answer changes nothing', async () => {
+      const id = await park(randomBytes(64 * 1024).toString('base64'))
+      const before = (await repos.captureChoiceRepo.get(id))!
+      expect(before.image.base64.length).toBeGreaterThan(0)
+      expect(await repos.captureChoiceRepo.answer(id, 'vr')).toBe(true)
+      const after = (await repos.captureChoiceRepo.get(id))!
+      expect(after.image).toEqual({ base64: '', mime: 'image/jpeg' })
+      expect(after).toEqual({ ...before, answer: 'vr', image: { base64: '', mime: 'image/jpeg' } })
+      expect(await repos.captureChoiceRepo.answer(id, 'mr')).toBe(false)
+      expect(await repos.captureChoiceRepo.get(id)).toEqual(after)
+    })
+
+    test('countOpenForVrRun counts an open question and not an answered, foreign or old one', async () => {
+      const vrRun = 700_000_000 + Number(uniq().slice(-6))
+      const mk = (runId: number) => repos.captureChoiceRepo.park({
+        chatId: 'chat-1', ticker: 'TQQQ', mrRunId: 11, vrRunId: runId, fills, image: { base64: 'QUJD', mime: 'image/jpeg' }, readOn: '2026-11-26',
+      })
+      const cutoff = () => new Date(Date.now() - CHOICE_TTL_MS)
+      expect(await repos.captureChoiceRepo.countOpenForVrRun(vrRun, cutoff())).toBe(0)
+      const open = await mk(vrRun)
+      expect(await repos.captureChoiceRepo.countOpenForVrRun(vrRun, cutoff())).toBe(1)
+      await mk(vrRun + 1)
+      expect(await repos.captureChoiceRepo.countOpenForVrRun(vrRun, cutoff())).toBe(1)
+      const answered = await mk(vrRun)
+      await repos.captureChoiceRepo.answer(answered, 'mr')
+      expect(await repos.captureChoiceRepo.countOpenForVrRun(vrRun, cutoff())).toBe(1)
+      await db.execute(sql`UPDATE capture_choices SET created_at = created_at - INTERVAL 2 DAY WHERE id = ${open}`)
+      expect(await repos.captureChoiceRepo.countOpenForVrRun(vrRun, cutoff())).toBe(0)
+    })
+
     test('deleteOlderThan removes old rows, answered or not, and keeps newer ones', async () => {
       const old1 = await park('QUJD')
       const old2 = await park('QUJD')

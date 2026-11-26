@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import { buildChoiceKeyboard } from '@st/telegram';
 import { t } from '@st/telegram/i18n';
+import { sha256 } from '../src/domain/booking';
 import { runBootSweeps } from '../src/wire/boot-sweeps';
 import { vrCaptureMessage } from '../src/wire/vr-capture-message';
 import { LABELS_EN, MR_FAILED, THREE, VR_FAILED, WAIT3, asked, asker, silenced } from './wire-capture-question-fixture';
@@ -197,6 +198,15 @@ describe('answering both', () => {
 });
 
 describe('one answer per question', () => {
+  test('the already-answered text tells the owner to send the screenshot again when no reply followed', () => {
+    expect(t('capture-choice-answered', 'en')).toBe(
+      'This question was already answered — nothing more was taken in. If no reply followed your first answer, send the screenshot again.',
+    );
+    expect(t('capture-choice-answered', 'ko')).toBe(
+      '이미 답한 질문입니다 — 추가로 받아들인 것은 없습니다. 첫 답변 뒤에 회신이 오지 않았다면 스크린샷을 다시 보내 주세요.',
+    );
+  });
+
   test('pressing the same button twice carries it out once', async () => {
     const a = await asked();
     await a.press('cs:1:v');
@@ -222,6 +232,34 @@ describe('one answer per question', () => {
     expect(a.vr.pending.length > 0).not.toBe(a.pending.length > 0);
     expect(a.sent.filter((m) => m.text === t('capture-choice-answered', 'en'))).toHaveLength(1);
     expect(a.captures).toHaveLength(1);
+  });
+});
+
+describe('an answered question gives up its screenshot', () => {
+  const FULL_HASH = () => sha256(new TextEncoder().encode(PNG_B64));
+  const EMPTY_HASH = () => sha256(new TextEncoder().encode(''));
+
+  for (const [data, answer, runIds] of [['cs:1:v', 'vr', [100001]], ['cs:1:m', 'mr', [1]], ['cs:1:b', 'both', [1, 100001]]] as const) {
+    test(`after "${answer}" the take-in used the whole screenshot and the parked row keeps none of it`, async () => {
+      const a = await asked();
+      await a.press(data);
+      const full = await FULL_HASH();
+      expect(full).not.toBe(await EMPTY_HASH());
+      expect(a.captures.map((c) => c.runId).sort((x, y) => x - y)).toEqual([...runIds]);
+      for (const c of a.captures) expect(c.imageHash).toBe(full);
+      expect(a.choices).toHaveLength(1);
+      expect(a.choices[0]!.image).toEqual({ base64: '', mime: 'image/png' });
+      expect(a.choices[0]).toMatchObject({ answer, chatId: '777', ticker: 'TQQQ', mrRunId: 1, vrRunId: 100001, readOn: '2026-11-10' });
+      expect(a.choices[0]!.fills).toEqual(THREE);
+    });
+  }
+
+  test('a second press after the first changes nothing', async () => {
+    const a = await asked();
+    await a.press('cs:1:v');
+    await a.press('cs:1:m');
+    expect(a.captures).toHaveLength(1);
+    expect(a.choices[0]).toMatchObject({ answer: 'vr', image: { base64: '', mime: 'image/png' } });
   });
 });
 

@@ -1,10 +1,9 @@
 // Pending tab of a VR run: fills read from screenshots that wait for the owner's decision.
 // Edit, Confirm and Reject per row, and Confirm all above the table.
 import { useState } from 'react';
-import { ApiError } from '../../api';
 import { vrApi } from '../../api.vr';
 import type { VrConfirmAllResult, VrPendingDto } from '../../api.vr.types';
-import { errorText } from '../../errortext';
+import { errorText, isRefusal } from '../../errortext';
 import { centsUsd, isoDate } from '../../format';
 import { useT } from '../../i18n';
 import { ScreenshotLink } from '../ScreenshotLink';
@@ -20,9 +19,6 @@ const NUM = 'text-right tabular-nums';
 
 // One action at a time; 'list' is the re-read that follows an edit.
 type Busy = number | 'all' | 'list' | null;
-
-/** A refusal (422) leaves the row as it was; any other failure leaves the list in doubt. */
-const isRefusal = (err: unknown): boolean => err instanceof ApiError && err.status === 422;
 
 export function VrPendingPanel({ runId, costPpm, onChanged }: VrPanelProps) {
   const t = useT();

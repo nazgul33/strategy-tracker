@@ -6,6 +6,7 @@ import { lookup } from '../../i18n/catalog';
 import { elementByTestId } from '../../testing/dom';
 import { installFetchStub, restoreFetch } from '../../testing/fetchStub';
 import type { FetchCalls } from '../../testing/fetchStub';
+import { goOffline } from '../../testing/offline';
 import { vrDialogHelpers } from '../../testing/vrDialog';
 import { VR_PENDING } from '../../testing/vr';
 
@@ -175,6 +176,38 @@ describe('VrPendingDialog', () => {
     expect(h.errorText()).toBe('This fill is no longer waiting: it was already confirmed or rejected.');
     expect(h.dialogOpen()).toBe(true);
     expect(saved).toEqual([]);
+    await h.click('Cancel');
+    expect(saved).toEqual(['stale', 'close']);
+  });
+
+  it('a 500 shows the message, stays open, and closing it reports a stale row', async () => {
+    put.status = 500;
+    put.json = { error: 'boom' };
+    await mount();
+    await h.submit();
+    expect(h.errorText()).toBe('The server had a problem (boom). Try again; if it keeps failing, check the server log.');
+    expect(h.dialogOpen()).toBe(true);
+    expect(saved).toEqual([]);
+    await h.click('Cancel');
+    expect(saved).toEqual(['stale', 'close']);
+  });
+
+  it('a save that never got an answer shows the message, stays open, and closing it reports a stale row', async () => {
+    await mount();
+    goOffline('PUT', '/pending/');
+    await h.submit();
+    expect(h.errorText()).toBe('Could not reach the server. Check the connection and try again.');
+    expect(h.dialogOpen()).toBe(true);
+    expect(saved).toEqual([]);
+    await h.click('Cancel');
+    expect(saved).toEqual(['stale', 'close']);
+  });
+
+  it('a 404 closes as stale too', async () => {
+    put.status = 404;
+    put.json = { error: 'vr-pending-not-found' };
+    await mount();
+    await h.submit();
     await h.click('Cancel');
     expect(saved).toEqual(['stale', 'close']);
   });

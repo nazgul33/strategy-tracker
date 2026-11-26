@@ -21,7 +21,13 @@ export function makeChoiceFakes(now: () => Date = () => new Date()) {
       const c = choices.find((x) => x.id === id)
       if (!c || c.answer !== null) return false
       c.answer = a
+      c.image = { ...c.image, base64: '' } // a new object: a copy handed out by `get` keeps its image
       return true
+    },
+    // The real repository compares in whole seconds, so the cutoff is floored the same way.
+    async countOpenForVrRun(vrRunId: number, cutoff: Date) {
+      const from = Math.floor(cutoff.getTime() / 1000) * 1000
+      return choices.filter((x) => x.vrRunId === vrRunId && x.answer === null && ms(x.createdAt) >= from).length
     },
     async deleteOlderThan(cutoff: Date) {
       let n = 0

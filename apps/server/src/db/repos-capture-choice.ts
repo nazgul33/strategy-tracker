@@ -1,4 +1,4 @@
-import { eq, and, isNull, lt, sql } from 'drizzle-orm'
+import { eq, and, gte, isNull, lt, sql } from 'drizzle-orm'
 import type { RawFill } from '@st/ingest'
 import * as s from './schema'
 import type { Db } from './db-type'
@@ -24,8 +24,9 @@ export function getCaptureChoiceRepos(db: Db) {
       return rows[0] ? toRow(rows[0]) : null
     },
     // The guard sits in the WHERE clause, so two presses racing on one question cannot both match.
+    // The screenshot goes in the same UPDATE: an answered question has no use for it.
     async answer(id, answer) {
-      const [res] = await db.update(s.captureChoices).set({ answer, answeredAt: sql`now()` })
+      const [res] = await db.update(s.captureChoices).set({ answer, answeredAt: sql`now()`, imageBase64: '' })
         .where(and(eq(s.captureChoices.id, id), isNull(s.captureChoices.answer)))
       return res.affectedRows === 1
     },
@@ -34,6 +35,15 @@ export function getCaptureChoiceRepos(db: Db) {
       const [res] = await db.delete(s.captureChoices)
         .where(lt(s.captureChoices.createdAt, sql`FROM_UNIXTIME(${Math.floor(cutoff.getTime() / 1000)})`))
       return res.affectedRows
+    },
+    async countOpenForVrRun(vrRunId, cutoff) {
+      const [row] = await db.select({ n: sql<number>`count(*)` }).from(s.captureChoices)
+        .where(and(
+          eq(s.captureChoices.vrRunId, vrRunId),
+          isNull(s.captureChoices.answer),
+          gte(s.captureChoices.createdAt, sql`FROM_UNIXTIME(${Math.floor(cutoff.getTime() / 1000)})`),
+        ))
+      return Number(row?.n ?? 0)
     },
   } satisfies CaptureChoiceRepo
   return { captureChoiceRepo }

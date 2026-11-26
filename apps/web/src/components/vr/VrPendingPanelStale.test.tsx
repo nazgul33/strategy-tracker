@@ -292,6 +292,33 @@ describe('VrPendingPanel after a request that was not simply refused', () => {
       expect(rows()).toHaveLength(3);
     });
 
+    it('a save answered 500 keeps the dialog open, and closing it re-reads the list and reports the change', async () => {
+      put.status = 500;
+      put.json = { error: 'boom' };
+      await h.clickId('vrPendingEdit-31');
+      await h.submit();
+      expect(h.errorText()).toBe(SERVER_ERROR);
+      expect(h.dialogOpen()).toBe(true);
+      expect(changed).toBe(0);
+      const before = gets;
+      await h.click('Cancel');
+      expect(h.dialogOpen()).toBe(false);
+      expect(gets).toBe(before + 1);
+      expect(changed).toBe(1);
+    });
+
+    it('a save that never got an answer does the same', async () => {
+      await h.clickId('vrPendingEdit-31');
+      goOffline('PUT', '/pending/');
+      await h.submit();
+      expect(h.errorText()).toBe(OFFLINE);
+      expect(h.dialogOpen()).toBe(true);
+      const before = gets;
+      await h.click('Cancel');
+      expect(gets).toBe(before + 1);
+      expect(changed).toBe(1);
+    });
+
     it('does not re-read when the dialog is closed after another kind of error', async () => {
       put.status = 422;
       put.json = { error: 'invalid-price' };
