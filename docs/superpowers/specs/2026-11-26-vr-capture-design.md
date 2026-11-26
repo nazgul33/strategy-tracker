@@ -120,7 +120,8 @@ For a VR run and the fills routed to it, inside the run lock:
    later day, would then come back as a new row and could be booked twice.) A screenshot that
    produced no row is read again.
 2. **Matching against what the run already has**: VR's booked fills, waiting fills and
-   **rejected** fills (each existing entry can cancel or mark one incoming fill). Amended after
+   **rejected** fills (each existing entry can cancel one incoming fill; marking does not use an
+   entry up, so several incoming fills can be marked against the same entry). Amended after
    the final review: the draft reused mean reversion's matcher, which knows a fill only by side,
    shares, price and date. On a VR ladder every rung of a side has the same lot, so a second
    screenshot of the same day had its new rung fills marked as possible duplicates, and a gap
@@ -136,12 +137,19 @@ For a VR run and the fills routed to it, inside the run lock:
    | same shares, other price | kept, **marked**, citing the entry's price | kept, unmarked: another rung |
    | other shares | unmarked when either order price is unknown; **marked** when both are known and equal (the same order read twice with a misread, or a partial fill) | kept, unmarked |
 
-   - Rejected rows only ever drop (first cell); they never mark. Counting rejected rows is the
-     designer's call: on a shared account the owner rejects the other strategy's fills once,
-     and the next screenshot of the same day must not bring them back.
-   - Drops are settled first, for every incoming fill, and an entry with an equal known order
-     price is preferred over one with none; marks are settled after. The result does not
-     depend on the order of the rows in the screenshot.
+   - Rejected rows drop like any other entry. They mark only where both order prices are
+     known (a rejected fill coming back with a misread price, shares or order price must not
+     return as an unmarked row); with an unknown order price they never mark. Counting rejected
+     rows is the designer's call: on a shared account the owner rejects the other strategy's
+     fills once, and the next screenshot of the same day must not bring them back.
+   - Drops are settled first, for every incoming fill, in a fixed order: equal known order
+     prices, then fills with a known order price against entries with none, then fills with
+     none. Marks are settled after and never use an entry up; an entry already used by a drop
+     still marks another incoming fill with the same known order price (the same order read
+     twice). The result does not depend on the order of the rows in the screenshot.
+   - A mark is the safe direction: a marked row is never booked by Confirm all, only one by
+     one. Known cost: when several rungs fill at one price (a gap open, or close-price orders)
+     and a second screenshot does not show the earlier rows again, its new rows are marked.
    - Everything else becomes a pending fill.
 3. A fill with no date in the screenshot gets today's date and is marked so; a fill dated after
    today is kept as read and marked, and cannot be confirmed until its date is corrected.
