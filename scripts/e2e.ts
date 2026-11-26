@@ -14,7 +14,7 @@
  * through the real Hono app → seeded run create → photo capture through
  * wire/capture against a fake vision model → duplicate guard → HTTP pending
  * confirm → state asserts → morning digest (+ cut-loss stops) → web viewmodels → stop-fill booking →
- * sim drafts (cached bars) → screenshot retention + vision review → web screenshot upload → deterministic sim → Value Rebalancing. Steps live in e2e-*.ts.
+ * sim drafts (cached bars) → screenshot retention + vision review → web screenshot upload → deterministic sim → Value Rebalancing → VR screenshots. Steps live in e2e-*.ts.
  * Exit 0 = every pinned assertion below held.
  */
 import { getDb, closeDb, applyMigrations } from '../apps/server/src/db/client'
@@ -29,7 +29,7 @@ import { DEFAULT_MR_PARAMS } from '../packages/strategies/src/mean-reversion'
 import { formatUsd, parseUsd } from '../packages/core/src/money'
 import { CATALOG } from '../packages/telegram/src/i18n'
 import { makeCachedBarReader } from '../apps/server/src/market/bars'
-import { jsonOf, type E2eCtx, type VisionFill } from './e2e-ctx'
+import { checksPassed, jsonOf, ok, type E2eCtx, type VisionFill } from './e2e-ctx'
 import { CUT_LOSS_PPM, checkPlannedStops, checkStopBooking } from './e2e-cutloss'
 import { checkOrderType } from './e2e-order-type'
 import { countingUpstream, checkSimDrafts } from './e2e-sim-drafts'
@@ -37,13 +37,7 @@ import { runVisionReview } from './e2e-vision-review'
 import { checkWebUpload } from './e2e-web-upload'
 import { checkDeterministicSim } from './e2e-sim'
 import { checkVr, storingCloses } from './e2e-vr'
-
-let checks = 0
-function ok(cond: unknown, label: string): void {
-  if (!cond) throw new Error(`E2E FAILED: ${label}`)
-  checks++
-  console.log(`  ok  ${label}`)
-}
+import { checkVrCapture } from './e2e-vr-capture'
 
 // ---- fixtures ------------------------------------------------------------
 const PASSWORD = 'e2e-password'
@@ -272,6 +266,7 @@ async function main(): Promise<void> {
     await checkWebUpload(ctx, TODAY)
     await checkDeterministicSim(ctx, repos.simRepo)
     await checkVr(ctx, TODAY, () => runMorningPipeline(storingCloses(dayDeps, repos.priceHistoryRepo)), sent) // Value Rebalancing: closes stored as main.ts does
+    await checkVrCapture(ctx, TODAY, () => runMorningPipeline(storingCloses(dayDeps, repos.priceHistoryRepo)), sent) // VR screenshots: pinned upload, confirm, the cycle hold, a shared ticker
 
     // ---- teardown + idempotency proof -----------------------------------------
     await closeDb()
@@ -280,7 +275,7 @@ async function main(): Promise<void> {
     const [left] = (await parent.$client.query(`SHOW DATABASES LIKE '${SCRATCH}'`)) as [any[], unknown]
     await closeDb()
     ok(left.length === 0, `scratch database ${SCRATCH} dropped after the run`)
-    console.log(`e2e OK — ${checks} assertions passed`)
+    console.log(`e2e OK — ${checksPassed()} assertions passed`)
   } finally {
     vision.stop(true)
     try { await closeDb() } catch { /* already closed */ }

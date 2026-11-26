@@ -1,4 +1,4 @@
-/** Shared plumbing for the e2e step modules (scripts/e2e.ts drives them in order). */
+/** Shared plumbing for the e2e step modules (scripts/e2e.ts drives them in order), including the `ok` check counter. */
 export interface VisionFill { side: string; ticker: string; shares: number; price: string; fee?: string; date?: string; orderType?: string; orderPrice?: string; orderedShares?: number | string }
 
 export interface E2eCtx {
@@ -12,3 +12,12 @@ export interface E2eCtx {
 }
 
 export const jsonOf = async (r: Response): Promise<any> => r.json()
+
+let checks = 0
+/** Throws on a failed check; counts and prints a passed one. */
+export function ok(cond: unknown, label: string): void {
+  if (!cond) throw new Error(`E2E FAILED: ${label}`)
+  checks++
+  console.log(`  ok  ${label}`)
+}
+export const checksPassed = (): number => checks
