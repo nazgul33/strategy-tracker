@@ -98,7 +98,7 @@ A strategy's **total** is the sum of its runs' values.
   with no shares shows none and plays no part in this (designer's call). When all the closes
   used are from the same date, it is shown once at the top. A row whose close is from an
   **earlier date than the newest close used on the page** shows its own date and is marked, and
-  its strategy's total is marked as resting on an older close. There is no time-of-day logic (the owner reads the page in Korea, where the
+  its strategy's total is marked as resting on an older close. The older mark has no time-of-day logic (the owner reads the page in Korea, where the
   New York date and the morning job's hour would otherwise raise false alarms every afternoon).
 - A run with no shares needs no close and is never marked.
 - Added after the final review, and changed again on the owner's decision to store the close
@@ -130,7 +130,10 @@ for most of the owner's day: a session's close was only stored by the next tradi
 job (07:30 New York, 21:30 in Korea). The owner chose to close that gap.
 
 - Every trading day at **17:00 New York**, an hour after the normal close (early-close days
-  close earlier), a job stores **that day's** close for every ticker of an active or paused run
+  close earlier), and again at 18:00 and 19:00 (added after the scoped final check: one shot
+  would leave the page a session behind for the owner's whole day if the server restarted at
+  17:00 or the source was a few minutes late; a ticker already stored costs one read and no
+  request), a job stores **that day's** close for every ticker of an active or paused run
   of either strategy. It uses the same price source and the same check as the morning fetch,
   with the expected date being today: an answer dated any other day is not stored and is
   logged.
@@ -140,7 +143,8 @@ job (07:30 New York, 21:30 in Korea). The owner chose to close that gap.
   logged; the next morning's job stores the same close anyway. For the tickers of active runs
   the morning job fetches the close again and overwrites the evening's value for the same
   date, so a late correction by the source is picked up; a ticker held only by paused runs
-  keeps the evening's value (the catch-up finds it already stored), which no decision reads.
+  keeps the evening's value (the catch-up finds it already stored). No trading decision reads
+  it; the dashboard and the run pages show it.
 - The morning job and its catch-up stay as they are. On a normal morning the catch-up finds
   every ticker already stored and fetches nothing.
 - `price_history` may therefore hold a row dated today, written only by this job after the
@@ -159,7 +163,11 @@ the next Update or fill edit, as one large adjustment. The owner chose to fix it
 
 - Setting a run's pool now moves the run's stored cash by the same difference (new pool minus
   old pool), in the same request, under the run lock, and books one ledger row for it. The
-  run page's cash and the dashboard include the added funds at once.
+  pool and the cash are written in one database transaction, so one can never be stored
+  without the other. The run page's cash and the dashboard include the added funds at once.
+- A run whose pool was edited before this version and not Updated since still carries that
+  old difference; this change does not repair it. One Update on such a run books it, once.
+  The Update popup keeps saying so.
 - A later Update on such a run reports no difference from this edit (the stored cash already
   equals the pool minus the fill history, as far as this edit is concerned). A seeded run keeps
   whatever difference its seed already had: this change adds the pool difference and does not
