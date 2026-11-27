@@ -4,13 +4,20 @@ import type { DayDeps } from './day'
 
 type Listed = { ticker: string; status: string }
 
-async function counted(list: () => Promise<Listed[]>, kind: string): Promise<string[]> {
+async function counted(list: () => Promise<Listed[]>, kind: string, label: string): Promise<string[]> {
   try {
     return (await list()).filter((r) => r.status === 'active' || r.status === 'paused').map((r) => r.ticker)
   } catch (e) {
-    console.error('close catch-up: run list failed:', kind, String(e))
+    console.error(`${label}: run list failed:`, kind, String(e))
     return []
   }
+}
+
+/** The distinct tickers of the active or paused runs of both strategies, mean reversion first; a failing list is logged under `label`. */
+export async function liveTickers(deps: DayDeps, label: string): Promise<string[]> {
+  const mr = await counted(() => deps.repos.runRepo.list(), 'MR', label)
+  const vr = await counted(() => deps.repos.vrRunRepo.list(), 'VR', label)
+  return [...new Set([...mr, ...vr])]
 }
 
 /**
@@ -23,9 +30,7 @@ export async function catchUpCloses(deps: DayDeps, today: ISODate): Promise<void
   if (!latest || !deps.persistClose) return
   try {
     const prev = prevTradingDay(today)
-    const mr = await counted(() => deps.repos.runRepo.list(), 'MR')
-    const vr = await counted(() => deps.repos.vrRunRepo.list(), 'VR')
-    for (const ticker of new Set([...mr, ...vr])) {
+    for (const ticker of await liveTickers(deps, 'close catch-up')) {
       try {
         const stored = await latest(ticker)
         if (stored !== null && stored >= prev) continue

@@ -1,13 +1,19 @@
 /**
- * Dashboard step of the operator e2e: GET /api/dashboard against the script's own reads, then the morning catch-up.
- * Every row and total is recomputed from the run lists, the run states and the newest stored close of the ticker,
- * marks included, once before and once after a morning run. A paused VR run on a ticker of its own (VRDB) has no
- * stored close until that morning stores it. The morning here has `latestStoredCloseDate` wired as main.ts does;
- * the other steps' mornings do not.
+ * Dashboard step of the operator e2e: GET /api/dashboard against the script's own reads, then the morning catch-up,
+ * then the evening close job. Every row and total is recomputed from the run lists, the run states and the newest
+ * stored close of the ticker, marks included, once before and once after a morning run. A paused VR run on a ticker
+ * of its own (VRDB) has no stored close until that morning stores it. The morning here has `latestStoredCloseDate`
+ * wired as main.ts does; the other steps' mornings do not. The dashboard reads the clock this step sets on the HTTP
+ * deps (07:45 New York for the morning checks, 17:30 around the evening job), never the wall clock, and `closesBehind`
+ * is recomputed with the same rule: the close expected by that time of day.
  */
 import { prevTradingDay } from '../packages/calendar/src/index'
 import { evalCents } from '../packages/strategies/src/value-rebalancing'
+import { expectedCloseDate } from '../apps/server/src/domain/dashboard'
+import type { HttpDeps } from '../apps/server/src/http/app'
 import { runMorningPipeline, type DayDeps } from '../apps/server/src/pipeline/day'
+import { runEveningCloses } from '../apps/server/src/pipeline/evening-closes'
+import { etTime } from '../apps/server/src/wire/deps'
 import { jsonOf, type E2eCtx } from './e2e-ctx'
 import { storingCloses } from './e2e-vr'
 
@@ -18,8 +24,10 @@ type ClosesRepo = {
 interface Expected { id: number; ticker: string; shares: number; cashCents: number }
 interface Want { id: number; shares: number; cashCents: number; stockCents: number | null; valueCents: number; close: string | null; closeDate: string | null; closeMark: string | null }
 
-export async function checkDashboard(c: E2eCtx, today: string, dayDeps: DayDeps, ph: ClosesRepo): Promise<void> {
+export async function checkDashboard(c: E2eCtx, today: string, dayDeps: DayDeps, ph: ClosesRepo, http: HttpDeps): Promise<void> {
   const prev = prevTradingDay(today)
+  const clock = (utc: string) => { http.now = () => new Date(utc) }
+  clock(`${today}T12:45:00Z`) // 07:45 New York (EST on the script's day): the evening job has not run yet
   const get = async (path: string) => jsonOf(await c.req('GET', path, undefined, c.token))
   const live = (r: { status: string }) => r.status === 'active' || r.status === 'paused'
 
@@ -69,8 +77,8 @@ export async function checkDashboard(c: E2eCtx, today: string, dayDeps: DayDeps,
         `dashboard ${when}, ${name}: total ${total}c, incomplete ${g.incomplete}, olderClose ${g.olderClose} as recomputed (got ${g.totalCents}c)`)
     })
     c.ok(d.closeDate === newest, `dashboard ${when}: closeDate ${newest} is the newest stored close of any row (got ${d.closeDate})`)
-    const behind = newest !== null && newest < prevTradingDay(prevTradingDay(today))
-    c.ok(d.closesBehind === behind, `dashboard ${when}: closesBehind ${behind} by the date rule (got ${d.closesBehind})`)
+    const behind = newest !== null && newest < expectedCloseDate(today, etTime(http.now!()))
+    c.ok(d.closesBehind === behind, `dashboard ${when}: closesBehind ${behind} by the expected close at ${etTime(http.now!())} New York (got ${d.closesBehind})`)
     const idsOf = (n: number) => new Set<number>(d.groups[n].runs.map((r: any) => r.id))
     c.ok([...closedMr].every((id) => !idsOf(0).has(id)) && [...closedVr].every((id) => !idsOf(1).has(id)),
       `dashboard ${when}: no closed run of either strategy is listed in its own group`)
@@ -107,6 +115,28 @@ export async function checkDashboard(c: E2eCtx, today: string, dayDeps: DayDeps,
   c.ok(row2?.close === '1800000' && row2.closeDate === prev && row2.closeMark === null && row2.stockCents === evalCents(27, 1_800_000n) && row2.stockCents === 486_000
     && row2.valueCents === 999_950 && d2.groups[1].incomplete === false,
     `VRDB row after the morning: close 180.00 of ${prev}, no mark, stock 486000c, value 999950c, VR group complete: ${JSON.stringify(row2)}`)
+
+  // ---- 17:30 New York before the evening job: the close of the day is expected and missing
+  clock(`${today}T22:30:00Z`)
+  const d4 = await checkAgainstLists('at 17:30 before the evening job')
+  c.ok(d4.closesBehind === true && d4.closeDate === prev, `dashboard at 17:30 before the evening job: closesBehind true, closeDate ${prev} (got ${d4.closesBehind}, ${d4.closeDate})`)
+
+  // ---- the evening job stores today's close for every ticker of a live run
+  const tickers = new Set<string>([
+    ...((await get('/runs')) as any[]).filter(live).map((r) => r.ticker),
+    ...((await get('/vr/runs')) as any[]).filter(live).map((r) => r.ticker),
+  ])
+  const eveningDeps: DayDeps = { ...catchUp, fetchLastClose: async () => ({ date: today, close: 1_810_000n }), now: () => new Date(`${today}T22:00:00Z`) }
+  const res = await runEveningCloses(eveningDeps)
+  c.ok(typeof res === 'object' && res.stored === tickers.size && res.behind === 0, `evening job stores today's close for all ${tickers.size} ticker(s) of live runs: ${JSON.stringify(res)}`)
+  const lasts = await Promise.all([...tickers].map(async (t) => [t, (await ph.listForTicker(t)).at(-1)] as const))
+  c.ok(lasts.every(([, r]) => r?.tradeDate === today && r.close === 1_810_000n), `every one of them now ends at ${today} with close 181.00 (1810000)`)
+
+  const d5 = await checkAgainstLists('at 17:30 after the evening job')
+  c.ok(d5.closeDate === today && d5.closesBehind === false, `dashboard at 17:30 after the evening job: closeDate ${today}, closesBehind false (got ${d5.closeDate}, ${d5.closesBehind})`)
+  const row5 = d5.groups[1].runs.find((r: any) => r.id === id)
+  c.ok(row5?.close === '1810000' && row5.closeDate === today && row5.closeMark === null && row5.stockCents === 488_700 && row5.valueCents === 1_002_650,
+    `VRDB row after the evening job: close 181.00 of ${today}, no mark, stock 488700c (27 x 181.00), value 1002650c: ${JSON.stringify(row5)}`)
 
   const closed = await c.req('PATCH', `/vr/runs/${id}`, { status: 'closed' }, c.token)
   c.ok(closed.status === 200, 'VRDB run closes -> 200')

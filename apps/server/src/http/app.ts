@@ -40,6 +40,8 @@ export interface HttpDeps {
   allowedChatIds: string[]
   send: (chatId: string, text: string) => Promise<void>
   routeCapture: RouteCapture
+  /** optional: the clock the dashboard reads the New York date and time from; the real time by default */
+  now?: () => Date
 }
 
 import { runsRouter } from './routes/runs'

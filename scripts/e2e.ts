@@ -268,7 +268,7 @@ async function main(): Promise<void> {
     await checkDeterministicSim(ctx, repos.simRepo)
     await checkVr(ctx, TODAY, () => runMorningPipeline(storingCloses(dayDeps, repos.priceHistoryRepo)), sent) // Value Rebalancing: closes stored as main.ts does
     await checkVrCapture(ctx, TODAY, () => runMorningPipeline(storingCloses(dayDeps, repos.priceHistoryRepo)), sent) // VR screenshots: pinned upload, confirm, the cycle hold, a shared ticker
-    await checkDashboard(ctx, TODAY, dayDeps, repos.priceHistoryRepo) // dashboard: every row and total from the lists and the stored closes; a paused VR run's close caught up
+    await checkDashboard(ctx, TODAY, dayDeps, repos.priceHistoryRepo, httpDeps) // dashboard: every row and total from the lists and the stored closes; a paused VR run's close caught up
 
     // ---- teardown + idempotency proof -----------------------------------------
     await closeDb()

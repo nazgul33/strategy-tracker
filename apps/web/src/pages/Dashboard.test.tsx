@@ -58,9 +58,8 @@ const IDLE: DashboardRowDto = {
 const mrGroup: DashboardGroupDto = { strategy: MR, totalCents: 4821033, incomplete: false, olderClose: false, runs: [SOXL, TQQQ] };
 const vrGroup: DashboardGroupDto = { strategy: VR, totalCents: 3190275, incomplete: false, olderClose: false, runs: [TQQQ_VR] };
 const DASH: DashboardDto = { today: '2026-11-26', closeDate: '2026-11-25', closesBehind: false, groups: [mrGroup, vrGroup] };
-const BEHIND = 'These closes are more than one session old. The morning job may not have run.';
-const HINT =
-  "A session's close is stored by the next trading morning's job (New York time), so the newest stored close can be one session behind the last one traded.";
+const BEHIND = "These closes are behind: the last session's close has not been stored yet.";
+const HINT = "Closes are stored at 17:00 New York time on trading days, and again by the next morning's job.";
 
 let gets = 0;
 const dash = {

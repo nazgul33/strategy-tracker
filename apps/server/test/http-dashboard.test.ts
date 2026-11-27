@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
-import { createRun } from './http-fakes'
+import { createApp } from '../src/http/app'
+import { createRun, loginAs, makeDeps, makeFakes } from './http-fakes'
 import { newVrRun, seedFill, vrSetup, type VrSetup } from './vr-http-fixture'
 
 async function seeded(): Promise<{ s: VrSetup; mrId: number; vrId: number }> {
@@ -56,5 +57,30 @@ describe('GET /api/dashboard', () => {
     expect((await s.req('GET', '/api/dashboard')).status).toBe(200)
     expect(await read()).toEqual(before)
     expect(before.every((r) => r.status === 200)).toBe(true)
+  })
+})
+
+describe('GET /api/dashboard reads the clock on every request', () => {
+  test('the date and the New York time come from the injected instant; closesBehind follows 17:30', async () => {
+    const f = makeFakes()
+    let at = new Date('2026-11-24T22:00:00Z')
+    const app = createApp({ ...makeDeps(f), now: () => at })
+    const auth = await loginAs(app)
+    const id = await createRun(app, auth, { name: 'mr', ticker: 'SOXL', costPpm: 0, poolCents: 100 })
+    f.states.get(id)!.buckets[0] = { index: 0, state: 'held', shares: 10, buyPrice: 350_000n, buyFeeCents: 0, filledOn: '2026-11-03' }
+    await f.repos.priceHistoryRepo.upsertMany([{ ticker: 'SOXL', tradeDate: '2026-11-23', close: 350_000n }])
+    const read = async () => (await app.request('/api/dashboard', { headers: auth })).json()
+
+    const at1700 = await read()
+    expect(at1700.today).toBe('2026-11-24')
+    expect(at1700.closesBehind).toBe(false)
+
+    at = new Date('2026-11-24T22:30:00Z')
+    expect((await read()).closesBehind).toBe(true)
+
+    await f.repos.priceHistoryRepo.upsertMany([{ ticker: 'SOXL', tradeDate: '2026-11-24', close: 360_000n }])
+    const stored = await read()
+    expect(stored.closeDate).toBe('2026-11-24')
+    expect(stored.closesBehind).toBe(false)
   })
 })

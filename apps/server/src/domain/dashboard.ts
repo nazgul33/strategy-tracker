@@ -1,4 +1,4 @@
-import { prevTradingDay } from '@st/calendar'
+import { dayInfo, prevTradingDay } from '@st/calendar'
 import type { ISODate } from '@st/core'
 import { evalCents, vrBooks } from '@st/strategies/value-rebalancing'
 import type { PendingRepo, RepoSurface, RunRepo } from './repo-types'
@@ -58,17 +58,24 @@ function groupOf(strategy: DashboardStrategy, rows: DashboardRow[], pageDate: IS
   }
 }
 
-export function buildDashboard(i: { today: ISODate; mr: readonly DashboardRunInput[]; vr: readonly DashboardRunInput[] }): Dashboard {
+/** From this New York wall time on a trading day the evening job (17:00) has stored the day's close. */
+export const EVENING_SETTLED = '17:30'
+
+/** The close the page should have by now: today's from 17:30 New York on a trading day, else the previous trading day's. */
+export function expectedCloseDate(today: ISODate, etTime: string): ISODate {
+  return dayInfo(today).open && etTime >= EVENING_SETTLED ? today : prevTradingDay(today)
+}
+
+export function buildDashboard(i: { today: ISODate; expectedClose: ISODate; mr: readonly DashboardRunInput[]; vr: readonly DashboardRunInput[] }): Dashboard {
   const mr = rowsOf(i.mr)
   const vr = rowsOf(i.vr)
   let closeDate: ISODate | null = null
   for (const r of [...mr, ...vr]) if (r.closeDate !== null && (closeDate === null || r.closeDate > closeDate)) closeDate = r.closeDate
-  // The morning job stores a close on the next trading day, so one session behind is normal; two is not.
-  const closesBehind = closeDate !== null && closeDate < prevTradingDay(prevTradingDay(i.today))
+  const closesBehind = closeDate !== null && closeDate < i.expectedClose
   return { today: i.today, closeDate, closesBehind, groups: [groupOf('mean-reversion', mr, closeDate), groupOf('value-rebalancing', vr, closeDate)] }
 }
 
-export async function loadDashboard(deps: { repos: DashboardRepos; today: ISODate }): Promise<Dashboard> {
+export async function loadDashboard(deps: { repos: DashboardRepos; today: ISODate; expectedClose: ISODate }): Promise<Dashboard> {
   const r = deps.repos
   const [mrRuns, pending, vrRuns] = await Promise.all([r.runRepo.list(), r.pendingRepo.listPending(), r.vrRunRepo.list()])
   const mrLive = mrRuns.filter((x) => x.status !== 'closed')
@@ -97,5 +104,5 @@ export async function loadDashboard(deps: { repos: DashboardRepos; today: ISODat
     const books = vrBooks(fills.map(toEngineFill), moves)
     return { id: x.id, name: x.name, ticker: x.ticker, status: x.status, shares: books.shares, cashCents: books.poolCents, waiting, lastClose: closes.get(x.ticker) ?? null }
   })
-  return buildDashboard({ today: deps.today, mr, vr })
+  return buildDashboard({ today: deps.today, expectedClose: deps.expectedClose, mr, vr })
 }

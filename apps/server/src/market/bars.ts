@@ -70,6 +70,9 @@ function inRange(bars: OHLCBar[], from: ISODate, to: ISODate): OHLCBar[] {
 // Read-through cache of finished daily sessions. Everything after the last
 // completed trading day (today included) goes to the provider on every call and
 // is neither stored nor marked covered, so a half-formed bar is never frozen.
+// price_history can hold a close-only row dated today, written only by the
+// evening job after the session; listBars skips it, and once that day is a
+// finished day and gets backfilled, upsertBars overwrites it with the full bar.
 export function makeCachedBarReader(deps: {
   upstream: (ticker: string, from: string, to: string) => Promise<OHLCBar[]>
   repos: BarCacheRepos

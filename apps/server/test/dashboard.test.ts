@@ -1,12 +1,13 @@
 import { describe, test, expect } from 'bun:test'
 import { emptyState } from '@st/core'
 import { DEFAULT_VR_SETTINGS } from '@st/strategies/value-rebalancing'
-import { buildDashboard, loadDashboard, type DashboardRepos, type DashboardRunInput } from '../src/domain/dashboard'
+import { buildDashboard, expectedCloseDate, loadDashboard, type DashboardRepos, type DashboardRunInput } from '../src/domain/dashboard'
 import { loadVrSummaries } from '../src/domain/vr/runs'
 import { NO_SNAPSHOT } from './booking-fakes'
 import { makeFakes } from './http-fakes'
 
 const TODAY = '2026-11-26'
+const EXPECTED = '2026-11-25'
 const run = (over: Partial<DashboardRunInput>): DashboardRunInput => ({
   id: 1, name: 'r', ticker: 'SOXL', status: 'active', shares: 0, cashCents: 0, waiting: 0, lastClose: null, ...over,
 })
@@ -14,25 +15,26 @@ const at = (date: string, close: bigint) => ({ date, close })
 
 describe('buildDashboard', () => {
   test('a mean reversion run is valued at the stored close plus its cash', () => {
-    const d = buildDashboard({ today: TODAY, mr: [run({ shares: 118, cashCents: 2_010_510, lastClose: at('2026-11-25', 361_800n) })], vr: [] })
+    const d = buildDashboard({ today: TODAY, expectedClose: EXPECTED, mr: [run({ shares: 118, cashCents: 2_010_510, lastClose: at('2026-11-25', 361_800n) })], vr: [] })
     expect(d.groups[0].runs[0]).toMatchObject({
       shares: 118, close: 361_800n, closeDate: '2026-11-25', closeMark: null, stockCents: 426_924, cashCents: 2_010_510, valueCents: 2_437_434,
     })
   })
 
   test('a VR run is valued the same way', () => {
-    const d = buildDashboard({ today: TODAY, mr: [], vr: [run({ shares: 277, cashCents: 1_212_495, lastClose: at('2026-11-25', 714_000n) })] })
+    const d = buildDashboard({ today: TODAY, expectedClose: EXPECTED, mr: [], vr: [run({ shares: 277, cashCents: 1_212_495, lastClose: at('2026-11-25', 714_000n) })] })
     expect(d.groups[1].runs[0]).toMatchObject({ stockCents: 1_977_780, valueCents: 3_190_275 })
   })
 
   test('the stock value rounds at half a cent', () => {
-    const d = buildDashboard({ today: TODAY, mr: [run({ shares: 3, lastClose: at('2026-11-25', 333_350n) })], vr: [] })
+    const d = buildDashboard({ today: TODAY, expectedClose: EXPECTED, mr: [run({ shares: 3, lastClose: at('2026-11-25', 333_350n) })], vr: [] })
     expect(d.groups[0].runs[0]!.stockCents).toBe(10_001)
   })
 
   test('a group total is the sum of its rows', () => {
     const d = buildDashboard({
       today: TODAY,
+      expectedClose: EXPECTED,
       mr: [
         run({ id: 1, shares: 118, cashCents: 2_010_510, lastClose: at('2026-11-25', 361_800n) }),
         run({ id: 2, shares: 95, cashCents: 1_705_299, lastClose: at('2026-11-25', 714_000n) }),
@@ -45,7 +47,7 @@ describe('buildDashboard', () => {
   })
 
   test('shares and no stored close: cash only, marked missing, the group incomplete', () => {
-    const d = buildDashboard({ today: TODAY, mr: [run({ shares: 10, cashCents: 50_000, lastClose: null })], vr: [run({ shares: 0, cashCents: 7 })] })
+    const d = buildDashboard({ today: TODAY, expectedClose: EXPECTED, mr: [run({ shares: 10, cashCents: 50_000, lastClose: null })], vr: [run({ shares: 0, cashCents: 7 })] })
     expect(d.groups[0].runs[0]).toMatchObject({ close: null, closeDate: null, stockCents: null, valueCents: 50_000, closeMark: 'missing' })
     expect(d.groups[0].totalCents).toBe(50_000)
     expect(d.groups[0].incomplete).toBe(true)
@@ -56,6 +58,7 @@ describe('buildDashboard', () => {
   test('the page date is the newest close; an earlier row is marked older', () => {
     const d = buildDashboard({
       today: TODAY,
+      expectedClose: EXPECTED,
       mr: [run({ id: 1, shares: 1, lastClose: at('2026-11-25', 100_000n) }), run({ id: 2, shares: 1, lastClose: at('2026-11-24', 100_000n) })],
       vr: [],
     })
@@ -68,6 +71,7 @@ describe('buildDashboard', () => {
   test('with the rows in different groups only the group of the older row is marked', () => {
     const d = buildDashboard({
       today: TODAY,
+      expectedClose: EXPECTED,
       mr: [run({ shares: 1, lastClose: at('2026-11-25', 100_000n) })],
       vr: [run({ shares: 1, lastClose: at('2026-11-24', 100_000n) })],
     })
@@ -80,6 +84,7 @@ describe('buildDashboard', () => {
   test('a row without shares uses no close and plays no part in the page date', () => {
     const d = buildDashboard({
       today: TODAY,
+      expectedClose: EXPECTED,
       mr: [run({ id: 1, shares: 0, cashCents: 900, lastClose: at('2026-11-27', 999_999n) })],
       vr: [run({ id: 2, shares: 5, lastClose: at('2026-11-25', 100_000n) })],
     })
@@ -92,6 +97,7 @@ describe('buildDashboard', () => {
     const lastClose = at('2026-11-25', 100_000n)
     const d = buildDashboard({
       today: TODAY,
+      expectedClose: EXPECTED,
       mr: [
         run({ id: 1, status: 'closed', shares: 50, cashCents: 1_000, lastClose }),
         run({ id: 2, status: 'paused', shares: 10, cashCents: 300, lastClose }),
@@ -107,13 +113,13 @@ describe('buildDashboard', () => {
 
   test('rows come in ascending id order and the inputs are not reordered', () => {
     const mr = [run({ id: 3 }), run({ id: 1 })]
-    const d = buildDashboard({ today: TODAY, mr, vr: [] })
+    const d = buildDashboard({ today: TODAY, expectedClose: EXPECTED, mr, vr: [] })
     expect(d.groups[0].runs.map((r) => r.id)).toEqual([1, 3])
     expect(mr.map((r) => r.id)).toEqual([3, 1])
   })
 
   test('with no run both groups are present and empty', () => {
-    expect(buildDashboard({ today: TODAY, mr: [], vr: [] })).toEqual({
+    expect(buildDashboard({ today: TODAY, expectedClose: EXPECTED, mr: [], vr: [] })).toEqual({
       today: TODAY,
       closeDate: null,
       closesBehind: false,
@@ -125,34 +131,48 @@ describe('buildDashboard', () => {
   })
 
   describe('closesBehind', () => {
-    const behind = (today: string, closeDate: string | null) =>
-      buildDashboard({ today, mr: [run({ shares: 1, lastClose: closeDate === null ? null : at(closeDate, 100_000n) })], vr: [] }).closesBehind
-    const cases: [string, string, boolean][] = [
-      ['2026-11-24', '2026-11-23', false],
-      ['2026-11-24', '2026-11-20', false],
-      ['2026-11-24', '2026-11-19', true],
-      ['2026-11-27', '2026-11-25', false],
-      ['2026-11-27', '2026-11-24', false],
-      ['2026-11-27', '2026-11-23', true],
-      ['2026-11-28', '2026-11-25', false],
-      ['2026-11-28', '2026-11-24', true],
-    ]
-    for (const [today, close, want] of cases) {
-      test(`today ${today}, newest close ${close}: ${want}`, () => {
-        expect(behind(today, close)).toBe(want)
-      })
-    }
+    const behind = (expectedClose: string, closeDate: string | null) =>
+      buildDashboard({ today: '2026-11-24', expectedClose, mr: [run({ shares: 1, lastClose: closeDate === null ? null : at(closeDate, 100_000n) })], vr: [] }).closesBehind
+
+    test('a close dated the expected date is not behind', () => {
+      expect(behind('2026-11-24', '2026-11-24')).toBe(false)
+    })
+
+    test('a close dated one day before the expected date is behind', () => {
+      expect(behind('2026-11-24', '2026-11-23')).toBe(true)
+    })
+
+    test('a close newer than expected is not behind', () => {
+      expect(behind('2026-11-23', '2026-11-24')).toBe(false)
+    })
 
     test('no row uses a close: false', () => {
       expect(behind('2026-11-24', null)).toBe(false)
-      expect(buildDashboard({ today: '2026-11-24', mr: [], vr: [] }).closesBehind).toBe(false)
+      expect(buildDashboard({ today: '2026-11-24', expectedClose: '2026-11-24', mr: [], vr: [] }).closesBehind).toBe(false)
     })
   })
 
   test('name, ticker and the waiting count are carried through', () => {
-    const d = buildDashboard({ today: TODAY, mr: [run({ id: 7, name: 'Alpha', ticker: 'TQQQ', waiting: 3 })], vr: [] })
+    const d = buildDashboard({ today: TODAY, expectedClose: EXPECTED, mr: [run({ id: 7, name: 'Alpha', ticker: 'TQQQ', waiting: 3 })], vr: [] })
     expect(d.groups[0].runs[0]).toMatchObject({ id: 7, name: 'Alpha', ticker: 'TQQQ', waiting: 3 })
   })
+})
+
+describe('expectedCloseDate', () => {
+  const cases: [string, string, string, string][] = [
+    ['2026-11-24', '17:29', '2026-11-23', 'a trading day before 17:30 expects the previous close'],
+    ['2026-11-24', '17:30', '2026-11-24', 'a trading day from 17:30 expects today\'s close'],
+    ['2026-11-24', '00:10', '2026-11-23', 'just after midnight expects the previous close'],
+    ['2026-11-28', '18:00', '2026-11-27', 'a Saturday expects Friday\'s close'],
+    ['2026-11-26', '18:00', '2026-11-25', 'a holiday expects the previous trading day\'s close'],
+    ['2026-11-27', '17:30', '2026-11-27', 'the half day from 17:30 expects its own close'],
+    ['2026-11-27', '17:29', '2026-11-25', 'the half day before 17:30 expects the day before the holiday'],
+  ]
+  for (const [today, time, want, why] of cases) {
+    test(`${today} at ${time} -> ${want}: ${why}`, () => {
+      expect(expectedCloseDate(today, time)).toBe(want)
+    })
+  }
 })
 
 describe('loadDashboard', () => {
@@ -186,7 +206,7 @@ describe('loadDashboard', () => {
     await f.repos.pendingRepo.decide(decided, 'rejected', { side: 'buy', shares: 5, price: 100_000n, fee: 0, filledOn: '2026-11-06', bucketIdx: 0 })
     await f.repos.pendingRepo.insert(pend(b))
     await f.repos.priceHistoryRepo.upsertMany([{ ticker: 'SOXL', tradeDate: '2026-11-25', close: 361_800n }])
-    const d = await loadDashboard({ repos: f.repos, today: TODAY })
+    const d = await loadDashboard({ repos: f.repos, today: TODAY, expectedClose: EXPECTED })
     expect(d.groups[0].runs).toHaveLength(2)
     expect(d.groups[0].runs[0]).toMatchObject({ id: a, shares: 118, cashCents: 2_010_510, waiting: 2, stockCents: 426_924, valueCents: 2_437_434, close: 361_800n })
     expect(d.groups[0].runs[1]).toMatchObject({ id: b, waiting: 1 })
@@ -204,7 +224,7 @@ describe('loadDashboard', () => {
       { ticker: 'TQQQ', tradeDate: '2026-11-09', close: 460_000n }, { ticker: 'TQQQ', tradeDate: '2026-11-10', close: 470_000n },
     ])
     const summary = (await loadVrSummaries({ repos: f.repos, today: TODAY }))[0]!
-    const row = (await loadDashboard({ repos: f.repos, today: TODAY })).groups[1].runs[0]!
+    const row = (await loadDashboard({ repos: f.repos, today: TODAY, expectedClose: EXPECTED })).groups[1].runs[0]!
     expect(summary.shares).toBe(80)
     expect(row).toMatchObject({ id, shares: summary.shares, cashCents: summary.poolCents, valueCents: summary.valueCents, waiting: 1, close: 470_000n, closeDate: '2026-11-10' })
   })
@@ -214,7 +234,7 @@ describe('loadDashboard', () => {
     const id = await f.repos.vrRunRepo.create(vrInput('New', 'NOPE'))
     const summary = (await loadVrSummaries({ repos: f.repos, today: TODAY }))[0]!
     expect(summary.valueCents).toBeNull()
-    const d = await loadDashboard({ repos: f.repos, today: TODAY })
+    const d = await loadDashboard({ repos: f.repos, today: TODAY, expectedClose: EXPECTED })
     expect(d.groups[1].runs[0]).toMatchObject({ id, shares: 0, stockCents: 0, valueCents: 1_000_000, closeMark: null, close: null, closeDate: null })
     expect(d.groups[1].incomplete).toBe(false)
     expect(d.closeDate).toBeNull()
@@ -230,7 +250,7 @@ describe('loadDashboard', () => {
     const vc = await f.repos.vrRunRepo.create(vrInput('VC'))
     await f.repos.vrRunRepo.updateStatus(vp, 'paused')
     await f.repos.vrRunRepo.updateStatus(vc, 'closed')
-    const d = await loadDashboard({ repos: f.repos, today: TODAY })
+    const d = await loadDashboard({ repos: f.repos, today: TODAY, expectedClose: EXPECTED })
     expect(d.groups[0].runs.map((r) => [r.id, r.status])).toEqual([[paused, 'paused']])
     expect(d.groups[1].runs.map((r) => [r.id, r.status])).toEqual([[vp, 'paused']])
   })
@@ -246,7 +266,7 @@ describe('loadDashboard', () => {
       ...f.repos,
       priceHistoryRepo: { listForTicker: async (t: string) => { calls.push(t); return f.repos.priceHistoryRepo.listForTicker(t) } },
     }
-    await loadDashboard({ repos, today: TODAY })
+    await loadDashboard({ repos, today: TODAY, expectedClose: EXPECTED })
     expect(calls.filter((t) => t === 'TQQQ')).toHaveLength(1)
     expect(calls.filter((t) => t === 'SOXL')).toHaveLength(1)
   })

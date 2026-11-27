@@ -6,10 +6,16 @@ import { notifyDay } from './notify'
 export interface CheckedClose { close: bigint; closeDate: ISODate }
 
 /**
- * The last close of a ticker once it passed the freshness check and was stored, or null when it is missing or stale.
+ * The last close of a ticker once it passed the freshness check and was stored, or null when it is missing or dated other
+ * than `expected` (the previous trading day by default).
  * Says nothing to the owner: the caller decides what a missing close means for its strategy.
  */
-export async function fetchClose(deps: DayDeps, ticker: string, today: ISODate): Promise<CheckedClose | null> {
+export async function fetchClose(
+  deps: DayDeps,
+  ticker: string,
+  today: ISODate,
+  expected: ISODate = prevTradingDay(today),
+): Promise<CheckedClose | null> {
   // fetch + sanity close
   let close: bigint
   let closeDate: ISODate
@@ -21,7 +27,7 @@ export async function fetchClose(deps: DayDeps, ticker: string, today: ISODate):
     console.error('last close fetch failed:', ticker, String(e))
     return null
   }
-  if (closeDate !== prevTradingDay(today)) return null
+  if (closeDate !== expected) return null
 
   // collect history once the close passed the sanity check above; a failed
   // backfill must not break the digest (fire-and-warn). Independent of run

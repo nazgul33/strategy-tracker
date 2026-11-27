@@ -25,7 +25,7 @@ export interface DayDeps {
   persistClose?: (ticker: string, tradeDate: ISODate, close: bigint) => Promise<void>
   /** optional: the trade date of the newest stored close of a ticker, or null; enables the close catch-up */
   latestStoredCloseDate?: (ticker: string) => Promise<ISODate | null>
-  /** optional: the clock the VR hold ages Telegram questions with; the real time by default */
+  /** optional: the clock the VR hold ages Telegram questions with, and the evening close job's 16:30 guard reads; the real time by default */
   now?: () => Date
 }
 

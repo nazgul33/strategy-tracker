@@ -1,5 +1,6 @@
 import { Cron } from 'croner'
 import type { DayDeps } from './day'
+import { runEveningCloses } from './evening-closes'
 import { runDecemberNudge, runMorningPipeline, runReminder } from './day'
 
 const sentLine = (what: string, failed: number) =>
@@ -27,6 +28,16 @@ export function startJobs(deps: DayDeps, log?: (msg: string) => void): Cron[] {
     }
   })
   jobs.push(reminder)
+
+  const evening = new Cron('0 17 * * 1-5', { timezone: 'America/New_York' }, async () => {
+    try {
+      const res = await runEveningCloses(deps)
+      log?.(typeof res === 'string' ? `evening closes: ${res}` : `evening closes: ${res.stored} stored, ${res.behind} behind`)
+    } catch (e) {
+      log?.(`evening closes error: ${String(e)}`)
+    }
+  })
+  jobs.push(evening)
 
   const nudge = new Cron('0 8 1 12 *', { timezone: 'America/New_York' }, async () => {
     try {
