@@ -137,8 +137,10 @@ job (07:30 New York, 21:30 in Korea). The owner chose to close that gap.
 - It stores nothing on a day the market is closed, and nothing when it is called before 16:30
   New York, so a half-formed bar of a session still open can never be stored.
 - It sends no message, takes no run lock and changes no run, order or books. A failure is
-  logged; the next morning's job stores the same close anyway (and overwrites the evening's
-  value with its own for the same date, so a late correction by the source is picked up).
+  logged; the next morning's job stores the same close anyway. For the tickers of active runs
+  the morning job fetches the close again and overwrites the evening's value for the same
+  date, so a late correction by the source is picked up; a ticker held only by paused runs
+  keeps the evening's value (the catch-up finds it already stored), which no decision reads.
 - The morning job and its catch-up stay as they are. On a normal morning the catch-up finds
   every ticker already stored and fetches nothing.
 - `price_history` may therefore hold a row dated today, written only by this job after the
