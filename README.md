@@ -225,6 +225,7 @@ only — nothing on weekends:
 | --- | --- |
 | 07:30 Mon–Fri | Morning pipeline: digest with buy/sell LOCs, forced sells, notices. On an NYSE holiday it sends a "market closed" note instead of a digest. |
 | 16:05 Mon–Fri | Fill-capture reminder (skipped on market holidays). |
+| 17:00, 18:00, 19:00 Mon–Fri | Evening close job: stores the day's closing price for every active or paused run's ticker (skipped on market holidays; no message). |
 | Dec 1, 08:00 | Calendar-maintenance nudge (see caveat below). |
 
 The digest carries one "⚠️ Unconfirmed orders from <date>: N" line per trade date, oldest first, naming every order left unresolved that no recorded digest has named yet, each exactly once; if a morning's digest could not be recorded, or the orders could not be marked afterwards, they are named again the next morning.

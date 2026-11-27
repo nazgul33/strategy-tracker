@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseEnv, resolveVisionApiKey, todayEt, visionSource } from '../src/wire/deps';
+import { etTime, parseEnv, resolveVisionApiKey, todayEt, visionSource } from '../src/wire/deps';
 
 // ---------- parseEnv ----------
 
@@ -146,5 +146,17 @@ describe('todayEt', () => {
   });
   test('defaults to the current date', () => {
     expect(todayEt()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('etTime', () => {
+  test('formats pinned instants as 24-hour HH:MM in America/New_York', () => {
+    expect(etTime(new Date('2026-11-25T05:00:00Z'))).toBe('00:00');
+    expect(etTime(new Date('2026-11-24T21:29:00Z'))).toBe('16:29');
+    expect(etTime(new Date('2026-11-24T22:30:00Z'))).toBe('17:30');
+    expect(etTime(new Date('2026-07-01T21:00:00Z'))).toBe('17:00');
+  });
+  test('defaults to the current time', () => {
+    expect(etTime()).toMatch(/^\d{2}:\d{2}$/);
   });
 });

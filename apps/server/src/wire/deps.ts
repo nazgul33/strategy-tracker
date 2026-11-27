@@ -134,3 +134,15 @@ const ET_FMT = new Intl.DateTimeFormat('en-CA', {
 export function todayEt(date: Date = new Date()): string {
   return ET_FMT.format(date);
 }
+
+const ET_TIME_FMT = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'America/New_York',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+/** 'HH:MM' (24 h) in New York. */
+export function etTime(date: Date = new Date()): string {
+  return ET_TIME_FMT.format(date);
+}

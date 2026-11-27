@@ -12,9 +12,15 @@ describe('parseHash', () => {
   });
 
   it('still parses the existing pages', () => {
-    expect(parseHash('')).toEqual({ page: 'runs' });
+    expect(parseHash('')).toEqual({ page: 'dashboard' });
     expect(parseHash('#/pending')).toEqual({ page: 'pending' });
     expect(parseHash('#/runs/4')).toEqual({ page: 'run', id: 4 });
+  });
+
+  it('parses the dashboard and the landing hashes', () => {
+    for (const h of ['', '#', '#/', '#/dashboard']) expect(parseHash(h)).toStrictEqual({ page: 'dashboard' });
+    expect(parseHash('#/dashboard/x')).toStrictEqual({ page: 'notFound', hash: '#/dashboard/x' });
+    expect(parseHash('#/runs')).toStrictEqual({ page: 'runs' });
   });
 
   it('reads the notifications tab and the notice id from a run link', () => {

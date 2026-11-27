@@ -1,9 +1,10 @@
-// VR routes of the app shell. Kept apart from App.test.tsx, which is near the size limit.
+// VR and landing routes of the app shell. Kept apart from App.test.tsx, which is near the size limit.
 // react-dom/client must stay a dynamic import: it has to load *after*
 // GlobalRegistrator.register(), otherwise onChange handlers silently never fire.
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { installFetchStub, restoreFetch } from './testing/fetchStub';
+import { setInputValue } from './testing/dom';
 import { VR_APP_ROUTES } from './testing/vr';
 
 GlobalRegistrator.register();
@@ -34,6 +35,13 @@ async function flush() {
   }
 }
 
+const EMPTY_GROUP = { totalCents: 0, incomplete: false, olderClose: false, runs: [] };
+const EMPTY_DASH = {
+  today: '2026-11-26',
+  closeDate: null,
+  groups: [{ strategy: 'mean-reversion', ...EMPTY_GROUP }, { strategy: 'value-rebalancing', ...EMPTY_GROUP }],
+};
+
 describe('App VR routes', () => {
   let container: HTMLDivElement | undefined;
   let root: ReturnType<typeof createRoot> | undefined;
@@ -52,7 +60,12 @@ describe('App VR routes', () => {
   beforeEach(() => {
     root = undefined;
     container = undefined;
-    installFetchStub(VR_APP_ROUTES);
+    installFetchStub([
+      { method: 'POST', url: '/api/login', json: { token: 'new-token' } },
+      { url: '/api/dashboard', json: EMPTY_DASH },
+      { url: '/notifications', json: { entries: [], nextBefore: null } },
+      ...VR_APP_ROUTES,
+    ]);
   });
 
   afterEach(() => {
@@ -111,5 +124,52 @@ describe('App VR routes', () => {
     await open('#/vr/abc');
     expect(document.querySelector('[data-testid="vr-run-page"]')).toBeNull();
     expect(document.body.textContent).not.toContain('TQQQ lump sum');
+    const back = document.querySelector('main a[href="#/dashboard"]');
+    expect(back?.textContent).toBe('Dashboard');
+  });
+
+  const nav = (href: string) => document.querySelector(`nav a[href="${href}"]`)!;
+  const expectDashboardLanding = () => {
+    expect(document.querySelector('[data-testid="dashboard-page"]')).not.toBeNull();
+    const first = document.querySelectorAll('nav a')[0]!;
+    expect(first.getAttribute('href')).toBe('#/dashboard');
+    expect(first.textContent).toBe('Dashboard');
+    expect(first.classList.contains('bg-muted')).toBe(true);
+    expect(nav('#/runs').classList.contains('bg-muted')).toBe(false);
+  };
+
+  it('the empty hash opens the Dashboard with its menu item first and active', async () => {
+    await open('');
+    expectDashboardLanding();
+  });
+
+  it('#/dashboard opens the Dashboard with its menu item first and active', async () => {
+    await open('#/dashboard');
+    expectDashboardLanding();
+  });
+
+  it('#/runs still opens the mean reversion runs list', async () => {
+    await open('#/runs');
+    expect(document.querySelector('[data-testid="dashboard-page"]')).toBeNull();
+    expect(document.querySelector('h1')?.textContent).toBe('Runs');
+    expect(nav('#/runs').classList.contains('bg-muted')).toBe(true);
+    expect(document.querySelectorAll('nav a')[1]!.getAttribute('href')).toBe('#/runs');
+  });
+
+  it('the app name in the header links to the Dashboard', async () => {
+    await open('#/runs');
+    const brand = [...document.querySelectorAll('header a')].find((a) => !a.closest('nav'))!;
+    expect(brand.getAttribute('href')).toBe('#/dashboard');
+    expect(brand.textContent).toBe('Strategy Tracker');
+  });
+
+  it('a successful sign-in lands on the Dashboard', async () => {
+    await open('#/login');
+    await act(async () => setInputValue(document.querySelector('input[type="password"]') as HTMLInputElement, 'pw'));
+    await act(async () => {
+      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    await flush();
+    expect(window.location.hash).toBe('#/dashboard');
   });
 });

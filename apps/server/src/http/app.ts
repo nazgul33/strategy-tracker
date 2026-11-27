@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { RepoSurface } from '../domain/booking'
 import type { CaptureChoiceRepo } from '../domain/capture-choice'
+import type { PoolBucketRepo } from '../domain/pool-edit'
 import type { OHLCBar } from '@st/market-data'
 import type { FillRepo, NotificationRepo, OrderRepo, PendingRepo, RunRepo } from '../domain/repo-types'
 import type { SharedRunRepo, VrRepos } from '../domain/vr/repo-types'
@@ -19,6 +20,7 @@ export interface HttpRepoSurface extends RepoSurface, VrRepos {
   settingsRepo: { getAll(): Promise<Record<string, string>>; set(key: string, value: string): Promise<void> }
   poolEditRepo: { insert(input: { runId: number; poolCents: number }): Promise<void> }
   runRepo: RunRepo
+  bucketRepo: PoolBucketRepo
   orderRepo: OrderRepo
   fillRepo: FillRepo
   notificationRepo: NotificationRepo
@@ -40,6 +42,8 @@ export interface HttpDeps {
   allowedChatIds: string[]
   send: (chatId: string, text: string) => Promise<void>
   routeCapture: RouteCapture
+  /** optional: the clock the dashboard reads the New York date and time from; the real time by default */
+  now?: () => Date
 }
 
 import { runsRouter } from './routes/runs'
@@ -52,6 +56,7 @@ import { simRouter } from './routes/sim'
 import { visionReviewRouter } from './routes/vision-review'
 import { capturesRouter } from './routes/captures'
 import { vrRouter } from './routes/vr'
+import { dashboardRouter } from './routes/dashboard'
 
 export function jsonBig(x: unknown): unknown {
   return JSON.parse(JSON.stringify(x, (_k, v) => typeof v === 'bigint' ? v.toString() : v))
@@ -79,6 +84,7 @@ export function createApp(deps: HttpDeps): Hono {
   app.route('/api', settingsRouter(deps))
   app.route('/api', notificationsRouter(deps))
   app.route('/api', capturesRouter(deps))
+  app.route('/api', dashboardRouter(deps))
   app.route('/api/sim', simRouter(deps))
   app.route('/api/vr', vrRouter(deps))
   app.post('/api/trigger/morning', async (c) => {

@@ -1,4 +1,4 @@
-// Tiny hash router: #/runs, #/runs/:id, #/vr, #/vr/:id[?tab=pending], #/pending, #/vision-review, #/sim, #/sim/:id,
+// Tiny hash router: #/dashboard (also the empty hash), #/runs, #/runs/:id, #/vr, #/vr/:id[?tab=pending], #/pending, #/vision-review, #/sim, #/sim/:id,
 // #/settings, #/login. Auth = a token in sessionStorage; without one every
 // page (except login) redirects to #/login.
 import { useEffect } from 'react';
@@ -8,6 +8,7 @@ import { useHashRoute, requireAuth } from './components/hooks';
 import type { Route } from './components/hooks';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/Login';
+import { DashboardPage } from './pages/Dashboard';
 import { RunsListPage } from './pages/RunsList';
 import { RunDetailPage } from './pages/RunDetail';
 import { VrRunsPage } from './pages/VrRuns';
@@ -20,6 +21,8 @@ import { SettingsPage } from './pages/Settings';
 
 function pageFor(route: Route) {
   switch (route.page) {
+    case 'dashboard':
+      return { node: <DashboardPage />, nav: 'dashboard' as const };
     case 'runs':
       return { node: <RunsListPage />, nav: 'runs' as const };
     case 'run':
@@ -52,7 +55,7 @@ function pageFor(route: Route) {
     case 'settings':
       return { node: <SettingsPage />, nav: 'settings' as const };
     default:
-      return { node: <NotFound />, nav: 'runs' as const };
+      return { node: <NotFound />, nav: 'dashboard' as const };
   }
 }
 
@@ -61,8 +64,8 @@ function NotFound() {
   return (
     <div className="py-10 text-center text-sm text-muted-foreground">
       {t('routeNotFound')}
-      <a href="#/runs" className="ml-2 text-primary underline">
-        {t('actionBack')}
+      <a href="#/dashboard" className="ml-2 text-primary underline">
+        {t('navDashboard')}
       </a>
     </div>
   );
