@@ -189,8 +189,9 @@ re-derives state from fills and, when stored cash differs from derived cash,
 books exactly one compensating `adjust` ledger row (`ref.reason: 'recalc'`)
 and reports the signed correction as `deltaCents` (rebuilt minus stored).
 
-Two flows write stored cash without a matching fill, so derived cash can
-differ from it there:
+Two flows write stored cash without a matching fill. Only the seed creates a
+difference between stored and derived cash; the pool edit keeps whatever
+difference the run already had:
 
 - `seedRun` (`domain/booking.ts`) applies seed buckets and then overwrites
   `state.cashCents` with the operator's number — that value is authoritative

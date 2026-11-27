@@ -558,7 +558,7 @@
   "vr.budgetLeft": "남은 예산",
   "vr.budgetOf": "총 {total} 중",
   "vr.buyInstruction": "{date} 종가 {close} 기준으로 {shares}주(약 {amount})를 매수하세요.",
-  "vr.buyInstructionPending": "저장된 종가가 아직 없습니다. 다음 거래일 장 마감 후 또는 다음 날 아침 작업에서 저장되며, 그 뒤에 매수 안내가 나옵니다.",
+  "vr.buyInstructionPending": "저장된 종가가 아직 없습니다. 다음 장 마감 후 또는 다음 날 아침 작업에서 저장되며, 그 뒤에 매수 안내가 나옵니다.",
   "vr.buyInstructionSmall": "목표 금액 {amount}이(가) {date} 종가 {close} 기준 1주 가격보다 작아 아직 매수할 수 없습니다.",
   "vr.buyLadder": "매수 사다리",
   "vr.cashAmountHint": "양수로 입력하세요. 부호는 종류에 따라 정해집니다.",
