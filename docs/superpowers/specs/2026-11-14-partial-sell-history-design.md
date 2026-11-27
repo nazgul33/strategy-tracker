@@ -189,16 +189,20 @@ re-derives state from fills and, when stored cash differs from derived cash,
 books exactly one compensating `adjust` ledger row (`ref.reason: 'recalc'`)
 and reports the signed correction as `deltaCents` (rebuilt minus stored).
 
-Two legitimate flows write stored cash or the starting pool *directly*,
-without a matching fill, so derived cash intentionally lags reality there:
+One legitimate flow writes stored cash *directly*, without a matching fill,
+so derived cash intentionally differs from it there:
 
 - `seedRun` (`domain/booking.ts`) applies seed buckets and then overwrites
   `state.cashCents` with the operator's number — that value is authoritative
   until the first recalc, which re-derives it from history.
-- Editing a run's pool (Settings) moves `poolCents`, the base of the formula,
-  while the stored state keeps the old base until something rebuilds it.
 
-Consequently an Update on a seeded or pool-edited run may book **one large
+Editing a run's pool (`setRunPool`, `domain/pool-edit.ts`) moves the stored
+cash by the same difference as `poolCents`, under the run lock, and books one
+`adjust` row (`ref.reason: 'pool-edit'`). Derived cash is linear in the pool,
+so the edit keeps whatever difference the run already had: a straight run
+stays straight, and a seeded run keeps its seed difference.
+
+Consequently an Update on a seeded run may book **one large
 adjust row** — that is the repair working as designed, not a bug: it is the
 one-time correction that re-anchors the books to `poolCents` minus history.
 The web UI surfaces this via the recalc result popup (`deltaCents` and

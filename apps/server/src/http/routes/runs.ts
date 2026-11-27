@@ -4,6 +4,7 @@ import { parseUsd, formatUsd } from '@st/core/money'
 import { progressView } from '@st/strategies'
 import { bucketNo, t as tgT } from '@st/telegram/i18n'
 import { seedRun, manualFill, cancelOrder } from '../../domain/booking'
+import { setRunPool } from '../../domain/pool-edit'
 import type { RawFill } from '@st/ingest'
 import type { OHLCBar } from '@st/market-data'
 import { jsonBig, type HttpDeps } from '../app'
@@ -133,9 +134,8 @@ export function runsRouter(deps: HttpDeps): Hono {
     const body = await c.req.json().catch(() => ({}))
     const amountCents = body?.amountCents
     if (!Number.isInteger(amountCents) || amountCents <= 0) return c.json({ error: 'invalid amountCents' }, 400)
-    if (id === null || !(await deps.repos.runRepo.get(id))) return c.json({ error: 'not found' }, 404)
-    await deps.repos.runRepo.updatePool(id, amountCents)
-    await deps.repos.poolEditRepo.insert({ runId: id, poolCents: amountCents })
+    const done = id === null ? null : await setRunPool(id, amountCents, { repos: deps.repos, today: deps.today() })
+    if (done === null) return c.json({ error: 'not found' }, 404)
     return c.json({ ok: true })
   })
   // order shaping (gaps + cut-loss) is editable in any run status (operator ruling): pure price-config edit.

@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { createApp } from '../src/http/app'
-import { makeFakes, makeDeps, PASSWORD } from './http-fakes'
+import { makeFakes, makeDeps, PASSWORD, createRun, json, loginAs, postFill } from './http-fakes'
 import { FAKE_CREATED_AT } from './booking-fakes'
 import type { RunStatus } from '../src/domain/repo-types'
 
@@ -111,6 +111,30 @@ describe('http runs', () => {
     expect(pr.status).toBe(200)
     const run = f.runs.find((x) => x.id === id)!
     expect(run.poolCents).toBe(200)
+    expect(f.poolEdits.length).toBe(1)
+  })
+  test('pool edit raises the run page cash and the dashboard row by the difference', async () => {
+    const f = makeFakes()
+    const app = createApp(makeDeps(f))
+    const auth = await loginAs(app)
+    const id = await createRun(app, auth, { name: 'r', ticker: 'SPY', costPpm: 0, poolCents: 1_000_000 })
+    await postFill(app, auth, id, { side: 'buy', shares: 10, price: '150.00', fee: '0.00', filledOn: '2026-11-10' })
+    const page = async () => (await (await app.request(`/api/runs/${id}`, { headers: auth })).json())
+    const row = async () => (await (await app.request('/api/dashboard', { headers: auth })).json()).groups[0].runs.find((r: { id: number }) => r.id === id)
+    expect((await page()).progressView.cashCents).toBe(850_000)
+    const before = await row()
+    expect(before).toMatchObject({ cashCents: 850_000, valueCents: 850_000 })
+
+    const pr = await app.request(`/api/runs/${id}/pool`, { method: 'POST', body: JSON.stringify({ amountCents: 1_500_000 }), headers: { ...json, ...auth } })
+
+    expect(pr.status).toBe(200)
+    expect(await pr.json()).toEqual({ ok: true })
+    const after = await page()
+    expect(after.progressView.cashCents).toBe(1_350_000)
+    expect(after.poolCents).toBe(1_500_000)
+    expect(await row()).toMatchObject({ cashCents: 1_350_000, valueCents: before.valueCents + 500_000 })
+    const adjusts = f.ledger.filter((l) => l.runId === id && l.kind === 'adjust')
+    expect(adjusts.map((l) => l.amountCents)).toEqual([500_000])
     expect(f.poolEdits.length).toBe(1)
   })
   test('patch status valid + invalid', async () => {

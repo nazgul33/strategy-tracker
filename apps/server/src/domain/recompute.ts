@@ -183,8 +183,9 @@ async function deleteFillUnlocked(
 // ledger keeps matching reality. Returns the rebuilt state, deltaCents (rebuilt
 // cash minus previously stored cash — 0 when the books were already straight)
 // and fillCount, the size of the history the state was derived from.
-// Drift is expected on seeded or pool-edited runs, where one Update books a
-// single large adjust: see "Recalc and drift" in the partial-sell-history spec.
+// Drift is expected on seeded runs, where one Update books a single large
+// adjust. A pool edit moves the stored cash with the pool (domain/pool-edit.ts),
+// so it adds no drift. See "Recalc and drift" in the partial-sell-history spec.
 // Runs under the per-run lock.
 export function recalcRunState(
   runId: number,
