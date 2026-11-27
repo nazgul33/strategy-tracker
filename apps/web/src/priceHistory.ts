@@ -19,8 +19,9 @@ function addDays(iso: string, days: number): string {
 }
 
 /**
- * `today` is the ET trade date; the fetch ends at the previous trading day —
- * today's bar is not settled yet (the live quote is shown separately).
+ * `today` is the ET trade date; the window ends at the previous trading day, a day
+ * whose close is settled for the whole day. A close for today can be stored after the
+ * evening job, but it is left out of the window (the live quote is shown separately).
  */
 export function computeHistoryWindow(buyDates: string[], today: string): HistoryWindow {
   const to = prevTradingDay(today);

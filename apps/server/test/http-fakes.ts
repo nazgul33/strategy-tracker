@@ -4,6 +4,7 @@ import type { HttpDeps, HttpRepoSurface, createApp } from '../src/http/app'
 import type { DayRepoSurface, FillRow, LedgerRow, NewOrder, NotificationRow, OrderRecord, OrderStatus, PendingRow, RunRow, RunStatus } from '../src/domain/repo-types'
 import type { CaptureImageInsert } from '../src/db/repos-vision'
 import type { VisionReviewRow } from '../src/domain/vision-review'
+import type { PoolBucketRepo } from '../src/domain/pool-edit'
 import { fakeCorrectionRepo } from './fake-corrections'
 import { fakeSimRepo } from './fake-sim'
 import { fakeRunRow, FAKE_CREATED_AT } from './booking-fakes'
@@ -31,7 +32,11 @@ export function makeFakes() {
       await orderRepo.insertMany(os)
       await bucketRepo.saveState(runId, state)
     },
-  } satisfies DayRepoSurface['bucketRepo']
+    async saveStateWithPool(runId: number, state: RunState, poolCents: number) {
+      await bucketRepo.saveState(runId, state)
+      await runRepo.updatePool(runId, poolCents)
+    },
+  } satisfies DayRepoSurface['bucketRepo'] & PoolBucketRepo
   const runRepo = {
     async list() { return [...runs] },
     async get(id: number) { return runs.find((r) => r.id === id) ?? null },

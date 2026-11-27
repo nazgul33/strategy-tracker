@@ -127,7 +127,7 @@ describe('VrLadders', () => {
       }),
     );
     only('vrBuyPending');
-    expect(byId('vrBuyPending')!.textContent).toBe('No closing price yet. The buy instruction arrives with the next morning message.');
+    expect(byId('vrBuyPending')!.textContent).toBe("No closing price stored yet. It is stored after the next session's close or by the next morning's job, and the buy instruction follows.");
   });
 
   it('says the ladder arrives with the next cycle when shares are held before cycle 1', async () => {

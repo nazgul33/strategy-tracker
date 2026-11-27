@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { RepoSurface } from '../domain/booking'
 import type { CaptureChoiceRepo } from '../domain/capture-choice'
+import type { PoolBucketRepo } from '../domain/pool-edit'
 import type { OHLCBar } from '@st/market-data'
 import type { FillRepo, NotificationRepo, OrderRepo, PendingRepo, RunRepo } from '../domain/repo-types'
 import type { SharedRunRepo, VrRepos } from '../domain/vr/repo-types'
@@ -19,6 +20,7 @@ export interface HttpRepoSurface extends RepoSurface, VrRepos {
   settingsRepo: { getAll(): Promise<Record<string, string>>; set(key: string, value: string): Promise<void> }
   poolEditRepo: { insert(input: { runId: number; poolCents: number }): Promise<void> }
   runRepo: RunRepo
+  bucketRepo: PoolBucketRepo
   orderRepo: OrderRepo
   fillRepo: FillRepo
   notificationRepo: NotificationRepo

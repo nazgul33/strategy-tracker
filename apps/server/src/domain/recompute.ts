@@ -184,8 +184,10 @@ async function deleteFillUnlocked(
 // cash minus previously stored cash — 0 when the books were already straight)
 // and fillCount, the size of the history the state was derived from.
 // Drift is expected on seeded runs, where one Update books a single large
-// adjust. A pool edit moves the stored cash with the pool (domain/pool-edit.ts),
-// so it adds no drift. See "Recalc and drift" in the partial-sell-history spec.
+// adjust. A pool edit moves the stored cash with the pool (domain/pool-edit.ts), so
+// it adds no drift; a run whose pool was edited before that change still carries the
+// old difference until its first Update books it, once. See "Recalc and drift" in the
+// partial-sell-history spec.
 // Runs under the per-run lock.
 export function recalcRunState(
   runId: number,

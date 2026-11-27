@@ -32,7 +32,7 @@ export interface DashboardGroupDto {
 export interface DashboardDto {
   today: string;
   closeDate: string | null;
-  /** the newest stored close is more than one session behind today */
+  /** true when the newest close used is older than the close the page should have by now (today's from 17:30 New York on a trading day, otherwise the previous trading day's) */
   closesBehind: boolean;
   groups: [DashboardGroupDto, DashboardGroupDto];
 }

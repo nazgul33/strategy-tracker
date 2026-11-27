@@ -29,7 +29,7 @@ export function startJobs(deps: DayDeps, log?: (msg: string) => void): Cron[] {
   })
   jobs.push(reminder)
 
-  const evening = new Cron('0 17 * * 1-5', { timezone: 'America/New_York' }, async () => {
+  const evening = new Cron('0 17-19 * * 1-5', { timezone: 'America/New_York' }, async () => {
     try {
       const res = await runEveningCloses(deps)
       log?.(typeof res === 'string' ? `evening closes: ${res}` : `evening closes: ${res.stored} stored, ${res.behind} behind`)

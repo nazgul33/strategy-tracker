@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { emptyState, type ISODate, type Run } from '@st/core'
+import { emptyState, type ISODate, type Run, type RunState } from '@st/core'
 import { computeOrders, DEFAULT_MR_PARAMS } from '@st/strategies'
 import { manualFill, seedRun } from '../src/domain/booking'
 import { setRunPool } from '../src/domain/pool-edit'
@@ -20,9 +20,17 @@ function deferred() {
 function setup() {
   const f = fakeRepos()
   const edits: { runId: number; poolCents: number }[] = []
+  const updatePool = async (id: number, p: number) => { const r = f._stores.runs.get(id); if (r) r.poolCents = p }
   const repos = {
     ...f.repos,
-    runRepo: { ...f.repos.runRepo, async updatePool(id: number, p: number) { const r = f._stores.runs.get(id); if (r) r.poolCents = p } },
+    runRepo: { ...f.repos.runRepo, updatePool },
+    bucketRepo: {
+      ...f.repos.bucketRepo,
+      async saveStateWithPool(id: number, state: RunState, p: number) {
+        await f.repos.bucketRepo.saveState(id, state)
+        await updatePool(id, p)
+      },
+    },
     poolEditRepo: { async insert(e: { runId: number; poolCents: number }) { edits.push(e) } },
   }
   const deps = { repos, today: TODAY, notify: silentNotifier }
@@ -101,16 +109,73 @@ describe('setRunPool', () => {
     const s = setup()
     const id = await heldRun(s)
     const save = spyOn(s.repos.bucketRepo, 'saveState')
+    const saveWithPool = spyOn(s.repos.bucketRepo, 'saveStateWithPool')
     const ledgerBefore = s.f._stores.ledger.length
 
     const res = await setRunPool(id, 1_000_000, s.deps)
 
     expect(res).toEqual({ deltaCents: 0 })
     expect(save).not.toHaveBeenCalled()
+    expect(saveWithPool).not.toHaveBeenCalled()
     expect(s.f._stores.ledger.length).toBe(ledgerBefore)
     expect(await cash(s, id)).toBe(850_000)
     expect(s.edits).toEqual([{ runId: id, poolCents: 1_000_000 }])
     save.mockRestore()
+    saveWithPool.mockRestore()
+  })
+
+  test('a difference is written with one saveStateWithPool call carrying the new state and pool', async () => {
+    const s = setup()
+    const id = await heldRun(s)
+    const saveWithPool = spyOn(s.repos.bucketRepo, 'saveStateWithPool')
+
+    await setRunPool(id, 1_500_000, s.deps)
+
+    expect(saveWithPool).toHaveBeenCalledTimes(1)
+    const [runId, state, pool] = saveWithPool.mock.calls[0]!
+    expect([runId, state.cashCents, pool]).toEqual([id, 1_350_000, 1_500_000])
+    saveWithPool.mockRestore()
+  })
+
+  test('the transaction fails: the pool and the cash stay, nothing is recorded, the error propagates, and a retry applies the difference once', async () => {
+    const s = setup()
+    const id = await heldRun(s)
+    const working = s.repos.bucketRepo.saveStateWithPool
+    const ledgerBefore = s.f._stores.ledger.length
+    s.repos.bucketRepo.saveStateWithPool = async () => { throw new Error('db down') }
+
+    await expect(setRunPool(id, 1_500_000, s.deps)).rejects.toThrow('db down')
+
+    expect(poolOf(s, id)).toBe(1_000_000)
+    expect(await cash(s, id)).toBe(850_000)
+    expect(s.edits).toEqual([])
+    expect(s.f._stores.ledger.length).toBe(ledgerBefore)
+
+    s.repos.bucketRepo.saveStateWithPool = working
+    expect(await setRunPool(id, 1_500_000, s.deps)).toEqual({ deltaCents: 500_000 })
+    expect(poolOf(s, id)).toBe(1_500_000)
+    expect(await cash(s, id)).toBe(1_350_000)
+    expect(poolRows(s, id).map((r) => r.amountCents)).toEqual([500_000])
+    expect(s.edits).toEqual([{ runId: id, poolCents: 1_500_000 }])
+  })
+
+  test('the pool-edit row fails after the transaction: pool and cash are both new, and a retry changes nothing more', async () => {
+    const s = setup()
+    const id = await heldRun(s)
+    const working = s.repos.poolEditRepo
+    const ledgerBefore = s.f._stores.ledger.length
+    s.repos.poolEditRepo = { async insert() { throw new Error('audit down') } }
+
+    await expect(setRunPool(id, 1_500_000, s.deps)).rejects.toThrow('audit down')
+
+    expect(poolOf(s, id)).toBe(1_500_000)
+    expect(await cash(s, id)).toBe(1_350_000)
+
+    s.repos.poolEditRepo = working
+    expect(await setRunPool(id, 1_500_000, s.deps)).toEqual({ deltaCents: 0 })
+    expect(poolOf(s, id)).toBe(1_500_000)
+    expect(await cash(s, id)).toBe(1_350_000)
+    expect(s.f._stores.ledger.length).toBe(ledgerBefore)
   })
 
   test('a seeded run keeps the difference it already had', async () => {

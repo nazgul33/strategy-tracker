@@ -93,6 +93,12 @@ export function getMrRunRepos(db: Db) {
         await saveStateWith(tx, runId, state)
       })
     },
+    async saveStateWithPool(runId: number, state: RunState, poolCents: number) {
+      await db.transaction(async (tx) => {
+        await tx.update(s.mrRuns).set({ poolCents }).where(eq(s.mrRuns.runId, runId))
+        await saveStateWith(tx, runId, state)
+      })
+    },
     async loadState(runId: number): Promise<RunState> {
       const rows = await db.select({ stateJson: s.mrRuns.stateJson }).from(s.mrRuns).where(eq(s.mrRuns.runId, runId))
       const raw: { buckets?: StoredBucket[]; cashCents: number; closed?: StoredClosed[]; ages?: Record<string, number> } = JSON.parse(rows[0].stateJson)

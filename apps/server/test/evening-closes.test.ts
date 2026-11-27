@@ -114,12 +114,56 @@ describe('the evening close job', () => {
     try {
       const { s, result } = await evening({ answers: { BAD: 'throw' }, extra: async (s) => { await mrRun(s, 'BAD', 'P3', 'paused') } })
       expect(result).toEqual({ stored: 2, behind: 1 })
-      expect(err).toHaveBeenCalledWith('last close fetch failed:', 'BAD', 'Error: boom')
-      expect(err.mock.calls.filter((c) => c.includes('BAD')).length).toBeGreaterThanOrEqual(1)
+      expect(err.mock.calls).toEqual([['last close fetch failed:', 'BAD', 'Error: boom'], ['evening closes stored nothing:', 'BAD']])
       expect(s.persisted.map(([t]) => t).sort()).toEqual(['TQQQ', 'TSLA'])
     } finally {
       err.mockRestore()
     }
+  })
+
+  test('a close that could not be persisted is counted as behind, not stored, and logged once by the job', async () => {
+    const err = quiet()
+    try {
+      const s = await setupEvening()
+      const persist = s.deps.persistClose!
+      s.deps.persistClose = async (tk, d, c) => { if (tk === 'TQQQ') throw new Error('disk full'); await persist(tk, d, c) }
+      expect(await runEveningCloses(s.deps)).toEqual({ stored: 1, behind: 1 })
+      expect(err.mock.calls.filter((c) => String(c[0]).startsWith('evening closes'))).toEqual([['evening closes stored nothing:', 'TQQQ']])
+      expect(err).toHaveBeenCalledWith('price history persist failed:', 'TQQQ', 'Error: disk full')
+      expect(s.persisted).toEqual([['TSLA', '2026-11-24', 520_000n]])
+    } finally {
+      err.mockRestore()
+    }
+  })
+
+  test('a second run on the same evening after a clean first run fetches nothing', async () => {
+    const s = await setupEvening()
+    expect(await runEveningCloses(s.deps)).toEqual({ stored: 2, behind: 0 })
+    s.fetched.length = 0
+    expect(await runEveningCloses(s.deps)).toEqual({ stored: 0, behind: 0 })
+    expect(s.fetched).toEqual([])
+  })
+
+  test('a second run after a first run that could not store one ticker fetches only that ticker', async () => {
+    const err = quiet()
+    try {
+      const s = await setupEvening({ answers: { TQQQ: '2026-11-23' } })
+      expect(await runEveningCloses(s.deps)).toEqual({ stored: 1, behind: 1 })
+      s.fetched.length = 0
+      s.deps.fetchLastClose = async (tk) => { s.fetched.push(tk); return { date: '2026-11-24', close: 530_000n } }
+      expect(await runEveningCloses(s.deps)).toEqual({ stored: 1, behind: 0 })
+      expect(s.fetched).toEqual(['TQQQ'])
+      expect(s.persisted.map(([t]) => t).sort()).toEqual(['TQQQ', 'TSLA'])
+    } finally {
+      err.mockRestore()
+    }
+  })
+
+  test('with an injected clock the New York date and time come from that one instant', async () => {
+    const s = await setupEvening({ today: '2026-11-24' })
+    s.deps.today = () => '2026-11-25'
+    expect(await runEveningCloses(s.deps)).toEqual({ stored: 2, behind: 0 })
+    expect(s.persisted.map(([, d]) => d)).toEqual(['2026-11-24', '2026-11-24'])
   })
 
   test('a failing stored-date read is logged and never thrown', async () => {
